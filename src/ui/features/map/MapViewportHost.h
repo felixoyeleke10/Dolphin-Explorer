@@ -1,0 +1,111 @@
+#pragma once
+#include "ui/features/map/MapTypes.h"
+#include "ui/mainwindow/AppState.h"   // for ToolMode
+#include <QColor>
+#include <QImage>
+#include <QString>
+#include <QWidget>
+#include <string>
+#include <vector>
+
+class QLabel;
+class QStackedWidget;
+class QToolButton;
+class QPushButton;
+
+namespace dolphin::ui {
+
+class MapView;
+class MapView3D;
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  MapViewportHost — owns the 2D / 3D viewport stack.
+//
+//  Layout:
+//    QStackedWidget  index 0 = MapView  (existing 2D raster map)
+//                    index 1 = MapView3D (OpenGL 3D renderer)
+//  An overlay toggle button switches between modes.
+//
+//  MainWindow keeps m_map_view = host->view2D() so all existing call sites
+//  work unchanged.  Nav-track data is forwarded to the 3D view automatically
+//  via the MapView::layerDataUpdated signal.
+// ─────────────────────────────────────────────────────────────────────────────
+
+class MapViewportHost : public QWidget {
+    Q_OBJECT
+public:
+    explicit MapViewportHost(QWidget* parent = nullptr);
+
+    MapView*   view2D() const { return m_view2d; }
+    MapView3D* view3D() const { return m_view3d; }
+
+    bool isMode3D() const { return m_is_3d; }
+    QImage grabViewportImage();
+
+    // Forward layer data to the 3D view; called from the layerDataUpdated signal handler.
+    void onLayerDataLoaded(const std::string& layer_id,
+                       const LayerMapData& data,
+                       QColor color = QColor(0, 180, 255));
+
+    // Call when a layer is removed.
+    void onLayerRemoved(const std::string& layer_id);
+
+    // Clear 3D scene (e.g. on project close).
+    void clearScene();
+
+public slots:
+    void setMode3D      (bool on);
+    void setShowGrid          (bool show);
+    void setMapBgColor        (QColor c);
+    void setGridColors        (QColor line2d, QColor minor3d, QColor major3d);
+    void setGratLabelSize     (int size);
+    void setGratLabelRotated  (bool rotated);
+    void setGratCoordFormat   (int fmt);
+    void setLayerVisible   (const std::string& layer_id, bool visible);
+    void setActiveLayer    (const std::string& layer_id);
+    void setSelectedLayers (const std::vector<std::string>& ids);
+    // Show or hide the "Import Files…" hint button overlaid on the empty map.
+    void setShowImportHint (bool show);
+
+    // Open a file dialog and load an XYZ/CSV terrain file into the 3D view.
+    // No-op if not in 3D mode or scene origin is not set.
+    void promptLoadTerrain();
+
+    // Forward the active tool mode to the 3D view.  The 3D view uses the mode
+    // to change its cursor and to decide what a left-click does (select vs.
+    // place contact).  The 2D view handles its own InputMode via MapView directly.
+    void setToolMode(ToolMode mode);
+
+signals:
+    void modeChanged(bool is_3d);
+    void gpuInfo(const QString& renderer, const QString& version, int maxTextureSize);
+    void glInitError(const QString& message);
+    // Cursor geo coordinates from whichever view is active.  Both NaN = left viewport.
+    void cursorMoved(double lon, double lat);
+    // Relayed from MapView3D — mirrors the equivalent signals on MapView.
+    void layerClicked  (const std::string& layer_id);
+    void layersSelected(const std::vector<std::string>& layer_ids);
+    void contextMenuRequested(QPoint globalPos);
+    // Relayed from MapView3D in ContactPick mode — same signature as MapView::contactPickedOnMap.
+    void contactPickedAt(double lon, double lat);
+    // Emitted when the user clicks the import hint button on the empty map.
+    void importFilesRequested();
+
+protected:
+    void resizeEvent(QResizeEvent*) override;
+
+private:
+    MapView3D* ensureView3D();
+    void positionOverlay();
+
+    MapView*        m_view2d          = nullptr;
+    MapView3D*      m_view3d          = nullptr;
+    QStackedWidget* m_stack           = nullptr;
+    QToolButton*    m_btn             = nullptr;   // 2D / 3D toggle
+    QToolButton*    m_terrain_btn     = nullptr;   // Load Terrain (3D mode only)
+    QLabel*         m_terrain_label   = nullptr;   // "Loading…" feedback
+    QPushButton*    m_import_hint_btn = nullptr;   // empty-state CTA
+    bool            m_is_3d           = false;
+};
+
+} // namespace dolphin::ui

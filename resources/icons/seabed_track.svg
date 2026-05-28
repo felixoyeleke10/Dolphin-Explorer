@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+     stroke="#aeaeb2" stroke-linecap="round" stroke-linejoin="round">
+  <!-- Water column mask region (shaded top zone) -->
+  <rect x="2" y="3" width="20" height="7" rx="1"
+        fill="#aeaeb2" fill-opacity="0.18" stroke="none"/>
+  <!-- Seabed boundary line -->
+  <line x1="2" y1="10" x2="22" y2="10" stroke-width="1.8"/>
+  <!-- Data rows below (seabed returns) -->
+  <line x1="2" y1="14" x2="22" y2="14" stroke-width="0.9" stroke-opacity="0.5"/>
+  <line x1="2" y1="18" x2="22" y2="18" stroke-width="0.9" stroke-opacity="0.5"/>
+</svg>

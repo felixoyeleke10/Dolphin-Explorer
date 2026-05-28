@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#aeaeb2" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <!-- Processing pipeline: three nodes in series -->
+  <!-- Node 1 (input) -->
+  <rect x="1.5" y="8.5" width="5" height="7" rx="1.5"/>
+  <!-- Arrow 1 -->
+  <line x1="6.5" y1="12" x2="9" y2="12"/>
+  <polyline points="8,10.5 9.5,12 8,13.5"/>
+  <!-- Node 2 (processing, prominent) -->
+  <rect x="9.5" y="6" width="5" height="12" rx="1.5"/>
+  <!-- Gear mark on node 2 -->
+  <circle cx="12" cy="12" r="1.8" stroke-width="1.2"/>
+  <!-- Arrow 2 -->
+  <line x1="14.5" y1="12" x2="17" y2="12"/>
+  <polyline points="15.5,10.5 17,12 15.5,13.5"/>
+  <!-- Node 3 (output) -->
+  <rect x="17" y="8.5" width="5.5" height="7" rx="1.5"/>
+</svg>

@@ -1,0 +1,5 @@
+CompileFlags:
+  CompilationDatabase: build_mingw
+
+Diagnostics:
+  UnusedIncludes: None

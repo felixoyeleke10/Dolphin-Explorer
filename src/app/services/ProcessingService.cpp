@@ -1,0 +1,224 @@
+#include "app/services/ProcessingService.h"
+#include "app/layers/DataLayer.h"
+#include "io/jsf/JsfReader.h"
+#include "io/cache/ParsedCache.h"
+#include "io/xtf/XtfReader.h"
+#include "pipeline/GraphRunner.h"
+#include "pipeline/NodeGraph.h"
+#include <QFutureWatcher>
+#include <QMetaObject>
+#include <QPointer>
+#include <QtConcurrent/QtConcurrent>
+#include <cctype>
+#include <memory>
+
+namespace {
+
+using namespace dolphin;
+
+struct RunRequest {
+    std::string         layer_id;
+    std::string         source_path;
+    std::string         artifact_path;
+    std::string         artifact_format;
+    std::string         graph_json;
+    core::ArtifactIndex artifact_index;
+};
+
+struct RunResult {
+    std::string layer_id;
+    std::string summary;
+    std::string error;
+    bool        failed = false;
+};
+
+struct BatchResult {
+    std::vector<RunResult> runs;
+    int                    succeeded = 0;
+    int                    total     = 0;
+};
+
+std::string normaliseFormat(std::string format)
+{
+    for (auto& c : format)
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    return format;
+}
+
+std::string formatFromPath(const std::string& path, const std::string& fallback = "xtf")
+{
+    auto dot = path.rfind('.');
+    if (dot == std::string::npos) return fallback;
+    return normaliseFormat(path.substr(dot + 1));
+}
+
+std::unique_ptr<io::IFormatReader> makeReader(const std::string& format)
+{
+    const std::string fmt = normaliseFormat(format);
+    if (fmt == "dlpd" || fmt == "dpcache")
+        return std::make_unique<io::ParsedCacheReader>();
+    if (fmt == "jsf")
+        return std::make_unique<io::JsfReader>();
+    return std::make_unique<io::XtfReader>();
+}
+
+RunResult executeRequest(const RunRequest& request)
+{
+    RunResult result;
+    result.layer_id = request.layer_id;
+
+    pipeline::NodeGraph graph;
+    if (!graph.fromJson(request.graph_json)) {
+        result.failed = true;
+        result.error  = "Could not restore the node graph for processing";
+        return result;
+    }
+
+    auto reader = makeReader(request.artifact_format);
+    if (!reader->open(request.artifact_path)) {
+        result.failed = true;
+        result.error  = "Cannot open artifact store: " + request.artifact_path;
+        return result;
+    }
+
+    pipeline::GraphJob job;
+    job.line_id     = request.layer_id;
+    job.source_path = request.source_path;
+
+    pipeline::GraphRunner::runLine(graph, request.artifact_index, *reader, job);
+
+    if (job.anyFailed()) {
+        result.failed = true;
+        result.error  = "One or more nodes failed - " + job.summary();
+    } else {
+        result.summary = job.summary();
+    }
+
+    return result;
+}
+
+} // namespace
+
+namespace dolphin::app {
+
+ProcessingService::ProcessingService(QObject* parent) : QObject(parent) {}
+
+ProcessingService::~ProcessingService()
+{
+    // Wait for any in-flight background futures before destruction so they
+    // cannot access members of a partially-destroyed object.
+    for (auto* child : children()) {
+        if (auto* w = qobject_cast<QFutureWatcherBase*>(child))
+            w->waitForFinished();
+    }
+}
+
+void ProcessingService::runLayer(Project& project, DataLayer* layer, const std::string& source_path)
+{
+    if (!layer || !layer->index_built) return;
+
+    RunRequest request;
+    request.layer_id       = layer->id;
+    request.source_path    = source_path;
+    request.artifact_path  = layer->artifact_store_path.empty()
+        ? source_path
+        : layer->artifact_store_path;
+    request.artifact_format = layer->artifact_store_format.empty()
+        ? formatFromPath(request.artifact_path)
+        : normaliseFormat(layer->artifact_store_format);
+    request.graph_json     = layer->uses_project_graph
+        ? project.processing_graph.toJson()
+        : layer->node_graph.toJson();
+    request.artifact_index = layer->artifact_index;
+
+    emit runStarted(request.layer_id);
+
+    auto* watcher = new QFutureWatcher<RunResult>(this);
+    connect(watcher, &QFutureWatcher<RunResult>::finished, this, [this, watcher]() {
+        RunResult result = watcher->result();
+        watcher->deleteLater();
+
+        if (result.failed)
+            emit runFailed(result.layer_id, result.error);
+        else
+            emit runComplete(result.layer_id, result.summary);
+    });
+    watcher->setFuture(QtConcurrent::run([request]() {
+        return executeRequest(request);
+    }));
+}
+
+void ProcessingService::runAll(Project& project)
+{
+    std::vector<RunRequest> requests;
+    requests.reserve(project.layers().size());
+
+    for (auto& layer : project.layers()) {
+        if (!layer || !layer->index_built) continue;
+
+        auto* src = project.findSource(layer->source_id);
+        if (!src) continue;
+
+        RunRequest request;
+        request.layer_id        = layer->id;
+        request.source_path     = src->path;
+        request.artifact_path   = layer->artifact_store_path.empty()
+            ? src->path
+            : layer->artifact_store_path;
+        request.artifact_format = layer->artifact_store_format.empty()
+            ? formatFromPath(request.artifact_path)
+            : normaliseFormat(layer->artifact_store_format);
+        request.graph_json      = layer->uses_project_graph
+            ? project.processing_graph.toJson()
+            : layer->node_graph.toJson();
+        request.artifact_index  = layer->artifact_index;
+        requests.push_back(std::move(request));
+    }
+
+    if (requests.empty()) {
+        emit batchComplete(0, 0);
+        return;
+    }
+
+    emit batchProgress(0, static_cast<int>(requests.size()));
+
+    // self (QPointer) is used as the invokeMethod target so Qt will discard
+    // any queued calls if the object is destroyed before they run on the
+    // main thread.  ~ProcessingService() calls waitForFinished() to ensure
+    // the background loop has finished posting before the object is torn down.
+    QPointer<ProcessingService> self(this);
+    auto* watcher = new QFutureWatcher<BatchResult>(this);
+    connect(watcher, &QFutureWatcher<BatchResult>::finished, this, [this, watcher]() {
+        BatchResult batch = watcher->result();
+        watcher->deleteLater();
+
+        for (const auto& run : batch.runs) {
+            if (run.failed)
+                emit runFailed(run.layer_id, run.error);
+            else
+                emit runComplete(run.layer_id, run.summary);
+        }
+
+        emit batchComplete(batch.succeeded, batch.total);
+    });
+    watcher->setFuture(QtConcurrent::run([requests, self]() {
+        BatchResult batch;
+        batch.total = static_cast<int>(requests.size());
+
+        for (size_t i = 0; i < requests.size(); ++i) {
+            RunResult run = executeRequest(requests[i]);
+            if (!run.failed) ++batch.succeeded;
+            batch.runs.push_back(std::move(run));
+
+            int done  = static_cast<int>(i + 1);
+            int total = batch.total;
+            QMetaObject::invokeMethod(self.data(), [self, done, total]() {
+                if (self) Q_EMIT self->batchProgress(done, total);
+            }, Qt::QueuedConnection);
+        }
+
+        return batch;
+    }));
+}
+
+} // namespace dolphin::app

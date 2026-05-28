@@ -1,0 +1,39 @@
+// MapViewPaint.cpp — paintEvent orchestrator.
+//
+// Draw phases are implemented in split files:
+//   MapViewPaint.Sonar.cpp      — background/grid, sonar images, coverage ribbons
+//   MapViewPaint.NavTrack.cpp   — graticule, nav track
+//   MapViewPaint.Contacts.cpp   — contacts, rubber-band selection rect
+//   MapViewPaint.Overlays.cpp   — measure overlay, scale bar, status badges
+#include "ui/features/map/MapView.h"
+
+#include <QPainter>
+
+namespace dolphin::ui {
+
+void MapView::paintEvent(QPaintEvent*)
+{
+    QPainter p(this);
+    p.setRenderHints(QPainter::Antialiasing |
+                     QPainter::TextAntialiasing |
+                     QPainter::SmoothPixmapTransform);
+
+    p.fillRect(rect(), m_map_bg_color);
+
+    if (m_layer_data.empty() && m_nav_track.empty()) {
+        if (m_show_grid) paintGraticule(p);
+        paintEmptyState(p);
+        return;
+    }
+
+    paintSonarLayers(p);
+    if (m_show_grid) paintGraticule(p);
+    paintNavTrack      (p);
+    paintProfileTracks (p);
+    paintContacts      (p);
+    paintMeasureOverlay(p);
+    paintScaleAndBadges(p);
+}
+
+
+} // namespace dolphin::ui

@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+     stroke="#aeaeb2" stroke-linecap="round" stroke-linejoin="round">
+  <!-- Outer frame -->
+  <rect x="2" y="2" width="20" height="20" rx="2" stroke-width="1.4"/>
+  <!-- Center nadir -->
+  <line x1="12" y1="2" x2="12" y2="22" stroke-width="0.8" stroke-dasharray="1.5,1.5" stroke-opacity="0.55"/>
+  <!-- Ping rows — amplitude peaks on each side -->
+  <polyline points="3,7  7,5  12,6.5  17,4.5  21,6.5" stroke-width="1.0" stroke-opacity="0.55"/>
+  <polyline points="3,11 6,9  12,10.5 18,8.5  21,10.5" stroke-width="1.1" stroke-opacity="0.70"/>
+  <polyline points="3,15 8,13 12,14   16,12   21,14" stroke-width="1.2" stroke-opacity="0.85"/>
+  <polyline points="3,19 7,17 12,18.5 17,16   21,18.5" stroke-width="1.3" stroke-opacity="1.0"/>
+</svg>

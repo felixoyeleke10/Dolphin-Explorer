@@ -1,0 +1,33 @@
+# Build outputs
+/build/
+/build-ninja/
+/build_mingw/
+/cmake-build-*/
+/website/dist/
+/website/.vite/
+
+# Generated binaries and logs
+*.exe
+*.dll
+*.lib
+*.a
+*.obj
+*.pdb
+*.ilk
+*.log
+
+# Local IDE/editor state
+/.vscode/
+/.claude/
+/.sixth/
+
+# Website dependencies
+/website/node_modules/
+
+# Local screenshots/debug artifacts
+/screenshot.png
+/dolphin_debug.log
+
+# OS files
+Thumbs.db
+.DS_Store

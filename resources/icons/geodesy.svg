@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+     stroke="#aeaeb2" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <!-- Globe ellipse -->
+  <ellipse cx="12" cy="12" rx="9" ry="9"/>
+  <!-- Equator -->
+  <line x1="3" y1="12" x2="21" y2="12"/>
+  <!-- Central meridian (flattened ellipse) -->
+  <path d="M12 3 C9 6 9 18 12 21"/>
+  <path d="M12 3 C15 6 15 18 12 21"/>
+  <!-- Geodesic arc with measurement tick marks -->
+  <path d="M6.5 7 Q12 5 17.5 7" stroke-dasharray="1.5 1.5"/>
+  <line x1="6.5"  y1="5.5" x2="6.5"  y2="8.5"/>
+  <line x1="17.5" y1="5.5" x2="17.5" y2="8.5"/>
+</svg>
