@@ -1,6 +1,6 @@
-﻿// MainWindow.ProjectBinding.cpp — bindProjectUi and window title sync.
+// MainWindow.ProjectBinding.cpp — bindProjectUi and window title sync.
 #include "ui/mainwindow/MainWindow.h"
-#include "ui/mainwindow/ProjectEventBus.h"
+#include "ui/systems/ProjectEventBus.h"
 #include "ui/shell/Features.h"
 #include "ui/features/datalibrary/DataLibraryWindow.h"
 #include "ui/features/import/ImportController.h"

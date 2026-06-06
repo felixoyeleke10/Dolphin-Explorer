@@ -1,9 +1,9 @@
 // MainWindow.AppSettings.cpp — applyLiveSettings() and onAppSettings().
 #include "ui/mainwindow/MainWindow.h"
 #include "ui/mainwindow/AppSettingsDialog.h"
-#include "ui/mainwindow/AppState.h"
+#include "ui/systems/AppState.h"
 #include "ui/mainwindow/MainStatusBar.h"
-#include "ui/mainwindow/WindowRegistry.h"
+#include "ui/systems/WindowRegistry.h"
 #include "ui/features/map/MapViewportHost.h"
 #include "ui/features/waterfall/WaterfallWindow.h"
 #include "ui/shell/ViewerWindow.h"

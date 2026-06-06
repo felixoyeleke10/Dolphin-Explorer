@@ -2,7 +2,7 @@
 
 #include "ui/mainwindow/MainWindow.h"
 #include "app/corrections/SubBottomCorrectionService.h"
-#include "ui/mainwindow/AppState.h"
+#include "ui/systems/AppState.h"
 #include "ui/shell/ViewerWindow.h"
 #include "ui/mainwindow/MainStatusBar.h"
 #include "ui/mainwindow/rightpanel/RightPanelHost.h"

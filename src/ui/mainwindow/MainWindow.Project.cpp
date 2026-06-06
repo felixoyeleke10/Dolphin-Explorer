@@ -5,6 +5,7 @@
 #include "ui/features/map/sidescan/SidescanViewController.h"
 #include "ui/features/map/MapView.h"
 #include "ui/features/map/MapViewportHost.h"
+#include "app/services/ImportService.h"
 #include "app/project/Project.h"
 #include "app/layers/DataLayer.h"
 

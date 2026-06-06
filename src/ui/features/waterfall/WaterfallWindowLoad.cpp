@@ -3,7 +3,7 @@
 #include <QDebug>
 #include "ui/features/waterfall/WaterfallWindow.h"
 #include "ui/features/waterfall/WaterfallQcStrip.h"
-#include "ui/mainwindow/AppState.h"
+#include "ui/systems/AppState.h"
 #include "ui/features/waterfall/WaterfallView.h"
 #include "ui/features/waterfall/panels/WaterfallInspectorPanel.h"
 #include "ui/features/waterfall/panels/WaterfallAnalysisPanel.h"

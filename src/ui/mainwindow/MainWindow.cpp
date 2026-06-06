@@ -1,6 +1,6 @@
 // MainWindow.cpp — constructor + service wiring only
 #include "ui/mainwindow/MainWindow.h"
-#include "ui/mainwindow/ProjectEventBus.h"
+#include "ui/systems/ProjectEventBus.h"
 #include "ui/mainwindow/MainStatusBar.h"
 #include "ui/bottom/BottomDockPanel.h"
 #include "ui/bottom/RuntimeLogBridge.h"

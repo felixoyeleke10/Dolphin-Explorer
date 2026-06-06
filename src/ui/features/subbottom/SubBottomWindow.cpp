@@ -5,7 +5,7 @@
 // Data loading   → SubBottomWindow.Load.cpp
 
 #include "ui/features/subbottom/SubBottomWindow.h"
-#include "ui/mainwindow/AppState.h"
+#include "ui/systems/AppState.h"
 #include "ui/features/subbottom/SubBottomView.h"
 #include "ui/features/subbottom/panels/SubBottomInspectorPanel.h"
 #include "ui/features/subbottom/panels/SubBottomDisplayPanel.h"

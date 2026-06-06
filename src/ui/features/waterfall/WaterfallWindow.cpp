@@ -6,7 +6,7 @@
 // Context menu     → WaterfallWindow.ContextMenu.cpp
 
 #include "ui/features/waterfall/WaterfallWindow.h"
-#include "ui/mainwindow/AppState.h"
+#include "ui/systems/AppState.h"
 #include "ui/shared/widgets/CommandBar.h"
 
 #include <QLabel>
