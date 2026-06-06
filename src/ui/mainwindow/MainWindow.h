@@ -416,17 +416,8 @@ private:
     // Keyed by layer ID; looked up whenever the waterfall opens a layer.
     std::unordered_map<std::string, NavProcessingParams> m_layer_nav_params;
 
-    // Per-layer waterfall display params — captured on paramsApplied,
-    // restored each time the waterfall opens a layer.
-    std::unordered_map<std::string, WaterfallParams> m_layer_wf_params;
-
-    // Per-layer SBP processing params — captured when the user hits Apply,
-    // restored each time the sub-bottom viewer opens or switches to a layer.
-    struct SbpLayerParams {
-        SbpGainParams   gain;
-        SbpSignalParams signal;
-    };
-    std::unordered_map<std::string, SbpLayerParams> m_layer_sbp_params;
+    // Per-layer display params moved to DataLayer::sss_display_state /
+    // sbp_display_state — no separate MainWindow maps needed.
 
     // Layer IDs with an in-flight SubBottom profile build. Guards onLayerSelected
     // against spawning a second QFutureWatcher for the same layer.

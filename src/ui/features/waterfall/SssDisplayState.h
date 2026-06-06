@@ -15,6 +15,7 @@ namespace dolphin::ui {
 struct SssDisplayState {
     WaterfallParams params;
     bool show_amp_bar = true;
+    bool customized   = false;  // true once the user has explicitly applied params
 };
 
 } // namespace dolphin::ui

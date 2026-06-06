@@ -171,9 +171,8 @@ void MainWindow::onLayerSelected(const std::string& layer_id)
             const uint64_t    sz   = src ? src->size_bytes : 0;
             m_waterfall_win->setLayer(layer, m_import_service, path, sz);
             applyStoredNavParams(layer->id);
-            const auto wf_it = m_layer_wf_params.find(layer->id);
-            if (wf_it != m_layer_wf_params.end())
-                m_waterfall_win->applyExternalParams(wf_it->second);
+            if (layer->sss_display_state.customized)
+                m_waterfall_win->applyExternalParams(layer->sss_display_state.params);
             // Restore per-layer palette — takes priority over any palette baked
             // into the cached params (which may have been captured before the
             // per-layer palette was last changed).
@@ -196,17 +195,17 @@ void MainWindow::onLayerSelected(const std::string& layer_id)
                 // Restore per-layer SBP palette.
                 if (layer->sbp_palette >= 0)
                     m_sbp_win->setPalette(layer->sbp_palette);
-                const auto sbp_it = m_layer_sbp_params.find(layer->id);
-                if (sbp_it != m_layer_sbp_params.end()) {
-                    m_sbp_win->applyGainParams(sbp_it->second.gain);
-                    m_sbp_win->applySignalParams(sbp_it->second.signal);
-                    if (m_inspector) {
-                        auto* host = m_inspector->rightPanelHost();
-                        if (auto* gm = host->sbpGainModule())
-                            gm->setParams(sbp_it->second.gain);
-                        if (auto* sm = host->sbpSignalModule())
-                            sm->setParams(sbp_it->second.signal);
-                    }
+                if (layer->sbp_display_state.gain_customized)
+                    m_sbp_win->applyGainParams(layer->sbp_display_state.gain);
+                if (layer->sbp_display_state.signal_customized)
+                    m_sbp_win->applySignalParams(layer->sbp_display_state.signal);
+                if ((layer->sbp_display_state.gain_customized || layer->sbp_display_state.signal_customized)
+                        && m_inspector) {
+                    auto* host = m_inspector->rightPanelHost();
+                    if (auto* gm = host->sbpGainModule())
+                        gm->setParams(layer->sbp_display_state.gain);
+                    if (auto* sm = host->sbpSignalModule())
+                        sm->setParams(layer->sbp_display_state.signal);
                 }
             }
         } else {
@@ -250,8 +249,6 @@ void MainWindow::onRemoveLayer(const std::string& layer_id)
 
     m_pending_sbp_builds.erase(layer_id);
     m_layer_nav_params.erase(layer_id);
-    m_layer_wf_params.erase(layer_id);
-    m_layer_sbp_params.erase(layer_id);
     if (m_sss_ctrl) m_sss_ctrl->unloadLayer(layer_id);
     if (m_viewport_host) m_viewport_host->onLayerRemoved(layer_id);
     else if (m_map_view) m_map_view->removeLayerData(layer_id);
@@ -285,8 +282,6 @@ void MainWindow::onRemoveLayers(const std::vector<std::string>& layer_ids)
     for (const auto& id : layer_ids) {
         m_pending_sbp_builds.erase(id);
         m_layer_nav_params.erase(id);
-        m_layer_wf_params.erase(id);
-        m_layer_sbp_params.erase(id);
         if (m_sss_ctrl) m_sss_ctrl->unloadLayer(id);
         if (m_viewport_host) m_viewport_host->onLayerRemoved(id);
         else if (m_map_view) m_map_view->removeLayerData(id);

@@ -30,8 +30,6 @@ void MainWindow::bindProjectUi()
     m_project_dirty = false;
     m_pending_sbp_builds.clear();
     m_layer_nav_params.clear();
-    m_layer_wf_params.clear();
-    m_layer_sbp_params.clear();
     if (m_undo_stack) m_undo_stack->clear();
     updateActionStates();
     setWindowTitleFromProject();

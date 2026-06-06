@@ -64,9 +64,8 @@ MainWindow::MainWindow(QWidget* parent)
                 src ? src->path : std::string{},
                 src ? src->size_bytes : 0);
             applyStoredNavParams(m_active_layer_id);
-            const auto it = m_layer_wf_params.find(m_active_layer_id);
-            if (it != m_layer_wf_params.end())
-                m_waterfall_win->applyExternalParams(it->second);
+            if (layer->sss_display_state.customized)
+                m_waterfall_win->applyExternalParams(layer->sss_display_state.params);
         }
     };
     connect(m_app_state, &AppState::soundVelocityChanged, this,

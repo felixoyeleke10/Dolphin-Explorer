@@ -190,25 +190,31 @@ void MainWindow::onSubBottomOpen()
                         this, [this](SbpGainParams p) {
                             const std::string lid = m_sbp_win ? m_sbp_win->currentLayerId() : std::string{};
                             if (lid.empty() || !m_project || !m_sbp_correction_svc) return;
-                            m_layer_sbp_params[lid].gain = p;
                             auto* layer = m_project->findLayer(lid);
                             if (!layer) return;
+                            layer->sbp_display_state.gain = p;
+                            layer->sbp_display_state.gain_customized = true;
                             const auto* src = m_project->findSource(layer->source_id);
                             m_sbp_correction_svc->applyToLine(
                                 lid, layer->artifact_store_path,
                                 layer->artifact_store_format, layer->artifact_index,
                                 src ? src->path : std::string{},
-                                p, m_layer_sbp_params[lid].signal);
+                                p, layer->sbp_display_state.signal);
                         });
                 connect(gain_mod, &SbpGainModule::applyToAllRequested,
                         this, [this](SbpGainParams p) {
                             if (!m_project || !m_sbp_correction_svc) return;
-                            const SbpSignalParams sig = m_sbp_win
-                                ? m_layer_sbp_params[m_sbp_win->currentLayerId()].signal
+                            const SbpSignalParams sig = (m_sbp_win && m_project)
+                                ? [&]() -> SbpSignalParams {
+                                    auto* l = m_project->findLayer(m_sbp_win->currentLayerId());
+                                    return l ? l->sbp_display_state.signal : SbpSignalParams{};
+                                  }()
                                 : SbpSignalParams{};
                             for (const auto& l : m_project->layers())
-                                if (l && l->modality == app::Modality::SubBottom)
-                                    m_layer_sbp_params[l->id].gain = p;
+                                if (l && l->modality == app::Modality::SubBottom) {
+                                    l->sbp_display_state.gain = p;
+                                    l->sbp_display_state.gain_customized = true;
+                                }
                             m_sbp_correction_svc->applyToAll(*m_project, p, sig);
                         });
             }
@@ -217,25 +223,31 @@ void MainWindow::onSubBottomOpen()
                         this, [this](SbpSignalParams p) {
                             const std::string lid = m_sbp_win ? m_sbp_win->currentLayerId() : std::string{};
                             if (lid.empty() || !m_project || !m_sbp_correction_svc) return;
-                            m_layer_sbp_params[lid].signal = p;
                             auto* layer = m_project->findLayer(lid);
                             if (!layer) return;
+                            layer->sbp_display_state.signal = p;
+                            layer->sbp_display_state.signal_customized = true;
                             const auto* src = m_project->findSource(layer->source_id);
                             m_sbp_correction_svc->applyToLine(
                                 lid, layer->artifact_store_path,
                                 layer->artifact_store_format, layer->artifact_index,
                                 src ? src->path : std::string{},
-                                m_layer_sbp_params[lid].gain, p);
+                                layer->sbp_display_state.gain, p);
                         });
                 connect(sig_mod, &SbpSignalModule::applyToAllRequested,
                         this, [this](SbpSignalParams p) {
                             if (!m_project || !m_sbp_correction_svc) return;
-                            const SbpGainParams gain = m_sbp_win
-                                ? m_layer_sbp_params[m_sbp_win->currentLayerId()].gain
+                            const SbpGainParams gain = (m_sbp_win && m_project)
+                                ? [&]() -> SbpGainParams {
+                                    auto* l = m_project->findLayer(m_sbp_win->currentLayerId());
+                                    return l ? l->sbp_display_state.gain : SbpGainParams{};
+                                  }()
                                 : SbpGainParams{};
                             for (const auto& l : m_project->layers())
-                                if (l && l->modality == app::Modality::SubBottom)
-                                    m_layer_sbp_params[l->id].signal = p;
+                                if (l && l->modality == app::Modality::SubBottom) {
+                                    l->sbp_display_state.signal = p;
+                                    l->sbp_display_state.signal_customized = true;
+                                }
                             m_sbp_correction_svc->applyToAll(*m_project, gain, p);
                         });
             }
@@ -262,17 +274,17 @@ void MainWindow::onSubBottomOpen()
             if (layer->sbp_palette >= 0)
                 m_sbp_win->setPalette(layer->sbp_palette);
             // Restore per-layer processing params; sync right-panel modules.
-            const auto sbp_it = m_layer_sbp_params.find(layer->id);
-            if (sbp_it != m_layer_sbp_params.end()) {
-                m_sbp_win->applyGainParams(sbp_it->second.gain);
-                m_sbp_win->applySignalParams(sbp_it->second.signal);
-                if (m_inspector) {
-                    auto* host = m_inspector->rightPanelHost();
-                    if (auto* gm = host->sbpGainModule())
-                        gm->setParams(sbp_it->second.gain);
-                    if (auto* sm = host->sbpSignalModule())
-                        sm->setParams(sbp_it->second.signal);
-                }
+            if (layer->sbp_display_state.gain_customized)
+                m_sbp_win->applyGainParams(layer->sbp_display_state.gain);
+            if (layer->sbp_display_state.signal_customized)
+                m_sbp_win->applySignalParams(layer->sbp_display_state.signal);
+            if ((layer->sbp_display_state.gain_customized || layer->sbp_display_state.signal_customized)
+                    && m_inspector) {
+                auto* host = m_inspector->rightPanelHost();
+                if (auto* gm = host->sbpGainModule())
+                    gm->setParams(layer->sbp_display_state.gain);
+                if (auto* sm = host->sbpSignalModule())
+                    sm->setParams(layer->sbp_display_state.signal);
             }
             // Sync right panel to reflect SBP window's current display settings.
             if (m_inspector)

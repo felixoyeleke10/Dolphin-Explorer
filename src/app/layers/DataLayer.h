@@ -7,6 +7,9 @@
 #include "core/SpatialRef.h"
 #include "pipeline/NodeGraph.h"
 #include "app/layers/LayerUtils.h"   // Modality enum, modalityLabel(), inferModality()
+// Qt-free display state types — safe to include from the app layer.
+#include "ui/features/waterfall/SssDisplayState.h"
+#include "ui/features/subbottom/SbpDisplayState.h"
 
 namespace dolphin::app {
 
@@ -53,6 +56,11 @@ public:
     float               qc_viewed_fraction    = 0.f;   // fraction of pings the user has scrolled past [0,1]
     int                 sss_palette           = -1;    // per-layer palette override; -1 = use app default
     int                 sbp_palette           = -1;    // per-layer SBP palette override; -1 = use window default
+
+    // Per-layer display state — written by MainWindow on paramsApplied, read on
+    // layer open.  Not yet persisted in project JSON; reset to defaults on project reload.
+    dolphin::ui::SssDisplayState sss_display_state;
+    dolphin::ui::SbpDisplayState sbp_display_state;
 
     // Tagging and grouping
     std::vector<std::string> tags;

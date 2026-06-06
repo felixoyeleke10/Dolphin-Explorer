@@ -138,9 +138,8 @@ void MainWindow::onWaterfallOpen()
                 // Prev/Next inside the waterfall window.
                 const std::string wf_id = m_waterfall_win->currentLayerId();
                 if (!wf_id.empty()) {
-                    m_layer_wf_params[wf_id] = p;
-
                     auto* layer = m_project->findLayer(wf_id);
+                    if (layer) { layer->sss_display_state.params = p; layer->sss_display_state.customized = true; }
                     if (layer && layer->slant_range_corrected != p.slant_range_correction) {
                         layer->slant_range_corrected = p.slant_range_correction;
                         if (m_sss_ctrl) m_sss_ctrl->reloadLayer(wf_id);
@@ -159,7 +158,8 @@ void MainWindow::onWaterfallOpen()
             for (const auto& l : m_project->layers()) {
                 if (!l) continue;
                 l->slant_range_corrected = p.slant_range_correction;
-                m_layer_wf_params[l->id] = p;
+                l->sss_display_state.params = p;
+                l->sss_display_state.customized = true;
             }
             if (m_sss_ctrl) m_sss_ctrl->reloadCurrentLayer();
             tx.commit();
@@ -218,13 +218,9 @@ void MainWindow::onWaterfallOpen()
             applyStoredNavParams(m_active_layer_id);
             m_waterfall_win->setProjectContacts(m_project->contacts());
 
-            // Restore per-layer display params if the user has previously
-            // adjusted them; otherwise the waterfall retains its defaults.
-            {
-                const auto it = m_layer_wf_params.find(m_active_layer_id);
-                if (it != m_layer_wf_params.end())
-                    m_waterfall_win->applyExternalParams(it->second);
-            }
+            // Restore per-layer display params if the user has previously adjusted them.
+            if (layer->sss_display_state.customized)
+                m_waterfall_win->applyExternalParams(layer->sss_display_state.params);
 
             // Sync mini-panels to the waterfall's current params on initial open.
             // The SSS map is synced via the paramsApplied signal from applyExternalParams
@@ -461,9 +457,8 @@ void MainWindow::onWaterfallSetCrs(const std::string& from_layer_id)
                                       src ? src->path : std::string{},
                                       src ? src->size_bytes : 0);
             applyStoredNavParams(lyr->id);
-            const auto wf_it = m_layer_wf_params.find(lyr->id);
-            if (wf_it != m_layer_wf_params.end())
-                m_waterfall_win->applyExternalParams(wf_it->second);
+            if (lyr->sss_display_state.customized)
+                m_waterfall_win->applyExternalParams(lyr->sss_display_state.params);
             // Restore per-layer palette after CRS-triggered reload.
             if (lyr->sss_palette >= 0)
                 m_waterfall_win->setPalette(lyr->sss_palette);
