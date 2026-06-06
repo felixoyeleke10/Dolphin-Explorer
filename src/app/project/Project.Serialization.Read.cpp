@@ -170,6 +170,52 @@ bool Project::fromJson(const std::string& json)
             jl.get("qc_viewed_fraction").asDouble());
         layer->sss_palette = jl.has("sss_palette") ? jl.get("sss_palette").asInt() : -1;
         layer->sbp_palette = jl.has("sbp_palette") ? jl.get("sbp_palette").asInt() : -1;
+
+        if (jl.has("sss_display")) {
+            const auto& jd = jl.get("sss_display");
+            auto& p = layer->sss_display_state.params;
+            p.gain              = static_cast<float>(jd.get("gain").asDouble());
+            p.contrast          = static_cast<float>(jd.get("contrast").asDouble());
+            p.threshold         = static_cast<float>(jd.get("threshold").asDouble());
+            p.smoothing         = static_cast<float>(jd.get("smoothing").asDouble());
+            p.display_channel   = static_cast<dolphin::ui::DisplayChannel>(jd.get("channel").asInt());
+            p.slant_range_correction = jd.get("src").asBool();
+            p.tvg.enabled    = jd.get("tvg_en").asBool();
+            p.tvg.spreading  = static_cast<float>(jd.get("tvg_spread").asDouble());
+            p.tvg.absorption = static_cast<float>(jd.get("tvg_absorb").asDouble());
+            p.agc.enabled         = jd.get("agc_en").asBool();
+            p.agc.mode            = static_cast<dolphin::app::AgcMode>(jd.get("agc_mode").asInt());
+            p.agc.strength        = static_cast<float>(jd.get("agc_str").asDouble());
+            p.agc.along_track_win = jd.get("agc_win").asInt();
+            p.arc.enabled      = jd.get("arc_en").asBool();
+            p.arc.exponent     = static_cast<float>(jd.get("arc_exp").asDouble());
+            p.arc.gain_cap_db  = static_cast<float>(jd.get("arc_cap").asDouble());
+            layer->sss_display_state.customized = true;
+        }
+
+        if (jl.has("sbp_display")) {
+            const auto& jd = jl.get("sbp_display");
+            auto& d = layer->sbp_display_state;
+            d.display_customized = jd.has("disp_ok") ? jd.get("disp_ok").asBool() : false;
+            d.gain_customized    = jd.get("gain_ok").asBool();
+            d.signal_customized  = jd.get("sig_ok").asBool();
+            d.display.gain              = static_cast<float>(jd.get("disp_gain").asDouble());
+            d.display.contrast          = static_cast<float>(jd.get("disp_contrast").asDouble());
+            d.display.polarity_invert   = jd.get("invert").asBool();
+            d.display.show_bottom_track = jd.get("bttrack").asBool();
+            d.display.sound_speed_ms    = static_cast<float>(jd.get("sv_ms").asDouble());
+            d.gain.static_gain_en = jd.get("gain_static_en").asBool();
+            d.gain.static_gain_db = static_cast<float>(jd.get("gain_static_db").asDouble());
+            d.gain.agc_en         = jd.get("gain_agc_en").asBool();
+            d.gain.agc_window     = jd.get("gain_agc_win").asInt();
+            d.gain.normalize_en   = jd.get("gain_norm_en").asBool();
+            d.signal.envelope_en   = jd.get("sig_env_en").asBool();
+            d.signal.dc_removal_en = jd.get("sig_dc_en").asBool();
+            d.signal.bandpass_en   = jd.get("sig_bp_en").asBool();
+            d.signal.bp_lo_hz      = static_cast<float>(jd.get("sig_bp_lo").asDouble());
+            d.signal.bp_hi_hz      = static_cast<float>(jd.get("sig_bp_hi").asDouble());
+        }
+
         layer->sonar_name  = jl.get("sonar_name").asString();
         layer->survey_name = jl.get("survey_name").asString();
         layer->vessel_name = jl.get("vessel_name").asString();

@@ -120,6 +120,57 @@ std::string Project::toJson() const
         jl["qc_viewed_fraction"] = util::JsonValue(static_cast<double>(l->qc_viewed_fraction));
         jl["sss_palette"] = util::JsonValue(l->sss_palette);
         jl["sbp_palette"] = util::JsonValue(l->sbp_palette);
+
+        // Per-layer SSS display state — only written when the user has applied params.
+        if (l->sss_display_state.customized) {
+            const auto& p = l->sss_display_state.params;
+            util::JsonValue jd = util::JsonValue::object();
+            jd["gain"]       = util::JsonValue(static_cast<double>(p.gain));
+            jd["contrast"]   = util::JsonValue(static_cast<double>(p.contrast));
+            jd["threshold"]  = util::JsonValue(static_cast<double>(p.threshold));
+            jd["smoothing"]  = util::JsonValue(static_cast<double>(p.smoothing));
+            jd["channel"]    = util::JsonValue(static_cast<int>(p.display_channel));
+            jd["src"]        = util::JsonValue(p.slant_range_correction);
+            jd["tvg_en"]     = util::JsonValue(p.tvg.enabled);
+            jd["tvg_spread"] = util::JsonValue(static_cast<double>(p.tvg.spreading));
+            jd["tvg_absorb"] = util::JsonValue(static_cast<double>(p.tvg.absorption));
+            jd["agc_en"]     = util::JsonValue(p.agc.enabled);
+            jd["agc_mode"]   = util::JsonValue(static_cast<int>(p.agc.mode));
+            jd["agc_str"]    = util::JsonValue(static_cast<double>(p.agc.strength));
+            jd["agc_win"]    = util::JsonValue(p.agc.along_track_win);
+            jd["arc_en"]     = util::JsonValue(p.arc.enabled);
+            jd["arc_exp"]    = util::JsonValue(static_cast<double>(p.arc.exponent));
+            jd["arc_cap"]    = util::JsonValue(static_cast<double>(p.arc.gain_cap_db));
+            jl["sss_display"] = std::move(jd);
+        }
+
+        // Per-layer SBP display state — only written when any side has been applied.
+        if (l->sbp_display_state.display_customized
+                || l->sbp_display_state.gain_customized
+                || l->sbp_display_state.signal_customized) {
+            const auto& d = l->sbp_display_state;
+            util::JsonValue jd = util::JsonValue::object();
+            jd["disp_ok"]         = util::JsonValue(d.display_customized);
+            jd["gain_ok"]         = util::JsonValue(d.gain_customized);
+            jd["sig_ok"]          = util::JsonValue(d.signal_customized);
+            jd["disp_gain"]       = util::JsonValue(static_cast<double>(d.display.gain));
+            jd["disp_contrast"]   = util::JsonValue(static_cast<double>(d.display.contrast));
+            jd["invert"]          = util::JsonValue(d.display.polarity_invert);
+            jd["bttrack"]         = util::JsonValue(d.display.show_bottom_track);
+            jd["sv_ms"]           = util::JsonValue(static_cast<double>(d.display.sound_speed_ms));
+            jd["gain_static_en"]  = util::JsonValue(d.gain.static_gain_en);
+            jd["gain_static_db"]  = util::JsonValue(static_cast<double>(d.gain.static_gain_db));
+            jd["gain_agc_en"]     = util::JsonValue(d.gain.agc_en);
+            jd["gain_agc_win"]    = util::JsonValue(d.gain.agc_window);
+            jd["gain_norm_en"]    = util::JsonValue(d.gain.normalize_en);
+            jd["sig_env_en"]      = util::JsonValue(d.signal.envelope_en);
+            jd["sig_dc_en"]       = util::JsonValue(d.signal.dc_removal_en);
+            jd["sig_bp_en"]       = util::JsonValue(d.signal.bandpass_en);
+            jd["sig_bp_lo"]       = util::JsonValue(static_cast<double>(d.signal.bp_lo_hz));
+            jd["sig_bp_hi"]       = util::JsonValue(static_cast<double>(d.signal.bp_hi_hz));
+            jl["sbp_display"] = std::move(jd);
+        }
+
         jl["sonar_name"]  = util::JsonValue(l->sonar_name);
         jl["survey_name"] = util::JsonValue(l->survey_name);
         jl["vessel_name"] = util::JsonValue(l->vessel_name);

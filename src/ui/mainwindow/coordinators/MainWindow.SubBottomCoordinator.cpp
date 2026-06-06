@@ -175,10 +175,13 @@ void MainWindow::onSubBottomOpen()
             connect(host, &RightPanelHost::sbpParamsChanged,
                     this, [this](SubBottomDisplayParams p) {
                         if (m_sbp_win) m_sbp_win->applyDisplayParams(p);
-                        // Persist per-layer SBP palette so it survives project close/reopen.
+                        // Persist per-layer SBP display params so they survive project reload.
                         if (!m_project || m_active_layer_id.empty()) return;
                         auto* layer = m_project->findLayer(m_active_layer_id);
-                        if (layer && layer->sbp_palette != p.palette_index) {
+                        if (!layer) return;
+                        layer->sbp_display_state.display = p;
+                        layer->sbp_display_state.display_customized = true;
+                        if (layer->sbp_palette != p.palette_index) {
                             layer->sbp_palette = p.palette_index;
                             m_project_dirty = true;
                             setWindowTitleFromProject();
@@ -270,7 +273,9 @@ void MainWindow::onSubBottomOpen()
             m_sbp_win->setLayer(layer, m_import_service,
                                 src ? src->path : std::string{},
                                 src ? src->size_bytes : 0);
-            // Restore per-layer SBP palette; leave at window default if not yet overridden.
+            // Restore per-layer SBP display params; palette always wins if set.
+            if (layer->sbp_display_state.display_customized)
+                m_sbp_win->applyDisplayParams(layer->sbp_display_state.display);
             if (layer->sbp_palette >= 0)
                 m_sbp_win->setPalette(layer->sbp_palette);
             // Restore per-layer processing params; sync right-panel modules.
@@ -278,12 +283,13 @@ void MainWindow::onSubBottomOpen()
                 m_sbp_win->applyGainParams(layer->sbp_display_state.gain);
             if (layer->sbp_display_state.signal_customized)
                 m_sbp_win->applySignalParams(layer->sbp_display_state.signal);
-            if ((layer->sbp_display_state.gain_customized || layer->sbp_display_state.signal_customized)
-                    && m_inspector) {
+            if (m_inspector) {
                 auto* host = m_inspector->rightPanelHost();
-                if (auto* gm = host->sbpGainModule())
+                if (layer->sbp_display_state.display_customized)
+                    host->setSbpParams(layer->sbp_display_state.display);
+                if (auto* gm = host->sbpGainModule(); layer->sbp_display_state.gain_customized)
                     gm->setParams(layer->sbp_display_state.gain);
-                if (auto* sm = host->sbpSignalModule())
+                if (auto* sm = host->sbpSignalModule(); layer->sbp_display_state.signal_customized)
                     sm->setParams(layer->sbp_display_state.signal);
             }
             // Sync right panel to reflect SBP window's current display settings.

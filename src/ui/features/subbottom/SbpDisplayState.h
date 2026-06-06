@@ -18,8 +18,9 @@ struct SbpDisplayState {
     SubBottomDisplayParams display;
     SbpGainParams          gain;
     SbpSignalParams        signal;
-    bool gain_customized   = false;  // true once gain params have been explicitly applied
-    bool signal_customized = false;  // true once signal params have been explicitly applied
+    bool display_customized = false;  // true once display (palette/gain/contrast) params applied
+    bool gain_customized    = false;  // true once gain params have been explicitly applied
+    bool signal_customized  = false;  // true once signal params have been explicitly applied
 };
 
 } // namespace dolphin::ui

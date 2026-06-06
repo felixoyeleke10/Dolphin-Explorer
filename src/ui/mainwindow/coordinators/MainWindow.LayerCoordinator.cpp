@@ -192,19 +192,22 @@ void MainWindow::onLayerSelected(const std::string& layer_id)
                 const std::string path = src ? src->path : std::string{};
                 const uint64_t    sz   = src ? src->size_bytes : 0;
                 m_sbp_win->setLayer(layer, m_import_service, path, sz);
-                // Restore per-layer SBP palette.
+                // Restore per-layer SBP display params; palette always wins if set.
+                if (layer->sbp_display_state.display_customized)
+                    m_sbp_win->applyDisplayParams(layer->sbp_display_state.display);
                 if (layer->sbp_palette >= 0)
                     m_sbp_win->setPalette(layer->sbp_palette);
                 if (layer->sbp_display_state.gain_customized)
                     m_sbp_win->applyGainParams(layer->sbp_display_state.gain);
                 if (layer->sbp_display_state.signal_customized)
                     m_sbp_win->applySignalParams(layer->sbp_display_state.signal);
-                if ((layer->sbp_display_state.gain_customized || layer->sbp_display_state.signal_customized)
-                        && m_inspector) {
+                if (m_inspector) {
                     auto* host = m_inspector->rightPanelHost();
-                    if (auto* gm = host->sbpGainModule())
+                    if (layer->sbp_display_state.display_customized)
+                        host->setSbpParams(layer->sbp_display_state.display);
+                    if (auto* gm = host->sbpGainModule(); layer->sbp_display_state.gain_customized)
                         gm->setParams(layer->sbp_display_state.gain);
-                    if (auto* sm = host->sbpSignalModule())
+                    if (auto* sm = host->sbpSignalModule(); layer->sbp_display_state.signal_customized)
                         sm->setParams(layer->sbp_display_state.signal);
                 }
             }
