@@ -3,9 +3,9 @@
 #include <string>
 #include <vector>
 
-#include "app/orchestration/WorkerRunRecord.h"
+#include "app/execution/WorkerRunRecord.h"
 
-namespace dolphin::app::orchestration {
+namespace dolphin::app::execution {
 
 class ExecutionHistory {
 public:
@@ -18,4 +18,4 @@ private:
     std::vector<WorkerRunRecord> m_records;
 };
 
-} // namespace dolphin::app::orchestration
+} // namespace dolphin::app::execution

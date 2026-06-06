@@ -5,7 +5,7 @@
 #include <QObject>
 #include "app/layers/DataLayer.h"
 #include "app/contracts/ContractStore.h"
-#include "app/orchestration/ExecutionHistory.h"
+#include "app/execution/ExecutionHistory.h"
 #include "app/workers/Worker.h"
 #include "app/project/ItemGroup.h"
 #include "core/Contact.h"
@@ -68,8 +68,8 @@ public:
     // Shared worker exchange + run history
     contracts::ContractStore& contractStore() { return m_contract_store; }
     const contracts::ContractStore& contractStore() const { return m_contract_store; }
-    orchestration::ExecutionHistory& executionHistory() { return m_execution_history; }
-    const orchestration::ExecutionHistory& executionHistory() const { return m_execution_history; }
+    execution::ExecutionHistory& executionHistory() { return m_execution_history; }
+    const execution::ExecutionHistory& executionHistory() const { return m_execution_history; }
 
     // Contacts
     void           addContact(const core::Contact& c);
@@ -133,7 +133,7 @@ private:
     std::vector<std::unique_ptr<DataLayer>> m_layers;
     std::vector<workers::Worker>          m_workers;
     contracts::ContractStore              m_contract_store;
-    orchestration::ExecutionHistory       m_execution_history;
+    execution::ExecutionHistory       m_execution_history;
     std::vector<core::Contact>            m_contacts;
     uint64_t                              m_next_contact_id = 1;
     std::vector<ItemGroup>                m_layer_groups;

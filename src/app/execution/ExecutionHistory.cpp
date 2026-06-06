@@ -1,6 +1,6 @@
-#include "app/orchestration/ExecutionHistory.h"
+#include "app/execution/ExecutionHistory.h"
 
-namespace dolphin::app::orchestration {
+namespace dolphin::app::execution {
 
 void ExecutionHistory::record(WorkerRunRecord record)
 {
@@ -22,4 +22,4 @@ void ExecutionHistory::clear()
     m_records.clear();
 }
 
-} // namespace dolphin::app::orchestration
+} // namespace dolphin::app::execution

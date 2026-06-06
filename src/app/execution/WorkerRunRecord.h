@@ -8,7 +8,7 @@
 #include "app/workers/WorkerTypes.h"
 #include "pipeline/GraphJob.h"
 
-namespace dolphin::app::orchestration {
+namespace dolphin::app::execution {
 
 struct WorkerRunRecord {
     std::string                   worker_id;
@@ -26,4 +26,4 @@ struct WorkerRunRecord {
     int64_t durationMs() const { return ended_utc_ms - started_utc_ms; }
 };
 
-} // namespace dolphin::app::orchestration
+} // namespace dolphin::app::execution

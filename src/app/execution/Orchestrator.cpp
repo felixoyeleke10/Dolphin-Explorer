@@ -1,4 +1,4 @@
-#include "app/orchestration/Orchestrator.h"
+#include "app/execution/Orchestrator.h"
 
 #include <algorithm>
 #include <chrono>
@@ -10,7 +10,7 @@
 #include "app/workers/Worker.h"
 #include "app/workers/WorkerAdapter.h"
 
-namespace dolphin::app::orchestration {
+namespace dolphin::app::execution {
 
 namespace {
 
@@ -192,4 +192,4 @@ WorkerRunRecord Orchestrator::executeWorker(Project& project, workers::Worker& w
     return record;
 }
 
-} // namespace dolphin::app::orchestration
+} // namespace dolphin::app::execution

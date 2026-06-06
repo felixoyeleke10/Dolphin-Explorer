@@ -19,6 +19,11 @@ add_library(dolphin-app STATIC
     services/ImportService.Load.cpp
     services/ProcessingService.cpp
 
+    # Corrections
+    corrections/CorrectionAlgorithms.cpp
+    corrections/SidescanCorrectionService.cpp
+    corrections/SubBottomCorrectionService.cpp
+
     # Contracts
     contracts/ContractStore.cpp
 
@@ -33,9 +38,9 @@ add_library(dolphin-app STATIC
     # Project utilities
     project/PathAuthority.cpp
 
-    # Processing orchestration
-    orchestration/ExecutionHistory.cpp
-    orchestration/Orchestrator.cpp
+    # Processing execution
+    execution/ExecutionHistory.cpp
+    execution/Orchestrator.cpp
 
     # Workers
     workers/Worker.cpp

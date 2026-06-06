@@ -3,7 +3,7 @@
 #include <string>
 #include <vector>
 
-#include "app/orchestration/WorkerRunRecord.h"
+#include "app/execution/WorkerRunRecord.h"
 
 namespace dolphin::app {
 class Project;
@@ -13,7 +13,7 @@ namespace dolphin::app::workers {
 class Worker;
 }
 
-namespace dolphin::app::orchestration {
+namespace dolphin::app::execution {
 
 class Orchestrator {
 public:
@@ -32,4 +32,4 @@ private:
     WorkerRunRecord executeWorker(Project& project, workers::Worker& worker) const;
 };
 
-} // namespace dolphin::app::orchestration
+} // namespace dolphin::app::execution
