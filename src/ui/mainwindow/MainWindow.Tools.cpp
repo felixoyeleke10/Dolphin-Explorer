@@ -1,4 +1,4 @@
-﻿// MainWindow.Tools.cpp — export/tool stubs, contact actions, onAbout.
+// MainWindow.Tools.cpp — export/tool stubs, contact actions, onAbout.
 #include "ui/mainwindow/MainWindow.h"
 #include "ui/mainwindow/commands/LayerCommands.h"
 #include "ui/mainwindow/AppSettingsDialog.h"
@@ -28,7 +28,7 @@
 
 namespace dolphin::ui {
 
-// ── Export helpers ────────────────────────────────────────────────────────────
+// -- Export helpers ------------------------------------------------------------
 
 namespace {
 // Returns the user's preferred export directory, falling back to home.
@@ -39,7 +39,7 @@ QString exportStartDir()
 }
 } // namespace
 
-// ── Export stubs ──────────────────────────────────────────────────────────────
+// -- Export stubs --------------------------------------------------------------
 
 void MainWindow::onExportCsv()
 {
@@ -91,6 +91,15 @@ void MainWindow::onExportCsv()
            << confidenceStr(c.confidence)                       << ','
            << quoted(QString::fromStdString(c.line_id))         << ','
            << quoted(QString::fromStdString(c.notes))           << '\n';
+    }
+
+    ts.flush();
+    if (file.error() != QFileDevice::NoError) {
+        file.close();
+        file.remove();
+        QMessageBox::warning(this, tr("Export Failed"),
+            tr("Export failed: could not write to file."));
+        return;
     }
 
     appendJobMessage(tr("Exported %1 contact(s) to %2")
@@ -207,17 +216,13 @@ void MainWindow::onMergeLayers(const std::vector<std::string>& layer_ids)
     appendJobMessage(tr("Merge Lines is not yet available in this version."));
 }
 
-// ── Tool stubs ────────────────────────────────────────────────────────────────
+// -- Tool stubs ----------------------------------------------------------------
 
 void MainWindow::onToolCursor()
 {
     if (m_map_view) m_map_view->setInputMode(MapView::ModePan);
     if (m_viewport_host) m_viewport_host->setToolMode(ToolMode::Pan);
-    m_in_select_mode = false;
-    if (m_cursor_select_btn) {
-        m_cursor_select_btn->setIcon(QIcon(":/icons/select.svg"));
-        m_cursor_select_btn->setToolTip(tr("Switch to Select (S)"));
-    }
+    if (m_cursor_btn) { QSignalBlocker sb(m_cursor_btn); m_cursor_btn->setChecked(true); }
     m_app_state->setToolMode(ToolMode::Pan);
 }
 
@@ -225,26 +230,15 @@ void MainWindow::onToolSelect()
 {
     if (m_map_view) m_map_view->setInputMode(MapView::ModeSelect);
     if (m_viewport_host) m_viewport_host->setToolMode(ToolMode::Select);
-    m_in_select_mode = true;
-    if (m_cursor_select_btn) {
-        m_cursor_select_btn->setIcon(QIcon(":/icons/cursor.svg"));
-        m_cursor_select_btn->setToolTip(tr("Switch to Cursor (V)"));
-    }
+    if (m_select_btn) { QSignalBlocker sb(m_select_btn); m_select_btn->setChecked(true); }
     m_app_state->setToolMode(ToolMode::Select);
-}
-
-void MainWindow::onToolCursorSelectToggle()
-{
-    if (m_in_select_mode)
-        onToolCursor();
-    else
-        onToolSelect();
 }
 
 void MainWindow::onToolZoom()
 {
     if (m_map_view) m_map_view->setInputMode(MapView::ModeZoom);
     if (m_viewport_host) m_viewport_host->setToolMode(ToolMode::Zoom);
+    if (m_zoom_btn) { QSignalBlocker sb(m_zoom_btn); m_zoom_btn->setChecked(true); }
     m_app_state->setToolMode(ToolMode::Zoom);
 }
 
@@ -252,6 +246,7 @@ void MainWindow::onToolMeasure()
 {
     if (m_map_view) m_map_view->setInputMode(MapView::ModeMeasure);
     if (m_viewport_host) m_viewport_host->setToolMode(ToolMode::Measure);
+    if (m_measure_btn) { QSignalBlocker sb(m_measure_btn); m_measure_btn->setChecked(true); }
     m_app_state->setToolMode(ToolMode::Measure);
     appendJobMessage(tr("Click to add points. Right-click or double-click to reset."));
 }
@@ -266,14 +261,14 @@ void MainWindow::onBottomTrack()
     }
     const auto* layer = m_project->findLayer(m_active_layer_id);
     if (!layer || layer->modality != app::Modality::SubBottom) {
-        appendJobMessage(tr("Bottom Track requires a sub-bottom profiler layer."));
+        appendJobMessage(tr("Sub-bottom Viewer requires a sub-bottom profiler layer."));
         return;
     }
     // Open the viewer — the seabed picks are overlaid there
     onSubBottomOpen();
 }
 
-// ── Contact / layer actions ───────────────────────────────────────────────────
+// -- Contact / layer actions ---------------------------------------------------
 
 void MainWindow::onAddContact()
 {
@@ -283,8 +278,15 @@ void MainWindow::onAddContact()
     }
     if (m_map_view) m_map_view->setInputMode(MapView::ModePickContact);
     if (m_viewport_host) m_viewport_host->setToolMode(ToolMode::ContactPick);
+    if (m_contact_btn) { QSignalBlocker sb(m_contact_btn); m_contact_btn->setChecked(true); }
     m_app_state->setToolMode(ToolMode::ContactPick);
-    appendJobMessage(tr("Click on the map to place a contact."));
+    appendJobMessage(tr("Click on the map to place a contact. Press V or another tool to stop."));
+}
+
+void MainWindow::onToggle3D()
+{
+    if (!m_viewport_host) return;
+    m_viewport_host->setMode3D(!m_viewport_host->isMode3D());
 }
 
 void MainWindow::onMeasurementUpdated(double metres)

@@ -10,6 +10,8 @@
 #include "ui/features/import/ImportController.h"
 #include "ui/features/processing/ProcessingController.h"
 #include "ui/features/map/sidescan/SidescanViewController.h"
+#include "app/corrections/SidescanCorrectionService.h"
+#include "app/corrections/SubBottomCorrectionService.h"
 #include "ui/features/import/ImportProgressDialog.h"
 #include "ui/features/waterfall/WaterfallWindow.h"
 #include "ui/features/subbottom/SubBottomWindow.h"
@@ -20,13 +22,13 @@
 #include "app/services/ProcessingService.h"
 #include "ui/features/contacts/ContactListPanel.h"
 #include "ui/shared/panels/LineListPanel.h"
-
 #include "ui/mainwindow/AppSettingsDialog.h"
 #include "ui/shell/AppInfo.h"
 #include <QApplication>
 #include <QProgressBar>
 #include <QSettings>
 #include <QUndoStack>
+#include <set>
 
 namespace dolphin::ui {
 
@@ -168,6 +170,7 @@ MainWindow::MainWindow(QWidget* parent)
                     const uint32_t jid = m_diag_hub->beginJob(
                         label, QString::fromStdString(layer_id));
                     m_import_job_ids[layer_id] = jid;
+                    taskBegin(QStringLiteral("import:") + QString::fromStdString(layer_id), label);
                 });
         connect(m_import_service, &app::ImportService::indexingProgress, this,
                 [this](const std::string& layer_id, int percent) {
@@ -182,6 +185,7 @@ MainWindow::MainWindow(QWidget* parent)
                         m_diag_hub->endJob(it->second, tr("Ready"));
                         m_import_job_ids.erase(it);
                     }
+                    taskDone(QStringLiteral("import:") + QString::fromStdString(layer_id));
                     if (m_project) {
                         if (const auto* layer = m_project->findLayer(layer_id))
                             recordActivity(ActivityKind::Import,
@@ -197,6 +201,8 @@ MainWindow::MainWindow(QWidget* parent)
                             QString::fromStdString(error));
                         m_import_job_ids.erase(it);
                     }
+                    taskFail(QStringLiteral("import:") + QString::fromStdString(layer_id),
+                             QString::fromStdString(error));
                 });
     }
 
@@ -209,7 +215,7 @@ MainWindow::MainWindow(QWidget* parent)
     setupMenuBar();
     setupStatusBar();
 
-    // ── Project event bus — one-time wiring, survives project replace ─────
+    // -- Project event bus — one-time wiring, survives project replace -----
     // Static components (always exist after setupCentralWidget) connect here.
     // Lazy components (waterfall, sbp, node graph) are null-guarded so these
     // connections are safe to establish even before those windows are created.
@@ -282,7 +288,7 @@ MainWindow::MainWindow(QWidget* parent)
             this, [this](const std::string& id) {
                 m_window_registry->broadcast(ViewerRefreshReason::LayerDataChanged, id);
             });
-    // ─────────────────────────────────────────────────────────────────────
+    // ---------------------------------------------------------------------
 
     m_sss_ctrl = new SidescanViewController(
         m_map_view, m_import_service,
@@ -302,6 +308,79 @@ MainWindow::MainWindow(QWidget* parent)
     // Register the map controller so WindowRegistry broadcasts reach it.
     // Uses m_map_view as the host widget for auto-cleanup on destroy.
     m_window_registry->registerViewer(m_map_view, m_sss_ctrl);
+
+    // Bakes processing corrections (TVG, ARC, AGC) into .dlpd amplitude data.
+    // Wired to the waterfall Apply buttons in onWaterfallOpen().
+    m_correction_svc = new app::SidescanCorrectionService(m_import_service, this);
+    connect(m_correction_svc, &app::SidescanCorrectionService::applyStarted,
+            this, [this](const std::string& layer_id) {
+                auto* layer = m_project ? m_project->findLayer(layer_id) : nullptr;
+                const QString label = layer
+                    ? tr("Baking corrections into %1…").arg(QString::fromStdString(layer->label))
+                    : tr("Baking sidescan corrections…");
+                taskBegin(QStringLiteral("correction:") + QString::fromStdString(layer_id), label);
+            });
+    connect(m_correction_svc, &app::SidescanCorrectionService::correctionsPersisted,
+            this, [this](const std::string& layer_id,
+                         const std::string& new_path,
+                         const core::ArtifactIndex& new_index) {
+                auto* layer = m_project ? m_project->findLayer(layer_id) : nullptr;
+                if (!layer) return;
+                layer->artifact_store_path   = new_path;
+                layer->artifact_store_format = "dlpd";
+                layer->artifact_index        = new_index;
+                m_project_dirty = true;
+                setWindowTitleFromProject();
+                if (m_sss_ctrl) m_sss_ctrl->reloadLayer(layer_id);
+                appendJobMessage(
+                    tr("Corrections baked into %1")
+                        .arg(QString::fromStdString(layer->label)));
+                taskDone(QStringLiteral("correction:") + QString::fromStdString(layer_id));
+            });
+    connect(m_correction_svc, &app::SidescanCorrectionService::applyFailed,
+            this, [this](const std::string& layer_id, const std::string& error) {
+                appendJobMessage(tr("Correction bake failed: %1")
+                    .arg(QString::fromStdString(error)));
+                taskFail(QStringLiteral("correction:") + QString::fromStdString(layer_id),
+                         QString::fromStdString(error));
+            });
+
+    // Bakes SBP processing corrections into .dlpd float samples.
+    // Wired to the SBP Apply buttons in onSubBottomOpen().
+    m_sbp_correction_svc = new app::SubBottomCorrectionService(m_import_service, this);
+    connect(m_sbp_correction_svc, &app::SubBottomCorrectionService::applyStarted,
+            this, [this](const std::string& layer_id) {
+                auto* layer = m_project ? m_project->findLayer(layer_id) : nullptr;
+                const QString label = layer
+                    ? tr("Baking corrections into %1…").arg(QString::fromStdString(layer->label))
+                    : tr("Baking sub-bottom corrections…");
+                taskBegin(QStringLiteral("sbp_correction:") + QString::fromStdString(layer_id), label);
+            });
+    connect(m_sbp_correction_svc, &app::SubBottomCorrectionService::correctionsPersisted,
+            this, [this](const std::string& layer_id,
+                         const std::string& new_path,
+                         const core::ArtifactIndex& new_index) {
+                auto* layer = m_project ? m_project->findLayer(layer_id) : nullptr;
+                if (!layer) return;
+                layer->artifact_store_path   = new_path;
+                layer->artifact_store_format = "dlpd";
+                layer->artifact_index        = new_index;
+                m_project_dirty = true;
+                setWindowTitleFromProject();
+                if (m_sbp_win && m_sbp_win->currentLayerId() == layer_id)
+                    m_sbp_win->reloadCurrentLayer();
+                appendJobMessage(
+                    tr("Corrections baked into %1")
+                        .arg(QString::fromStdString(layer->label)));
+                taskDone(QStringLiteral("sbp_correction:") + QString::fromStdString(layer_id));
+            });
+    connect(m_sbp_correction_svc, &app::SubBottomCorrectionService::applyFailed,
+            this, [this](const std::string& layer_id, const std::string& error) {
+                appendJobMessage(tr("SBP correction bake failed: %1")
+                    .arg(QString::fromStdString(error)));
+                taskFail(QStringLiteral("sbp_correction:") + QString::fromStdString(layer_id),
+                         QString::fromStdString(error));
+            });
 
     {
         // Apply the persisted map sonar quality (default: CoverageOnly).
@@ -371,6 +450,8 @@ MainWindow::MainWindow(QWidget* parent)
                     m_import_job_ids[id] = m_diag_hub->beginJob(
                         tr("Processing: %1").arg(label), QString::fromStdString(id));
                     m_import_overlay->addJob(id, label, "RUN", 0.f);
+                    taskBegin(QStringLiteral("proc:") + QString::fromStdString(id),
+                              tr("Processing: %1").arg(label));
                 });
         connect(m_proc_ctrl, &ProcessingController::layerRunFinished,
                 this, [this](const std::string& id, const QString& summary) {
@@ -380,8 +461,9 @@ MainWindow::MainWindow(QWidget* parent)
                         m_import_job_ids.erase(it);
                     }
                     m_import_overlay->finishJob(id, summary);
-                    // Notify all open viewers so they reload the updated layer data.
-                    m_event_bus->postLayerDataChanged(id);
+                    taskDone(QStringLiteral("proc:") + QString::fromStdString(id));
+                    // Viewer reload happens in processingPersisted (after index is updated).
+                    // If no data was written (empty buffer) the .dlpd is unchanged — no reload needed.
                 });
         connect(m_proc_ctrl, &ProcessingController::layerRunFailed,
                 this, [this](const std::string& id, const QString& error) {
@@ -394,6 +476,23 @@ MainWindow::MainWindow(QWidget* parent)
                     m_diag_hub->postProblem(
                         tr("Processing failed: %1").arg(error),
                         DiagnosticsHub::Severity::Error, QString::fromStdString(id));
+                    taskFail(QStringLiteral("proc:") + QString::fromStdString(id), error);
+                });
+        connect(m_proc_ctrl, &ProcessingController::processingPersisted,
+                this, [this](const std::string& id,
+                             const std::string& /*proc_path*/,
+                             const core::ArtifactIndex& proc_index,
+                             bool slant_range_corrected) {
+                    auto* layer = m_project ? m_project->findLayer(id) : nullptr;
+                    if (!layer) return;
+                    // The .dlpd was overwritten in-place; only the index changes.
+                    layer->artifact_index         = proc_index;
+                    layer->pipeline_applied       = true;
+                    layer->slant_range_corrected  = slant_range_corrected;
+                    m_project_dirty = true;
+                    setWindowTitleFromProject();
+                    // Reload viewers from the now-updated .dlpd.
+                    m_event_bus->postLayerDataChanged(id);
                 });
     }
 
@@ -418,6 +517,25 @@ MainWindow::MainWindow(QWidget* parent)
 
     bindProjectUi();
     appendJobMessage("Workstation ready.");
+}
+
+void MainWindow::triggerAutoProcessing()
+{
+    if (!m_proc_ctrl || !m_project) return;
+    onOpenProcessingWindow();
+    std::set<std::string> queued_store_paths;
+    for (const auto& layer : m_project->layers()) {
+        if (!layer || !layer->index_built || layer->pipeline_applied) continue;
+        if (layer->modality != app::Modality::Sidescan) continue;
+        // Dual-freq and Mixed-split layers share the same DLPD. Only submit one
+        // runLayer per unique store path to prevent concurrent writes to the same file.
+        if (!layer->artifact_store_path.empty()
+                && !queued_store_paths.insert(layer->artifact_store_path).second)
+            continue;
+        const auto* src = m_project->findSource(layer->source_id);
+        if (!src) continue;
+        m_proc_ctrl->runLayer(layer.get(), src->path);
+    }
 }
 
 } // namespace dolphin::ui

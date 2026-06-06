@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include "ui/features/waterfall/NavProcessingParams.h"
 #include "ui/features/waterfall/processing/SeabedAutoDetector.h"
 #include "ui/features/waterfall/WaterfallContact.h"
@@ -16,7 +16,7 @@ namespace dolphin::ui {
 class WfValueRow;
 class WfToggleRow;
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  WaterfallAnalysisPanel — right image-processing panel in the Waterfall window.
 //
 //  All numeric parameters use WfValueRow: drag up/down to change, click to
@@ -27,7 +27,7 @@ class WfToggleRow;
 //    • Processing Tools (WaterfallParams) — applied via same Apply buttons
 //    • Navigation Processing (NavProcessingParams) — applied via dedicated
 //      "Run on This Line / All Lines" buttons; modifies stored raw ping nav.
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 class WaterfallAnalysisPanel : public QFrame {
     Q_OBJECT
@@ -88,25 +88,25 @@ private:
     void refreshProcessingDirty();
     void refreshNavDirty();
 
-    // ── Section header buttons (for dirty indicators) ─────────────────────
+    // -- Section header buttons (for dirty indicators) ---------------------
     QPushButton* m_image_hdr      = nullptr;
     QPushButton* m_seabed_hdr     = nullptr;
     QPushButton* m_processing_hdr = nullptr;
     QPushButton* m_nav_hdr        = nullptr;
 
-    // ── TVG ───────────────────────────────────────────────────────────────
+    // -- TVG ---------------------------------------------------------------
     WfToggleRow* m_tvg_toggle       = nullptr;
     QWidget*     m_tvg_body         = nullptr;
     WfValueRow*  m_tvg_spreading    = nullptr;
     WfValueRow*  m_tvg_absorption   = nullptr;
 
-    // ── ARN ───────────────────────────────────────────────────────────────
+    // -- ARN ---------------------------------------------------------------
     WfToggleRow* m_arn_toggle       = nullptr;
     QWidget*     m_arn_body         = nullptr;
     WfValueRow*  m_arn_strength     = nullptr;
     WfValueRow*  m_arn_gain_cap     = nullptr;
 
-    // ── AGC ───────────────────────────────────────────────────────────────
+    // -- AGC ---------------------------------------------------------------
     WfToggleRow* m_agc_enable_toggle    = nullptr;
     QWidget*     m_agc_body             = nullptr;
     QComboBox*   m_agc_mode_combo       = nullptr;
@@ -118,35 +118,36 @@ private:
     WfValueRow*  m_agc_edge_skip        = nullptr;
     WfValueRow*  m_agc_noise_floor      = nullptr;
 
-    // ── Destripe ──────────────────────────────────────────────────────────
+    // -- Destripe ----------------------------------------------------------
     WfToggleRow* m_destripe_toggle  = nullptr;
     QWidget*     m_destripe_body    = nullptr;
     WfValueRow*  m_destripe_window  = nullptr;
     WfValueRow*  m_destripe_subdiv  = nullptr;
     WfValueRow*  m_destripe_cap     = nullptr;
 
-    // ── Slant Range Correction ────────────────────────────────────────────
+    // -- Slant Range Correction --------------------------------------------
     WfToggleRow* m_src_toggle       = nullptr;
 
-    // ── Seabed auto params ────────────────────────────────────────────────
+    // -- Seabed auto params ------------------------------------------------
     QComboBox*   m_seabed_channel_combo = nullptr;
     QComboBox*   m_seabed_method_combo  = nullptr;
     WfValueRow*  m_seabed_blank         = nullptr;
     WfValueRow*  m_seabed_thresh        = nullptr;
     WfValueRow*  m_seabed_snr           = nullptr;
     WfValueRow*  m_seabed_outlier       = nullptr;
+    WfValueRow*  m_seabed_ch_agree      = nullptr;
     WfValueRow*  m_seabed_smooth        = nullptr;
 
-    // ── Seabed manual tools ───────────────────────────────────────────────
+    // -- Seabed manual tools -----------------------------------------------
     QToolButton* m_tool_pen         = nullptr;
     QToolButton* m_tool_box         = nullptr;
     QToolButton* m_tool_erase       = nullptr;
 
-    // ── Contact picking ───────────────────────────────────────────────────
+    // -- Contact picking ---------------------------------------------------
     QToolButton* m_contact_pick_btn    = nullptr;
     QComboBox*   m_contact_class_combo = nullptr;
 
-    // ── Processing Tools (image enhancement, applied via main Apply btns) ─
+    // -- Processing Tools (image enhancement, applied via main Apply btns) -
     WfToggleRow* m_bpn_toggle        = nullptr;
     WfValueRow*  m_bpn_strength      = nullptr;
     WfValueRow*  m_bpn_smooth        = nullptr;
@@ -163,7 +164,7 @@ private:
     WfValueRow*  m_mle_clip_limit    = nullptr;
     QWidget*     m_mle_body          = nullptr;
 
-    // ── Navigation Processing (applied via dedicated Run buttons) ─────────
+    // -- Navigation Processing (applied via dedicated Run buttons) ---------
     WfToggleRow* m_nav_smooth_toggle  = nullptr;
     QWidget*     m_nav_smooth_body    = nullptr;
     WfValueRow*  m_nav_smooth_window  = nullptr;

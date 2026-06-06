@@ -1,7 +1,7 @@
 #pragma once
 // ParsedCache_p.h — binary structs and helpers shared across ParsedCache TUs.
 //
-// ── Supported artifact types ──────────────────────────────────────────────────
+// -- Supported artifact types --------------------------------------------------
 // The cache stores three modalities:
 //
 //   ArtifactType::Sidescan     → CacheSidescanPayloadHeader + CacheSidescanSample[]
@@ -31,7 +31,8 @@ namespace dolphin::io::detail_cache {
 
 inline constexpr std::array<char, 8> kFileMagic   = {'D', 'P', 'C', 'A', 'C', 'H', 'E', '1'};
 inline constexpr std::array<char, 4> kRecordMagic = {'D', 'P', 'R', '1'};
-inline constexpr uint32_t kCacheVersion = 25;
+inline constexpr uint32_t kCacheVersion         = 26;  // current write version
+inline constexpr uint32_t kMinAcceptableVersion = 25;  // v25 SBP lacks correction_flags; read as 0
 
 #pragma pack(push, 1)
 struct CacheFileHeader {
@@ -133,6 +134,8 @@ struct CacheSubBottomPayloadHeader {
     CacheNavHeader nav;
     uint32_t sample_count = 0;
     int32_t  bottom_sample_idx = -1;  // v25: seabed first-return index; -1 = not detected
+    uint32_t correction_flags  =  0;  // v26: bitmask of SbpCorrectionFlag; 0 = no baked corrections
+    uint32_t reserved          =  0;
 };
 
 struct CacheMagPayloadHeader {
@@ -368,6 +371,7 @@ static inline bool writePayload(FILE* file, const core::Artifact& artifact)
             hdr.nav               = toCacheNav(value.nav);
             hdr.sample_count      = static_cast<uint32_t>(value.samples.size());
             hdr.bottom_sample_idx = value.bottom_sample_idx;
+            hdr.correction_flags  = value.correction_flags;
             if (!writePod(file, hdr)) return false;
             if (!value.samples.empty()) {
                 return std::fwrite(value.samples.data(), sizeof(float),

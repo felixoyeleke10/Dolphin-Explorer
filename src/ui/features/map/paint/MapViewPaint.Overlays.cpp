@@ -153,7 +153,7 @@ void MapView::paintMeasureOverlay(QPainter& p) const
 
 void MapView::paintScaleAndBadges(QPainter& p) const
 {
-    // ── North arrow (top-right, fixed north-up) ──────────────────────────────
+    // -- North arrow (top-right, fixed north-up) ------------------------------
     {
         p.setRenderHint(QPainter::Antialiasing, true);
         constexpr int kR = 13, kMargin = 22, kCY = 30;
@@ -188,7 +188,7 @@ void MapView::paintScaleAndBadges(QPainter& p) const
         p.drawText(kCX - nw / 2, kCY - kR - 1, "N");
     }
 
-    // ── Scale bar ─────────────────────────────────────────────────────────────
+    // -- Scale bar -------------------------------------------------------------
     {
         const double sc = baseScale() * m_zoom;
         // Geographic: pixPerMetre = sc/111320 — cos(lat) cancels between
@@ -234,7 +234,7 @@ void MapView::paintScaleAndBadges(QPainter& p) const
         }
     }
 
-    // ── Status badges (top-right) ─────────────────────────────────────────────
+    // -- Status badges (top-right) ---------------------------------------------
     {
         bool any_reduced   = false;
         int  bad_nav_total = 0;

@@ -9,7 +9,7 @@
 
 namespace dolphin::io::detail_segy {
 
-// ── Trace header plausibility score ───────────────────────────────────────────
+// -- Trace header plausibility score -------------------------------------------
 // Returns a score in [0, 8] indicating how plausible this 240-byte block is as
 // a SEG-Y trace header for the given byte order.  Used by the probe phase and
 // the resync scanner.
@@ -46,7 +46,7 @@ inline int scoreTraceHeader(const uint8_t* thdr, bool le,
     return score;
 }
 
-// ── Forward resync scanner ────────────────────────────────────────────────────
+// -- Forward resync scanner ----------------------------------------------------
 // Reads the file in 4 KB chunks and scans (4-byte aligned steps) for a block
 // that scores ≥ kThreshold as a trace header.  Searches at most kMaxScan bytes
 // forward from [start].  Returns the byte offset, or UINT64_MAX if not found.

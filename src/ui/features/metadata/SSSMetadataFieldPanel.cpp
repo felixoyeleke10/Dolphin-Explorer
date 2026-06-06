@@ -1,4 +1,4 @@
-﻿// SSSMetadataFieldPanel.cpp — field sidebar construction and per-field config slots.
+// SSSMetadataFieldPanel.cpp — field sidebar construction and per-field config slots.
 #include "ui/features/metadata/SSSMetadataWindow.h"
 #include "ui/shared/UiUtils.h"
 #include "ui/shell/Theme.h"
@@ -19,9 +19,9 @@ namespace dolphin::ui {
 
 static constexpr int kThickSpinW = 42;  // line-thickness spinbox width
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Field panel construction
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void SSSMetadataWindow::buildFieldPanel(QWidget* parent)
 {
@@ -107,9 +107,9 @@ void SSSMetadataWindow::buildFieldPanel(QWidget* parent)
             this, &SSSMetadataWindow::onPrecisionChanged);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Field visibility
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void SSSMetadataWindow::onFieldListItemChanged()
 {
@@ -137,9 +137,9 @@ void SSSMetadataWindow::onSearchTextChanged(const QString& text)
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Per-field config
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void SSSMetadataWindow::onFieldListCurrentChanged(int row)
 {

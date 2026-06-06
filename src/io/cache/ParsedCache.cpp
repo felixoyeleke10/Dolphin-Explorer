@@ -20,7 +20,7 @@ bool parsedCacheIsValid(const std::string& path)
     CacheFileHeader hdr{};
     const bool ok = (std::fread(&hdr, sizeof(hdr), 1, f) == 1)
                  && sameMagic(hdr.magic, kFileMagic)
-                 && (hdr.version == kCacheVersion);
+                 && (hdr.version >= kMinAcceptableVersion && hdr.version <= kCacheVersion);
     std::fclose(f);
     return ok;
 }
@@ -54,14 +54,18 @@ bool ParsedCacheReader::open(const std::string& path)
         close();
         return false;
     }
-    if (!sameMagic(header.magic, kFileMagic) || header.version != kCacheVersion) {
+    if (!sameMagic(header.magic, kFileMagic)
+            || header.version < kMinAcceptableVersion
+            || header.version > kCacheVersion) {
         close();
         return false;
     }
 
+    m_file_version = header.version;
     m_meta = {};
     m_meta.format_name = "DPCACHE";
     loadFileHeaderMetadata(header, m_meta);
+    m_cur_pos = sizeof(CacheFileHeader);  // file pointer is here after reading the header
     return true;
 }
 
@@ -71,8 +75,10 @@ void ParsedCacheReader::close()
         std::fclose(m_file);
         m_file = nullptr;
     }
-    m_meta = {};
-    m_fileSize = 0;
+    m_meta         = {};
+    m_fileSize     = 0;
+    m_file_version = 0;
+    m_cur_pos      = UINT64_MAX;
 }
 
 FormatMeta ParsedCacheReader::metadata()

@@ -14,7 +14,7 @@ class QWheelEvent;
 
 namespace dolphin::ui {
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  SubBottomView — 2-D seismic section widget.
 //
 //  X-axis: trace index (along-track), horizontally scrollable.
@@ -32,7 +32,7 @@ namespace dolphin::ui {
 //  Ctrl+scroll  → zoom trace width ±1 px
 //  Shift+scroll → zoom depth scale ×1.25 / ÷1.25
 //  Plain scroll → scroll along-track
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 class SubBottomView : public QWidget {
     Q_OBJECT
 public:

@@ -16,9 +16,9 @@
 
 namespace dolphin::ui {
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Thread-safe terrain build result
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 struct TerrainBuildResult {
     std::vector<float> vertices;      // full-res xyz triples, GL_TRIANGLES
@@ -55,7 +55,7 @@ static TerrainBuildResult buildTerrainFromFile(
         return result;
     }
 
-    // ── Parse XYZ / CSV (3 numeric columns; skip header/comment lines) ────────
+    // -- Parse XYZ / CSV (3 numeric columns; skip header/comment lines) --------
     struct RawPt { double x, y, z; };
     std::vector<RawPt> pts;
     pts.reserve(300000);
@@ -84,7 +84,7 @@ static TerrainBuildResult buildTerrainFromFile(
         return result;
     }
 
-    // ── Auto-detect origin when none is set ───────────────────────────────────
+    // -- Auto-detect origin when none is set -----------------------------------
     if (!has_origin) {
         double xmin = pts[0].x, xmax = pts[0].x;
         double ymin = pts[0].y, ymax = pts[0].y;
@@ -103,7 +103,7 @@ static TerrainBuildResult buildTerrainFromFile(
         result.has_auto_origin = true;
     }
 
-    // ── Convert to local metres ───────────────────────────────────────────────
+    // -- Convert to local metres -----------------------------------------------
     std::vector<float> raw;
     raw.reserve(pts.size() * 3);
     for (const auto& p : pts) {
@@ -127,7 +127,7 @@ static TerrainBuildResult buildTerrainFromFile(
         return result;
     }
 
-    // ── Bounding box ──────────────────────────────────────────────────────────
+    // -- Bounding box ----------------------------------------------------------
     float xmin = raw[0], xmax = raw[0];
     float ymin = raw[1], ymax = raw[1];
     result.z_min = raw[2];
@@ -142,15 +142,16 @@ static TerrainBuildResult buildTerrainFromFile(
 
     const float span_x = xmax - xmin;
     const float span_y = ymax - ymin;
-    if (span_x <= 0.f && span_y <= 0.f) {
-        result.error = QStringLiteral("All points coincide — no terrain to build.");
+    if (span_x <= 0.f || span_y <= 0.f) {
+        result.error = QStringLiteral("Terrain data has zero extent in at least one axis — "
+                                      "all points must vary in both X and Y.");
         return result;
     }
     result.radius      = 0.5f * std::sqrt(span_x * span_x + span_y * span_y);
     result.x_min_local = xmin;  result.x_max_local = xmax;
     result.y_min_local = ymin;  result.y_max_local = ymax;
 
-    // ── Build regular grid ─────────────────────────────────────────────────────
+    // -- Build regular grid -----------------------------------------------------
     // Aim for ~4 points per cell; resolution clamped to [64, 512].
     const int n_pts = static_cast<int>(raw.size()) / 3;
     const int GRID  = std::clamp(static_cast<int>(std::sqrt(n_pts / 4.0)), 64, 512);
@@ -176,7 +177,7 @@ static TerrainBuildResult buildTerrainFromFile(
         if (grid_cnt[i] > 0)
             grid_z[i] = static_cast<float>(grid_z_sum[i] / grid_cnt[i]);
 
-    // ── Emit GL_TRIANGLES: two per 2×2 quad with all four corners present ─────
+    // -- Emit GL_TRIANGLES: two per 2×2 quad with all four corners present -----
     auto has = [&](int gx, int gy) -> bool {
         return gx >= 0 && gx < GRID && gy >= 0 && gy < GRID
             && grid_cnt[gy * GRID + gx] > 0;
@@ -201,7 +202,7 @@ static TerrainBuildResult buildTerrainFromFile(
         }
     }
 
-    // ── Build half-resolution LOD mesh ───────────────────────────────────────
+    // -- Build half-resolution LOD mesh ---------------------------------------
     {
         const int LGRID = std::clamp(GRID / 2, 32, 256);
         const float lcell_x = (LGRID > 1) ? span_x / (LGRID - 1) : span_x;
@@ -241,9 +242,9 @@ static TerrainBuildResult buildTerrainFromFile(
     return result;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  loadTerrainFile — public API, dispatches background parse + GL upload
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void MapView3D::loadTerrainFile(const std::string& layer_id,
                                  const QString& path,
@@ -295,7 +296,7 @@ void MapView3D::loadTerrainFile(const std::string& layer_id,
 
                 if (res.radius > m_scene_radius) {
                     m_scene_radius = res.radius;
-                    fitToScene();
+                    if (!m_camera_user_moved) fitToScene();
                 }
                 update();
                 emit terrainLoadFinished(layer_id, true, {});

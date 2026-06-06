@@ -26,7 +26,7 @@ void MapView3D::paintGL()
 {
     if (!m_gl_ready) return;
 
-    // ── FPS tracking (60-frame rolling average) ───────────────────────────────
+    // -- FPS tracking (60-frame rolling average) -------------------------------
     constexpr int kFpsWindow = 60;
     ++m_fps_frames;
     if (m_fps_frames >= kFpsWindow) {
@@ -35,7 +35,7 @@ void MapView3D::paintGL()
         m_fps_frames = 0;
     }
 
-    // ── Upload any pending VBOs / textures ────────────────────────────────────
+    // -- Upload any pending VBOs / textures ------------------------------------
     if (m_layers_dirty)   { buildNavMergedVbo();      m_layers_dirty   = false; }
     if (m_curtains_dirty) { rebuildAllCurtainVbos(); m_curtains_dirty = false; }
     if (m_terrain_dirty)  { rebuildAllTerrainVbos(); m_terrain_dirty  = false; }
@@ -50,7 +50,7 @@ void MapView3D::paintGL()
 
     m_vao.bind();
 
-    // ── 1. Infinite reference grid ─────────────────────────────────────────────
+    // -- 1. Infinite reference grid ---------------------------------------------
     if (m_show_grid && m_grid_shader && m_has_origin) {
         glDisable(GL_DEPTH_TEST);
         m_grid_shader->bind();
@@ -61,7 +61,7 @@ void MapView3D::paintGL()
 
     const QMatrix4x4 mvp = m_camera.mvp();
 
-    // ── 2. Terrain ────────────────────────────────────────────────────────────
+    // -- 2. Terrain ------------------------------------------------------------
     if (m_terrain_shader && !m_terrain_layers.empty()) {
         m_terrain_shader->bind();
         m_terrain_shader->setUniformValue(m_loc_terr_mvp, mvp);
@@ -69,7 +69,7 @@ void MapView3D::paintGL()
         m_terrain_shader->release();
     }
 
-    // ── 3. SBP curtain ────────────────────────────────────────────────────────
+    // -- 3. SBP curtain --------------------------------------------------------
     if (m_curtain_shader && !m_curtain_layers.empty()) {
         m_curtain_shader->bind();
         m_curtain_shader->setUniformValue(m_loc_curt_mvp, mvp);
@@ -77,7 +77,7 @@ void MapView3D::paintGL()
         m_curtain_shader->release();
     }
 
-    // ── 4. Sonar drape ────────────────────────────────────────────────────────
+    // -- 4. Sonar drape --------------------------------------------------------
     if (m_drape_shader && !m_drape_layers.empty()) {
         m_drape_shader->bind();
         m_drape_shader->setUniformValue(m_loc_drape_mvp, mvp);
@@ -85,7 +85,7 @@ void MapView3D::paintGL()
         m_drape_shader->release();
     }
 
-    // ── 5. Flat-colour overlay: survey outline, nav tracks, selection hull ───
+    // -- 5. Flat-colour overlay: survey outline, nav tracks, selection hull ---
     m_shader->bind();
     m_shader->setUniformValue(m_loc_mvp, mvp);
     drawSurveyOutline();
@@ -95,15 +95,15 @@ void MapView3D::paintGL()
 
     m_vao.release();
 
-    // ── HUD (QPainter overlay, implemented in MapView3D.Overlays.cpp) ─────────
+    // -- HUD (QPainter overlay, implemented in MapView3D.Overlays.cpp) ---------
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing);
     drawHUD(painter);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Draw helpers
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void MapView3D::drawLines(QOpenGLBuffer& vbo, int count,
                           const QColor& col, float lw)

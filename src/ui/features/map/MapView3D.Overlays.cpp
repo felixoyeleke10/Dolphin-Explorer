@@ -77,7 +77,7 @@ void MapView3D::drawHUD(QPainter& painter)
         painter.drawText(fpsbadge, Qt::AlignCenter, fps_str);
     }
 
-    // ── Depth colormap legend ─────────────────────────────────────────────────
+    // -- Depth colormap legend -------------------------------------------------
     if (!m_terrain_layers.empty()) {
         const auto& T = m_terrain_layers.front();
         const QString leg = QString("Depth: %1 m → %2 m")
@@ -86,7 +86,7 @@ void MapView3D::drawHUD(QPainter& painter)
         painter.drawText(15, badge.top() - 2, leg);
     }
 
-    // ── SBP curtain depth legend ──────────────────────────────────────────────
+    // -- SBP curtain depth legend ----------------------------------------------
     if (!m_curtain_layers.empty()) {
         float z_range_max = 0.f;
         for (const auto& C : m_curtain_layers)
@@ -96,16 +96,16 @@ void MapView3D::drawHUD(QPainter& painter)
         painter.drawText(15, badge.top() - 2 - (m_terrain_layers.empty() ? 0 : 15), leg);
     }
 
-    // ── Grid coordinate labels ────────────────────────────────────────────────
+    // -- Grid coordinate labels ------------------------------------------------
     if (m_show_grid && m_has_origin)
         drawGridLabels(painter);
 
-    // ── Scale bar + compass rose ──────────────────────────────────────────────
+    // -- Scale bar + compass rose ----------------------------------------------
     if (m_has_origin)
         drawScaleBar3D(painter);
     drawCompassRose(painter);
 
-    // ── Empty state ───────────────────────────────────────────────────────────
+    // -- Empty state -----------------------------------------------------------
     if (m_layers.empty() && m_terrain_layers.empty()) {
         painter.setPen(QColor(Theme::kTextDim));
         QFont big = painter.font();
@@ -169,7 +169,7 @@ void MapView3D::drawGridLabels(QPainter& painter)
     const bool utm_only  = !m_is_projected && (fmt == 2);
     const int label_h = show_both ? 2 * lh : lh;
 
-    // ── Easting labels (bottom edge) ──────────────────────────────────────────
+    // -- Easting labels (bottom edge) ------------------------------------------
     struct LabelCandidate { float sx; QString text; QString text2; };
     std::vector<LabelCandidate> eastCands;
     eastCands.reserve(nLines * 2 + 4);
@@ -222,7 +222,7 @@ void MapView3D::drawGridLabels(QPainter& painter)
         }
     }
 
-    // ── Northing labels (left edge) ───────────────────────────────────────────
+    // -- Northing labels (left edge) -------------------------------------------
     std::vector<LabelCandidate> northCands;
     northCands.reserve(nLines * 2 + 4);
 

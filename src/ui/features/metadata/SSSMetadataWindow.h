@@ -31,9 +31,9 @@ class Project;
 
 namespace dolphin::ui {
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Per-field display configuration
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 struct SSSFieldConfig {
     bool   visible   = true;
     bool   show_plot = false;
@@ -43,9 +43,9 @@ struct SSSFieldConfig {
     int    precision = -1;  // -1 = field default
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  SSSNavModel — virtual QAbstractTableModel backed by nav-only SidescanPings.
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 class SSSNavModel : public QAbstractTableModel {
     Q_OBJECT
 public:
@@ -84,9 +84,9 @@ private:
     bool                            m_coords_projected = false;
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Chart data structs
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 struct SSSPlotSeries {
     QString          label;
     QColor           color;
@@ -97,13 +97,13 @@ struct SSSPlotSeries {
 
 enum class SSSChartMode { Line, Scatter, Histogram };
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  SSSMetadataPlotWidget — three chart modes: Line / Scatter / Histogram.
 //
 //  Line:      one or more series (Y vs ping index).
 //  Scatter:   two fields as X/Y, each ping as a dot.  Hover not yet wired.
 //  Histogram: frequency distribution of one field, configurable bin count.
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 class SSSMetadataPlotWidget : public QWidget {
     Q_OBJECT
 public:
@@ -162,7 +162,7 @@ private:
     bool    m_dragging = false;
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  SSSMetadataWindow — Excel-inspired per-ping SSS data spreadsheet + charts.
 //
 //  Features:
@@ -173,7 +173,7 @@ private:
 //    • Export to CSV (all or selection)
 //    • Right panel: field checklist + per-field plot config
 //    • Chart panel: Line / Scatter / Histogram with axis selectors + zoom/pan
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 class SSSMetadataWindow : public QWidget {
     Q_OBJECT
 public:
@@ -246,7 +246,7 @@ private:
     QString buildTabText(bool selection_only, bool with_headers) const;
     void    exportToCsv (bool selection_only);
 
-    // ── Project / data ────────────────────────────────────────────────────────
+    // -- Project / data --------------------------------------------------------
     app::Project*        m_project       = nullptr;
     app::ImportService*  m_import_service = nullptr;
     std::string          m_active_layer_id;
@@ -258,32 +258,32 @@ private:
 
     QVector<SSSFieldConfig> m_field_cfg;
 
-    // ── Model / view ─────────────────────────────────────────────────────────
+    // -- Model / view ---------------------------------------------------------
     SSSNavModel*           m_model  = nullptr;
     QSortFilterProxyModel* m_proxy  = nullptr;
     QTableView*            m_table  = nullptr;
     SSSMetadataPlotWidget* m_plot   = nullptr;
 
-    // ── Chart dock/toggle state ───────────────────────────────────────────────
+    // -- Chart dock/toggle state -----------------------------------------------
     QSplitter*   m_outer_vsplit     = nullptr;
     QWidget*     m_chart_pane       = nullptr;
     QToolButton* m_btn_toggle_chart = nullptr;
     QToolButton* m_btn_undock_chart = nullptr;
     bool         m_chart_floating   = false;
 
-    // ── Top bar ───────────────────────────────────────────────────────────────
+    // -- Top bar ---------------------------------------------------------------
     QToolButton* m_line_btn      = nullptr;
     QMenu*       m_line_menu     = nullptr;
     QCheckBox*   m_visible_only_cb = nullptr;
     QLabel*      m_load_status   = nullptr;
 
-    // ── Selection status bar (below table) ───────────────────────────────────
+    // -- Selection status bar (below table) -----------------------------------
     QLabel*    m_sel_status      = nullptr;
 
-    // ── Right panel — field list ──────────────────────────────────────────────
+    // -- Right panel — field list ----------------------------------------------
     QListWidget* m_field_list    = nullptr;
 
-    // ── Right panel — per-field config ───────────────────────────────────────
+    // -- Right panel — per-field config ---------------------------------------
     QLabel*      m_cfg_name      = nullptr;
     QCheckBox*   m_cfg_plot_cb   = nullptr;
     QToolButton* m_cfg_color_btn = nullptr;
@@ -292,7 +292,7 @@ private:
     QSpinBox*    m_cfg_prec_sp   = nullptr;
     QWidget*     m_cfg_panel     = nullptr;
 
-    // ── Chart toolbar ─────────────────────────────────────────────────────────
+    // -- Chart toolbar ---------------------------------------------------------
     QComboBox* m_chart_type_cb  = nullptr;
     QLabel*    m_chart_x_lbl    = nullptr;
     QComboBox* m_chart_x_cb     = nullptr;

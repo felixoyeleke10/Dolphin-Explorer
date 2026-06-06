@@ -1,4 +1,4 @@
-﻿// SSSMetadataWindow.cpp — window shell, UI construction, selection status.
+// SSSMetadataWindow.cpp — window shell, UI construction, selection status.
 // Companion files:
 //   SSSMetadataChart.cpp     — buildChartToolbar, toggle/dock, chart update slots
 //   SSSNavModel.cpp          — field defs + SSSNavModel implementation
@@ -38,44 +38,44 @@ static constexpr int kInitW = 1200;
 static constexpr int kInitH = 740;
 
 static const QColor kDefaultColors[SSSNavModel::kFieldCount] = {
-    // ── Identification ─────────────────────────────────────────────────────────
+    // -- Identification ---------------------------------------------------------
     {0x88,0x88,0x88}, {0x68,0x88,0x68},   // ping #, ping id
     {0x38,0xa8,0x58},                      // channel
-    // ── Timestamps ─────────────────────────────────────────────────────────────
+    // -- Timestamps -------------------------------------------------------------
     {0x88,0x88,0x88}, {0x88,0x88,0x98},   // time, nav time
-    // ── Resolved position ──────────────────────────────────────────────────────
+    // -- Resolved position ------------------------------------------------------
     {0x48,0xa8,0xe8}, {0x48,0xe8,0xa8},   // lat, lon
-    // ── Raw source positions ───────────────────────────────────────────────────
+    // -- Raw source positions ---------------------------------------------------
     {0x28,0x88,0xc8}, {0x28,0xc8,0x88},   // fish lat, fish lon
     {0x18,0x68,0xa8}, {0x18,0xa8,0x68},   // vessel lat, vessel lon
-    // ── Depth / dynamics ───────────────────────────────────────────────────────
+    // -- Depth / dynamics -------------------------------------------------------
     {0xc8,0x88,0x38}, {0x58,0xc8,0x68},   // depth, altitude
     {0xe8,0x58,0x58}, {0x58,0x88,0xe8},   // roll, pitch
-    // ── Heading sources ────────────────────────────────────────────────────────
+    // -- Heading sources --------------------------------------------------------
     {0xe8,0xc8,0x48}, {0xc8,0xa8,0x38},   // heading, sensor hdg
     {0xa8,0x88,0x58},                      // ship hdg
-    // ── Motion ─────────────────────────────────────────────────────────────────
+    // -- Motion -----------------------------------------------------------------
     {0x98,0x58,0xe8}, {0x48,0xe8,0xe8},   // speed, heave
-    // ── Sonar geometry ─────────────────────────────────────────────────────────
+    // -- Sonar geometry ---------------------------------------------------------
     {0xe8,0x88,0x48}, {0xa8,0xa8,0x48},   // slant range, sample rate
     {0x88,0x48,0x48}, {0x48,0x88,0x48},   // blanking, layback
     {0x88,0x48,0x88}, {0x58,0xa8,0x78},   // cable out, fish dx
     {0x78,0x58,0xa8}, {0xa8,0x78,0x48},   // fish dy, kp
-    // ── Acoustics ──────────────────────────────────────────────────────────────
+    // -- Acoustics --------------------------------------------------------------
     {0xe8,0x48,0x88}, {0x48,0xc8,0x98},   // frequency, SV
     {0x68,0x88,0xc8},                      // bandwidth
-    // ── Gain / calibration ─────────────────────────────────────────────────────
+    // -- Gain / calibration -----------------------------------------------------
     {0xa8,0x78,0x78}, {0x78,0xa8,0x78},   // gain, init gain
     {0x78,0x78,0xa8},                      // volt scale
-    // ── Bottom / QC ────────────────────────────────────────────────────────────
+    // -- Bottom / QC ------------------------------------------------------------
     {0x68,0x58,0xa8},                      // samples
     {0xe8,0x78,0x58}, {0xc8,0x98,0x48},   // btm range, btm conf
     {0xe8,0x48,0x48}, {0xe8,0x88,0x28},   // qc flags, corrections
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  SSSMetadataWindow — construction
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 SSSMetadataWindow::SSSMetadataWindow(QWidget* parent)
     : QWidget(parent, Qt::Window)
@@ -100,9 +100,9 @@ SSSMetadataWindow::SSSMetadataWindow(QWidget* parent)
     buildUi();
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  UI construction
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void SSSMetadataWindow::buildUi()
 {
@@ -110,7 +110,7 @@ void SSSMetadataWindow::buildUi()
     root->setContentsMargins(0, 0, 0, 0);
     root->setSpacing(0);
 
-    // ── Icon toolbar ──────────────────────────────────────────────────────────
+    // -- Icon toolbar ----------------------------------------------------------
     {
         auto* toolbar = new QWidget(this);
         toolbar->setObjectName("metaToolbar");
@@ -198,7 +198,7 @@ void SSSMetadataWindow::buildUi()
         root->addWidget(toolbar);
     }
 
-    // ── Top bar ───────────────────────────────────────────────────────────────
+    // -- Top bar ---------------------------------------------------------------
     {
         auto* bar = new QWidget(this);
         bar->setFixedHeight(Theme::kFilterBarH);
@@ -229,7 +229,7 @@ void SSSMetadataWindow::buildUi()
         root->addWidget(bar);
     }
 
-    // ── Horizontal splitter: table-pane | field panel ─────────────────────────
+    // -- Horizontal splitter: table-pane | field panel -------------------------
     m_outer_vsplit = new QSplitter(Qt::Vertical, this);
     auto* outer_vsplit = m_outer_vsplit;
     outer_vsplit->setHandleWidth(5);
@@ -285,7 +285,7 @@ void SSSMetadataWindow::buildUi()
     }
     outer_vsplit->addWidget(upper);
 
-    // ── Chart panel ───────────────────────────────────────────────────────────
+    // -- Chart panel -----------------------------------------------------------
     m_chart_pane = new QWidget(outer_vsplit);
     m_chart_pane->setAttribute(Qt::WA_DeleteOnClose, false);
     m_chart_pane->installEventFilter(this);
@@ -304,7 +304,7 @@ void SSSMetadataWindow::buildUi()
 
     root->addWidget(outer_vsplit, 1);
 
-    // ── Connections ───────────────────────────────────────────────────────────
+    // -- Connections -----------------------------------------------------------
     connect(m_visible_only_cb, &QCheckBox::toggled,
             this, &SSSMetadataWindow::onShowOnlyVisibleToggled);
     connect(m_table, &QTableView::customContextMenuRequested,
@@ -313,9 +313,9 @@ void SSSMetadataWindow::buildUi()
             this, &SSSMetadataWindow::onSelectionChanged);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Selection status bar
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void SSSMetadataWindow::onSelectionChanged()
 {

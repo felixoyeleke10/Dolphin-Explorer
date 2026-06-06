@@ -90,7 +90,7 @@ void MapView::paintGraticule(QPainter& p) const
     const double firstLon = std::ceil(lonMin / gridStepLon) * gridStepLon;
     const double firstLat = std::ceil(latMin / gridStepLat) * gridStepLat;
 
-    // ── Grid lines ────────────────────────────────────────────────────────────
+    // -- Grid lines ------------------------------------------------------------
     p.setRenderHint(QPainter::Antialiasing, false);
     p.setPen(QPen(m_grid_color, 1));
 
@@ -112,7 +112,7 @@ void MapView::paintGraticule(QPainter& p) const
         p.drawLine(QPointF(0.0, py), QPointF(width(), py));
     }
 
-    // ── Coordinate labels ─────────────────────────────────────────────────────
+    // -- Coordinate labels -----------------------------------------------------
     // Resolve coordinate display mode:
     //   fmt 0 = Auto  → show degrees when geographic, metres when projected
     //   fmt 1 = Degrees  → always geographic (degrees); no-op when projected
@@ -268,7 +268,7 @@ void MapView::paintNavTrack(QPainter& p) const
     drawTrackPts(m_nav_track, kNavTrackLine,   1.5f);
 }
 
-// ── paintProfileTracks ────────────────────────────────────────────────────────
+// -- paintProfileTracks --------------------------------------------------------
 //
 // Draws a per-segment colored ribbon over the nav line for Profile-kind layers.
 // Color maps bottom depth: shallow = blue, mid = green, deep = red.

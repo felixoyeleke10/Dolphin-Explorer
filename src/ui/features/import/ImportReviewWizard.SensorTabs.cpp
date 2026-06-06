@@ -1,4 +1,4 @@
-﻿// ImportReviewWizard.SensorTabs.cpp — Heading, Channels, and Header tab rebuilds.
+// ImportReviewWizard.SensorTabs.cpp — Heading, Channels, and Header tab rebuilds.
 #include "ui/features/import/ImportReviewWizard.h"
 #include "ui/shell/Theme.h"
 #include "ui/shared/UiUtils.h"
@@ -12,9 +12,9 @@
 
 namespace dolphin::ui {
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Heading tab
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void ImportReviewWizard::rebuildHeadingTab()
 {
@@ -83,9 +83,9 @@ void ImportReviewWizard::rebuildHeadingTab()
     m_hdg_layout->addStretch();
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Channels tab
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void ImportReviewWizard::rebuildChannelsTab()
 {
@@ -142,9 +142,9 @@ void ImportReviewWizard::rebuildChannelsTab()
     m_chn_layout->addStretch();
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Header tab
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void ImportReviewWizard::rebuildHeaderTab()
 {

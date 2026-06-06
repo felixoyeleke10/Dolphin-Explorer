@@ -22,7 +22,7 @@ class QOpenGLTexture;
 
 namespace dolphin::ui {
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  MapView3D — true OpenGL 3D map renderer (Phase 1 + 2 + 3).
 //
 //  Renders in a Z-up, right-hand, local-metre coordinate system:
@@ -38,7 +38,7 @@ namespace dolphin::ui {
 //
 //  Camera: orbit (left-drag = yaw/pitch, scroll = distance,
 //                 right-drag = pan target).
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 class MapView3D : public QOpenGLWidget, protected QOpenGLFunctions_3_3_Core {
     Q_OBJECT
@@ -46,17 +46,17 @@ public:
     explicit MapView3D(QWidget* parent = nullptr);
     ~MapView3D() override;
 
-    // ── Scene origin ──────────────────────────────────────────────────────
+    // -- Scene origin ------------------------------------------------------
     void setSceneOrigin(double lon_or_x, double lat_or_y, bool is_projected);
     bool hasOrigin() const { return m_has_origin; }
 
-    // ── Nav-track API ─────────────────────────────────────────────────────
+    // -- Nav-track API -----------------------------------------------------
     void updateNavTrack(const std::string& layer_id,
                         const LayerMapData& data,
                         QColor color);
     void removeLayer(const std::string& layer_id);
 
-    // ── Terrain API (Phase 2) ─────────────────────────────────────────────
+    // -- Terrain API (Phase 2) ---------------------------------------------
     // Load an XYZ/CSV bathy file in a background thread; render as depth mesh.
     // z_is_depth: true → raw Z = positive depth → stored as negative altitude.
     // Does NOT require hasOrigin() — auto-detects origin from the data centre.
@@ -65,7 +65,7 @@ public:
     void removeTerrainLayer(const std::string& layer_id);
     int  terrainLayerCount() const { return static_cast<int>(m_terrain_layers.size()); }
 
-    // ── Profile curtain API (Phase 2) ────────────────────────────────────
+    // -- Profile curtain API (Phase 2) ------------------------------------
     // Render the SBP bottom-depth scalar as a colored vertical curtain along
     // the nav track.  data.kind must be LayerMapKind::Profile.
     // palette_index: SbpPalette::Index (0=Greyscale, 1=InvGrey, 2=Seismic, 3=Thermal).
@@ -74,7 +74,7 @@ public:
     void removeProfileCurtain(const std::string& layer_id);
     int  curtainLayerCount() const { return static_cast<int>(m_curtain_layers.size()); }
 
-    // ── Sonar drape API (Phase 3) ─────────────────────────────────────────
+    // -- Sonar drape API (Phase 3) -----------------------------------------
     // Drape a sidescan preview image onto all loaded terrain meshes (or onto a
     // flat reference quad at z=0 when no terrain is present).
     //
@@ -93,10 +93,10 @@ public:
     void removeSonarDrape(const std::string& layer_id);
     int  drapeLayerCount() const { return static_cast<int>(m_drape_layers.size()); }
 
-    // ── Scene ─────────────────────────────────────────────────────────────
+    // -- Scene -------------------------------------------------------------
     void clearScene();
 
-    // ── Display ───────────────────────────────────────────────────────────
+    // -- Display -----------------------------------------------------------
     void setVerticalExaggeration(float ve);
     float verticalExaggeration() const { return m_v_exag; }
     void setShowGrid          (bool show);
@@ -109,13 +109,13 @@ public:
     void setActiveLayer    (const std::string& layer_id);
     void setSelectedLayers (const std::vector<std::string>& ids);
 
-    // ── Camera ────────────────────────────────────────────────────────────
+    // -- Camera ------------------------------------------------------------
     void resetCamera();
     void fitToScene();
     // Returns the layer under a screen point, or empty if no 3D layer was hit.
     std::string hitTestLayer(QPoint px) const;
 
-    // ── Tool mode ─────────────────────────────────────────────────────────
+    // -- Tool mode ---------------------------------------------------------
     // Values intentionally match AppState::ToolMode: Pan=0, Select=1,
     // Zoom=2, Measure=3, ContactPick=4.
     void setToolMode(int mode);
@@ -150,7 +150,7 @@ protected:
     void contextMenuEvent  (QContextMenuEvent*)  override;
 
 private:
-    // ── Nav layer ─────────────────────────────────────────────────────────
+    // -- Nav layer ---------------------------------------------------------
     struct NavLayer3D {
         std::string          id;
         QColor               color;
@@ -164,7 +164,7 @@ private:
         bool  has_bbox  = false;
     };
 
-    // ── Terrain mesh layer ────────────────────────────────────────────────
+    // -- Terrain mesh layer ------------------------------------------------
     struct TerrainMesh3D {
         std::string        id;
         std::vector<float> cpu_verts;       // full-res xyz triples, pending upload
@@ -179,7 +179,7 @@ private:
         bool               dirty = false;
     };
 
-    // ── Profile curtain layer (SBP Phase 2) ──────────────────────────────
+    // -- Profile curtain layer (SBP Phase 2) ------------------------------
     struct CurtainLayer3D {
         std::string        id;
         std::vector<float> cpu_verts;      // xyzA quads (4 floats/vertex), GL_TRIANGLES
@@ -193,7 +193,7 @@ private:
         bool  visible = true;
     };
 
-    // ── Sonar drape layer ─────────────────────────────────────────────────
+    // -- Sonar drape layer -------------------------------------------------
     struct SonarDrape3D {
         std::string       id;
         // CPU side — set by setSonarDrape(), consumed by uploadPendingDrapes()
@@ -214,7 +214,7 @@ private:
         int               outline_vert_count = 0;
     };
 
-    // ── Geometry builders ─────────────────────────────────────────────────
+    // -- Geometry builders -------------------------------------------------
     void buildNavMergedVbo();   // rebuilds single VBO for all nav layers
     void buildCurtainVbo(CurtainLayer3D& C);
     void rebuildAllCurtainVbos();
@@ -225,7 +225,7 @@ private:
     void buildDrapeHullVbo(SonarDrape3D& d); // swath polygon outline VBO from pending_hull
     void buildSurveyOutline();               // rectangle outline of overall data footprint
 
-    // ── Draw phases ───────────────────────────────────────────────────────
+    // -- Draw phases -------------------------------------------------------
     void drawGrid();
     void drawNavLayers();
     void drawCurtains();
@@ -247,12 +247,12 @@ private:
     // (lon, lat) in the display CRS on success.
     bool groundHit(QPoint px, QPointF& geo) const;
 
-    // ── Flat-colour shader (axes / nav tracks / survey outline) ──────────
+    // -- Flat-colour shader (axes / nav tracks / survey outline) ----------
     QOpenGLShaderProgram* m_shader    = nullptr;
     GLint m_loc_mvp   = -1;
     GLint m_loc_color = -1;
 
-    // ── Procedural grid shader (infinite ground plane, fragment-computed) ─
+    // -- Procedural grid shader (infinite ground plane, fragment-computed) -
     QOpenGLShaderProgram* m_grid_shader = nullptr;
     GLint m_loc_grid_invvp     = -1;
     GLint m_loc_grid_camxy     = -1;
@@ -263,13 +263,13 @@ private:
     GLint m_loc_grid_minorcol  = -1;
     GLint m_loc_grid_majorcol  = -1;
 
-    // ── Curtain shader (SBP depth ribbon — SbpPalette by amplitude) ─────
+    // -- Curtain shader (SBP depth ribbon — SbpPalette by amplitude) -----
     QOpenGLShaderProgram* m_curtain_shader = nullptr;
     GLint m_loc_curt_mvp     = -1;
     GLint m_loc_curt_palette = -1;
     GLint m_loc_curt_vexag   = -1;
 
-    // ── Terrain shader (depth-coloured mesh + screen-space lighting) ─────
+    // -- Terrain shader (depth-coloured mesh + screen-space lighting) -----
     QOpenGLShaderProgram* m_terrain_shader = nullptr;
     GLint m_loc_terr_mvp    = -1;
     GLint m_loc_terr_zmin   = -1;
@@ -277,7 +277,7 @@ private:
     GLint m_loc_terr_vexag  = -1;
     GLint m_loc_terr_campos = -1;
 
-    // ── Drape shader (textured sonar image onto terrain/quad) ─────────────
+    // -- Drape shader (textured sonar image onto terrain/quad) -------------
     QOpenGLShaderProgram* m_drape_shader = nullptr;
     GLint m_loc_drape_mvp    = -1;
     GLint m_loc_drape_origin = -1;   // vec2: SW corner in local metres
@@ -286,7 +286,7 @@ private:
     GLint m_loc_drape_tex    = -1;   // sampler2D: texture unit 0
     GLint m_loc_drape_alpha  = -1;
 
-    // ── Shared VAO + static VBOs ──────────────────────────────────────────
+    // -- Shared VAO + static VBOs ------------------------------------------
     QOpenGLVertexArrayObject m_vao;
     QOpenGLBuffer m_grid_quad_vbo  { QOpenGLBuffer::VertexBuffer }; // static NDC quad
     QOpenGLBuffer m_survey_vbo     { QOpenGLBuffer::VertexBuffer };
@@ -296,7 +296,7 @@ private:
     bool m_gl_ready     = false;
     bool m_survey_dirty = false;
 
-    // ── Data layers ───────────────────────────────────────────────────────
+    // -- Data layers -------------------------------------------------------
     std::vector<NavLayer3D>     m_layers;
     std::vector<CurtainLayer3D> m_curtain_layers;
     std::vector<TerrainMesh3D>  m_terrain_layers;
@@ -306,7 +306,7 @@ private:
     bool m_terrain_dirty  = false;
     bool m_drapes_dirty   = false;
 
-    // ── Scene ─────────────────────────────────────────────────────────────
+    // -- Scene -------------------------------------------------------------
     double      m_origin_x      = 0.0;
     double      m_origin_y      = 0.0;
     bool        m_has_origin    = false;
@@ -328,29 +328,31 @@ private:
     float         m_fps_avg     = 0.f;
     int           m_fps_frames  = 0;
 
-    // ── Camera ────────────────────────────────────────────────────────────
+    // -- Camera ------------------------------------------------------------
     Camera3D m_camera;
 
-    // ── Tool mode ─────────────────────────────────────────────────────────
+    // -- Tool mode ---------------------------------------------------------
     // 0=Pan, 1=Select, 2=Zoom, 3=Measure, 4=ContactPick (matches AppState::ToolMode).
     int m_tool_mode = 0;
 
-    // ── Mouse ─────────────────────────────────────────────────────────────
+    // -- Mouse -------------------------------------------------------------
     QPoint m_drag_start;
     float  m_drag_yaw0    = 0.f;
     float  m_drag_pitch0  = 0.f;
-    bool   m_orbiting     = false;
-    bool   m_orbit_moved  = false;  // true once left-drag exceeds the click threshold
+    bool   m_orbiting          = false;
+    bool   m_orbit_moved       = false;  // true once right-drag exceeds click threshold
+    bool   m_had_orbit         = false;  // survives mouseRelease; cleared on next press
 
     QPoint    m_pan_start;
     QVector3D m_pan_target0;
-    bool      m_panning   = false;
-    bool      m_pan_moved = false;
+    bool      m_panning          = false;
+    bool      m_pan_moved        = false;
+    bool      m_camera_user_moved = false;  // suppresses auto-fit after user pans/orbits
 
     // Screen-space layer pick; emits layerClicked / layersSelected.
     void pickAt(QPoint px);
 
-    // ── Selection ─────────────────────────────────────────────────────────
+    // -- Selection ---------------------------------------------------------
     std::vector<std::string> m_selected_layer_ids;
 };
 

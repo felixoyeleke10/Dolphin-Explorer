@@ -16,7 +16,8 @@ core::ArtifactIndex ParsedCacheReader::buildIndex(ProgressFn progress)
     double first_ts = -1.0;
     double last_ts  = 0.0;
     bool valid = true;
-    m_meta.bottom_pick_src_mask = 0;
+    m_meta.bottom_pick_src_mask  = 0;
+    m_meta.correction_flags_seen = 0;
 
     while (true) {
         uint64_t offset = 0;
@@ -54,7 +55,17 @@ core::ArtifactIndex ParsedCacheReader::buildIndex(ProgressFn progress)
             if (readPod(m_file, ph)) {
                 if (ph.bottom_pick_source == 1) m_meta.bottom_pick_src_mask |= 0x01;
                 else if (ph.bottom_pick_source == 2) m_meta.bottom_pick_src_mask |= 0x02;
+                m_meta.correction_flags_seen |= ph.correction_flags;
             }
+        }
+
+        // For v26+ subbottom records, accumulate SBP correction flags alongside SSS ones.
+        if (static_cast<core::ArtifactType>(header.type) == core::ArtifactType::SubBottom
+                && m_file_version >= 26
+                && header.payload_size >= sizeof(CacheSubBottomPayloadHeader)) {
+            CacheSubBottomPayloadHeader ph{};
+            if (readPod(m_file, ph))
+                m_meta.correction_flags_seen |= ph.correction_flags;
         }
 
         const double ts_s = header.timestamp_us * 1e-6;
@@ -66,6 +77,10 @@ core::ArtifactIndex ParsedCacheReader::buildIndex(ProgressFn progress)
             break;
         }
     }
+
+    // buildIndex() leaves the file pointer at an untracked position;
+    // invalidate so readArtifact() always seeks on its first call after this.
+    m_cur_pos = UINT64_MAX;
 
     if (!valid) {
         m_meta = {};

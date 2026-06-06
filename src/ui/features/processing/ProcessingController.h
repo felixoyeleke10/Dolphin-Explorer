@@ -3,6 +3,7 @@
 #include <QString>
 #include <memory>
 #include <string>
+#include "core/ArtifactIndex.h"
 
 namespace dolphin::app {
 class DataLayer;
@@ -41,6 +42,14 @@ signals:
     void layerRunStarted (const std::string& layer_id, const QString& label);
     void layerRunFinished(const std::string& layer_id, const QString& summary);
     void layerRunFailed  (const std::string& layer_id, const QString& error);
+
+    // Emitted after a successful run when processed data has been persisted.
+    // Consumers should redirect the layer's artifact store to proc_path so
+    // the next load reads the processed output instead of the raw cache.
+    void processingPersisted(const std::string& layer_id,
+                             const std::string& proc_path,
+                             const core::ArtifactIndex& proc_index,
+                             bool slant_range_corrected);
 
 private slots:
     void onRunStarted(const std::string& layer_id);

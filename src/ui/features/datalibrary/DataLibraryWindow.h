@@ -56,20 +56,20 @@ private:
     void switchPage(Page page);
     void setModalityFilter(int modality);   // -1 = All Types
 
-    // ── Core ─────────────────────────────────────────────────────────────────
+    // -- Core -----------------------------------------------------------------
     app::Project*   m_project         = nullptr;
     QStackedWidget* m_stack           = nullptr;
     Page            m_current_page    = PageLayers;
     int             m_modality_filter = -1;
     bool            m_compact_rows    = false;
 
-    // ── Toolbar ───────────────────────────────────────────────────────────────
+    // -- Toolbar ---------------------------------------------------------------
     QToolButton*    m_tab_layers      = nullptr;
     QToolButton*    m_tab_contacts    = nullptr;
     QToolButton*    m_tab_issues      = nullptr;
     QToolButton*    m_modality_btn    = nullptr;
 
-    // ── Left panel — filters ─────────────────────────────────────────────────
+    // -- Left panel — filters -------------------------------------------------
     QRadioButton*   m_match_any       = nullptr;
     QCheckBox*      m_text_chk        = nullptr;
     QLineEdit*      m_filter_text     = nullptr;
@@ -79,12 +79,12 @@ private:
     QCheckBox*      m_state_failed    = nullptr;
     QCheckBox*      m_state_pending   = nullptr;
 
-    // ── Center — tables ───────────────────────────────────────────────────────
+    // -- Center — tables -------------------------------------------------------
     QTableWidget*   m_layers_table    = nullptr;
     QTableWidget*   m_contacts_table  = nullptr;
     QTableWidget*   m_issues_table    = nullptr;
 
-    // ── Right panel — column visibility ──────────────────────────────────────
+    // -- Right panel — column visibility --------------------------------------
     QListWidget*    m_col_list        = nullptr;
 };
 

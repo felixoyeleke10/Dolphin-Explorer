@@ -6,9 +6,9 @@ QString qssShell()
 {
     return QString(
 
-        // ─────────────────────────────────────────────────────────────────────
+        // ---------------------------------------------------------------------
         // Shell structure
-        // ─────────────────────────────────────────────────────────────────────
+        // ---------------------------------------------------------------------
 
         "#shellRoot { background: @bg; }"
 
@@ -115,7 +115,7 @@ QString qssShell()
         "  font-weight: 700; letter-spacing: 1.2px; background: transparent;"
         "}"
 
-        // ── Map viewport overlay buttons (2D/3D toggle + terrain load) ─────────
+        // -- Map viewport overlay buttons (2D/3D toggle + terrain load) ---------
         // Floating pill buttons overlaid on the map canvas — dark semi-transparent
         // background so they read against both sea and terrain imagery.
         "QToolButton#map3DBtn {"
@@ -172,7 +172,7 @@ QString qssShell()
         "#propertiesPanel QScrollArea QScrollBar::add-line:vertical,"
         "#propertiesPanel QScrollArea QScrollBar::sub-line:vertical { height: 0; }"
 
-        // ── Properties/Controls splitter handle ───────────────────────────────
+        // -- Properties/Controls splitter handle -------------------------------
         // Must be styled explicitly — without this rule Qt's CSS engine makes the
         // handle transparent and it stops receiving mouse events entirely.
         "QSplitter#propsSplitter::handle:vertical {"
@@ -187,9 +187,9 @@ QString qssShell()
         "  background: @accentSoft;"
         "}"
 
-        // ─────────────────────────────────────────────────────────────────────
+        // ---------------------------------------------------------------------
         // Main toolbar
-        // ─────────────────────────────────────────────────────────────────────
+        // ---------------------------------------------------------------------
 
         "QToolBar#mainToolBar {"
         "  background: @bgEl; border: none;"
@@ -210,9 +210,9 @@ QString qssShell()
         "QToolBar#mainToolBar QToolButton:disabled { background: transparent; }"
         "QToolBar#mainToolBar QToolButton::menu-indicator { image: none; }"
 
-        // ─────────────────────────────────────────────────────────────────────
+        // ---------------------------------------------------------------------
         // Menu bar + menus
-        // ─────────────────────────────────────────────────────────────────────
+        // ---------------------------------------------------------------------
 
         "QMenuBar {"
         "  background: @bgEl; color: @textSecond;"
@@ -237,9 +237,9 @@ QString qssShell()
         "QMenu::item:selected { background: rgba(@accentRgb,0.3); }"
         "QMenu::separator { height: 1px; background: @borderMenu; margin: 4px 0; }"
 
-        // ─────────────────────────────────────────────────────────────────────
+        // ---------------------------------------------------------------------
         // Status bar
-        // ─────────────────────────────────────────────────────────────────────
+        // ---------------------------------------------------------------------
 
         "QStatusBar {"
         "  background: @bgEl; border-top: 1px solid @border;"
@@ -267,11 +267,11 @@ QString qssShell()
         "QLabel#aiDot[aiStatus=\"ready\"]   { background: @success; }"
         "QLabel#aiDot[aiStatus=\"active\"]  { background: @caution; }"
 
-        // ─────────────────────────────────────────────────────────────────────
+        // ---------------------------------------------------------------------
         // Title bar search + window control buttons
-        // ─────────────────────────────────────────────────────────────────────
+        // ---------------------------------------------------------------------
 
-        // ── Unified command / Conversation / Assistant pill ──────────────────────
+        // -- Unified command / Conversation / Assistant pill ----------------------
         "QFrame#uniBar {"
         "  background: @overlayEl;"
         "  border: 1px solid @overlayHov;"
@@ -305,7 +305,7 @@ QString qssShell()
         "QPushButton#winBtnClose:hover   { background: @closeBtnHover; color: @textPrimary; }"
         "QPushButton#winBtnClose:pressed { background: rgba(196,43,28,0.80); color: @textPrimary; }"
 
-        // ── Nav arrow buttons (back / forward) ────────────────────────────────
+        // -- Nav arrow buttons (back / forward) --------------------------------
         "QPushButton#navBtn {"
         "  background: transparent; border: none; border-radius: @radius2;"
         "  color: @textDisabled; font-family: @font; font-size: 16px; font-weight: 600; padding: 0;"
@@ -314,7 +314,7 @@ QString qssShell()
         "QPushButton#navBtn:enabled:hover    { background: rgba(255,255,255,0.09); color: @textPrimary; }"
         "QPushButton#navBtn:enabled:pressed  { background: @overlayMut; }"
 
-        // ── Buttons inside the unified pill ──────────────────────────────────
+        // -- Buttons inside the unified pill ----------------------------------
         // Conversation — icon-only, no text padding
         "QPushButton#uniBarBtn {"
         "  background: transparent; border: none; border-radius: 5px;"
@@ -330,7 +330,7 @@ QString qssShell()
         "QPushButton#uniBarBtnAccent:hover   { background: rgba(@accentRgb,0.10); color: @textPrimary; }"
         "QPushButton#uniBarBtnAccent:pressed { background: rgba(@accentRgb,0.06); }"
 
-        // ── Layout panel toggle buttons (corner widget, left of min/max/close) ──
+        // -- Layout panel toggle buttons (corner widget, left of min/max/close) --
         // Match win-control button treatment exactly — same size, same hover colours.
         "QPushButton#layoutToggleBtn {"
         "  background: transparent; border: none;"
@@ -347,7 +347,7 @@ QString qssShell()
         // Corner widget must explicitly match the menu bar surface
         "QWidget#titleBarCorner { background: @bgEl; }"
 
-        // ── Conversation panel ────────────────────────────────────────────────
+        // -- Conversation panel ------------------------------------------------
         "QFrame#convPanel {"
         "  background: @bgPanel;"
         "  border: 1px solid @border;"
@@ -394,7 +394,7 @@ QString qssShell()
         "QPushButton#convSendBtn:hover   { background: rgba(@accentRgb,0.30); color: @textPrimary; }"
         "QPushButton#convSendBtn:pressed { background: rgba(@accentRgb,0.12); }"
 
-        // ── Embedded panel chat (right panel Chats tab) ───────────────────────
+        // -- Embedded panel chat (right panel Chats tab) -----------------------
         "QWidget#panelChat { background: @bgPanel; }"
         // Header
         "QWidget#panelChatHdr { background: @bgEl; border-bottom: 1px solid @border; }"

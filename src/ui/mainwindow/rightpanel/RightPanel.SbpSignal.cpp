@@ -1,4 +1,4 @@
-﻿#include "ui/mainwindow/rightpanel/RightPanel.SbpSignal.h"
+#include "ui/mainwindow/rightpanel/RightPanel.SbpSignal.h"
 #include "ui/shell/Theme.h"
 
 #include <QCheckBox>
@@ -36,7 +36,7 @@ SbpSignalModule::SbpSignalModule(QWidget* parent) : QWidget(parent)
     vl->setSpacing(Theme::kSpacing1);
     scroll->setWidget(container);
 
-    // ── Envelope ───────────────────────────────────────────────────────────────
+    // -- Envelope ---------------------------------------------------------------
     m_envelope_en = new QCheckBox(tr("Envelope"), container);
     m_envelope_en->setObjectName("ctrlToggle");
     m_envelope_en->setToolTip(
@@ -47,7 +47,7 @@ SbpSignalModule::SbpSignalModule(QWidget* parent) : QWidget(parent)
            "Requires Apply."));
     vl->addWidget(m_envelope_en);
 
-    // ── DC Removal ─────────────────────────────────────────────────────────────
+    // -- DC Removal -------------------------------------------------------------
     auto* div1 = new QFrame(container); div1->setObjectName("ctrlDivider");
     div1->setFixedHeight(Theme::kSepSz); vl->addWidget(div1);
 
@@ -60,7 +60,7 @@ SbpSignalModule::SbpSignalModule(QWidget* parent) : QWidget(parent)
            "Requires Apply."));
     vl->addWidget(m_dc_removal_en);
 
-    // ── Bandpass ───────────────────────────────────────────────────────────────
+    // -- Bandpass ---------------------------------------------------------------
     auto* div2 = new QFrame(container); div2->setObjectName("ctrlDivider");
     div2->setFixedHeight(Theme::kSepSz); vl->addWidget(div2);
 
@@ -117,7 +117,7 @@ SbpSignalModule::SbpSignalModule(QWidget* parent) : QWidget(parent)
 
     vl->addStretch(1);
 
-    // ── Apply buttons (pinned below scroll) ───────────────────────────────────
+    // -- Apply buttons (pinned below scroll) -----------------------------------
     auto* sep = new QFrame(this);
     sep->setFrameShape(QFrame::HLine);
     sep->setObjectName("ctrlDivider");

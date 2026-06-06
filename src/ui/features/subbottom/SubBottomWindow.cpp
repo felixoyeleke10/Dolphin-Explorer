@@ -21,6 +21,7 @@
 #include <QScrollBar>
 #include <QSettings>
 #include <QSignalBlocker>
+#include <QTimer>
 #include <QToolButton>
 #include <QVBoxLayout>
 
@@ -55,7 +56,7 @@ SubBottomWindow::SubBottomWindow(AppState* app_state, QWidget* parent)
 
     buildToolbar();
 
-    // ── Content: inspector | view+scroll | display panel ──────────────────
+    // -- Content: inspector | view+scroll | display panel ------------------
     auto* content = new QHBoxLayout;
     content->setContentsMargins(0, 0, 0, 0);
     content->setSpacing(0);
@@ -109,7 +110,7 @@ SubBottomWindow::SubBottomWindow(AppState* app_state, QWidget* parent)
 
     buildStatusBar();  // inserts status bar into root
 
-    // ── Signal wiring ──────────────────────────────────────────────────────
+    // -- Signal wiring ------------------------------------------------------
 
     // Inspector → view scale
     connect(m_inspector, &SubBottomInspectorPanel::traceWidthChanged,
@@ -171,8 +172,44 @@ SubBottomWindow::SubBottomWindow(AppState* app_state, QWidget* parent)
     connect(m_view, &SubBottomView::contextMenuRequested,
             this, &SubBottomWindow::onContextMenu);
 
+    // Restore view scale and overlay style from persisted QSettings.
+    {
+        QSettings qs;
+        const int   px_trace  = qs.value(QStringLiteral("sbpView/pxPerTrace"),  2).toInt();
+        const float px_sample = static_cast<float>(
+            qs.value(QStringLiteral("sbpView/pxPerSample"), 0.5).toDouble());
+        m_view->setPxPerTrace(px_trace);
+        m_view->setPxPerSample(px_sample);
+
+        SubBottomViewStyle st;
+        st.xhair_show       = qs.value(QStringLiteral("sbpStyle/xhairShow"),    st.xhair_show).toBool();
+        st.xhair_color      = QColor(qs.value(QStringLiteral("sbpStyle/xhairColor"),
+                                               st.xhair_color.name()).toString());
+        st.xhair_style      = static_cast<Qt::PenStyle>(
+            qs.value(QStringLiteral("sbpStyle/xhairStyle"),
+                     static_cast<int>(st.xhair_style)).toInt());
+        st.xhair_width      = qs.value(QStringLiteral("sbpStyle/xhairWidth"),   st.xhair_width).toInt();
+        st.xhair_opacity    = qs.value(QStringLiteral("sbpStyle/xhairOpacity"), st.xhair_opacity).toInt();
+        st.grid_show        = qs.value(QStringLiteral("sbpStyle/gridShow"),     st.grid_show).toBool();
+        st.grid_color       = QColor(qs.value(QStringLiteral("sbpStyle/gridColor"),
+                                               st.grid_color.name()).toString());
+        st.grid_opacity     = qs.value(QStringLiteral("sbpStyle/gridOpacity"),  st.grid_opacity).toInt();
+        st.grid_interval_ms = static_cast<float>(
+            qs.value(QStringLiteral("sbpStyle/gridInterval"), 0.0).toDouble());
+        st.bt_color         = QColor(qs.value(QStringLiteral("sbpStyle/btColor"),
+                                               st.bt_color.name()).toString());
+        st.bt_thickness     = qs.value(QStringLiteral("sbpStyle/btThickness"),  st.bt_thickness).toInt();
+        m_view->setViewStyle(st);
+    }
+
     // Push restored display preferences to the view now that all connections are live.
     m_display->notifyParamsChanged();
+
+    m_proc_debounce = new QTimer(this);
+    m_proc_debounce->setSingleShot(true);
+    m_proc_debounce->setInterval(80);
+    connect(m_proc_debounce, &QTimer::timeout,
+            this,             &SubBottomWindow::onProcDebounce);
 }
 
 void SubBottomWindow::closeEvent(QCloseEvent* e)

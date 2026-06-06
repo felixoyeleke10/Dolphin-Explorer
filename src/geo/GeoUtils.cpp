@@ -101,7 +101,7 @@ std::optional<UtmZone> parseUtmZone(std::string_view crs)
 
 } // namespace (anonymous)
 
-// ── Public: latLonToUtm ───────────────────────────────────────────────────────
+// -- Public: latLonToUtm -------------------------------------------------------
 
 bool latLonToUtm(double lat_deg, double lon_deg,
                  int& zone_out, bool& north_out,

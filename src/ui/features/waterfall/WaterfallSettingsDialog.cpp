@@ -1,4 +1,4 @@
-﻿// WaterfallSettingsDialog.cpp — professional tabbed settings for WaterfallWindow.
+// WaterfallSettingsDialog.cpp — professional tabbed settings for WaterfallWindow.
 
 #include "ui/features/waterfall/WaterfallSettingsDialog.h"
 #include "render/sonar/SSSPalette.h"
@@ -25,9 +25,9 @@ namespace dolphin::ui {
 static constexpr int kMinW = 460;
 static constexpr int kMinH = 380;
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Helpers
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 static QGroupBox* makeGroup(const QString& title, QWidget* parent)
 {
@@ -45,9 +45,9 @@ static QFormLayout* makeForm(QGroupBox* g)
     return f;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Construction
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 WaterfallSettingsDialog::WaterfallSettingsDialog(const Settings& cur, QWidget* parent)
     : QDialog(parent)
@@ -95,7 +95,7 @@ WaterfallSettingsDialog::WaterfallSettingsDialog(const Settings& cur, QWidget* p
     m_grid_opacity_spin->setValue(cur.overlay.grid_opacity);
     m_grid_interval_spin->setValue(static_cast<double>(cur.overlay.grid_interval_m));
 
-    // ── Buttons ───────────────────────────────────────────────────────────
+    // -- Buttons -----------------------------------------------------------
     root->addSpacing(8);
     auto* bbox = new QDialogButtonBox(
         QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
@@ -108,9 +108,9 @@ WaterfallSettingsDialog::WaterfallSettingsDialog(const Settings& cur, QWidget* p
     connect(bbox, &QDialogButtonBox::rejected, this, &QDialog::reject);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Tab builders
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void WaterfallSettingsDialog::buildDisplayTab(QTabWidget* tabs)
 {
@@ -119,7 +119,7 @@ void WaterfallSettingsDialog::buildDisplayTab(QTabWidget* tabs)
     vbox->setContentsMargins(Theme::kSpacing3, Theme::kSpacing3, Theme::kSpacing3, Theme::kSpacing3);
     vbox->setSpacing(10);
 
-    // ── Channel ───────────────────────────────────────────────────────────
+    // -- Channel -----------------------------------------------------------
     auto* g1 = makeGroup(tr("Sonar Channel"), page);
     auto* f1 = makeForm(g1);
 
@@ -139,7 +139,7 @@ void WaterfallSettingsDialog::buildDisplayTab(QTabWidget* tabs)
     f1->addRow(tr("Display channel:"), m_channel_combo);
     vbox->addWidget(g1);
 
-    // ── Overlays ──────────────────────────────────────────────────────────
+    // -- Overlays ----------------------------------------------------------
     auto* g2 = makeGroup(tr("Display Overlays"), page);
     auto* f2 = makeForm(g2);
 
@@ -315,9 +315,9 @@ void WaterfallSettingsDialog::buildGridTab(QTabWidget* tabs)
     tabs->addTab(page, tr("Grid"));
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Read-back
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 WaterfallSettingsDialog::Settings WaterfallSettingsDialog::currentSettings() const
 {
@@ -341,9 +341,9 @@ WaterfallSettingsDialog::Settings WaterfallSettingsDialog::currentSettings() con
     return s;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Colour button swatch helper
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 // static
 void WaterfallSettingsDialog::updateColorButton(QPushButton* btn, const QColor& c)
@@ -352,9 +352,9 @@ void WaterfallSettingsDialog::updateColorButton(QPushButton* btn, const QColor& 
     btn->setText(c.name().toUpper());
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Persist / Apply
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void WaterfallSettingsDialog::onApply()
 {
@@ -375,9 +375,9 @@ void WaterfallSettingsDialog::onApply()
     emit applied(s);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  loadDefaults — restores persisted settings for WaterfallWindow constructor
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 // static
 WaterfallSettingsDialog::Settings WaterfallSettingsDialog::loadDefaults()

@@ -1,4 +1,4 @@
-﻿// AppSettingsDialog.cpp — constructor, controls fill/read, apply, load defaults.
+// AppSettingsDialog.cpp — constructor, controls fill/read, apply, load defaults.
 #include "ui/mainwindow/AppSettingsDialog.h"
 #include "ui/shell/Theme.h"
 
@@ -25,9 +25,9 @@ static constexpr int kSettingsSidebarW = 168;
 static constexpr int kMinW             = 700;
 static constexpr int kMinH             = 520;
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Constructor
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 AppSettingsDialog::AppSettingsDialog(const Settings& current, QWidget* parent)
     : QDialog(parent)
@@ -55,7 +55,7 @@ AppSettingsDialog::AppSettingsDialog(const Settings& current, QWidget* parent)
     m_nav = new QListWidget(sidebar);
     m_nav->setObjectName("settingsNav");
     for (const auto* label : { "General", "Appearance", "Performance",
-                                "Data", "Export", "About" })
+                                "Data", "Export", "Map", "About" })
         m_nav->addItem(tr(label));
     sbl->addWidget(m_nav);
     hl->addWidget(sidebar);
@@ -66,6 +66,7 @@ AppSettingsDialog::AppSettingsDialog(const Settings& current, QWidget* parent)
     m_stack->addWidget(buildPerformancePage());
     m_stack->addWidget(buildDataPage());
     m_stack->addWidget(buildExportPage());
+    m_stack->addWidget(buildMapPage());
     m_stack->addWidget(buildAboutPage());
     hl->addWidget(m_stack, 1);
 
@@ -95,11 +96,24 @@ AppSettingsDialog::AppSettingsDialog(const Settings& current, QWidget* parent)
     root->addWidget(btn_box);
 
     fillControls(current);
+
+    // Override the palette combo with the currently active SSS palette so the
+    // dialog always shows what is actually rendered, not just the app-level default.
+    // These can diverge when the user changes palette via the layer inspector.
+    {
+        QSettings qs;
+        const QVariant v = qs.value(QStringLiteral("sss/paletteIdx"));
+        if (v.isValid()) {
+            const int idx = v.toInt();
+            if (idx >= 0 && idx < m_palette_combo->count())
+                m_palette_combo->setCurrentIndex(idx);
+        }
+    }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Controls fill / read-back
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void AppSettingsDialog::fillControls(const Settings& s)
 {
@@ -183,9 +197,9 @@ AppSettingsDialog::Settings AppSettingsDialog::currentSettings() const
     return s;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Apply / persist
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void AppSettingsDialog::onApply()
 {
@@ -219,15 +233,16 @@ void AppSettingsDialog::onApply()
     // Mirror to legacy SettingsDialog keys so existing readers (SidescanViewController,
     // RightPanel.Display, LayerInspectorPage) pick up the change without restart.
     qs.setValue("display/units", s.units_system == 0 ? "m" : "ft");
-    const char* palette_name = "Gray";
-    switch (s.default_palette) {
-    case 0: palette_name = "Hot";    break;  // Thermal
-    case 1: palette_name = "Gray";   break;  // Greyscale
-    case 2: palette_name = "Ocean";  break;
-    case 3: palette_name = "Copper"; break;
-    default: break;
-    }
+    static constexpr const char* kPaletteNames[] = {
+        "Thermal", "Gray", "Ocean", "Copper",
+        "Inverted", "Viridis", "Plasma", "Midnight", "Sand", "Spectrum"
+    };
+    const char* palette_name = (s.default_palette >= 0 && s.default_palette < 10)
+        ? kPaletteNames[s.default_palette] : "Gray";
     qs.setValue("display/palette", QLatin1String(palette_name));
+    // Also write the SSS-specific key so the palette survives an app restart
+    // even if the user never opened the layer inspector.
+    qs.setValue(QStringLiteral("sss/paletteIdx"), s.default_palette);
 
     emit applied(s);
 }
@@ -270,7 +285,14 @@ AppSettingsDialog::Settings AppSettingsDialog::loadDefaults()
     if (!qs.contains(kKeyDefaultPalette) && qs.contains("display/palette")) {
         const QString n = qs.value("display/palette").toString();
         if      (n == "Hot"    || n == "Thermal")  s.default_palette = 0;
+        else if (n == "Ocean")                      s.default_palette = 2;
         else if (n == "Copper")                     s.default_palette = 3;
+        else if (n == "Inverted")                   s.default_palette = 4;
+        else if (n == "Viridis")                    s.default_palette = 5;
+        else if (n == "Plasma")                     s.default_palette = 6;
+        else if (n == "Midnight")                   s.default_palette = 7;
+        else if (n == "Sand")                       s.default_palette = 8;
+        else if (n == "Spectrum" || n == "Turbo")   s.default_palette = 9;
         else                                        s.default_palette = 1;
     }
 

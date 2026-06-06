@@ -24,7 +24,7 @@ namespace dolphin::ui {
 
 void MapView::paintContacts(QPainter& p) const
 {
-    // ── Contacts ──────────────────────────────────────────────────────────────
+    // -- Contacts --------------------------------------------------------------
     if (m_project) {
         constexpr int kRadius    = 5;
         constexpr int kSelRadius = 7;
@@ -77,7 +77,7 @@ void MapView::paintContacts(QPainter& p) const
         }
     }
 
-    // ── Rubber-band selection rect ────────────────────────────────────────────
+    // -- Rubber-band selection rect --------------------------------------------
     if (m_rubberbanding && m_drag_moved) {
         const QRect rect = QRect(m_drag_start, m_rubberband_end).normalized();
         p.setPen(QPen(kRubberbandStroke, 1, Qt::DashLine));

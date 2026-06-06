@@ -1,4 +1,4 @@
-﻿// WaterfallViewInput.cpp — mouse, wheel, resize, and leave event handlers
+// WaterfallViewInput.cpp — mouse, wheel, resize, and leave event handlers
 
 #include "ui/features/waterfall/WaterfallView.h"
 
@@ -11,9 +11,9 @@
 
 namespace dolphin::ui {
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Mouse events
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void WaterfallView::mousePressEvent(QMouseEvent* ev)
 {
@@ -134,7 +134,7 @@ void WaterfallView::mousePressEvent(QMouseEvent* ev)
 
 void WaterfallView::mouseMoveEvent(QMouseEvent* ev)
 {
-    // ── Seabed pen drag ───────────────────────────────────────────────────
+    // -- Seabed pen drag ---------------------------------------------------
     if (m_seabed.isDragging() && (ev->buttons() & Qt::LeftButton)) {
         m_cursor_x = ev->pos().x();
         m_cursor_y = ev->pos().y();
@@ -174,7 +174,7 @@ void WaterfallView::mouseMoveEvent(QMouseEvent* ev)
         return;
     }
 
-    // ── Box tool rubber-band update ───────────────────────────────────────
+    // -- Box tool rubber-band update ---------------------------------------
     if (m_seabed_tool == 2 && (ev->buttons() & Qt::LeftButton) && m_box_anchor_row >= 0) {
         m_cursor_x = ev->pos().x();
         m_cursor_y = ev->pos().y();
@@ -182,7 +182,7 @@ void WaterfallView::mouseMoveEvent(QMouseEvent* ev)
         return;
     }
 
-    // ── Eraser drag: clear seabed for every row swept by the cursor ───────
+    // -- Eraser drag: clear seabed for every row swept by the cursor -------
     if (m_seabed_tool == 3 && (ev->buttons() & Qt::LeftButton)) {
         m_cursor_x = ev->pos().x();
         m_cursor_y = ev->pos().y();
@@ -198,7 +198,7 @@ void WaterfallView::mouseMoveEvent(QMouseEvent* ev)
         return;
     }
 
-    // ── Normal cursor tracking ────────────────────────────────────────────
+    // -- Normal cursor tracking --------------------------------------------
     const int new_cx = ev->pos().x();
     const int new_cy = ev->pos().y();
     const bool cursor_moved = (new_cx != m_cursor_x || new_cy != m_cursor_y);
@@ -248,6 +248,7 @@ void WaterfallView::mouseReleaseEvent(QMouseEvent* ev)
     }
     if (m_seabed_tool == 2 && m_box_anchor_row >= 0) {
         // Box released — auto-detect seabed within the selected rows + range window.
+        if (rowCount() == 0) { m_box_anchor_row = -1; return; }
         const int rh      = m_renderer.layout().row_height;
         const int cur_row = qBound(0,
             m_scroll.scrollRow() + (ev->pos().y() - kWfScaleBarH) / rh,
@@ -287,9 +288,9 @@ void WaterfallView::mouseReleaseEvent(QMouseEvent* ev)
         emit pingClicked(row, ch, range_m);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Wheel event
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void WaterfallView::wheelEvent(QWheelEvent* ev)
 {
@@ -329,9 +330,9 @@ void WaterfallView::wheelEvent(QWheelEvent* ev)
     else { m_dirty = true; update(); }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Resize / leave
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void WaterfallView::resizeEvent(QResizeEvent* e)
 {

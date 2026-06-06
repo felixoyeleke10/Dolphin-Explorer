@@ -73,7 +73,7 @@ bool copyProjectOwnedCaches(const std::string& old_manifest,
 
 } // namespace
 
-// ── Lifecycle ─────────────────────────────────────────────────────────────────
+// -- Lifecycle -----------------------------------------------------------------
 
 Project::Project(QObject* parent) : QObject(parent) {}
 
@@ -169,7 +169,7 @@ bool Project::saveAs(const std::string& new_path)
     return false;
 }
 
-// ── ID generation ─────────────────────────────────────────────────────────────
+// -- ID generation -------------------------------------------------------------
 
 std::string Project::generateId(const std::string& prefix) const
 {

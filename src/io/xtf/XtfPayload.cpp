@@ -36,7 +36,7 @@ XtfReader::readArtifact(const core::ArtifactIndexEntry& entry)
     double nav_lat = sensor_pos_ok ? pkt.SensorYcoordinate : pkt.ShipYcoordinate;
     double nav_lon = sensor_pos_ok ? pkt.SensorXcoordinate : pkt.ShipXcoordinate;
 
-    // ── Magnetometer ──────────────────────────────────────────────────────────
+    // -- Magnetometer ----------------------------------------------------------
     if (entry.type == core::ArtifactType::Magnetometer) {
         core::MagSample mag;
         mag.id              = entry.artifact_id;
@@ -76,7 +76,7 @@ XtfReader::readArtifact(const core::ArtifactIndexEntry& entry)
         return mag;
     }
 
-    // ── Sonar ping (SSS or SBP) ───────────────────────────────────────────────
+    // -- Sonar ping (SSS or SBP) -----------------------------------------------
     const bool has_subrecord_offset =
         entry.subrecord_offset >= sizeof(XtfPacketHeader)
      && entry.subrecord_offset + sizeof(XtfPingChanHeader) <= pkt.NumBytesThisRecord;
@@ -173,7 +173,7 @@ XtfReader::readArtifact(const core::ArtifactIndexEntry& entry)
     num_samples = std::min(num_samples, max_samples);
     if (num_samples == 0) return std::nullopt;
 
-    // ── Sub-bottom trace ──────────────────────────────────────────────────────
+    // -- Sub-bottom trace ------------------------------------------------------
     if (entry.type == core::ArtifactType::SubBottom) {
         core::SubBottomTrace trace;
         trace.id             = entry.artifact_id;
@@ -208,7 +208,7 @@ XtfReader::readArtifact(const core::ArtifactIndexEntry& entry)
         return trace;
     }
 
-    // ── Sidescan ping ─────────────────────────────────────────────────────────
+    // -- Sidescan ping ---------------------------------------------------------
     core::SidescanPing ping;
     ping.id             = entry.artifact_id;
     ping.timestamp_us   = ts_us;

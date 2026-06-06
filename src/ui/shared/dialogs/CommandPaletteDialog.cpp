@@ -1,4 +1,4 @@
-﻿// CommandPaletteDialog.cpp — dialog shell, painting, filter logic, event handling.
+// CommandPaletteDialog.cpp — dialog shell, painting, filter logic, event handling.
 //   Delegate + constants → CommandPaletteDelegate.h / CommandPaletteDelegate.cpp
 #include "ui/shared/dialogs/CommandPaletteDialog.h"
 #include "ui/shared/dialogs/CommandPaletteDelegate.h"
@@ -24,7 +24,7 @@ namespace dolphin::ui {
 
 using namespace detail;
 
-// ── Construction ──────────────────────────────────────────────────────────────
+// -- Construction --------------------------------------------------------------
 
 CommandPaletteDialog::CommandPaletteDialog(QWidget* parent)
     : QDialog(parent, Qt::Dialog | Qt::FramelessWindowHint | Qt::NoDropShadowWindowHint)
@@ -39,7 +39,7 @@ CommandPaletteDialog::CommandPaletteDialog(QWidget* parent)
     root->setContentsMargins(kShadowX, 4, kShadowX, kShadowB);
     root->setSpacing(0);
 
-    // ── Card container ────────────────────────────────────────────────────────
+    // -- Card container --------------------------------------------------------
     auto* card = new QWidget(this);
     card->setObjectName("cpCard");
     auto* cl = new QVBoxLayout(card);
@@ -47,7 +47,7 @@ CommandPaletteDialog::CommandPaletteDialog(QWidget* parent)
     cl->setSpacing(0);
     root->addWidget(card);
 
-    // ── Search row ────────────────────────────────────────────────────────────
+    // -- Search row ------------------------------------------------------------
     auto* input_row = new QWidget(card);
     input_row->setObjectName("cpInputRow");
     auto* irl = new QHBoxLayout(input_row);
@@ -70,7 +70,7 @@ CommandPaletteDialog::CommandPaletteDialog(QWidget* parent)
     sep->setFixedHeight(Theme::kSepSz);
     cl->addWidget(sep);
 
-    // ── Results list ──────────────────────────────────────────────────────────
+    // -- Results list ----------------------------------------------------------
     m_list = new QListWidget(card);
     m_list->setObjectName("cpList");
     m_list->setFrameShape(QFrame::NoFrame);
@@ -87,12 +87,13 @@ CommandPaletteDialog::CommandPaletteDialog(QWidget* parent)
     qApp->installEventFilter(this);
 }
 
-// ── Painting ──────────────────────────────────────────────────────────────────
+// -- Painting ------------------------------------------------------------------
 
 void CommandPaletteDialog::paintEvent(QPaintEvent*)
 {
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
+    p.setClipRect(rect());
 
     // Card rect sits inside the shadow margins; width adapts to dialog size.
     const int cardW = width() - kShadowX * 2;
@@ -116,7 +117,7 @@ void CommandPaletteDialog::paintEvent(QPaintEvent*)
 
 void CommandPaletteDialog::resizeEvent(QResizeEvent* ev) { QDialog::resizeEvent(ev); }
 
-// ── Public API ────────────────────────────────────────────────────────────────
+// -- Public API ----------------------------------------------------------------
 
 void CommandPaletteDialog::setItems(QList<CommandPaletteItem> items)
 {
@@ -151,7 +152,7 @@ void CommandPaletteDialog::popup(QWidget* anchor)
     m_input->setFocus();
 }
 
-// ── Filter & rendering ────────────────────────────────────────────────────────
+// -- Filter & rendering --------------------------------------------------------
 
 void CommandPaletteDialog::applyFilter(const QString& text)
 {
@@ -265,7 +266,7 @@ void CommandPaletteDialog::updateHeight()
     setFixedHeight(4 + kInputH + 1 + totalH + kShadowB);
 }
 
-// ── Event filter ──────────────────────────────────────────────────────────────
+// -- Event filter --------------------------------------------------------------
 
 bool CommandPaletteDialog::eventFilter(QObject* watched, QEvent* ev)
 {

@@ -9,43 +9,43 @@
 
 namespace dolphin::ui {
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  AppSettings — application-wide live settings.
 //  Canonical definition is here so spine systems can depend on AppState alone
 //  without pulling in the dialog.  AppSettingsDialog exposes this as a type
 //  alias so all existing code continues to work unchanged.
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 struct AppSettings {
-    // ── General ───────────────────────────────────────────────────────
+    // -- General -------------------------------------------------------
     int     units_system    = 0;
     int     depth_unit      = 0;
     int     coord_format    = 0;
     int     date_format     = 0;
 
-    // ── Appearance ────────────────────────────────────────────────────
+    // -- Appearance ----------------------------------------------------
     int     theme           = 0;
     int     ui_density      = 1;
     int     font_size       = 1;
     bool    show_tooltips   = true;
     bool    show_grid       = true;
 
-    // ── Performance ───────────────────────────────────────────────────
+    // -- Performance ---------------------------------------------------
     int     worker_threads  = 4;
     int     tile_cache_mb   = 512;
     int     autosave_min    = 5;
     bool    gpu_accel       = true;
 
-    // ── Data defaults ─────────────────────────────────────────────────
+    // -- Data defaults -------------------------------------------------
     double  sound_velocity  = 1500.0;
     bool    auto_stretch    = true;
     int     default_palette = 0;
     int     default_crs     = 0;
 
-    // ── Export ────────────────────────────────────────────────────────
+    // -- Export --------------------------------------------------------
     QString export_dir;
     int     export_format   = 0;
 
-    // ── Map ───────────────────────────────────────────────────────────
+    // -- Map -----------------------------------------------------------
     QColor  map_bg_color    { Theme::kBg };
     int     map_grid_preset    = 0;
     int     grid_label_size    = 1;

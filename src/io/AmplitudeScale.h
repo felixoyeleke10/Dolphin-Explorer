@@ -4,7 +4,7 @@
 #include <cstdint>
 #include <vector>
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  AmplitudeScale — sonar amplitude normalisation utilities
 //
 //  Converts raw sonar sample data (uint32 or float32) to the common uint16
@@ -17,7 +17,7 @@
 //  99th-percentile value rather than the absolute maximum.  This prevents a
 //  single nadir specular spike (the brightest sample in nearly every ping)
 //  from compressing all meaningful backscatter data toward zero.
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 namespace dolphin::io {
 

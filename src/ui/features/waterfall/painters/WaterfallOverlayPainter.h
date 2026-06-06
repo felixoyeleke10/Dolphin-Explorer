@@ -15,7 +15,7 @@ class QPainter;
 
 namespace dolphin::ui {
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  WaterfallOverlayPainter — stateless overlay drawing for WaterfallView.
 //
 //  All methods are static.  WaterfallView calls these from its paintEvent()
@@ -29,7 +29,7 @@ namespace dolphin::ui {
 //    paintRuler          — ping-index labels on the left depth ruler
 //    paintCrosshair      — semi-transparent crosshair under the cursor
 //    paintEmptyState     — centred placeholder when no data is loaded
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 class WaterfallOverlayPainter {
 public:

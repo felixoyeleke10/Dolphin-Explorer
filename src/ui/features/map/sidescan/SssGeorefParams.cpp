@@ -133,7 +133,7 @@ void applyNavSmoothing(std::vector<CorrectedSssNav>&         table,
 
 } // namespace
 
-// ── resolveSssHeading ─────────────────────────────────────────────────────────
+// -- resolveSssHeading ---------------------------------------------------------
 
 ResolvedHeading resolveSssHeading(
     const core::NavPoint&  nav,
@@ -207,7 +207,7 @@ ResolvedHeading resolveSssHeading(
     return r;
 }
 
-// ── resolveSssPosition ────────────────────────────────────────────────────────
+// -- resolveSssPosition --------------------------------------------------------
 
 ResolvedPosition resolveSssPosition(
     const core::SidescanPing& ping,
@@ -308,7 +308,7 @@ ResolvedPosition resolveSssPosition(
     return r;
 }
 
-// ── buildCorrectedNavTable ────────────────────────────────────────────────────
+// -- buildCorrectedNavTable ----------------------------------------------------
 
 std::vector<CorrectedSssNav> buildCorrectedNavTable(
     const std::vector<core::SidescanPing>& pings,
@@ -343,7 +343,7 @@ std::vector<CorrectedSssNav> buildCorrectedNavTable(
     return result;
 }
 
-// ── buildHeadingTable ─────────────────────────────────────────────────────────
+// -- buildHeadingTable ---------------------------------------------------------
 // Retained for backward compatibility; calls the internal heading logic directly.
 
 std::vector<double> buildHeadingTable(

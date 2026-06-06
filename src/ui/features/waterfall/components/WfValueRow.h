@@ -7,12 +7,12 @@ class QTimer;
 
 namespace dolphin::ui {
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  WfValueRow — professional parameter row for instrument panels.
 //
 //  Visual layout:
-//    Label text                    [ value suffix  │ ▲ ]
-//                                  [               │ ▼ ]
+//    Label text                    [ value suffix  | ▲ ]
+//                                  [               | ▼ ]
 //
 //  Interaction:
 //    • Click ▲ / ▼               — step +1 / -1; hold for auto-repeat
@@ -21,7 +21,7 @@ namespace dolphin::ui {
 //    • Mouse wheel                — always ignored; can't be changed by accident
 //
 //  No native widget chrome — entirely custom-painted.
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 class WfValueRow : public QWidget {
     Q_OBJECT
@@ -57,14 +57,14 @@ private slots:
     void onRepeatTick();
 
 private:
-    // ── Geometry ──────────────────────────────────────────────────────────
+    // -- Geometry ----------------------------------------------------------
     QRect pillRect()      const;
     QRect arrowAreaRect() const;
     QRect upArrowRect()   const;
     QRect downArrowRect() const;
     QRect valueAreaRect() const;
 
-    // ── Helpers ───────────────────────────────────────────────────────────
+    // -- Helpers -----------------------------------------------------------
     void    step(int dir);
     void    startEdit();
     void    commitEdit();
@@ -72,22 +72,22 @@ private:
     QString formatValue() const;
     double  clamp(double v) const;
 
-    // ── Hit zones ─────────────────────────────────────────────────────────
+    // -- Hit zones ---------------------------------------------------------
     enum class Zone { None, Value, UpArrow, DownArrow };
     Zone zoneAt(const QPoint& pos) const;
 
-    // ── Value state ───────────────────────────────────────────────────────
+    // -- Value state -------------------------------------------------------
     QString m_label;
     double  m_lo, m_hi, m_step, m_value, m_default;
     int     m_decimals;
     QString m_suffix;
 
-    // ── Special display ───────────────────────────────────────────────────
+    // -- Special display ---------------------------------------------------
     bool    m_has_special  = false;
     double  m_special_trig = 0.0;
     QString m_special_text;
 
-    // ── Interaction state ─────────────────────────────────────────────────
+    // -- Interaction state -------------------------------------------------
     Zone    m_hover_zone      = Zone::None;
     Zone    m_press_zone      = Zone::None;
     bool    m_dragging        = false;
@@ -95,7 +95,7 @@ private:
     double  m_drag_origin_v   = 0.0;
     QTimer* m_repeat_timer    = nullptr;
 
-    // ── Edit overlay ──────────────────────────────────────────────────────
+    // -- Edit overlay ------------------------------------------------------
     QLineEdit* m_edit = nullptr;
 };
 

@@ -1,4 +1,4 @@
-﻿// AppSettingsDialog.Pages.cpp — page builders and layout helpers.
+// AppSettingsDialog.Pages.cpp — page builders and layout helpers.
 #include "ui/mainwindow/AppSettingsDialog.h"
 #include "ui/shell/Theme.h"
 
@@ -77,9 +77,9 @@ void addHint(QFormLayout* fl, const QString& text, QWidget* parent)
 
 } // namespace
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Page builders
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 QWidget* AppSettingsDialog::buildGeneralPage()
 {
@@ -180,61 +180,6 @@ QWidget* AppSettingsDialog::buildAppearancePage()
     bfl->addRow(QString(), m_grid_check);
 
     vl->addLayout(bfl);
-
-    addSection(vl, tr("Map"), page);
-    auto* mfl = makeForm();
-
-    m_map_bg_combo = new QComboBox(page);
-    m_map_bg_combo->setToolTip(tr("Background colour shown in the 2D and 3D map viewports"));
-    {
-        QPixmap pm(14, 10);
-        for (const auto& p : kMapBgPresets) {
-            pm.fill(QColor(p.hex));
-            m_map_bg_combo->addItem(QIcon(pm), tr(p.name));
-        }
-    }
-    mfl->addRow(tr("Background:"), m_map_bg_combo);
-
-    m_map_grid_combo = new QComboBox(page);
-    m_map_grid_combo->setToolTip(tr("Grid line colour for the graticule (2D) and reference grid (3D)"));
-    {
-        QPixmap pm(14, 10);
-        for (const auto& p : kMapGridPresets) {
-            pm.fill(QColor(p.major3d));   // use the brighter major colour as the swatch
-            m_map_grid_combo->addItem(QIcon(pm), tr(p.name));
-        }
-    }
-    mfl->addRow(tr("Grid lines:"), m_map_grid_combo);
-
-    m_grid_label_size_combo = new QComboBox(page);
-    m_grid_label_size_combo->addItems({
-        tr("Small  (7 pt)"),
-        tr("Normal  (8 pt, default)"),
-        tr("Large  (10 pt)"),
-    });
-    m_grid_label_size_combo->setToolTip(tr("Point size of the coordinate labels on the graticule grid."));
-    mfl->addRow(tr("Label size:"), m_grid_label_size_combo);
-
-    m_grid_label_rotated_check = new QCheckBox(tr("Rotate latitude labels 90°"), page);
-    m_grid_label_rotated_check->setToolTip(
-        tr("Draw latitude coordinate labels vertically along the left map edge."));
-    mfl->addRow(QString(), m_grid_label_rotated_check);
-
-    m_grat_coord_combo = new QComboBox(page);
-    m_grat_coord_combo->addItems({
-        tr("Auto  (match data CRS)"),
-        tr("Degrees  (Lat / Lon)"),
-        tr("Easting / Northing  (UTM)"),
-        tr("Both  (degrees + E/N)"),
-    });
-    m_grat_coord_combo->setToolTip(
-        tr("Coordinate format shown on the graticule grid labels.\n"
-           "\"Easting / Northing\" and \"Both\" convert geographic data to UTM on the fly.\n"
-           "For data already in a projected CRS, the projected values are always shown."));
-    mfl->addRow(tr("Coord labels:"), m_grat_coord_combo);
-
-    addHint(mfl, tr("All presets are optimised for sonar data readability. Changes take effect immediately."), page);
-    vl->addLayout(mfl);
 
     auto* restart_hint = new QLabel(
         tr("Theme, density, and font-size changes take effect on next launch."), page);
@@ -339,7 +284,10 @@ QWidget* AppSettingsDialog::buildDataPage()
     auto* dfl = makeForm();
 
     m_palette_combo = new QComboBox(page);
-    m_palette_combo->addItems({ tr("Thermal"), tr("Greyscale"), tr("Ocean"), tr("Copper") });
+    m_palette_combo->addItems({
+        tr("Thermal"), tr("Greyscale"), tr("Ocean"), tr("Copper"),
+        tr("Inverted"), tr("Viridis"), tr("Plasma"), tr("Midnight"), tr("Sand"), tr("Spectrum")
+    });
     dfl->addRow(tr("Default palette:"), m_palette_combo);
 
     m_auto_stretch = new QCheckBox(tr("Auto-stretch amplitude on load"), page);
@@ -481,6 +429,84 @@ QWidget* AppSettingsDialog::buildAboutPage()
     copy_lbl->setObjectName("aboutCopy");
     copy_lbl->setWordWrap(true);
     vl->addWidget(copy_lbl);
+
+    vl->addStretch();
+
+    return wrapInScroll(page);
+}
+
+QWidget* AppSettingsDialog::buildMapPage()
+{
+    auto* page = new QWidget;
+    page->setObjectName("settingsPage");
+    auto* vl = new QVBoxLayout(page);
+    vl->setContentsMargins(28, Theme::kSpacing7, 28, Theme::kSpacing7);
+    vl->setSpacing(0);
+
+    auto* title = new QLabel(tr("Map"), page);
+    title->setObjectName("settingsPageTitle");
+    vl->addWidget(title);
+    vl->addSpacing(18);
+
+    addSection(vl, tr("Viewport"), page);
+    auto* vfl = makeForm();
+
+    m_map_bg_combo = new QComboBox(page);
+    m_map_bg_combo->setToolTip(tr("Background colour shown in the 2D and 3D map viewports"));
+    {
+        QPixmap pm(14, 10);
+        for (const auto& p : kMapBgPresets) {
+            pm.fill(QColor(p.hex));
+            m_map_bg_combo->addItem(QIcon(pm), tr(p.name));
+        }
+    }
+    vfl->addRow(tr("Background:"), m_map_bg_combo);
+
+    vl->addLayout(vfl);
+
+    addSection(vl, tr("Grid"), page);
+    auto* gfl = makeForm();
+
+    m_map_grid_combo = new QComboBox(page);
+    m_map_grid_combo->setToolTip(tr("Grid line colour for the graticule (2D) and reference grid (3D)"));
+    {
+        QPixmap pm(14, 10);
+        for (const auto& p : kMapGridPresets) {
+            pm.fill(QColor(p.major3d));
+            m_map_grid_combo->addItem(QIcon(pm), tr(p.name));
+        }
+    }
+    gfl->addRow(tr("Grid lines:"), m_map_grid_combo);
+
+    m_grid_label_size_combo = new QComboBox(page);
+    m_grid_label_size_combo->addItems({
+        tr("Small  (7 pt)"),
+        tr("Normal  (8 pt, default)"),
+        tr("Large  (10 pt)"),
+    });
+    m_grid_label_size_combo->setToolTip(tr("Point size of the coordinate labels on the graticule grid."));
+    gfl->addRow(tr("Label size:"), m_grid_label_size_combo);
+
+    m_grid_label_rotated_check = new QCheckBox(tr("Rotate latitude labels 90°"), page);
+    m_grid_label_rotated_check->setToolTip(
+        tr("Draw latitude coordinate labels vertically along the left map edge."));
+    gfl->addRow(QString(), m_grid_label_rotated_check);
+
+    m_grat_coord_combo = new QComboBox(page);
+    m_grat_coord_combo->addItems({
+        tr("Auto  (match data CRS)"),
+        tr("Degrees  (Lat / Lon)"),
+        tr("Easting / Northing  (UTM)"),
+        tr("Both  (degrees + E/N)"),
+    });
+    m_grat_coord_combo->setToolTip(
+        tr("Coordinate format shown on the graticule grid labels.\n"
+           "\"Easting / Northing\" and \"Both\" convert geographic data to UTM on the fly.\n"
+           "For data already in a projected CRS, the projected values are always shown."));
+    gfl->addRow(tr("Coord labels:"), m_grat_coord_combo);
+
+    addHint(gfl, tr("All presets are optimised for sonar data readability. Changes take effect immediately."), page);
+    vl->addLayout(gfl);
 
     vl->addStretch();
 

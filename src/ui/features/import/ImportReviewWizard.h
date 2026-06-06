@@ -25,7 +25,7 @@ namespace dolphin::app { class Project; }
 
 namespace dolphin::ui {
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  ImportReviewWizard
 //
 //  Replaces the old ImportSetupDialog + QFileDialog + ImportDialog chain.
@@ -39,7 +39,7 @@ namespace dolphin::ui {
 //  without a declared EPSG).  Geographic files resolve without it.  Mixed
 //  imports where files live in different UTM zones are not currently supported
 //  in a single wizard session; the CRS tab shows a warning in that case.
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 class ImportReviewWizard : public QDialog {
     Q_OBJECT
 public:
@@ -72,7 +72,7 @@ private slots:
     void onAccept();
 
 private:
-    // ── File entry ────────────────────────────────────────────────────────────
+    // -- File entry ------------------------------------------------------------
     struct FileEntry {
         QString          path;
         QString          file_name;
@@ -101,7 +101,7 @@ private:
     void updateImportButton();
     QString modalityString(const io::ProbeResult& r) const;
 
-    // ── Adaptive tab registry ─────────────────────────────────────────────────
+    // -- Adaptive tab registry -------------------------------------------------
     // Each TabKind encodes its own show/hide predicate in updateTabVisibility().
     // To add a new sensor-specific tab: add a kind here, call makeTab() once in
     // buildTabSection(), add a case in updateTabVisibility(), add a rebuild method.
@@ -109,20 +109,20 @@ private:
     struct TabSpec { TabKind kind; int idx = -1; };
     QList<TabSpec> m_tab_specs;
 
-    // ── Data ──────────────────────────────────────────────────────────────────
+    // -- Data ------------------------------------------------------------------
     QList<FileEntry>   m_entries;
     core::SpatialRef   m_suggested_crs;   // seed value from MainWindow (last used)
     core::SpatialRef   m_project_crs;     // user-confirmed CRS for this import batch
     ImportDialogResult m_result;
     std::vector<core::ArtifactType> m_module_filter;  // set by ImportSetupDialog; empty = all
 
-    // ── File list section ─────────────────────────────────────────────────────
+    // -- File list section -----------------------------------------------------
     QScrollArea* m_file_scroll  = nullptr;
     QWidget*     m_file_content = nullptr;
     QVBoxLayout* m_file_layout  = nullptr;
     QLabel*      m_drop_hint    = nullptr;
 
-    // ── Tab widget ────────────────────────────────────────────────────────────
+    // -- Tab widget ------------------------------------------------------------
     QTabWidget*  m_tabs            = nullptr;
     QWidget*     m_summary_content = nullptr;
     QVBoxLayout* m_summary_layout  = nullptr;
@@ -138,7 +138,7 @@ private:
     QWidget*     m_hdr_content     = nullptr;
     QVBoxLayout* m_hdr_layout      = nullptr;
 
-    // ── Project section ───────────────────────────────────────────────────────
+    // -- Project section -------------------------------------------------------
     app::Project*  m_current_project = nullptr;
     QRadioButton*  m_radio_current   = nullptr;
     QLabel*        m_current_name    = nullptr;
@@ -148,12 +148,12 @@ private:
     QLabel*        m_folder_label    = nullptr;
     QString        m_browse_folder;
 
-    // ── Footer ────────────────────────────────────────────────────────────────
+    // -- Footer ----------------------------------------------------------------
     QLabel*      m_status_label    = nullptr;
     QPushButton* m_import_btn      = nullptr;
     bool         m_rebuild_pending = false;
 
-    // ── Layout builders ───────────────────────────────────────────────────────
+    // -- Layout builders -------------------------------------------------------
     void buildFileSection   (QVBoxLayout* root);
     void buildTabSection    (QVBoxLayout* root);
     void buildProjectSection(QVBoxLayout* root);

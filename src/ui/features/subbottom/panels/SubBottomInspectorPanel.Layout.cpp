@@ -1,4 +1,4 @@
-﻿// SubBottomInspectorPanel.Layout.cpp — constructor and section builder helpers.
+// SubBottomInspectorPanel.Layout.cpp — constructor and section builder helpers.
 #include "ui/features/subbottom/panels/SubBottomInspectorPanel.h"
 #include "ui/shell/Theme.h"
 
@@ -25,7 +25,7 @@ SubBottomInspectorPanel::SubBottomInspectorPanel(QWidget* parent)
     fl->setContentsMargins(0, 0, 0, 0);
     fl->setSpacing(0);
 
-    // ── Scrollable content area ───────────────────────────────────────────
+    // -- Scrollable content area -------------------------------------------
     auto* scroll = new QScrollArea(this);
     scroll->setObjectName("av_panel_scroll");
     scroll->setWidgetResizable(true);
@@ -40,7 +40,7 @@ SubBottomInspectorPanel::SubBottomInspectorPanel(QWidget* parent)
     vl->setSpacing(0);
     scroll->setWidget(container);
 
-    // ── LINES
+    // -- LINES
     {
         auto* bl = makeSection("Lines", true, container, vl);
 
@@ -57,7 +57,7 @@ SubBottomInspectorPanel::SubBottomInspectorPanel(QWidget* parent)
                 });
     }
 
-    // ── SURVEY DATA ───────────────────────────────────────────────────────
+    // -- SURVEY DATA -------------------------------------------------------
     {
         auto* bl = makeSection("Survey Data", true, container, vl);
         makeRow(bl, tr("Traces"),   m_val_traces);
@@ -66,35 +66,35 @@ SubBottomInspectorPanel::SubBottomInspectorPanel(QWidget* parent)
         makeRow(bl, tr("Length"),   m_val_length);
     }
 
-    // ── SOURCE FILE ───────────────────────────────────────────────────────
+    // -- SOURCE FILE -------------------------------------------------------
     {
         auto* bl = makeSection("Source File", true, container, vl);
         makeWideRow(bl, tr("File"),   m_val_filename);
         makeRow    (bl, tr("Format"), m_val_fmt_size);
     }
 
-    // ── COORDINATE SYSTEM (collapsed) ─────────────────────────────────────
+    // -- COORDINATE SYSTEM (collapsed) -------------------------------------
     {
         auto* bl = makeSection("Coordinate System", false, container, vl);
         makeRow(bl, tr("CRS"),  m_val_crs);
         makeRow(bl, tr("Type"), m_val_crs_kind);
     }
 
-    // ── SONAR ─────────────────────────────────────────────────────────────
+    // -- SONAR -------------------------------------------------------------
     {
         auto* bl = makeSection("Sonar", true, container, vl);
         makeRow(bl, tr("Frequency"), m_val_freq);
         makeRow(bl, tr("Sound spd"), m_val_speed);
     }
 
-    // ── VESSEL (collapsed) ────────────────────────────────────────────────
+    // -- VESSEL (collapsed) ------------------------------------------------
     {
         auto* bl = makeSection("Vessel", false, container, vl);
         makeRow(bl, tr("Survey"), m_val_survey);
         makeRow(bl, tr("Vessel"), m_val_vessel);
     }
 
-    // ── VIEW SETTINGS ─────────────────────────────────────────────────────
+    // -- VIEW SETTINGS -----------------------------------------------------
     {
         auto* bl = makeSection("View Settings", true, container, vl);
 
@@ -158,7 +158,7 @@ SubBottomInspectorPanel::SubBottomInspectorPanel(QWidget* parent)
 
     vl->addStretch();
 
-    // ── NAV BUTTONS — pinned below scroll, always visible ─────────────────
+    // -- NAV BUTTONS — pinned below scroll, always visible -----------------
     {
         auto* sep = new QFrame(this);
         sep->setFrameShape(QFrame::HLine);

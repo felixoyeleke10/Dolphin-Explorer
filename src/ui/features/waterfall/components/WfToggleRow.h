@@ -6,7 +6,7 @@ class QPropertyAnimation;
 
 namespace dolphin::ui {
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  WfToggleRow — animated iOS-style toggle switch row.
 //
 //  Visual layout:
@@ -14,7 +14,7 @@ namespace dolphin::ui {
 //
 //  Click anywhere to toggle. Thumb slides with eased animation.
 //  setChecked() snaps without animation (for programmatic init).
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 class WfToggleRow : public QWidget {
     Q_OBJECT

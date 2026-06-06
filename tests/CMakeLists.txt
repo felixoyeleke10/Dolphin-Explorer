@@ -136,6 +136,10 @@ add_executable(test_xtf_reader
 
 target_include_directories(test_xtf_reader PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_xtf_reader PRIVATE dolphin-io)
+# Absolute path to the reduced real-vendor fixtures (FIX-016/FIX-017) so the
+# test can load them regardless of the working directory ctest runs from.
+target_compile_definitions(test_xtf_reader PRIVATE
+    XTF_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
 set_target_properties(test_xtf_reader PROPERTIES
     CXX_STANDARD 20
     AUTOMOC OFF

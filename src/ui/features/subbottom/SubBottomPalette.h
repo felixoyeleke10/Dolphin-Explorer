@@ -5,7 +5,7 @@
 
 namespace dolphin::ui {
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  SbpPalette — colour palettes for sub-bottom profiler amplitude display.
 //
 //  toRgb() maps a gain-applied, signed float amplitude in [-1, +1] to RGB.
@@ -13,7 +13,7 @@ namespace dolphin::ui {
 //    InvertedGrey — absolute value → inverted luminance (white = silent)
 //    Seismic      — signed: positive → red, negative → blue, zero → black
 //    Thermal      — absolute value → black→purple→red→orange→yellow
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 struct SbpPalette {
     enum Index { Greyscale = 0, InvertedGrey = 1, Seismic = 2, Thermal = 3, Count = 4 };

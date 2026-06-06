@@ -48,7 +48,11 @@ public:
     bool                index_built           = false;
     bool                visible               = true;
     bool                slant_range_corrected = false;  // SRC; persisted in project JSON
+    bool                pipeline_applied      = false;  // true after processing pipeline has been persisted
     BottomTrackKind     bottom_track_kind     = BottomTrackKind::Unknown;
+    float               qc_viewed_fraction    = 0.f;   // fraction of pings the user has scrolled past [0,1]
+    int                 sss_palette           = -1;    // per-layer palette override; -1 = use app default
+    int                 sbp_palette           = -1;    // per-layer SBP palette override; -1 = use window default
 
     // Tagging and grouping
     std::vector<std::string> tags;

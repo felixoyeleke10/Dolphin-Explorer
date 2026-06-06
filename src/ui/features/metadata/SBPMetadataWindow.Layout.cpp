@@ -1,4 +1,4 @@
-﻿// SBPMetadataWindow.Layout.cpp — UI construction: toolbar, field panel, chart toolbar.
+// SBPMetadataWindow.Layout.cpp — UI construction: toolbar, field panel, chart toolbar.
 #include "ui/features/metadata/SBPMetadataWindow.h"
 #include "ui/features/metadata/SSSMetadataWindow.h"
 #include "ui/shell/Theme.h"
@@ -26,16 +26,16 @@ namespace dolphin::ui {
 static constexpr int kThickSpinW = 42;  // line-thickness spinbox width
 static constexpr int kBinsSpinW  = 52;  // histogram bins spinbox width
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  UI construction
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 void SBPMetadataWindow::buildUi()
 {
     auto* root = new QVBoxLayout(this);
     root->setContentsMargins(0, 0, 0, 0);
     root->setSpacing(0);
 
-    // ── Icon toolbar ──────────────────────────────────────────────────────────
+    // -- Icon toolbar ----------------------------------------------------------
     {
         auto* toolbar = new QWidget(this);
         toolbar->setObjectName("metaToolbar");
@@ -123,7 +123,7 @@ void SBPMetadataWindow::buildUi()
         root->addWidget(toolbar);
     }
 
-    // ── Top bar: survey line selector ─────────────────────────────────────────
+    // -- Top bar: survey line selector -----------------------------------------
     {
         auto* bar = new QWidget(this);
         bar->setFixedHeight(Theme::kFilterBarH);
@@ -149,7 +149,7 @@ void SBPMetadataWindow::buildUi()
         root->addWidget(bar);
     }
 
-    // ── Outer vertical splitter: [upper pane | chart pane] ───────────────────
+    // -- Outer vertical splitter: [upper pane | chart pane] -------------------
     m_outer_vsplit = new QSplitter(Qt::Vertical, this);
     m_outer_vsplit->setHandleWidth(5);
 
@@ -159,7 +159,7 @@ void SBPMetadataWindow::buildUi()
         ul->setContentsMargins(0, 0, 0, 0);
         ul->setSpacing(0);
 
-        // ── Horizontal splitter: [field panel | table] ────────────────────────
+        // -- Horizontal splitter: [field panel | table] ------------------------
         auto* hsplit = new QSplitter(Qt::Horizontal, upper);
         hsplit->setHandleWidth(3);
 
@@ -207,7 +207,7 @@ void SBPMetadataWindow::buildUi()
     }
     m_outer_vsplit->addWidget(upper);
 
-    // ── Chart panel (bottom) ──────────────────────────────────────────────────
+    // -- Chart panel (bottom) --------------------------------------------------
     m_chart_pane = new QWidget(m_outer_vsplit);
     m_chart_pane->setAttribute(Qt::WA_DeleteOnClose, false);
     m_chart_pane->installEventFilter(this);
@@ -226,16 +226,16 @@ void SBPMetadataWindow::buildUi()
 
     root->addWidget(m_outer_vsplit, 1);
 
-    // ── Connections ───────────────────────────────────────────────────────────
+    // -- Connections -----------------------------------------------------------
     connect(m_table, &QTableView::customContextMenuRequested,
             this, &SBPMetadataWindow::showTableContextMenu);
     connect(m_table->selectionModel(), &QItemSelectionModel::selectionChanged,
             this, &SBPMetadataWindow::onSelectionChanged);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Field panel construction
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 void SBPMetadataWindow::buildFieldPanel(QWidget* parent)
 {
     auto* vl = new QVBoxLayout(parent);
@@ -321,9 +321,9 @@ void SBPMetadataWindow::buildFieldPanel(QWidget* parent)
             this, &SBPMetadataWindow::onPrecisionChanged);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Chart toolbar construction
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 void SBPMetadataWindow::buildChartToolbar(QWidget* parent)
 {
     auto* bar = new QWidget(parent);

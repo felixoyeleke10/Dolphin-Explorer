@@ -13,7 +13,7 @@ using namespace detail_segy;
 SegyReader::SegyReader()  = default;
 SegyReader::~SegyReader() { close(); }
 
-// ── open ───────────────────────────────────────────────────────────────────────
+// -- open -----------------------------------------------------------------------
 
 namespace {
 
@@ -88,7 +88,7 @@ bool SegyReader::open(const std::string& path)
     }
     if (m_fileSize < kMinFileBytes) { close(); return false; }
 
-    // ── Text header (3200 bytes at offset 0) ─────────────────────────────────
+    // -- Text header (3200 bytes at offset 0) ---------------------------------
     {
         uint8_t txthdr[kTextHeaderBytes];
         if (detail::seekAbs(m_file, 0) &&
@@ -103,11 +103,11 @@ bool SegyReader::open(const std::string& path)
     uint8_t binhdr[kBinHeaderBytes];
     if (std::fread(binhdr, kBinHeaderBytes, 1, m_file) != 1) { close(); return false; }
 
-    // ── SEG-Y revision ────────────────────────────────────────────────────────
+    // -- SEG-Y revision --------------------------------------------------------
     // Binary header offset 300–301: major.minor revision (Rev 1 = 0x01 0x00).
     m_segyRevision = binhdr[300];
 
-    // ── Endian + format detection ─────────────────────────────────────────────
+    // -- Endian + format detection ---------------------------------------------
     // Bytes 25-26 of the binary header carry the sample format code.
     const int16_t fmt_be = beInt16(&binhdr[24]);
     const int16_t fmt_le = leInt16(&binhdr[24]);
@@ -141,7 +141,7 @@ bool SegyReader::open(const std::string& path)
         m_sampleFormat = static_cast<int>(fmt_be);
     }
 
-    // ── Extended text headers ─────────────────────────────────────────────────
+    // -- Extended text headers -------------------------------------------------
     const int16_t  ext_raw          = rdInt16(&binhdr[60], m_littleEndian);
     const uint64_t after_fixed_hdrs = kTextHeaderBytes + kBinHeaderBytes;
     const uint64_t remaining        = (m_fileSize > after_fixed_hdrs)
@@ -175,11 +175,11 @@ bool SegyReader::open(const std::string& path)
     if (m_dataOffset >= m_fileSize) { close(); return false; }
     if (m_dataOffset + kTraceHdrBytes > m_fileSize) { close(); return false; }
 
-    // ── Resolve si / ns with chosen endian ─────────────────────────────────────
+    // -- Resolve si / ns with chosen endian -------------------------------------
     m_fileSampleInterval  = rdUint16(&binhdr[16], m_littleEndian);
     m_fileSamplesPerTrace = static_cast<uint32_t>(rdUint16(&binhdr[20], m_littleEndian));
 
-    // ── Probe phase ───────────────────────────────────────────────────────────
+    // -- Probe phase -----------------------------------------------------------
     // Score each plausible (endian, format) combination against the actual first
     // trace(s) at m_dataOffset and pick the best interpretation.
     {
@@ -235,7 +235,7 @@ bool SegyReader::open(const std::string& path)
     return true;
 }
 
-// ── close ──────────────────────────────────────────────────────────────────────
+// -- close ----------------------------------------------------------------------
 
 void SegyReader::close()
 {
@@ -256,11 +256,11 @@ void SegyReader::close()
     m_probeScore              = 0;
 }
 
-// ── metadata ──────────────────────────────────────────────────────────────────
+// -- metadata ------------------------------------------------------------------
 
 FormatMeta SegyReader::metadata() { return m_meta; }
 
-// ── bytesPerSample ────────────────────────────────────────────────────────────
+// -- bytesPerSample ------------------------------------------------------------
 
 uint32_t SegyReader::bytesPerSample() const
 {

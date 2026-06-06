@@ -9,6 +9,7 @@
 #include "ui/shell/ViewerWindow.h"
 #include "core/SubBottomTrace.h"
 #include <QWidget>
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
@@ -19,6 +20,7 @@ class QLabel;
 class QPoint;
 class QProgressBar;
 class QScrollBar;
+class QTimer;
 class QToolButton;
 
 namespace dolphin::app {
@@ -31,7 +33,7 @@ namespace dolphin::ui {
 class SubBottomInspectorPanel;
 class SubBottomView;
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  SubBottomWindow — top-level window for sub-bottom profiler (SBP) display.
 //
 //  Layout mirrors WaterfallWindow:
@@ -46,7 +48,7 @@ class SubBottomView;
 //  Data loading handled in SubBottomWindow.Load.cpp.
 //  Toolbar + command palette in SubBottomWindow.Toolbar.cpp.
 //  Status bar + cursor handlers in SubBottomWindow.Status.cpp.
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 class SubBottomWindow : public QWidget, public IViewerWindow {
     Q_OBJECT
@@ -130,10 +132,11 @@ private slots:
     void onCursorMoved(int trace_idx, float depth_s, double lat, double lon, bool nav_projected);
     void onCursorLeft();
     void onContextMenu(const QPoint& global_pos);
+    void onProcDebounce();  // fires after proc debounce settles; launches the actual background task
 
 private:
-    // Snapshots m_traces_raw + current params, runs the processing pipeline on
-    // a background thread, and calls m_view->setTraces() on completion.
+    // Cancels any in-flight task, then arms m_proc_debounce so rapid calls
+    // (e.g. slider drags) collapse into a single pipeline run.
     void scheduleProcessing();
 
     void setDataState(ViewerDataState s) {
@@ -146,7 +149,7 @@ private:
     void startProgress();
     void finishProgress();
 
-    // ── Widgets ───────────────────────────────────────────────────────────
+    // -- Widgets -----------------------------------------------------------
     SubBottomInspectorPanel* m_inspector           = nullptr;
     SubBottomView*           m_view                = nullptr;
     SubBottomDisplayPanel*   m_display             = nullptr;
@@ -157,8 +160,9 @@ private:
     QLabel*        m_status_left   = nullptr;
     QLabel*        m_status_right  = nullptr;
     QProgressBar*  m_progress_bar  = nullptr;
+    QTimer*        m_proc_debounce = nullptr;  // batches rapid processing triggers
 
-    // ── Data ─────────────────────────────────────────────────────────────
+    // -- Data -------------------------------------------------------------
     app::DataLayer*     m_layer             = nullptr;
     app::ImportService* m_import_service    = nullptr;
     std::string         m_source_path;
@@ -170,13 +174,16 @@ private:
     app::CancellationToken m_proc_cancel;
     ViewerDataState        m_data_state  = ViewerDataState::Idle;
 
-    std::vector<core::SubBottomTrace> m_traces_raw;  // unprocessed; held for re-processing on param change
+    // Unprocessed traces — shared_ptr so scheduleProcessing() captures a pointer
+    // instead of copying all data on the UI thread.  The background task copies
+    // lazily once it actually starts, so cancelled tasks skip the copy entirely.
+    std::shared_ptr<const std::vector<core::SubBottomTrace>> m_traces_raw;
     SbpGainParams                     m_gain_params;
     SbpSignalParams                   m_signal_params;
 
     AppState*           m_app_state         = nullptr;
 
-    // ── Display state ─────────────────────────────────────────────────────
+    // -- Display state -----------------------------------------------------
     float               m_sound_half_speed  = 750.0f; // depth = time * this (= speed/2)
 };
 

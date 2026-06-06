@@ -1,4 +1,4 @@
-﻿// SidescanCorrectionDialog.Layout.cpp — section builders and static layout helpers.
+// SidescanCorrectionDialog.Layout.cpp — section builders and static layout helpers.
 #include "ui/features/map/sidescan/SidescanCorrectionDialog.h"
 #include "ui/shell/Theme.h"
 
@@ -13,7 +13,7 @@
 
 namespace dolphin::ui {
 
-// ── Static helpers ────────────────────────────────────────────────────────────
+// -- Static helpers ------------------------------------------------------------
 
 static QFrame* makeSectionFrame(QWidget* parent)
 {
@@ -44,7 +44,7 @@ static void addRow(QVBoxLayout* vl, QWidget* parent,
     vl->addWidget(row);
 }
 
-// ── Section builders ──────────────────────────────────────────────────────────
+// -- Section builders ----------------------------------------------------------
 
 void SidescanCorrectionDialog::buildLayerSection(QVBoxLayout* body,
                                                  const QString& layer_name)

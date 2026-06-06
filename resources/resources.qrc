@@ -61,5 +61,6 @@
     <file>icons/recycle_bin.svg</file>
     <file>icons/lock.svg</file>
     <file>icons/history.svg</file>
+    <file>icons/more.svg</file>
   </qresource>
 </RCC>

@@ -12,7 +12,7 @@
 
 namespace dolphin::io {
 
-// ── XTF on-disk binary structures (packed, little-endian) ────────────────────
+// -- XTF on-disk binary structures (packed, little-endian) --------------------
 
 #pragma pack(push, 1)
 
@@ -150,17 +150,20 @@ static_assert(sizeof(XtfPingChanHeader) == 64, "XtfPingChanHeader must be 64 byt
 
 #pragma pack(pop)
 
-// ── Channel type constants ────────────────────────────────────────────────────
+// -- Channel type constants ----------------------------------------------------
 
 static constexpr uint16_t XTF_MAGIC     = 0xFACE;
 static constexpr uint16_t CHAN_SUBBOT    = 0;
 static constexpr uint16_t CHAN_PORT_SSS  = 1;
 static constexpr uint16_t CHAN_STBD_SSS  = 2;
+// Recognized but not yet supported: bathymetry channels (some systems use 4).
+static constexpr uint16_t CHAN_BATHY     = 3;
+static constexpr uint16_t CHAN_BATHY_ALT = 4;
 
 static constexpr uint8_t  PACKET_PING   = 0;
 static constexpr uint8_t  PACKET_NAV    = 42;
 
-// ── Coordinate helpers ────────────────────────────────────────────────────────
+// -- Coordinate helpers --------------------------------------------------------
 
 static inline bool isFiniteCoordinate(double lat, double lon)
 {

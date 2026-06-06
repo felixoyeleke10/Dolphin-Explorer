@@ -5,7 +5,7 @@
 
 namespace dolphin::io::detail_segy {
 
-// ── Coordinate scalar ──────────────────────────────────────────────────────────
+// -- Coordinate scalar ----------------------------------------------------------
 // Positive → multiplier; negative → divisor; 0 or 1 → identity.
 inline double applyCoordScalar(int32_t raw, int16_t scalar)
 {
@@ -15,7 +15,7 @@ inline double applyCoordScalar(int32_t raw, int16_t scalar)
     return static_cast<double>(raw) / static_cast<double>(-scalar);
 }
 
-// ── Trace identification code (bytes 29-30, index 28) ─────────────────────────
+// -- Trace identification code (bytes 29-30, index 28) -------------------------
 // 1=seismic  2=dead  3=dummy  4=time-break  5=uphole  6=sweep  7=timing
 // 8=water-break  ≥9=vendor-defined
 inline int16_t traceIdentCode(const uint8_t* thdr, bool le)
@@ -30,14 +30,14 @@ inline bool isSeismicTrace(int16_t code)
     return code != 2 && code != 3;
 }
 
-// ── Delay recording time (bytes 109-110, index 108) ──────────────────────────
+// -- Delay recording time (bytes 109-110, index 108) --------------------------
 // Time in milliseconds from the shot to the start of the recorded trace.
 inline int16_t traceDelayMs(const uint8_t* thdr, bool le)
 {
     return rdInt16(&thdr[108], le);
 }
 
-// ── Timestamp ─────────────────────────────────────────────────────────────────
+// -- Timestamp -----------------------------------------------------------------
 // Reads year / day-of-year / h / m / s (bytes 157-166).
 // Returns µs since Unix epoch, or 0 if header fields look invalid.
 inline int64_t traceTimestampUs(const uint8_t* thdr, bool le)
@@ -63,7 +63,7 @@ inline int64_t traceTimestampUs(const uint8_t* thdr, bool le)
     return (days * 86400LL + ch * 3600LL + cm * 60LL + cs) * 1'000'000LL;
 }
 
-// ── Coordinate confidence ──────────────────────────────────────────────────────
+// -- Coordinate confidence ------------------------------------------------------
 
 enum class CoordConfidence : uint8_t {
     None      = 0,  // all-zero coordinates

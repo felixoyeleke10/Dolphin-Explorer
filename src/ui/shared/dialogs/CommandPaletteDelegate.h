@@ -9,7 +9,7 @@
 namespace dolphin::ui {
 namespace detail {
 
-// ── Layout ────────────────────────────────────────────────────────────────────
+// -- Layout --------------------------------------------------------------------
 constexpr int kCardW    = 560;
 constexpr int kShadowX  = 8;
 constexpr int kShadowB  = 10;
@@ -20,14 +20,14 @@ constexpr int kHdrH     = 18;
 constexpr int kMaxItems = 8;
 constexpr int kRadius   = 6;
 
-// ── Item roles ────────────────────────────────────────────────────────────────
+// -- Item roles ----------------------------------------------------------------
 enum {
     RoleItemIdx  = Qt::UserRole,
     RoleIsHeader = Qt::UserRole + 1,
     RoleCategory = Qt::UserRole + 2,
 };
 
-// ── Colors ────────────────────────────────────────────────────────────────────
+// -- Colors --------------------------------------------------------------------
 // Command palette uses its own dark palette — intentionally distinct from the
 // shell theme so the overlay reads as a separate floating surface.
 inline const QColor kBg          { 0x1e, 0x1e, 0x1e };
@@ -45,7 +45,7 @@ inline const QColor kCardShadow  {  0,   0,   0, 38};    // floating card drop-s
 
 QColor categoryDot(const QString& cat);
 
-// ── Delegate ──────────────────────────────────────────────────────────────────
+// -- Delegate ------------------------------------------------------------------
 class PaletteDelegate : public QStyledItemDelegate {
     const QList<CommandPaletteItem>* m_items;
 public:

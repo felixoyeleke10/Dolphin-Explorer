@@ -1,4 +1,4 @@
-﻿// TerminalWidget.cpp — embedded terminal panel.
+// TerminalWidget.cpp — embedded terminal panel.
 // Per-command execution via cmd.exe /C (Windows) or /bin/sh -c (Unix).
 // Tracks cwd across cd commands; supports history, colored output, process kill.
 #include "ui/bottom/TerminalWidget.h"
@@ -30,7 +30,7 @@ const QColor kColorSystem  { Theme::kTextDisabled };  // dim system messages
 
 } // namespace
 
-// ── Constructor ───────────────────────────────────────────────────────────────
+// -- Constructor ---------------------------------------------------------------
 
 TerminalWidget::TerminalWidget(QWidget* parent)
     : QWidget(parent)
@@ -56,7 +56,7 @@ TerminalWidget::~TerminalWidget()
     }
 }
 
-// ── Layout ────────────────────────────────────────────────────────────────────
+// -- Layout --------------------------------------------------------------------
 
 void TerminalWidget::buildLayout()
 {
@@ -132,7 +132,7 @@ void TerminalWidget::buildLayout()
     connect(clear_btn,  &QToolButton::clicked,     this, &TerminalWidget::onClear);
 }
 
-// ── Working directory ─────────────────────────────────────────────────────────
+// -- Working directory ---------------------------------------------------------
 
 void TerminalWidget::setWorkingDirectory(const QString& dir)
 {
@@ -150,7 +150,7 @@ void TerminalWidget::updateCwdLabel()
     m_cwd_label->setToolTip(m_cwd);
 }
 
-// ── Input / history ───────────────────────────────────────────────────────────
+// -- Input / history -----------------------------------------------------------
 
 bool TerminalWidget::eventFilter(QObject* watched, QEvent* ev)
 {
@@ -199,7 +199,7 @@ void TerminalWidget::onSubmit()
     runCommand(cmd);
 }
 
-// ── Command execution ─────────────────────────────────────────────────────────
+// -- Command execution ---------------------------------------------------------
 
 QString TerminalWidget::shellPrompt() const
 {
@@ -302,7 +302,7 @@ bool TerminalWidget::tryBuiltin(const QString& raw)
     return false;
 }
 
-// ── Process I/O ───────────────────────────────────────────────────────────────
+// -- Process I/O ---------------------------------------------------------------
 
 void TerminalWidget::onReadyReadStdOut()
 {
@@ -358,7 +358,7 @@ void TerminalWidget::onClear()
     m_output->clear();
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// -- Helpers -------------------------------------------------------------------
 
 void TerminalWidget::appendColored(const QString& text, const QColor& color)
 {

@@ -3,6 +3,7 @@
 #include "ui/features/waterfall/rendering/WaterfallGLRenderer.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <vector>
 
@@ -280,9 +281,12 @@ void WaterfallGLRenderer::uploadSrcParams(const std::vector<PingRow>& rows)
     std::vector<float> data(static_cast<size_t>(n) * 2);
     for (int i = 0; i < n; ++i) {
         const float seabed_r = rows[i].seabed.range_m;
-        data[static_cast<size_t>(i) * 2]     = (seabed_r > 0.f) ? seabed_r
-                                               : rows[i].altitude_m;
-        data[static_cast<size_t>(i) * 2 + 1] = rows[i].slant_range_m;
+        const float alt_r    = rows[i].altitude_m;
+        data[static_cast<size_t>(i) * 2] =
+            (seabed_r > 0.f && std::isfinite(seabed_r)) ? seabed_r :
+            (alt_r    > 0.f && std::isfinite(alt_r))    ? alt_r    : 0.f;
+        data[static_cast<size_t>(i) * 2 + 1] =
+            std::isfinite(rows[i].slant_range_m) ? rows[i].slant_range_m : 0.f;
     }
     const bool is_new_src = !m_tex_src;
     if (is_new_src) glGenTextures(1, &m_tex_src);

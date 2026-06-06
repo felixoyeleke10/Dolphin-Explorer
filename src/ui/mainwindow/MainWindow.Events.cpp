@@ -13,6 +13,7 @@
 #include <QFileInfo>
 #include <QMenuBar>
 #include <QMimeData>
+#include <QMessageBox>
 #include <QSettings>
 #include <QShowEvent>
 #include <QStandardPaths>
@@ -57,12 +58,26 @@ static void purgeStaleTempProjects()
     }
 }
 
-// ── Event overrides ───────────────────────────────────────────────────────────
+// -- Event overrides -----------------------------------------------------------
 
 void MainWindow::closeEvent(QCloseEvent* event)
 {
-    if (m_project && !m_project->isTempProject())
+    if (m_project && m_project_dirty) {
+        const auto reply = QMessageBox::question(
+            this, tr("Close"),
+            m_project->isTempProject()
+                ? tr("You have unsaved changes. Save before closing?")
+                : tr("Save changes to \"%1\" before closing?")
+                      .arg(QString::fromStdString(m_project->name())),
+            QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel);
+        if (reply == QMessageBox::Cancel) { event->ignore(); return; }
+        if (reply == QMessageBox::Save) {
+            onSaveProject();
+            if (m_project_dirty) { event->ignore(); return; }  // save failed or was cancelled
+        }
+    } else if (m_project && !m_project->isTempProject()) {
         m_project->save();
+    }
 
     QSettings settings(AppInfo::kOrgName, AppInfo::kSettingsApp);
     settings.setValue("geometry",          saveGeometry());

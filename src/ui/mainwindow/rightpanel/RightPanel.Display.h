@@ -20,7 +20,7 @@ public:
     bool     supports(const app::DataLayer& layer) const override {
         return layer.modality == app::Modality::Sidescan;
     }
-    void     setLayer(app::DataLayer*)                   override {}
+    void     setLayer(app::DataLayer*)                   override;
     QWidget* widget()                                    override { return this; }
 
     int  currentPaletteIndex() const;

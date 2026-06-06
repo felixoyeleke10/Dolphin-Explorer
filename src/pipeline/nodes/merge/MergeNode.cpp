@@ -3,7 +3,7 @@
 
 namespace dolphin::pipeline {
 
-// ── MergeNode ─────────────────────────────────────────────────────────────────
+// -- MergeNode -----------------------------------------------------------------
 
 NodeSchema MergeNode::schema() const
 {
@@ -17,7 +17,7 @@ ArtifactBuffer MergeNode::process(const ArtifactBuffer& input, const NodeParams&
     return input;
 }
 
-// ── BlendNode ─────────────────────────────────────────────────────────────────
+// -- BlendNode -----------------------------------------------------------------
 
 NodeSchema BlendNode::schema() const
 {
@@ -35,7 +35,7 @@ ArtifactBuffer BlendNode::process(const ArtifactBuffer& input, const NodeParams&
     return input;
 }
 
-// ── MultiMergeNode ────────────────────────────────────────────────────────────
+// -- MultiMergeNode ------------------------------------------------------------
 
 int MultiMergeNode::inputCount() const
 {

@@ -17,14 +17,14 @@ namespace PaletteIndex {
     inline constexpr int Count     = 10;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  SonarDisplayParams — shared image-processing parameters for any sonar view.
 //
 //  Consumed by SSSAmplitudeProcessor and SSSPalette; inherited by
 //  WaterfallParams which adds waterfall-specific extensions (AGC, SRC).
 //
 //  No Qt dependency — pure data, safe to include from any layer.
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 struct SonarDisplayParams {
     float gain      = 1.0f;   // 0.5 – 10.0  (gamma-style brightness)

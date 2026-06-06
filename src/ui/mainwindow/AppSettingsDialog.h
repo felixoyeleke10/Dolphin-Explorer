@@ -1,4 +1,5 @@
 #pragma once
+#include "ui/systems/AppState.h"   // AppSettings — canonical settings definition
 #include "ui/shell/Theme.h"
 #include <QColor>
 #include <QDialog>
@@ -15,7 +16,7 @@ class QStackedWidget;
 
 namespace dolphin::ui {
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  AppSettingsDialog — application-wide preferences.
 //
 //  Sidebar navigation with six pages:
@@ -28,48 +29,14 @@ namespace dolphin::ui {
 //
 //  All values persist to QSettings under the "app/" key group.
 //  Call loadDefaults() to read current settings without opening the dialog.
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 class AppSettingsDialog : public QDialog {
     Q_OBJECT
 public:
-    struct Settings {
-        // ── General ───────────────────────────────────────────────────────
-        int     units_system    = 0;    // 0=Metric, 1=Imperial
-        int     depth_unit      = 0;    // 0=Meters, 1=Feet
-        int     coord_format    = 0;    // 0=Decimal Degrees, 1=DMS, 2=UTM
-        int     date_format     = 0;    // 0=ISO 8601 (UTC), 1=Local time
-
-        // ── Appearance ────────────────────────────────────────────────────
-        int     theme           = 0;    // 0=Dark, 1=Light (future)
-        int     ui_density      = 1;    // 0=Compact, 1=Normal, 2=Comfortable
-        int     font_size       = 1;    // 0=Small, 1=Medium, 2=Large
-        bool    show_tooltips   = true;
-        bool    show_grid       = true;
-
-        // ── Performance ───────────────────────────────────────────────────
-        int     worker_threads  = 4;    // 1–16
-        int     tile_cache_mb   = 512;  // 64–4096
-        int     autosave_min    = 5;    // 0=disabled, 1–60
-        bool    gpu_accel       = true;
-
-        // ── Data defaults ─────────────────────────────────────────────────
-        double  sound_velocity  = 1500.0;   // m/s
-        bool    auto_stretch    = true;
-        int     default_palette = 0;        // 0=Thermal, 1=Greyscale, 2=Ocean, 3=Copper
-        int     default_crs     = 0;        // 0=WGS 84, 1=NAD83, 2=ETRS89
-
-        // ── Export ────────────────────────────────────────────────────────
-        QString export_dir;
-        int     export_format   = 0;        // 0=CSV, 1=GeoJSON, 2=KMZ, 3=Shapefile
-
-        // ── Map ───────────────────────────────────────────────────────────
-        QColor  map_bg_color    { Theme::kBg };  // 2D/3D viewport background
-        int     map_grid_preset    = 0;            // index into kMapGridPresets
-        int     grid_label_size    = 1;            // 0=Small/7pt, 1=Normal/8pt, 2=Large/10pt
-        bool    grid_label_rotated = false;        // true = lat labels rotated 90°
-        int     graticule_coord    = 0;            // 0=Auto, 1=Degrees, 2=Easting/Northing, 3=Both
-    };
+    // Canonical definition lives in AppState as AppSettings.
+    // This alias keeps all existing AppSettingsDialog::Settings references working.
+    using Settings = AppSettings;
 
     // QSettings key constants
     static constexpr const char* kKeyUnits          = "app/unitsSystem";
@@ -132,6 +99,7 @@ private:
     QWidget* buildPerformancePage();
     QWidget* buildDataPage       ();
     QWidget* buildExportPage     ();
+    QWidget* buildMapPage        ();
     QWidget* buildAboutPage      ();
 
     void fillControls(const Settings& s);
@@ -139,36 +107,36 @@ private:
     QListWidget*    m_nav   = nullptr;
     QStackedWidget* m_stack = nullptr;
 
-    // ── General ───────────────────────────────────────────────────────────
+    // -- General -----------------------------------------------------------
     QComboBox* m_units_combo        = nullptr;
     QComboBox* m_depth_unit_combo   = nullptr;
     QComboBox* m_coord_format_combo = nullptr;
     QComboBox* m_date_format_combo  = nullptr;
 
-    // ── Appearance ────────────────────────────────────────────────────────
+    // -- Appearance --------------------------------------------------------
     QComboBox* m_theme_combo        = nullptr;
     QComboBox* m_density_combo      = nullptr;
     QComboBox* m_font_size_combo    = nullptr;
     QCheckBox* m_tooltips_check     = nullptr;
     QCheckBox* m_grid_check         = nullptr;
 
-    // ── Performance ───────────────────────────────────────────────────────
+    // -- Performance -------------------------------------------------------
     QSpinBox*  m_workers_spin       = nullptr;
     QSpinBox*  m_cache_spin         = nullptr;
     QSpinBox*  m_autosave_spin      = nullptr;
     QCheckBox* m_gpu_accel_check    = nullptr;
 
-    // ── Data defaults ─────────────────────────────────────────────────────
+    // -- Data defaults -----------------------------------------------------
     QDoubleSpinBox* m_sound_vel_spin = nullptr;
     QCheckBox*      m_auto_stretch   = nullptr;
     QComboBox*      m_palette_combo  = nullptr;
     QComboBox*      m_crs_combo      = nullptr;
 
-    // ── Export ────────────────────────────────────────────────────────────
+    // -- Export ------------------------------------------------------------
     QLineEdit*   m_export_dir_edit  = nullptr;
     QComboBox*   m_export_fmt_combo = nullptr;
 
-    // ── Map ───────────────────────────────────────────────────────────────
+    // -- Map ---------------------------------------------------------------
     QComboBox*   m_map_bg_combo              = nullptr;
     QComboBox*   m_map_grid_combo            = nullptr;
     QComboBox*   m_grid_label_size_combo     = nullptr;

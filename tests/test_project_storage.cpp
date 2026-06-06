@@ -24,6 +24,7 @@
 #include <QTemporaryDir>
 
 #include <cassert>
+#include <cmath>
 #include <cstdio>
 #include <string>
 
@@ -328,6 +329,51 @@ static void testLayerRemoval()
     CHECK(loaded->sources().empty());
 }
 
+// 9. Display-state round-trip — visible, SRC, QC fraction, bottom-track kind,
+//    and the new per-layer SSS palette all survive save → reopen.
+static void testDisplayStatePersistence()
+{
+    QTemporaryDir tmp;
+    CHECK(tmp.isValid());
+    if (!tmp.isValid()) return;
+
+    const std::string manifest = (tmp.path() + "/display.dlp").toStdString();
+    auto proj = dolphin::app::Project::create("display", manifest);
+    CHECK(proj != nullptr);
+    if (!proj) return;
+
+    auto* src   = proj->addSource("/fake/survey.xtf", "xtf");
+    auto* layer = proj->addLayer(src->id, "layer");
+    CHECK(layer != nullptr);
+    if (!layer) return;
+
+    injectIndexEntry(layer);
+    layer->visible               = false;
+    layer->slant_range_corrected = true;
+    layer->qc_viewed_fraction    = 0.75f;
+    layer->bottom_track_kind     = dolphin::app::BottomTrackKind::Mixed;
+    layer->sss_palette           = 3;  // e.g. Copper
+    layer->sbp_palette           = 2;  // e.g. Seismic
+
+    CHECK(proj->save());
+
+    auto loaded = dolphin::app::Project::open(manifest);
+    CHECK(loaded != nullptr);
+    if (!loaded) return;
+    CHECK(!loaded->layers().empty());
+
+    const auto& ll = loaded->layers().front();
+    CHECK(ll != nullptr);
+    if (!ll) return;
+
+    CHECK(!ll->visible);
+    CHECK(ll->slant_range_corrected);
+    CHECK(std::fabs(ll->qc_viewed_fraction - 0.75f) < 1e-4f);
+    CHECK(ll->bottom_track_kind == dolphin::app::BottomTrackKind::Mixed);
+    CHECK(ll->sss_palette == 3);
+    CHECK(ll->sbp_palette == 2);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 //  Entry point
 // ─────────────────────────────────────────────────────────────────────────────
@@ -344,6 +390,7 @@ int main(int argc, char** argv)
     testReopenInvalidatesUnknownFormat();
     testDpcacheFormatAccepted();
     testLayerRemoval();
+    testDisplayStatePersistence();
 
     std::printf("\n%d passed, %d failed\n", g_pass, g_fail);
     return (g_fail == 0) ? 0 : 1;

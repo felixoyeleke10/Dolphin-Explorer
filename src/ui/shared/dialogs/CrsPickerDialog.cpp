@@ -1,4 +1,4 @@
-﻿// CrsPickerDialog.cpp — searchable EPSG CRS picker for survey projects.
+// CrsPickerDialog.cpp — searchable EPSG CRS picker for survey projects.
 //
 // Performance strategy:
 //   - buildTable() runs once in the constructor; all QTableWidgetItems are
@@ -48,7 +48,7 @@ CrsPickerDialog::CrsPickerDialog(const core::SpatialRef& current, QWidget* paren
     vlay->setSpacing(Theme::kSpacing3);
     vlay->setContentsMargins(Theme::kSpacing4, Theme::kSpacing4, Theme::kSpacing4, Theme::kSpacing4);
 
-    // ── Title ─────────────────────────────────────────────────────────────
+    // -- Title -------------------------------------------------------------
     auto* title = new QLabel(
         tr("Choose the coordinate reference system used by this survey's navigation data."),
         this);
@@ -56,13 +56,13 @@ CrsPickerDialog::CrsPickerDialog(const core::SpatialRef& current, QWidget* paren
     title->setObjectName("crsPickerTitle");
     vlay->addWidget(title);
 
-    // ── Search bar ────────────────────────────────────────────────────────
+    // -- Search bar --------------------------------------------------------
     m_search = new QLineEdit(this);
     m_search->setPlaceholderText(tr("Search by name or EPSG code\u2026"));
     m_search->setClearButtonEnabled(true);
     vlay->addWidget(m_search);
 
-    // ── Table ─────────────────────────────────────────────────────────────
+    // -- Table -------------------------------------------------------------
     m_table = new QTableWidget(this);
     m_table->setColumnCount(3);
     m_table->setHorizontalHeaderLabels({tr("EPSG"), tr("Name"), tr("Type")});
@@ -77,13 +77,13 @@ CrsPickerDialog::CrsPickerDialog(const core::SpatialRef& current, QWidget* paren
     m_table->setSortingEnabled(false);
     vlay->addWidget(m_table, 1);
 
-    // ── Preview ───────────────────────────────────────────────────────────
+    // -- Preview -----------------------------------------------------------
     m_preview = new QLabel(tr("No CRS selected"), this);
     m_preview->setObjectName("crsPreviewLabel");
     m_preview->setAlignment(Qt::AlignCenter);
     vlay->addWidget(m_preview);
 
-    // ── Buttons ───────────────────────────────────────────────────────────
+    // -- Buttons -----------------------------------------------------------
     auto* buttons = new QDialogButtonBox(
         QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
     auto* ok_btn = buttons->button(QDialogButtonBox::Ok);
@@ -92,7 +92,7 @@ CrsPickerDialog::CrsPickerDialog(const core::SpatialRef& current, QWidget* paren
     ok_btn->setEnabled(false);
     vlay->addWidget(buttons);
 
-    // ── Debounce timer ────────────────────────────────────────────────────
+    // -- Debounce timer ----------------------------------------------------
     m_debounce = new QTimer(this);
     m_debounce->setSingleShot(true);
     m_debounce->setInterval(100);
@@ -100,7 +100,7 @@ CrsPickerDialog::CrsPickerDialog(const core::SpatialRef& current, QWidget* paren
         applyFilter(m_pending_filter);
     });
 
-    // ── Build table once ──────────────────────────────────────────────────
+    // -- Build table once --------------------------------------------------
     buildTable();
 
     // Pre-select the current CRS if it's in the database
@@ -119,7 +119,7 @@ CrsPickerDialog::CrsPickerDialog(const core::SpatialRef& current, QWidget* paren
         }
     }
 
-    // ── Connections ───────────────────────────────────────────────────────
+    // -- Connections -------------------------------------------------------
     connect(m_search, &QLineEdit::textChanged, this, [this](const QString& text) {
         m_pending_filter = text;
         m_debounce->start();          // restart; fires 100 ms after last keystroke
@@ -147,7 +147,7 @@ void CrsPickerDialog::buildTable()
 
     const QString typeGeo  = tr("Geographic");
     const QString typeProj = tr("Projected");
-    const QString sepLabel = tr("── All CRS ───────────────────────────────");
+    const QString sepLabel = tr("-- All CRS -------------------------------");
 
     QFont boldFont   = m_table->font();  boldFont.setBold(true);
     QFont italicFont = m_table->font();  italicFont.setItalic(true);

@@ -11,7 +11,7 @@ namespace dolphin::pipeline {
 
 NodeGraph::NodeGraph() = default;
 
-// ── Groups ────────────────────────────────────────────────────────────────────
+// -- Groups --------------------------------------------------------------------
 
 NodeGroup* NodeGraph::addGroup(NodeGroup group)
 {
@@ -39,7 +39,7 @@ const NodeGroup* NodeGraph::findGroup(const std::string& id) const
     return nullptr;
 }
 
-// ── Nodes ─────────────────────────────────────────────────────────────────────
+// -- Nodes ---------------------------------------------------------------------
 
 void NodeGraph::addNode(NodePtr node)
 {
@@ -65,7 +65,7 @@ NodePtr NodeGraph::findNode(const std::string& id) const
     return nullptr;
 }
 
-// ── Edges ─────────────────────────────────────────────────────────────────────
+// -- Edges ---------------------------------------------------------------------
 
 bool NodeGraph::addEdge(const std::string& from, const std::string& to, int to_port)
 {
@@ -93,7 +93,7 @@ void NodeGraph::removeEdgeToPort(const std::string& to, int to_port)
         m_edges.end());
 }
 
-// ── Layout ────────────────────────────────────────────────────────────────────
+// -- Layout --------------------------------------------------------------------
 
 void NodeGraph::setNodePosition(const std::string& id, float x, float y)
 {

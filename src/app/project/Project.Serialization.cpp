@@ -8,6 +8,8 @@
 #include "geo/GeoUtils.h"
 #include "util/Json.h"
 
+#include <cmath>
+
 namespace dolphin::app {
 
 namespace {
@@ -16,7 +18,7 @@ using detail::normalisePath;
 using detail::normaliseFormat;
 using detail::manifestDirectory;
 
-// ── Encode helpers ────────────────────────────────────────────────────────────
+// -- Encode helpers ------------------------------------------------------------
 
 static std::string modalityToString(Modality m) {
     switch (m) {
@@ -47,7 +49,7 @@ static util::JsonValue spatialRefToJson(const core::SpatialRef& ref)
     return out;
 }
 
-// ── Path helpers ──────────────────────────────────────────────────────────────
+// -- Path helpers --------------------------------------------------------------
 
 static std::string pathForManifest(const std::string& path, const std::string& manifest_path)
 {
@@ -71,7 +73,7 @@ static std::string pathForManifest(const std::string& path, const std::string& m
 
 } // namespace
 
-// ── toJson ────────────────────────────────────────────────────────────────────
+// -- toJson --------------------------------------------------------------------
 
 std::string Project::toJson() const
 {
@@ -113,7 +115,11 @@ std::string Project::toJson() const
         jl["index_built"] = util::JsonValue(l->index_built);
         jl["visible"]     = util::JsonValue(l->visible);
         jl["slant_range_corrected"] = util::JsonValue(l->slant_range_corrected);
+        jl["pipeline_applied"]      = util::JsonValue(l->pipeline_applied);
         jl["bottom_track_kind"] = util::JsonValue(static_cast<int>(l->bottom_track_kind));
+        jl["qc_viewed_fraction"] = util::JsonValue(static_cast<double>(l->qc_viewed_fraction));
+        jl["sss_palette"] = util::JsonValue(l->sss_palette);
+        jl["sbp_palette"] = util::JsonValue(l->sbp_palette);
         jl["sonar_name"]  = util::JsonValue(l->sonar_name);
         jl["survey_name"] = util::JsonValue(l->survey_name);
         jl["vessel_name"] = util::JsonValue(l->vessel_name);
@@ -173,10 +179,10 @@ std::string Project::toJson() const
         jc["lat"]            = util::JsonValue(c.lat);
         jc["lon"]            = util::JsonValue(c.lon);
         jc["spatial_ref"]    = spatialRefToJson(c.spatial_ref);
-        jc["depth_m"]        = util::JsonValue(static_cast<double>(c.depth_m));
-        jc["range_m"]       = util::JsonValue(static_cast<double>(c.range_m));
-        jc["width_m"]        = util::JsonValue(static_cast<double>(c.width_m));
-        jc["height_m"]       = util::JsonValue(static_cast<double>(c.height_m));
+        jc["depth_m"]        = util::JsonValue(std::isfinite(c.depth_m)  ? static_cast<double>(c.depth_m)  : 0.0);
+        jc["range_m"]        = util::JsonValue(std::isfinite(c.range_m)  ? static_cast<double>(c.range_m)  : 0.0);
+        jc["width_m"]        = util::JsonValue(std::isfinite(c.width_m)  ? static_cast<double>(c.width_m)  : 0.0);
+        jc["height_m"]       = util::JsonValue(std::isfinite(c.height_m) ? static_cast<double>(c.height_m) : 0.0);
         jc["artifact_id"]    = util::JsonValue(static_cast<double>(c.artifact_id));
         jc["sample_idx"]     = util::JsonValue(static_cast<double>(c.sample_idx));
         jc["line_id"]        = util::JsonValue(c.line_id);

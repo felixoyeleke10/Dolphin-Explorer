@@ -40,6 +40,26 @@ core::ArtifactIndex XtfReader::buildIndex(ProgressFn progress)
         }
     }
 
+    // Report every declared channel whose TypeOfChannel this reader cannot index,
+    // so the user knows why an expected modality (e.g. bathymetry) is missing
+    // rather than seeing it silently dropped.  Supported types: sub-bottom (0),
+    // port SSS (1), starboard SSS (2).  Recognized-but-unsupported: bathymetry
+    // (3/4).  Anything else is unrecognized.
+    for (size_t ci = 0; ci < m_chan_info.size(); ++ci) {
+        const uint16_t type = m_chan_info[ci].type;
+        if (type == CHAN_SUBBOT || type == CHAN_PORT_SSS || type == CHAN_STBD_SSS)
+            continue;
+        const bool recognized = (type == CHAN_BATHY || type == CHAN_BATHY_ALT);
+        addDiagnostic(Sev::Warning, Code::UnsupportedChannelType,
+             "Channel " + std::to_string(ci)
+             + " (" + m_chan_info[ci].channel_name + ")"
+             + ": TypeOfChannel " + std::to_string(type)
+             + (recognized
+                  ? " (bathymetry) is recognized but not supported;"
+                  : " is not recognized;")
+             + " channel will be skipped");
+    }
+
     core::ArtifactIndex index;
     index.source_id = m_path;
 
@@ -61,6 +81,9 @@ core::ArtifactIndex XtfReader::buildIndex(ProgressFn progress)
     // Resync-tracking: collapse multiple bad-magic advances into one diagnostic.
     uint64_t resync_start = 0;
     bool     in_resync    = false;
+
+    // Report each distinct unsupported packet HeaderType only once.
+    bool reported_pkt_type[256] = {false};
 
     while (true) {
         uint64_t offset = 0;
@@ -269,6 +292,27 @@ core::ArtifactIndex XtfReader::buildIndex(ProgressFn progress)
             }
             if (hasUsableCoordinate(nlat, nlon))
                 nav_fixes.push_back({ts_us, nlat, nlon});
+        } else if (pkt.HeaderType != PACKET_PING) {
+            // Packet type this reader does not index.  PACKET_PING with zero
+            // channels falls through silently (it carries no sample data).
+            // Recognized-but-unsupported types (attitude, notes) are Info;
+            // unrecognized types are Warning.  Report each type once.
+            if (!reported_pkt_type[pkt.HeaderType]) {
+                reported_pkt_type[pkt.HeaderType] = true;
+                const bool recognized = (pkt.HeaderType == PACKET_ATTITUDE
+                                      || pkt.HeaderType == PACKET_NOTES);
+                const char* label = (pkt.HeaderType == PACKET_ATTITUDE) ? " (attitude)"
+                                  : (pkt.HeaderType == PACKET_NOTES)    ? " (notes)"
+                                  : "";
+                addDiagnostic(recognized ? Sev::Info : Sev::Warning,
+                     Code::UnsupportedPacketType,
+                     "Packet type " + std::to_string(pkt.HeaderType) + label
+                     + (recognized
+                          ? " is recognized but not indexed by this reader"
+                          : " is not recognized; record skipped")
+                     + " (first seen at " + fmtHex(offset) + ")",
+                     offset);
+            }
         }
 
         if (!detail::seekAbs(m_file, offset + record_bytes))

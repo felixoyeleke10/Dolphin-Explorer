@@ -251,8 +251,8 @@ void MainWindow::recordActivity(ActivityKind kind, const QString& description)
 void MainWindow::onLayerVisibilityChanged(const std::string& layer_id, bool visible)
 {
     if (!m_project) {
-        if (m_map_view)      m_map_view->setLayerVisible(layer_id, visible);
         if (m_viewport_host) m_viewport_host->setLayerVisible(layer_id, visible);
+        else if (m_map_view) m_map_view->setLayerVisible(layer_id, visible);
         return;
     }
 
@@ -264,8 +264,8 @@ void MainWindow::onLayerVisibilityChanged(const std::string& layer_id, bool visi
     auto apply = [this](const std::string& lid, bool v) {
         if (auto* layer = m_project ? m_project->findLayer(lid) : nullptr)
             layer->visible = v;
-        if (m_map_view)      m_map_view->setLayerVisible(lid, v);
         if (m_viewport_host) m_viewport_host->setLayerVisible(lid, v);
+        else if (m_map_view) m_map_view->setLayerVisible(lid, v);
         if (m_line_list)     m_line_list->setLayerVisibility(lid, v);
         if (m_layer_picker)  m_layer_picker->setLayerVisibility(lid, v);
         // visible is serialized; direct mutation bypasses Project::modified() signal.

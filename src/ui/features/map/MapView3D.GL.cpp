@@ -11,9 +11,9 @@
 
 namespace dolphin::ui {
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Flat-colour shader (axes / nav tracks / survey outline)
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 static const char* kVertSrc = R"glsl(
 #version 330 core
@@ -33,9 +33,9 @@ void main() {
 }
 )glsl";
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Terrain shader (depth-coloured triangle mesh)
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 // uVExag scales Z for display only; depth colour uses unscaled Z so the
 // palette stays correct regardless of the current exaggeration setting.
@@ -95,13 +95,13 @@ void main() {
 }
 )glsl";
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Drape shader (sonar image projected onto terrain / flat quad)
 //
 //  UV is computed per-vertex from the world-space XY position relative to the
 //  sonar image's bounding box.  Fragments outside the bbox or with alpha < 1%
 //  (no sonar return) are discarded so the terrain depth-colour shows through.
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 static const char* kDrapeVertSrc = R"glsl(
 #version 330 core
@@ -132,13 +132,13 @@ void main() {
 }
 )glsl";
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Curtain shader (SBP vertical profile ribbon)
 //
 //  Each quad spans surface (z=0) to bottom pick (z = -depth_m) along one
 //  segment of the nav track.  Color maps depth: blue (shallow) → red (deep).
 //  VE is applied as a uniform so the user can change it without a VBO rebuild.
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 static const char* kCurtainVertSrc = R"glsl(
 #version 330 core
@@ -176,14 +176,14 @@ void main() {
 }
 )glsl";
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Procedural infinite ground-grid shader
 //
 //  A full-screen NDC quad is drawn.  The fragment shader unprojects each pixel
 //  to a world-space ray, intersects it with the z=0 ground plane, then draws
 //  anti-aliased minor + major grid lines via fwidth-based smoothstep —
 //  automatically handling any zoom level without CPU rebuilds.
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 static const char* kGridVertSrc = R"glsl(
 #version 330 core
@@ -243,9 +243,9 @@ void main() {
 }
 )glsl";
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  OpenGL lifecycle
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void MapView3D::initializeGL()
 {
@@ -260,7 +260,7 @@ void MapView3D::initializeGL()
     // top-level composition, which is a common source of flicker during Windows
     // screen capture on OpenGL-backed widgets.
 
-    // ── Flat-colour shader ────────────────────────────────────────────────────
+    // -- Flat-colour shader ----------------------------------------------------
     m_shader = new QOpenGLShaderProgram(this);
     if (!m_shader->addShaderFromSourceCode(QOpenGLShader::Vertex,   kVertSrc) ||
         !m_shader->addShaderFromSourceCode(QOpenGLShader::Fragment, kFragSrc) ||
@@ -270,7 +270,7 @@ void MapView3D::initializeGL()
     m_loc_mvp   = m_shader->uniformLocation("uMVP");
     m_loc_color = m_shader->uniformLocation("uColor");
 
-    // ── Procedural grid shader ────────────────────────────────────────────────
+    // -- Procedural grid shader ------------------------------------------------
     m_grid_shader = new QOpenGLShaderProgram(this);
     if (!m_grid_shader->addShaderFromSourceCode(QOpenGLShader::Vertex,   kGridVertSrc) ||
         !m_grid_shader->addShaderFromSourceCode(QOpenGLShader::Fragment, kGridFragSrc) ||
@@ -297,7 +297,7 @@ void MapView3D::initializeGL()
     m_grid_quad_vbo.allocate(kQuad, sizeof(kQuad));
     m_grid_quad_vbo.release();
 
-    // ── Terrain shader ────────────────────────────────────────────────────────
+    // -- Terrain shader --------------------------------------------------------
     m_terrain_shader = new QOpenGLShaderProgram(this);
     if (!m_terrain_shader->addShaderFromSourceCode(QOpenGLShader::Vertex,   kTerrVertSrc) ||
         !m_terrain_shader->addShaderFromSourceCode(QOpenGLShader::Fragment, kTerrFragSrc) ||
@@ -310,7 +310,7 @@ void MapView3D::initializeGL()
     m_loc_terr_vexag  = m_terrain_shader->uniformLocation("uVExag");
     m_loc_terr_campos = m_terrain_shader->uniformLocation("uCamPos");
 
-    // ── Curtain shader ────────────────────────────────────────────────────────
+    // -- Curtain shader --------------------------------------------------------
     m_curtain_shader = new QOpenGLShaderProgram(this);
     if (!m_curtain_shader->addShaderFromSourceCode(QOpenGLShader::Vertex,   kCurtainVertSrc) ||
         !m_curtain_shader->addShaderFromSourceCode(QOpenGLShader::Fragment, kCurtainFragSrc) ||
@@ -321,7 +321,7 @@ void MapView3D::initializeGL()
     m_loc_curt_palette = m_curtain_shader->uniformLocation("uPaletteIdx");
     m_loc_curt_vexag   = m_curtain_shader->uniformLocation("uVExag");
 
-    // ── Drape shader ──────────────────────────────────────────────────────────
+    // -- Drape shader ----------------------------------------------------------
     m_drape_shader = new QOpenGLShaderProgram(this);
     if (!m_drape_shader->addShaderFromSourceCode(QOpenGLShader::Vertex,   kDrapeVertSrc) ||
         !m_drape_shader->addShaderFromSourceCode(QOpenGLShader::Fragment, kDrapeFragSrc) ||
@@ -353,9 +353,9 @@ void MapView3D::resizeGL(int w, int h)
     glViewport(0, 0, w, h);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Geometry builders
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void MapView3D::buildNavMergedVbo()
 {

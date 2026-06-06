@@ -1,4 +1,4 @@
-﻿// NodeGraphViewPaint.cpp — all paint methods for the node graph canvas.
+// NodeGraphViewPaint.cpp — all paint methods for the node graph canvas.
 #include "ui/features/nodegraph/NodeGraphView.h"
 #include "pipeline/NodeGraph.h"
 #include "pipeline/NodeRegistry.h"
@@ -217,17 +217,17 @@ void NodeGraphView::paintNode(QPainter& p, const std::string& id, bool sel, bool
     const float   barW   = 3.f * (float)m_zoom;
     const QColor  accent = typeColor(node->typeId());
 
-    // ── Shadow ────────────────────────────────────────────────────────────────
+    // -- Shadow ----------------------------------------------------------------
     p.setPen(Qt::NoPen);
     p.setBrush(kNodeShadow);
     p.drawRoundedRect(rw.adjusted(1, 3, 1, 3), cr, cr);
 
-    // ── Body ──────────────────────────────────────────────────────────────────
+    // -- Body ------------------------------------------------------------------
     p.setBrush(hov ? QColor(Theme::kBgHover) : QColor(Theme::kBgElevated));
     p.setPen(Qt::NoPen);
     p.drawRoundedRect(rw, cr, cr);
 
-    // ── Left accent bar (3 px, clipped to rounded rect) ───────────────────────
+    // -- Left accent bar (3 px, clipped to rounded rect) -----------------------
     {
         QPainterPath body_path; body_path.addRoundedRect(rw, cr, cr);
         QPainterPath bar_path;  bar_path.addRect(QRectF(rw.left(), rw.top(), barW, rw.height()));
@@ -236,14 +236,14 @@ void NodeGraphView::paintNode(QPainter& p, const std::string& id, bool sel, bool
         p.drawPath(body_path.intersected(bar_path));
     }
 
-    // ── Border ────────────────────────────────────────────────────────────────
+    // -- Border ----------------------------------------------------------------
     p.setBrush(Qt::NoBrush);
     if (sel)       p.setPen(QPen(QColor(Theme::kAccent), 1.5));
     else if (hov)  p.setPen(QPen(QColor(Theme::kBorderMenu), 1.0));
     else           p.setPen(QPen(QColor(Theme::kBorder), 1.0));
     p.drawRoundedRect(rw, cr, cr);
 
-    // ── Label (single line, vertically centred) ───────────────────────────────
+    // -- Label (single line, vertically centred) -------------------------------
     if (m_zoom > 0.3) {
         const float tx = rw.left() + barW + 6.f * (float)m_zoom;
         const float tw = rw.width() - barW - 10.f * (float)m_zoom;
@@ -255,7 +255,7 @@ void NodeGraphView::paintNode(QPainter& p, const std::string& id, bool sel, bool
                    QString::fromStdString(node->label()));
     }
 
-    // ── Ports ─────────────────────────────────────────────────────────────────
+    // -- Ports -----------------------------------------------------------------
     paintPort(p, canvasToWidget(outPortPos(id)), true,
               m_hov_port_node == id && m_hov_port_out, isConnected(id, true));
 

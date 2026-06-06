@@ -8,13 +8,13 @@ class QTabWidget;
 
 namespace dolphin::ui {
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  SettingsDialog — application preferences stored via QSettings.
 //
 //  Tabs:
 //    Display    — units, palette defaults
 //    Processing — default TVG parameters
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 class SettingsDialog : public QDialog {
     Q_OBJECT
 public:

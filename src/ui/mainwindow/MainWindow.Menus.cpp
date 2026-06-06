@@ -1,4 +1,4 @@
-﻿// MainWindow.Menus.cpp — menu bar construction.
+// MainWindow.Menus.cpp — menu bar construction.
 // Geodetic settings dialog lives in MainWindow.Geodesy.cpp.
 #include "ui/mainwindow/MainWindow.h"
 #include "ui/features/map/sidescan/SidescanViewController.h"
@@ -256,7 +256,7 @@ void MainWindow::buildViewMenu()
 
     view->addSeparator();
 
-    // ── Map Sonar Preview Quality ─────────────────────────────────────────────
+    // -- Map Sonar Preview Quality ---------------------------------------------
     QMenu* sonar_menu = view->addMenu(tr("Map Sonar Preview"));
     auto*  ag         = new QActionGroup(sonar_menu);
     ag->setExclusive(true);

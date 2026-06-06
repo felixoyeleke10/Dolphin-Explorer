@@ -9,7 +9,7 @@ namespace dolphin::io {
 
 using namespace detail_segy;
 
-// ── buildIndex ────────────────────────────────────────────────────────────────
+// -- buildIndex ----------------------------------------------------------------
 
 core::ArtifactIndex SegyReader::buildIndex(ProgressFn progress)
 {
@@ -20,7 +20,7 @@ core::ArtifactIndex SegyReader::buildIndex(ProgressFn progress)
     using Sev  = core::ImportDiagnosticSeverity;
     using Code = core::ImportDiagnosticCode;
 
-    // ── Deferred open() diagnostics ────────────────────────────────────────────
+    // -- Deferred open() diagnostics --------------------------------------------
     if (m_sampleFormatDefaulted) {
         addDiagnostic(Sev::Warning, Code::InferredBytesPerSample,
              "Binary file header format code is 0 (unset); defaulted to"
@@ -55,7 +55,7 @@ core::ArtifactIndex SegyReader::buildIndex(ProgressFn progress)
     core::ArtifactIndex index;
     index.source_id = m_path;
 
-    // ── CRS from text header (decoded in open()) ───────────────────────────────
+    // -- CRS from text header (decoded in open()) -------------------------------
     {
         const core::SpatialRef text_crs = crsFromTextHeader(m_textHeaderDecoded);
         if (!text_crs.empty())
@@ -91,7 +91,7 @@ core::ArtifactIndex SegyReader::buildIndex(ProgressFn progress)
 
         if (std::fread(thdr, kTraceHdrBytes, 1, m_file) != 1) break;
 
-        // ── Validate geometry ──────────────────────────────────────────────────
+        // -- Validate geometry --------------------------------------------------
         uint32_t ns = static_cast<uint32_t>(rdUint16(&thdr[114], m_littleEndian));
         if (ns == 0) ns = m_fileSamplesPerTrace;
 
@@ -133,7 +133,7 @@ core::ArtifactIndex SegyReader::buildIndex(ProgressFn progress)
 
         consecutive_bad = 0;
 
-        // ── Samples-per-trace mismatch (report once) ───────────────────────────
+        // -- Samples-per-trace mismatch (report once) ---------------------------
         {
             const uint32_t raw_ns = static_cast<uint32_t>(rdUint16(&thdr[114], m_littleEndian));
             if (!ns_mismatch_reported
@@ -151,14 +151,14 @@ core::ArtifactIndex SegyReader::buildIndex(ProgressFn progress)
             }
         }
 
-        // ── Trace identification filter ────────────────────────────────────────
+        // -- Trace identification filter ----------------------------------------
         const int16_t ident = traceIdentCode(thdr, m_littleEndian);
         if (!isSeismicTrace(ident)) {
             if (!detail::seekAbs(m_file, trace_offset + trace_total)) break;
             continue;
         }
 
-        // ── Timestamp ─────────────────────────────────────────────────────────
+        // -- Timestamp ---------------------------------------------------------
         const int64_t ts_us = traceTimestampUs(thdr, m_littleEndian);
         const double  ts_s  = ts_us * 1e-6;
         if (ts_us > 0) {
@@ -166,7 +166,7 @@ core::ArtifactIndex SegyReader::buildIndex(ProgressFn progress)
             last_ts = ts_s;
         }
 
-        // ── Coordinates (extended parser with confidence) ──────────────────────
+        // -- Coordinates (extended parser with confidence) ----------------------
         const CoordResult coord = parseTraceCoordsEx(thdr, m_littleEndian);
         if (coord.is_projected) any_projected = true;
         if (coord.units_contradicted && !units_contradiction_reported) {

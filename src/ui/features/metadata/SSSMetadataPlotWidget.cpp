@@ -1,4 +1,4 @@
-﻿// SSSMetadataPlotWidget.cpp — custom plot widget (Line / Scatter / Histogram).
+// SSSMetadataPlotWidget.cpp — custom plot widget (Line / Scatter / Histogram).
 #include "ui/features/metadata/SSSMetadataWindow.h"
 #include "ui/shell/Theme.h"
 
@@ -15,9 +15,9 @@
 
 namespace dolphin::ui {
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  PlotMetrics helpers
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 QPointF SSSMetadataPlotWidget::PlotMetrics::toPixel(double x, double y) const
 {
@@ -31,9 +31,9 @@ double SSSMetadataPlotWidget::PlotMetrics::fromPixelX(double px) const
     return xmin + (px - area.left()) / area.width() * (xmax - xmin);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  SSSMetadataPlotWidget
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 SSSMetadataPlotWidget::SSSMetadataPlotWidget(QWidget* parent)
     : QWidget(parent)
@@ -88,7 +88,7 @@ void SSSMetadataPlotWidget::clear()
     update();
 }
 
-// ── Pan/Zoom ─────────────────────────────────────────────────────────────────
+// -- Pan/Zoom -----------------------------------------------------------------
 
 void SSSMetadataPlotWidget::wheelEvent(QWheelEvent* ev)
 {
@@ -119,7 +119,7 @@ void SSSMetadataPlotWidget::mouseReleaseEvent(QMouseEvent* ev)
     if (ev->button() == Qt::LeftButton) m_dragging = false;
 }
 
-// ── Paint helpers ─────────────────────────────────────────────────────────────
+// -- Paint helpers -------------------------------------------------------------
 
 SSSMetadataPlotWidget::PlotMetrics
 SSSMetadataPlotWidget::computeMetrics(const QRect& plot) const

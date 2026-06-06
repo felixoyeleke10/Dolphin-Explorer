@@ -22,6 +22,16 @@ std::vector<uint16_t> syntheticReturn(int n, int seabed_idx)
     return samples;
 }
 
+std::vector<uint16_t> syntheticFirstReturn(int n, int seabed_idx)
+{
+    std::vector<uint16_t> samples(static_cast<size_t>(n), 10);
+    for (int i = seabed_idx; i < std::min(n, seabed_idx + 8); ++i) {
+        const int decay = i - seabed_idx;
+        samples[static_cast<size_t>(i)] = static_cast<uint16_t>(900 - decay * 70);
+    }
+    return samples;
+}
+
 std::vector<PingRow> syntheticRows(int count, int first_idx, int step_idx)
 {
     std::vector<PingRow> rows(static_cast<size_t>(count));
@@ -36,13 +46,18 @@ std::vector<PingRow> syntheticRows(int count, int first_idx, int step_idx)
     return rows;
 }
 
-void addEarlyFalseReturn(PingRow& row, int idx)
+std::vector<PingRow> syntheticFirstReturnRows(int count, int first_idx, int step_idx)
 {
-    if (idx < 0 || idx + 1 >= static_cast<int>(row.port.size())) return;
-    row.port[static_cast<size_t>(idx)] = 1800;
-    row.port[static_cast<size_t>(idx + 1)] = 1600;
-    row.stbd[static_cast<size_t>(idx)] = 1800;
-    row.stbd[static_cast<size_t>(idx + 1)] = 1600;
+    std::vector<PingRow> rows(static_cast<size_t>(count));
+    for (int i = 0; i < count; ++i) {
+        const int seabed_idx = first_idx + i * step_idx;
+        auto samples = syntheticFirstReturn(100, seabed_idx);
+        rows[static_cast<size_t>(i)].port = samples;
+        rows[static_cast<size_t>(i)].stbd = samples;
+        rows[static_cast<size_t>(i)].slant_range_m = 99.f;
+        rows[static_cast<size_t>(i)].timestamp_us = i + 1;
+    }
+    return rows;
 }
 
 int detectedCount(const std::vector<PingRow>& rows)
@@ -61,26 +76,28 @@ int main()
 {
     {
         SeabedAutoParams params;
-        assert(params.method == SeabedMethod::ContinuityAware);
+        assert(params.method == SeabedMethod::Threshold);
     }
 
     {
         auto rows = syntheticRows(8, 30, 1);
-        SeabedAutoDetector::detectAll(rows, {});
+        SeabedAutoParams params;
+        params.method = SeabedMethod::Threshold;
+        SeabedAutoDetector::detectAll(rows, params);
 
         assert(detectedCount(rows) == static_cast<int>(rows.size()));
         for (const auto& row : rows) {
-            assert(row.seabed.confidence > 0.38f);
+            assert(row.seabed.confidence > 0.80f);
             assert(row.seabed.range_m >= 28.f);
             assert(row.seabed.range_m <= 40.f);
         }
     }
 
     {
-        auto rows = syntheticRows(10, 25, 2);
+        auto rows = syntheticFirstReturnRows(6, 25, 2);
         SeabedAutoParams params;
-        params.method = SeabedMethod::ContinuityAware;
-        params.max_delta_m = 0.f;
+        params.method = SeabedMethod::FirstReturn;
+        params.min_snr = 3.f;
 
         SeabedAutoDetector::detectAll(rows, params);
 
@@ -92,20 +109,68 @@ int main()
     }
 
     {
-        auto rows = syntheticRows(14, 42, 0);
-        addEarlyFalseReturn(rows[0], 8);
-        addEarlyFalseReturn(rows[1], 9);
+        auto rows = syntheticRows(12, 42, 0);
 
         SeabedAutoParams params;
-        params.method = SeabedMethod::ContinuityAware;
+        params.method = SeabedMethod::Threshold;
         params.max_delta_m = 5.f;
         SeabedAutoDetector::detectAll(rows, params);
 
-        for (int i = 2; i < static_cast<int>(rows.size()); ++i) {
-            assert(rows[static_cast<size_t>(i)].seabed.detected);
+        for (int i = 0; i < static_cast<int>(rows.size()); ++i) {
             assert(rows[static_cast<size_t>(i)].seabed.range_m >= 39.f);
             assert(rows[static_cast<size_t>(i)].seabed.range_m <= 45.f);
         }
+    }
+
+    // Non-linear range regression test.
+    // Seabed echo is at sample index 60 of 100.  Linear interpolation places it
+    // at ~60 m; the non-linear mapping places it at 90 m.  When port_ranges /
+    // stbd_ranges are populated the detector must use the real range, not the
+    // linear approximation.
+    {
+        const int   n_samp  = 100;
+        const float slant   = 100.f;
+        const int   sb_idx  = 60;
+
+        // Build two row sets: one without per-sample ranges (linear fallback),
+        // one with non-linear ranges where sample sb_idx maps to 90 m.
+        std::vector<PingRow> rows_lin(4), rows_nl(4);
+        for (int ri = 0; ri < 4; ++ri) {
+            auto ampl = syntheticReturn(n_samp, sb_idx);
+
+            rows_lin[ri].port  = ampl;  rows_lin[ri].stbd  = ampl;
+            rows_nl[ri].port   = ampl;  rows_nl[ri].stbd   = ampl;
+            rows_lin[ri].slant_range_m = slant;
+            rows_nl[ri].slant_range_m  = slant;
+            rows_lin[ri].timestamp_us  = ri + 1;
+            rows_nl[ri].timestamp_us   = ri + 1;
+
+            // Non-linear: samples 0..sb_idx span 0..90 m, rest span 90..100 m.
+            rows_nl[ri].port_ranges.resize(static_cast<size_t>(n_samp));
+            rows_nl[ri].stbd_ranges.resize(static_cast<size_t>(n_samp));
+            for (int j = 0; j < n_samp; ++j) {
+                const float r = (j <= sb_idx)
+                    ? slant * 0.9f * static_cast<float>(j) / static_cast<float>(sb_idx)
+                    : 0.9f * slant + 0.1f * slant
+                        * static_cast<float>(j - sb_idx)
+                        / static_cast<float>(n_samp - 1 - sb_idx);
+                rows_nl[ri].port_ranges[static_cast<size_t>(j)] = r;
+                rows_nl[ri].stbd_ranges[static_cast<size_t>(j)] = r;
+            }
+            // port_ranges[sb_idx] == 90.f; linear would give ~60.6 m.
+        }
+
+        SeabedAutoParams params;
+        params.method = SeabedMethod::Threshold;
+
+        SeabedAutoDetector::detectAll(rows_lin, params);
+        SeabedAutoDetector::detectAll(rows_nl,  params);
+
+        for (const auto& row : rows_lin)
+            assert(row.seabed.range_m > 50.f && row.seabed.range_m < 72.f);
+
+        for (const auto& row : rows_nl)
+            assert(row.seabed.range_m > 82.f && row.seabed.range_m < 98.f);
     }
 
     return 0;

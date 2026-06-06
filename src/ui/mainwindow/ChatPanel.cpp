@@ -1,4 +1,4 @@
-﻿#include "ui/mainwindow/ChatPanel.h"
+#include "ui/mainwindow/ChatPanel.h"
 #include "ui/shell/Theme.h"
 
 #include <QEvent>
@@ -31,7 +31,7 @@ ConversationPanel::ConversationPanel(QWidget* parent) : QFrame(parent)
     root->setContentsMargins(0, 0, 0, 0);
     root->setSpacing(0);
 
-    // ── Header (drag handle) ──────────────────────────────────────────────────
+    // -- Header (drag handle) --------------------------------------------------
     m_header = new QWidget(this);
     m_header->setObjectName("convHeader");
     m_header->setFixedHeight(kHeaderH);
@@ -60,13 +60,13 @@ ConversationPanel::ConversationPanel(QWidget* parent) : QFrame(parent)
     hl->addWidget(close_btn);
     root->addWidget(m_header);
 
-    // ── Separator ─────────────────────────────────────────────────────────────
+    // -- Separator -------------------------------------------------------------
     auto* sep = new QFrame(this);
     sep->setObjectName("convSep");
     sep->setFixedHeight(Theme::kSepSz);
     root->addWidget(sep);
 
-    // ── Message scroll area ───────────────────────────────────────────────────
+    // -- Message scroll area ---------------------------------------------------
     m_scroll = new QScrollArea(this);
     m_scroll->setObjectName("convScroll");
     m_scroll->setWidgetResizable(true);
@@ -84,13 +84,13 @@ ConversationPanel::ConversationPanel(QWidget* parent) : QFrame(parent)
     m_scroll->setWidget(msg_widget);
     root->addWidget(m_scroll, 1);
 
-    // ── Input separator ───────────────────────────────────────────────────────
+    // -- Input separator -------------------------------------------------------
     auto* sep2 = new QFrame(this);
     sep2->setObjectName("convSep");
     sep2->setFixedHeight(Theme::kSepSz);
     root->addWidget(sep2);
 
-    // ── Input row ─────────────────────────────────────────────────────────────
+    // -- Input row -------------------------------------------------------------
     auto* input_row = new QWidget(this);
     input_row->setObjectName("convInputRow");
     input_row->setFixedHeight(kInputRowH);
@@ -129,7 +129,7 @@ void ConversationPanel::popupBelow(QWidget* anchor)
     m_input->setFocus();
 }
 
-// ── Drag-to-move via header event filter ──────────────────────────────────────
+// -- Drag-to-move via header event filter --------------------------------------
 
 bool ConversationPanel::eventFilter(QObject* watched, QEvent* ev)
 {

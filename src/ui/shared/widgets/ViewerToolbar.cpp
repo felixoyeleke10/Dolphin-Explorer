@@ -22,7 +22,7 @@ ViewerToolbar::ViewerToolbar(QWidget* parent)
     m_layout->setContentsMargins(10, 0, 10, 0);
     m_layout->setSpacing(2);
 
-    // ── Standard left buttons ─────────────────────────────────────────────────
+    // -- Standard left buttons -------------------------------------------------
     auto* btn_new      = makeBtn(":/icons/new.svg",
         tr("Create a new project or workspace. Shortcut: Ctrl+N."));
     auto* btn_open     = makeBtn(":/icons/open.svg",
@@ -47,7 +47,7 @@ ViewerToolbar::ViewerToolbar(QWidget* parent)
     connect(m_btn_meta,   &QToolButton::clicked, this, &ViewerToolbar::metaRequested);
     connect(btn_settings, &QToolButton::clicked, this, &ViewerToolbar::settingsRequested);
 
-    // ── Centred command bar ───────────────────────────────────────────────────
+    // -- Centred command bar ---------------------------------------------------
     m_layout->addStretch(1);
 
     m_cmd_bar = new CommandBar(this);

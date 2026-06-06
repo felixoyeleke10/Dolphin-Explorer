@@ -9,7 +9,7 @@
 
 namespace dolphin::ui {
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Pixel geometry constants — all values are in LOGICAL pixels.
 //
 //  HiDPI note: the renderer currently builds a QImage at logical resolution
@@ -22,7 +22,7 @@ namespace dolphin::ui {
 //       the logical counterparts.
 //  The strip cache (per-row pixel buffer) must also be phys_w wide.
 //  Hit-testing (xToRange, mouse events, overlay painter) stays in logical pixels.
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 inline constexpr int kWfRulerW    = 0;    // no ruler strip — waterfall fills full width
 inline constexpr int kWfScaleBarH = 22;   // logical px — top PORT/STBD scale bar
@@ -30,7 +30,7 @@ inline constexpr int kWfAmpBarH   = 48;   // logical px — bottom amplitude cha
 inline constexpr int kWfLabelPadX = 6;    // logical px — horizontal text padding
 inline constexpr int kWfRowHeight = 1;    // logical px per ping row
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  WfLayout — current widget geometry snapshot.
 //  Set by WaterfallView::updateLayout() on every resize and passed into
 //  rebuild() / xToRange() / seabed helpers.
@@ -38,7 +38,7 @@ inline constexpr int kWfRowHeight = 1;    // logical px per ping row
 //  Logical fields are used by hit-testing, overlay painting, and scroll logic.
 //  Physical fields (phys_*) are derived from logical * dpr and are intended
 //  for the image buffer once the HiDPI upgrade above is implemented.
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 struct WfLayout {
     // Logical (Qt-coordinate) fields
@@ -60,11 +60,11 @@ struct WfLayout {
     int   phys_row_h    = 0;  // row_height * dpr
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Inline coordinate helpers
 //  Used by both WaterfallRenderer (image building) and
 //  WaterfallSeabedTracker (hit-testing) to avoid formula duplication.
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 // Sample index → starboard pixel x
 inline int sampleToPixelStbd(int si, float z, int h_pan, int nadir_x) noexcept
@@ -78,12 +78,12 @@ inline int sampleToPixelPort(int si, float z, int h_pan, int nadir_x) noexcept
     return nadir_x - 1 - static_cast<int>((si - h_pan) * z);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  WaterfallRenderer — builds the sidescan raster image from PingRows.
 //
 //  One instance is owned by WaterfallView.  All rendering state (colour table,
 //  image, strip cache, layout) lives here so WaterfallView's member list stays lean.
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 class WaterfallRenderer {
 public:

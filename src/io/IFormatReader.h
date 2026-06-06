@@ -33,6 +33,9 @@ struct FormatMeta {
     // Bottom pick source summary: bit 0 = any auto-detected picks, bit 1 = any user-edited picks.
     // 0 = no picks found (fresh import or detection not yet run).
     uint8_t     bottom_pick_src_mask = 0;
+    // OR of all CorrectionFlag bits seen across artifact payload headers during buildIndex.
+    // Non-zero means at least one artifact was written after a processing pipeline run.
+    uint32_t    correction_flags_seen = 0;
 };
 
 // Progress callback: value in [0.0, 1.0]

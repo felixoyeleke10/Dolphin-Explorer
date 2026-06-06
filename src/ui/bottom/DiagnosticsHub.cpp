@@ -8,7 +8,7 @@ DiagnosticsHub::DiagnosticsHub(QObject* parent)
     qRegisterMetaType<DiagnosticsHub::Problem>();
 }
 
-// ── Problems ──────────────────────────────────────────────────────────────────
+// -- Problems ------------------------------------------------------------------
 
 void DiagnosticsHub::postProblem(const QString& msg, Severity sev,
                                  const QString& layer_id)
@@ -43,7 +43,7 @@ int DiagnosticsHub::errorCount() const
     return n;
 }
 
-// ── Output log ────────────────────────────────────────────────────────────────
+// -- Output log ----------------------------------------------------------------
 
 void DiagnosticsHub::logOutput(const QString& msg)
 {
@@ -53,7 +53,7 @@ void DiagnosticsHub::logOutput(const QString& msg)
     emit outputLogged(msg);
 }
 
-// ── Jobs ──────────────────────────────────────────────────────────────────────
+// -- Jobs ----------------------------------------------------------------------
 
 uint32_t DiagnosticsHub::beginJob(const QString& name, const QString& layer_id)
 {

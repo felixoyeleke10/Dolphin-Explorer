@@ -18,7 +18,7 @@ enum class Modality {
     Unknown,
 };
 
-// ── Modality utilities ────────────────────────────────────────────────────────
+// -- Modality utilities --------------------------------------------------------
 
 std::string        modalityLabel         (Modality m);
 Modality           inferModality         (const core::ArtifactIndex& idx);
@@ -43,7 +43,7 @@ std::vector<float> sidescanFrequencyBands(const core::ArtifactIndex& index);
 // Returns bands.front() when target_hz <= 0; returns 0 when bands is empty.
 float nearestFrequencyBand(const std::vector<float>& bands, float target_hz);
 
-// ── Module routing table ──────────────────────────────────────────────────────
+// -- Module routing table ------------------------------------------------------
 // Ordered canonical list: each type becomes its own DataLayer at import time.
 // When multiple families are present the first type in this list claims the
 // pre-allocated layer slot; remaining families each get a new layer.

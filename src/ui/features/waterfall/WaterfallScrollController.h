@@ -4,7 +4,7 @@
 
 namespace dolphin::ui {
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  WaterfallScrollController — vertical scroll, horizontal zoom, and pan state.
 //
 //  Pure value type — no QObject, no Qt dependency.
@@ -15,7 +15,7 @@ namespace dolphin::ui {
 //  via a registered callback (a lambda that emits scrollChanged()).  This keeps
 //  the Qt signal origin in WaterfallView (the only QObject here) and makes the
 //  controller trivially unit-testable without Qt.
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 class WaterfallScrollController {
 public:
@@ -28,13 +28,13 @@ public:
         m_on_scroll_changed = std::move(cb);
     }
 
-    // ── Accessors ──────────────────────────────────────────────────────────
+    // -- Accessors ----------------------------------------------------------
     int   scrollRow() const { return m_scroll_row; }
     float hZoom()     const { return m_h_zoom; }
     int   hPan()      const { return m_h_pan; }
     bool  wantEnd()   const { return m_want_end; }
 
-    // ── Vertical scroll ────────────────────────────────────────────────────
+    // -- Vertical scroll ----------------------------------------------------
 
     // Jump to a specific row.  Returns true if the scroll position changed
     // (the caller should repaint).
@@ -58,7 +58,7 @@ public:
     // widget layout is established (maxVisible changes from its default of 1).
     void resync(int total_rows, int visible_rows);
 
-    // ── Vertical wheel (plain scroll) ──────────────────────────────────────
+    // -- Vertical wheel (plain scroll) --------------------------------------
 
     enum class ScrollResult { Ok, AtTop, AtBottom };
 
@@ -67,7 +67,7 @@ public:
     // so WaterfallView can emit scrollBeyondBounds(-1 / +1).
     ScrollResult scrollBy(int delta, int total_rows, int visible_rows);
 
-    // ── Horizontal zoom / pan ──────────────────────────────────────────────
+    // -- Horizontal zoom / pan ----------------------------------------------
 
     // Ctrl+scroll: factor > 1 = zoom in, factor < 1 = zoom out.
     // auto_zoom = currently computed auto-fit pixels-per-sample.
@@ -96,9 +96,9 @@ private:
     void fireScrollChanged(int total_rows, int visible_rows);
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Inline implementations (all trivially small)
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 inline void WaterfallScrollController::scrollToEnd()
 {

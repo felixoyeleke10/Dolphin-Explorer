@@ -11,9 +11,9 @@
 
 namespace dolphin::ui {
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Public API
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 std::vector<PingRow> WaterfallPingAssembler::assemble(
     const std::vector<core::SidescanPing>& pings,
@@ -85,9 +85,9 @@ std::vector<PingRow> WaterfallPingAssembler::assemble(
     return rows;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Private: build a single PingRow from an optional (port, stbd) pair
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 PingRow WaterfallPingAssembler::buildRow(const core::SidescanPing* pp,
                                           const core::SidescanPing* sp)
@@ -96,9 +96,11 @@ PingRow WaterfallPingAssembler::buildRow(const core::SidescanPing* pp,
     float max_range = 0.f;
     bool  nav_set   = false;
 
-    auto fill = [&](const core::SidescanPing* ping, std::vector<uint16_t>& out) {
+    auto fill = [&](const core::SidescanPing* ping,
+                    std::vector<uint16_t>& out, std::vector<float>& out_ranges) {
         if (!ping) return;
-        max_range = std::max(max_range, ping->slant_range_m);
+        if (std::isfinite(ping->slant_range_m))
+            max_range = std::max(max_range, ping->slant_range_m);
         if (!row.timestamp_us) row.timestamp_us = ping->timestamp_us;
         if (!row.artifact_id)  row.artifact_id  = static_cast<int64_t>(ping->id);
         if (!nav_set && ping->nav.valid) {
@@ -110,10 +112,18 @@ PingRow WaterfallPingAssembler::buildRow(const core::SidescanPing* pp,
             nav_set          = true;
         }
         out.resize(ping->samples.size());
-        for (size_t i = 0; i < ping->samples.size(); ++i)
+        bool any_range = false;
+        for (size_t i = 0; i < ping->samples.size(); ++i) {
             out[i] = SSSAmplitudeProcessor::physical16(
                 ping->samples[i].amplitude,
                 ping->samples[i].range_m);
+            if (ping->samples[i].range_m > 0.f) any_range = true;
+        }
+        if (any_range) {
+            out_ranges.resize(ping->samples.size());
+            for (size_t i = 0; i < ping->samples.size(); ++i)
+                out_ranges[i] = ping->samples[i].range_m;
+        }
 
         // Transfer pipeline seabed detection.  When both channels carry a pick,
         // keep the one with higher confidence.  User-edited picks (source == 2)
@@ -134,10 +144,34 @@ PingRow WaterfallPingAssembler::buildRow(const core::SidescanPing* pp,
         }
     };
 
-    fill(pp, row.port);
-    fill(sp, row.stbd);
+    fill(pp, row.port, row.port_ranges);
+    fill(sp, row.stbd, row.stbd_ranges);
     row.slant_range_m = max_range;
     return row;
+}
+
+// -----------------------------------------------------------------------------
+//  Input contract gate
+// -----------------------------------------------------------------------------
+
+int WaterfallPingAssembler::sanitize(std::vector<core::SidescanPing>& pings)
+{
+    const int before = static_cast<int>(pings.size());
+    pings.erase(
+        std::remove_if(pings.begin(), pings.end(),
+            [](const core::SidescanPing& p) {
+                return p.samples.size() < 2
+                    || !std::isfinite(p.slant_range_m)
+                    || !(p.slant_range_m > 0.f);
+            }),
+        pings.end());
+    for (auto& p : pings) {
+        if (!std::isfinite(p.blanking_m)) p.blanking_m = 0.f;
+        for (auto& s : p.samples)
+            if (!std::isfinite(s.range_m))
+                s.range_m = 0.f;  // keep negative (masked/water-column); only clear NaN/Inf
+    }
+    return before - static_cast<int>(pings.size());
 }
 
 } // namespace dolphin::ui

@@ -1,4 +1,4 @@
-﻿// GeodesyPanel.cpp — left-context CRS / coordinate management panel
+// GeodesyPanel.cpp — left-context CRS / coordinate management panel
 
 #include "ui/features/geodesy/GeodesyPanel.h"
 #include "ui/shared/dialogs/CrsPickerDialog.h"
@@ -21,9 +21,9 @@ namespace dolphin::ui {
 
 static constexpr int kDotW = 14;  // CRS status dot indicator width
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Construction
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 GeodesyPanel::GeodesyPanel(QWidget* parent)
     : QWidget(parent)
@@ -52,9 +52,9 @@ GeodesyPanel::GeodesyPanel(QWidget* parent)
     root->addWidget(scroll, 1);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Section builders
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void GeodesyPanel::buildCrsSection(QVBoxLayout* root)
 {
@@ -118,7 +118,7 @@ void GeodesyPanel::buildCrsSection(QVBoxLayout* root)
 
 void GeodesyPanel::buildLayersSection(QVBoxLayout* root)
 {
-    // ── Layer overview card ───────────────────────────────────────────────
+    // -- Layer overview card -----------------------------------------------
     m_layers_card = new QFrame(this);
     m_layers_card->setObjectName("dlgSection");
     auto* vl = new QVBoxLayout(m_layers_card);
@@ -143,7 +143,7 @@ void GeodesyPanel::buildLayersSection(QVBoxLayout* root)
 
     root->addWidget(m_layers_card);
 
-    // ── Apply card ────────────────────────────────────────────────────────
+    // -- Apply card --------------------------------------------------------
     m_apply_card = new QFrame(this);
     m_apply_card->setObjectName("dlgSection");
     auto* avl = new QVBoxLayout(m_apply_card);
@@ -173,9 +173,9 @@ void GeodesyPanel::buildLayersSection(QVBoxLayout* root)
     });
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Public refresh
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void GeodesyPanel::refresh(app::Project* project, const core::SpatialRef& pending_crs)
 {
@@ -185,9 +185,9 @@ void GeodesyPanel::refresh(app::Project* project, const core::SpatialRef& pendin
     refreshLayerList();
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Private refresh helpers
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void GeodesyPanel::refreshCrsDisplay()
 {

@@ -1,4 +1,4 @@
-﻿// MainWindow.WaterfallCoordinator.cpp — waterfall window lifecycle and state reflection.
+// MainWindow.WaterfallCoordinator.cpp — waterfall window lifecycle and state reflection.
 #include "ui/mainwindow/MainWindow.h"
 #include "ui/mainwindow/commands/LayerCommands.h"
 #include "ui/shell/ViewerWindow.h"
@@ -8,6 +8,7 @@
 #include "ui/mainwindow/panels/GainControlPanel.h"
 #include "ui/mainwindow/panels/ImagingControlPanel.h"
 #include "ui/features/map/sidescan/SidescanViewController.h"
+#include "app/corrections/SidescanCorrectionService.h"
 #include "ui/shell/Features.h"
 #include "ui/shared/dialogs/CrsPickerDialog.h"
 #include "ui/features/metadata/SSSMetadataWindow.h"
@@ -66,17 +67,40 @@ void MainWindow::onWaterfallOpen()
         connect(m_waterfall_win, &WaterfallWindow::navProcessAllLinesRequested,
                 this, &MainWindow::onWaterfallNavProcessAllLines);
         connect(m_waterfall_win, &WaterfallWindow::paletteChanged,
-                this, &MainWindow::onPaletteChanged);
+                this, [this](int idx) {
+                    onPaletteChanged(idx);
+                    // Persist per-layer SSS palette so it survives project close/reopen.
+                    if (!m_project || m_active_layer_id.empty()) return;
+                    auto* layer = m_project->findLayer(m_active_layer_id);
+                    if (layer && layer->sss_palette != idx) {
+                        layer->sss_palette = idx;
+                        m_project_dirty = true;
+                        setWindowTitleFromProject();
+                    }
+                });
+        connect(m_waterfall_win, &WaterfallWindow::qcViewedFractionChanged,
+                this, [this](const std::string& /*layer_id*/, float /*fraction*/) {
+                    // WaterfallScrollSync already writes to layer->qc_viewed_fraction
+                    // before emitting this signal — just mark the project dirty so
+                    // the updated fraction is included in the next save.
+                    if (m_project && !m_project_dirty) {
+                        m_project_dirty = true;
+                        setWindowTitleFromProject();
+                    }
+                });
         connect(m_waterfall_win, &WaterfallWindow::dataStateChanged,
                 this, [this](ViewerDataState s) {
                     refreshLoadingIndicator();
-                    if (s == ViewerDataState::Loading || s == ViewerDataState::Processing)
+                    if (s == ViewerDataState::Loading || s == ViewerDataState::Processing) {
                         m_op_mgr->registerExternal("waterfall", m_waterfall_win->loadToken());
-                    else
+                    } else {
                         m_op_mgr->unregisterExternal("waterfall");
+                    }
                 });
+        connect(m_waterfall_win, &WaterfallWindow::layerChangeRequested,
+                this, [this](const std::string& id) { onLayerSelected(id); });
 
-        // ── Control panel wiring ──────────────────────────────────────────
+        // -- Control panel wiring ------------------------------------------
         // Nav correction panels push corrections to the waterfall
         connect(m_nav_panel, &NavInfoPanel::applyToLineRequested,
                 m_waterfall_win, &WaterfallWindow::applyNavToLine);
@@ -100,23 +124,29 @@ void MainWindow::onWaterfallOpen()
 
         // When the waterfall applies any params, pull the latest state back into
         // the gain and imaging panels so they stay in sync with internal changes.
-        // Also sync the SRC flag to the DataLayer and update the map swath shape.
+        // Also sync display params to the SSS map so its colours update globally.
         connect(m_waterfall_win, &WaterfallWindow::paramsApplied, this, [this]() {
             if (!m_waterfall_win) return;
             const auto& p = m_waterfall_win->currentParams();
             m_gain_panel->setParams(p);
             m_imaging_panel->setParams(p);
+            if (m_sss_ctrl) m_sss_ctrl->setDisplayParams(p);
 
-            if (m_project && !m_active_layer_id.empty()) {
-                // Capture per-layer waterfall params so they survive layer switches.
-                m_layer_wf_params[m_active_layer_id] = p;
+            if (m_project) {
+                // Use the layer the waterfall is actually showing, which may
+                // differ from m_active_layer_id when the user has navigated
+                // Prev/Next inside the waterfall window.
+                const std::string wf_id = m_waterfall_win->currentLayerId();
+                if (!wf_id.empty()) {
+                    m_layer_wf_params[wf_id] = p;
 
-                auto* layer = m_project->findLayer(m_active_layer_id);
-                if (layer && layer->slant_range_corrected != p.slant_range_correction) {
-                    layer->slant_range_corrected = p.slant_range_correction;
-                    if (m_sss_ctrl) m_sss_ctrl->reloadLayer(m_active_layer_id);
-                    app::ProjectTransaction tx(m_project.get());
-                    tx.commit();
+                    auto* layer = m_project->findLayer(wf_id);
+                    if (layer && layer->slant_range_corrected != p.slant_range_correction) {
+                        layer->slant_range_corrected = p.slant_range_correction;
+                        if (m_sss_ctrl) m_sss_ctrl->reloadLayer(wf_id);
+                        app::ProjectTransaction tx(m_project.get());
+                        tx.commit();
+                    }
                 }
             }
         });
@@ -133,12 +163,54 @@ void MainWindow::onWaterfallOpen()
             }
             if (m_sss_ctrl) m_sss_ctrl->reloadCurrentLayer();
             tx.commit();
+            // Bake amplitude corrections into every layer's .dlpd.
+            if (m_correction_svc) m_correction_svc->applyToAll(*m_project, toCorrectionParams(p));
         });
+
+        // -- Bake-to-dlpd wiring -----------------------------------------------
+        // When the user explicitly applies gain/imaging corrections (Apply to
+        // Line / Apply to All buttons in the panel), also write the corrected
+        // amplitudes back into the .dlpd so exports and future sessions see the
+        // corrected data — not just the current session's display preview.
+        if (m_correction_svc) {
+            auto bakeCurrentLine = [this](const WaterfallParams& p) {
+                if (!m_project || !m_waterfall_win) return;
+                const std::string wf_id = m_waterfall_win->currentLayerId();
+                if (wf_id.empty()) return;
+                auto* layer = m_project->findLayer(wf_id);
+                if (!layer) return;
+                const auto* src = m_project->findSource(layer->source_id);
+                m_correction_svc->applyToLine(
+                    wf_id,
+                    layer->artifact_store_path,
+                    layer->artifact_store_format,
+                    layer->artifact_index,
+                    src ? src->path : std::string{},
+                    toCorrectionParams(p));
+            };
+
+            connect(m_gain_panel,    &GainControlPanel::applyToLineRequested,
+                    this, bakeCurrentLine);
+            connect(m_imaging_panel, &ImagingControlPanel::applyToLineRequested,
+                    this, bakeCurrentLine);
+            // applyToAll baking is handled by the WaterfallWindow::applyToAllRequested
+            // lambda above (line 163) which calls m_correction_svc->applyToAll after
+            // applyExternalParamsToAll emits the signal — no duplicate connection needed.
+        }
+    }
+
+    // Populate the FILES list with every sidescan layer in the current project.
+    if (m_project) {
+        std::vector<std::pair<std::string, std::string>> sss_layers;
+        for (const auto& l : m_project->layers())
+            if (l && l->modality == app::Modality::Sidescan)
+                sss_layers.emplace_back(l->id, l->label);
+        m_waterfall_win->setProjectLayers(sss_layers);
     }
 
     if (m_project && !m_active_layer_id.empty()) {
         auto* layer = m_project->findLayer(m_active_layer_id);
-        if (layer) {
+        if (layer && layer->modality == app::Modality::Sidescan) {
             const auto* src    = m_project->findSource(layer->source_id);
             const std::string path = src ? src->path : std::string{};
             const uint64_t    sz   = src ? src->size_bytes : 0;
@@ -154,8 +226,10 @@ void MainWindow::onWaterfallOpen()
                     m_waterfall_win->applyExternalParams(it->second);
             }
 
-            // Sync mini-panels to the waterfall's current params on initial open
-            // so they reflect the persisted state rather than default values.
+            // Sync mini-panels to the waterfall's current params on initial open.
+            // The SSS map is synced via the paramsApplied signal from applyExternalParams
+            // above; if no stored params exist, m_display_params stays nullopt so the
+            // map continues to use its own per-layer auto-stretch.
             if (m_gain_panel && m_imaging_panel) {
                 const auto& p = m_waterfall_win->currentParams();
                 m_gain_panel->setParams(p);
@@ -164,10 +238,15 @@ void MainWindow::onWaterfallOpen()
         }
     }
 
-    // Sync palette from Properties inspector so the waterfall opens at the
-    // correct colour scheme even if the user changed it before opening.
-    if (m_inspector)
-        m_waterfall_win->setPalette(m_inspector->currentPaletteIndex());
+    // Sync palette: use the per-layer saved palette if available, otherwise fall
+    // back to the Properties inspector (which shows the app-wide default).
+    {
+        auto* layer = m_project ? m_project->findLayer(m_active_layer_id) : nullptr;
+        if (layer && layer->sss_palette >= 0)
+            m_waterfall_win->setPalette(layer->sss_palette);
+        else if (m_inspector)
+            m_waterfall_win->setPalette(m_inspector->currentPaletteIndex());
+    }
 
     m_waterfall_win->show();
     m_waterfall_win->raise();
@@ -275,10 +354,6 @@ void MainWindow::onWaterfallContactCreated(float range_m, double lat, double lon
 
 void MainWindow::onWaterfallParamsApplied()
 {
-    if (m_project) {
-        m_project_dirty = true;
-        setWindowTitleFromProject();
-    }
     if (!m_active_layer_id.empty() && m_project) {
         if (const auto* layer = m_project->findLayer(m_active_layer_id)) {
             recordActivity(ActivityKind::DisplayParams,
@@ -389,6 +464,11 @@ void MainWindow::onWaterfallSetCrs(const std::string& from_layer_id)
             const auto wf_it = m_layer_wf_params.find(lyr->id);
             if (wf_it != m_layer_wf_params.end())
                 m_waterfall_win->applyExternalParams(wf_it->second);
+            // Restore per-layer palette after CRS-triggered reload.
+            if (lyr->sss_palette >= 0)
+                m_waterfall_win->setPalette(lyr->sss_palette);
+            else if (m_inspector)
+                m_waterfall_win->setPalette(m_inspector->currentPaletteIndex());
         }
     };
 

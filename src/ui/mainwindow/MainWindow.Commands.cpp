@@ -53,7 +53,7 @@ QList<CommandPaletteItem> MainWindow::buildCommandItems()
         return l && l->modality == app::Modality::SubBottom;
     }();
 
-    // ── File ─────────────────────────────────────────────────────────────────
+    // -- File -----------------------------------------------------------------
     addCmd(CommandId::NewProject,        true,        [this] { onNewProject(); });
     addCmd(CommandId::OpenProject,       true,        [this] { onOpenProject(); });
     addCmd(CommandId::SaveProject,       has_project, [this] { onSaveProject(); });
@@ -62,11 +62,11 @@ QList<CommandPaletteItem> MainWindow::buildCommandItems()
     addCmd(CommandId::ImportFile,        has_project, [this] { onImportFile(); });
     addCmd(CommandId::CloseProject,      has_project, [this] { onCloseProject(); });
 
-    // ── Project ───────────────────────────────────────────────────────────────
+    // -- Project ---------------------------------------------------------------
     addCmd(CommandId::GeodeticSettings,  has_project, [this] { onGeodeticSettings(); });
     addCmd(CommandId::ResetRaw,          has_layer,   [this] { onResetRaw(); });
 
-    // ── View ──────────────────────────────────────────────────────────────────
+    // -- View ------------------------------------------------------------------
     add("View", tr("Toggle Primary Side Bar"),   "", "sidebar left panel context",
         true, [this] { onToggleContextPanel(); });
     add("View", tr("Toggle Secondary Side Bar"), "", "sidebar right properties inspector",
@@ -76,22 +76,22 @@ QList<CommandPaletteItem> MainWindow::buildCommandItems()
     add("View", tr("Fit Map to Data"),           "", "fit zoom reset map",
         m_map_view != nullptr, [this] { if (m_map_view) m_map_view->fitToDataAndReset(); });
 
-    // ── Navigate ─────────────────────────────────────────────────────────────
+    // -- Navigate -------------------------------------------------------------
     addCmd(CommandId::WaterfallOpen, has_layer, [this] { onWaterfallOpen(); });
     addCmd(CommandId::SubBottomOpen, has_sbp,   [this] { onSubBottomOpen(); });
 
-    // ── Tools ─────────────────────────────────────────────────────────────────
+    // -- Tools -----------------------------------------------------------------
     addCmd(CommandId::Measure,      true,        [this] { onToolMeasure(); });
     addCmd(CommandId::BottomTrack,  has_sbp,     [this] { onBottomTrack(); });
     addCmd(CommandId::NodeGraph,    true,        [this] { onNodeGraph(); });
     addCmd(CommandId::AddContact,   has_project, [this] { onAddContact(); });
     addCmd(CommandId::ClearContacts,has_project, [this] { onClearContacts(); });
 
-    // ── Processing ────────────────────────────────────────────────────────────
+    // -- Processing ------------------------------------------------------------
     addCmd(CommandId::RunSelectedLayer, has_layer,   [this] { onRunSelectedLayer(); });
     addCmd(CommandId::RunAllLayers,     has_project, [this] { onRunAllLayers(); });
 
-    // ── Export ────────────────────────────────────────────────────────────────
+    // -- Export ----------------------------------------------------------------
     addCmd(CommandId::ExportCsv,     has_project, [this] { onExportCsv(); });
     addCmd(CommandId::ExportGeotiff, has_project, [this] { onExportGeotiff(); });
     addCmd(CommandId::ExportKmz,     has_project, [this] { onExportKmz(); });
@@ -99,11 +99,11 @@ QList<CommandPaletteItem> MainWindow::buildCommandItems()
     addCmd(CommandId::ExportPdf,     has_project, [this] { onExportPdf(); });
     addCmd(CommandId::ExportScreenshot, true,     [this] { onExportScreenshot(); });
 
-    // ── Settings / Help ───────────────────────────────────────────────────────
+    // -- Settings / Help -------------------------------------------------------
     addCmd(CommandId::AppSettings, true, [this] { onAppSettings(); });
     addCmd(CommandId::About,       true, [this] { onAbout(); });
 
-    // ── Dynamic project items ─────────────────────────────────────────────────
+    // -- Dynamic project items -------------------------------------------------
     if (has_project) {
         auto makeLine = [&](const app::DataLayer& l) {
             const QString badge = modalityBadge(l.modality);

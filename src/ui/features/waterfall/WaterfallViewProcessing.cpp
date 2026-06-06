@@ -13,7 +13,7 @@
 
 namespace dolphin::ui {
 
-// ── Nav Processing ────────────────────────────────────────────────────────────
+// -- Nav Processing ------------------------------------------------------------
 
 std::vector<core::SidescanPing>
 WaterfallView::runNavCorrections(std::vector<core::SidescanPing> pings,
@@ -58,9 +58,11 @@ WaterfallView::runNavCorrections(std::vector<core::SidescanPing> pings,
     return pings;
 }
 
-// ── runPipeline — background-safe full display pipeline ───────────────────────
+// -- runPipeline — background-safe full display pipeline -----------------------
 //
-// TVG/ARC/AGC → assemble rows → beam/ARN/destripe/ML → seabed → auto-stretch.
+// TVG/ARC/AGC → assemble rows → seabed → beam/ARN/destripe/ML → auto-stretch.
+// Seabed detection runs on clean calibrated amplitudes (before display-specific
+// enhancements) so beam-pattern correction / ARN / destripe / ML cannot bias picks.
 // pings are read-only; we make one internal working copy here so the caller
 // can keep the original for re-processing on param changes.
 
@@ -73,26 +75,33 @@ WaterfallView::WfPipelineResult WaterfallView::runPipeline(
     using namespace detail;
     auto work = pings;  // single working copy; original stays intact in the caller
 
-    if (params.tvg.enabled)  applyTvg(work, params);
-    if (params.arc.enabled)  applyArc(work, params);
-    if (params.agc.enabled)  normalizeRawAmplitudes(work, params);
-    else                     stretchRawAmplitudes(work);
+    // Skip corrections that are already baked into the .dlpd data so they are
+    // not double-applied.  All pings in one line share the same correction_flags.
+    const uint32_t baked = pings.empty() ? 0u : pings.front().correction_flags;
+
+    if (params.tvg.enabled && !core::hasCorrectionFlag(baked, core::CorrectionFlag::Tvg))
+        applyTvg(work, params);
+    if (params.arc.enabled && !core::hasCorrectionFlag(baked, core::CorrectionFlag::Arc))
+        applyArc(work, params);
+    if (params.agc.enabled && !core::hasCorrectionFlag(baked, core::CorrectionFlag::GainNormalized))
+        normalizeRawAmplitudes(work, params);
+    else if (!params.agc.enabled)
+        stretchRawAmplitudes(work);
 
     WfPipelineResult result;
     result.rows = WaterfallPingAssembler::assemble(work, params);
+
+    if (seabed_enabled) {
+        SeabedAutoDetector::detectAll(result.rows, seabed_params);
+        if (seabed_params.smoothing > 0.f)
+            SeabedAutoDetector::smooth(result.rows,
+                                       static_cast<int>(seabed_params.smoothing));
+    }
 
     if (params.beam_pattern.enabled) applyBeamPattern(result.rows, params);
     if (params.arn.enabled)          applyArn(result.rows, params);
     if (params.destripe.enabled)     applyDestripe(result.rows, params);
     if (params.ml_enhance.enabled)   applyMlEnhance(result.rows, params);
-
-    if (seabed_enabled) {
-        SeabedAutoDetector::detectAll(result.rows, seabed_params);
-        if (seabed_params.smoothing > 0.f
-                && seabed_params.method != SeabedMethod::ContinuityAware)
-            SeabedAutoDetector::smooth(result.rows,
-                                       static_cast<int>(seabed_params.smoothing));
-    }
 
     // Compute auto-stretch (1st/99th percentile across assembled amplitudes).
     // Bucket 0 is excluded — it captures water-column / nadir-blanking zeros.
@@ -130,7 +139,7 @@ WaterfallView::WfPipelineResult WaterfallView::runPipeline(
     return result;
 }
 
-// ── do* wrappers — bridge rebuildRows/setPings to detail:: free functions ─────
+// -- do* wrappers — bridge rebuildRows/setPings to detail:: free functions -----
 
 void WaterfallView::doApplyTvg(std::vector<core::SidescanPing>& pings)            { detail::applyTvg(pings, m_params); }
 void WaterfallView::doApplyArc(std::vector<core::SidescanPing>& pings)            { detail::applyArc(pings, m_params); }

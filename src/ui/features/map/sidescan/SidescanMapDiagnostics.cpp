@@ -1,6 +1,6 @@
-﻿// SidescanMapDiagnostics.cpp — setGeorefParams, reloadCurrentLayer,
-//                              setPaletteIndex, repaletteAllLayers,
-//                              colorizeIntensityCache,
+// SidescanMapDiagnostics.cpp — setGeorefParams, reloadCurrentLayer,
+//                              setPaletteIndex, setDisplayParams,
+//                              repaletteAllLayers, colorizeIntensityCache,
 //                              unloadLayer, deactivate.
 #include "ui/features/map/sidescan/SidescanViewController.h"
 #include "ui/features/map/MapView.h"
@@ -41,7 +41,7 @@ struct PaletteRebuildResult {
 
 } // namespace
 
-// ── setGeorefParams / reloadCurrentLayer ─────────────────────────────────────
+// -- setGeorefParams / reloadCurrentLayer -------------------------------------
 
 void SidescanViewController::setGeorefParams(const SssGeorefParams& p)
 {
@@ -80,20 +80,33 @@ void SidescanViewController::reloadLayer(const std::string& layer_id)
     activateLayer(layer_id, m_project);
 }
 
-// ── colorizeIntensityCache ────────────────────────────────────────────────────
+// -- colorizeIntensityCache ----------------------------------------------------
 //
-// Static helper: build a colored ARGB32 QImage from a raw intensity cache and
-// a palette index.  O(pixels) on the calling thread — no disk I/O, no geometry.
+// Static helper: build a colored ARGB32 QImage from a raw intensity cache,
+// display params, and a palette index.  O(pixels) — no disk I/O, no geometry.
 // Returns a null QImage when the cache is empty.
 
+void SidescanViewController::setDisplayParams(const SonarDisplayParams& dp)
+{
+    if (m_display_params.has_value() && *m_display_params == dp) return;
+    m_display_params = dp;
+    m_palette_idx = dp.palette;   // keep m_palette_idx in sync with display_params.palette
+    repaletteAllLayers();
+}
+
 QImage SidescanViewController::colorizeIntensityCache(
-    const IntensityCache& cache, int palette_idx)
+    const IntensityCache& cache, const std::optional<SonarDisplayParams>& dp, int palette_idx)
 {
     if (!cache.valid()) return {};
 
-    SonarDisplayParams params;
-    params.display_low  = cache.disp_low;
-    params.display_high = cache.disp_high;
+    // When dp is nullopt (no params have been explicitly set), fall back to the
+    // per-layer auto-stretch computed at rasterization time.  When dp has a value,
+    // honor it as-is — even if display_low/high are 0/1 (identity stretch).
+    SonarDisplayParams params = dp.value_or(SonarDisplayParams{});
+    if (!dp.has_value()) {
+        params.display_low  = cache.disp_low;
+        params.display_high = cache.disp_high;
+    }
 
     // Build a 65 536-entry uint16 → QRgb LUT (same path as SwathRasterizer).
     std::array<QRgb, 65536> lut;
@@ -119,7 +132,7 @@ QImage SidescanViewController::colorizeIntensityCache(
     return img;
 }
 
-// ── setPaletteIndex / repaletteAllLayers ──────────────────────────────────────
+// -- setPaletteIndex / repaletteAllLayers --------------------------------------
 
 void SidescanViewController::setPaletteIndex(int idx)
 {
@@ -132,22 +145,23 @@ void SidescanViewController::setPaletteIndex(int idx)
 
 void SidescanViewController::repaletteAllLayers()
 {
+    if (!m_project) return;
     const int max_img_dim = maxImageDimForQuality(m_quality);
     if (max_img_dim == 0) return;   // CoverageOnly / Off: no image to repaint
 
     for (const auto& layer_id : m_loaded_layers) {
-        // ── Fast path: intensity cache present ──────────────────────────────
+        // -- Fast path: intensity cache present ------------------------------
         // O(pixels) LUT recolor on the main thread — no background task,
         // no disk I/O, no geometry rebuild.
         const auto ic_it = m_layer_intensity_cache.find(layer_id);
         if (ic_it != m_layer_intensity_cache.end() && ic_it->second.valid()) {
-            QImage img = colorizeIntensityCache(ic_it->second, m_palette_idx);
+            QImage img = colorizeIntensityCache(ic_it->second, m_display_params, m_palette_idx);
             if (!img.isNull() && m_map_view)
                 m_map_view->updatePreviewImage(layer_id, std::move(img));
             continue;
         }
 
-        // ── Fallback: pings cached but no intensity cache ───────────────────
+        // -- Fallback: pings cached but no intensity cache -------------------
         // Rebuild coverage + image on a background thread (still avoids disk I/O).
         const auto cache_it = m_layer_pings_cache.find(layer_id);
         if (cache_it == m_layer_pings_cache.end()) {
@@ -182,8 +196,15 @@ void SidescanViewController::repaletteAllLayers()
                     ic.h         = res.layer_data.intensity_h;
                     ic.disp_low  = res.layer_data.intensity_disp_low;
                     ic.disp_high = res.layer_data.intensity_disp_high;
-                    if (ic.valid())
+                    if (ic.valid()) {
                         m_layer_intensity_cache[res.layer_id] = std::move(ic);
+                        // Re-colorize with current display params: the background
+                        // build used defaults; setDisplayParams may have been called
+                        // while the task was in flight.
+                        res.layer_data.preview_image = colorizeIntensityCache(
+                            m_layer_intensity_cache[res.layer_id],
+                            m_display_params, m_palette_idx);
+                    }
 
                     m_map_view->setLayerMapData(res.layer_id, std::move(res.layer_data));
                     if (res.layer_id == m_active_layer_id)
@@ -211,7 +232,7 @@ void SidescanViewController::repaletteAllLayers()
     }
 }
 
-// ── unloadLayer / deactivate ──────────────────────────────────────────────────
+// -- unloadLayer / deactivate --------------------------------------------------
 
 void SidescanViewController::unloadLayer(const std::string& layer_id)
 {

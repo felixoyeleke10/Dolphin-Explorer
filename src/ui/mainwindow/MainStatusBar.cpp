@@ -1,4 +1,4 @@
-﻿// MainStatusBar.cpp — modular status bar implementation.
+// MainStatusBar.cpp — modular status bar implementation.
 #include "ui/mainwindow/MainStatusBar.h"
 #include "ui/shared/CoordFormat.h"
 #include "ui/shell/Theme.h"
@@ -18,7 +18,7 @@ static constexpr int kAiDotSz = 7;  // AI status indicator dot size
 MainStatusBar::MainStatusBar(QWidget* parent)
     : QStatusBar(parent)
 {
-    // ── Progress bar ──────────────────────────────────────────────────────────
+    // -- Progress bar ----------------------------------------------------------
     m_progress = new QProgressBar(this);
     m_progress->setRange(0, 100);
     m_progress->setFixedWidth(Theme::kMainProgressBarW);
@@ -28,11 +28,11 @@ MainStatusBar::MainStatusBar(QWidget* parent)
     // Fusion style required for indeterminate animation on Windows (native style ignores QSS).
     m_progress->setStyle(QStyleFactory::create("Fusion"));
 
-    // ── Context label (project · active layer) ────────────────────────────────
+    // -- Context label (project · active layer) --------------------------------
     m_context = new QLabel(tr("No project"), this);
     m_context->setObjectName("statusChrome");
 
-    // ── Transient job message ─────────────────────────────────────────────────
+    // -- Transient job message -------------------------------------------------
     m_job = new QLabel(this);
     m_job->setObjectName("statusChrome");
 
@@ -41,7 +41,7 @@ MainStatusBar::MainStatusBar(QWidget* parent)
     m_job_timer->setInterval(8000);
     connect(m_job_timer, &QTimer::timeout, this, [this]() { m_job->clear(); });
 
-    // ── Permanent cursor data ─────────────────────────────────────────────────
+    // -- Permanent cursor data -------------------------------------------------
     m_range = new QLabel(this);
     m_range->setObjectName("statusChrome");
 
@@ -51,7 +51,7 @@ MainStatusBar::MainStatusBar(QWidget* parent)
     m_pos = new QLabel(this);
     m_pos->setObjectName("statusData");
 
-    // ── AI provider indicator ─────────────────────────────────────────────────
+    // -- AI provider indicator -------------------------------------------------
     m_ai_widget = new QWidget(this);
     m_ai_widget->setObjectName("statusAiSection");
     auto* ai_layout = new QHBoxLayout(m_ai_widget);
@@ -69,7 +69,7 @@ MainStatusBar::MainStatusBar(QWidget* parent)
     ai_layout->addWidget(m_ai_dot);
     m_ai_widget->hide();
 
-    // ── Assemble left → right ─────────────────────────────────────────────────
+    // -- Assemble left → right -------------------------------------------------
     addWidget(m_progress);
     addWidget(m_context, 1);
     addWidget(m_job);
@@ -80,7 +80,7 @@ MainStatusBar::MainStatusBar(QWidget* parent)
     addPermanentWidget(m_ai_widget);
 }
 
-// ── Context ───────────────────────────────────────────────────────────────────
+// -- Context -------------------------------------------------------------------
 
 void MainStatusBar::setProjectContext(const QString& project, const QString& layer)
 {
@@ -95,7 +95,7 @@ void MainStatusBar::clearContext()
     m_context->setText(tr("No project"));
 }
 
-// ── Job messages ──────────────────────────────────────────────────────────────
+// -- Job messages --------------------------------------------------------------
 
 void MainStatusBar::showJobMessage(const QString& msg, int timeout_ms)
 {
@@ -104,7 +104,7 @@ void MainStatusBar::showJobMessage(const QString& msg, int timeout_ms)
     m_job_timer->start();
 }
 
-// ── Cursor data ───────────────────────────────────────────────────────────────
+// -- Cursor data ---------------------------------------------------------------
 
 void MainStatusBar::setCursorRange(const QString& side_label, float metres)
 {
@@ -143,7 +143,7 @@ void MainStatusBar::clearCursorData()
     m_pos->clear();
 }
 
-// ── Progress ──────────────────────────────────────────────────────────────────
+// -- Progress ------------------------------------------------------------------
 
 void MainStatusBar::setProgressIndeterminate()
 {
@@ -164,7 +164,7 @@ void MainStatusBar::hideProgress()
     m_progress->setVisible(false);
 }
 
-// ── AI indicator ──────────────────────────────────────────────────────────────
+// -- AI indicator --------------------------------------------------------------
 
 void MainStatusBar::setAiProvider(AiProvider provider)
 {

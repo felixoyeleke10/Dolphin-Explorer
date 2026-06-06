@@ -5,7 +5,7 @@
 // Shared role offsets and item-type enum used by all LineListPanel translation units.
 namespace dolphin::ui::detail {
 
-// ── Tag color palette (8 named colors, stored as tag id strings) ─────────────
+// -- Tag color palette (8 named colors, stored as tag id strings) -------------
 struct TagPaletteEntry {
     const char* id;
     const char* label;

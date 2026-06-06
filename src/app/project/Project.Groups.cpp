@@ -4,7 +4,7 @@
 
 namespace dolphin::app {
 
-// ── Layer groups ──────────────────────────────────────────────────────────────
+// -- Layer groups --------------------------------------------------------------
 
 ItemGroup* Project::addLayerGroup(const std::string& name)
 {
@@ -66,7 +66,7 @@ void Project::setLayerTags(const std::string& layer_id, std::vector<std::string>
     emit modified();
 }
 
-// ── Contact groups ────────────────────────────────────────────────────────────
+// -- Contact groups ------------------------------------------------------------
 
 ItemGroup* Project::addContactGroup(const std::string& name)
 {

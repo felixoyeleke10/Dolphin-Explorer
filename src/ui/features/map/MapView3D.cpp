@@ -17,9 +17,9 @@
 
 namespace dolphin::ui {
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Construction / destruction
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 MapView3D::MapView3D(QWidget* parent)
     : QOpenGLWidget(parent)
@@ -45,8 +45,8 @@ MapView3D::MapView3D(QWidget* parent)
 
 MapView3D::~MapView3D()
 {
-    makeCurrent();
-    if (m_gl_ready) {
+    if (m_gl_ready && context() && context()->isValid()) {
+        makeCurrent();
         m_grid_quad_vbo.destroy();
         m_survey_vbo.destroy();
         m_nav_merged_vbo.destroy();
@@ -55,6 +55,7 @@ MapView3D::~MapView3D()
         for (auto& D : m_drape_layers) {
             delete D.texture;
             D.quad_vbo.destroy();
+            D.outline_vbo.destroy();
         }
         m_vao.destroy();
     }
@@ -66,9 +67,9 @@ MapView3D::~MapView3D()
     doneCurrent();
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Scene origin
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void MapView3D::setSceneOrigin(double x, double y, bool is_projected)
 {
@@ -78,9 +79,9 @@ void MapView3D::setSceneOrigin(double x, double y, bool is_projected)
     m_has_origin   = true;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Nav-track API
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void MapView3D::updateNavTrack(const std::string& layer_id,
                                 const LayerMapData& data,
@@ -111,7 +112,7 @@ void MapView3D::updateNavTrack(const std::string& layer_id,
         const float r = QVector3D(hi - lo).length() * 0.5f;
         if (r > m_scene_radius) {
             m_scene_radius = r;
-            fitToScene();
+            if (!m_camera_user_moved) fitToScene();
         }
     }
 
@@ -129,9 +130,9 @@ void MapView3D::removeLayer(const std::string& layer_id)
     update();
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Sonar drape API (Phase 3)
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void MapView3D::setSonarDrape(const std::string& layer_id,
                                const QImage& image,
@@ -171,21 +172,24 @@ void MapView3D::removeSonarDrape(const std::string& layer_id)
     auto it = std::find_if(m_drape_layers.begin(), m_drape_layers.end(),
                            [&](const SonarDrape3D& D){ return D.id == layer_id; });
     if (it == m_drape_layers.end()) return;
-    if (m_gl_ready) {
+    if (m_gl_ready && context() && context()->isValid()) {
         makeCurrent();
         delete it->texture;
         it->texture = nullptr;
         it->quad_vbo.destroy();
         it->outline_vbo.destroy();
         doneCurrent();
+    } else {
+        delete it->texture;
+        it->texture = nullptr;
     }
     m_drape_layers.erase(it);
     update();
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Profile curtain API (Phase 2)
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void MapView3D::setProfileCurtain(const std::string& layer_id, const LayerMapData& data,
                                    int palette_index)
@@ -265,7 +269,7 @@ void MapView3D::setProfileCurtain(const std::string& layer_id, const LayerMapDat
             (xmax - xmin) * (xmax - xmin) + (ymax - ymin) * (ymax - ymin));
         if (r > m_scene_radius) {
             m_scene_radius = r;
-            fitToScene();
+            if (!m_camera_user_moved) fitToScene();
         }
     }
 
@@ -277,24 +281,39 @@ void MapView3D::removeProfileCurtain(const std::string& layer_id)
     auto it = std::find_if(m_curtain_layers.begin(), m_curtain_layers.end(),
                            [&](const CurtainLayer3D& C){ return C.id == layer_id; });
     if (it == m_curtain_layers.end()) return;
-    if (m_gl_ready) { makeCurrent(); it->vbo.destroy(); doneCurrent(); }
+    if (m_gl_ready) {
+        if (!context() || !context()->isValid()) {
+            m_curtain_layers.erase(it);
+            m_survey_dirty = true;
+            return;
+        }
+        makeCurrent();
+        it->vbo.destroy();
+        doneCurrent();
+    }
     m_curtain_layers.erase(it);
     m_survey_dirty = true;
     update();
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Scene / display
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void MapView3D::clearScene()
 {
-    makeCurrent();
-    m_nav_merged_vbo.destroy();
-    for (auto& C : m_curtain_layers)  C.vbo.destroy();
-    for (auto& T : m_terrain_layers) { T.vbo.destroy(); T.vbo_lod.destroy(); }
-    for (auto& D : m_drape_layers) { delete D.texture; D.quad_vbo.destroy(); }
-    doneCurrent();
+    if (m_gl_ready && context() && context()->isValid()) {
+        makeCurrent();
+        m_nav_merged_vbo.destroy();
+        for (auto& C : m_curtain_layers)  C.vbo.destroy();
+        for (auto& T : m_terrain_layers) { T.vbo.destroy(); T.vbo_lod.destroy(); }
+        for (auto& D : m_drape_layers) {
+            delete D.texture;
+            D.quad_vbo.destroy();
+            D.outline_vbo.destroy();
+        }
+        doneCurrent();
+    }
     m_layers.clear();
     m_curtain_layers.clear();
     m_terrain_layers.clear();
@@ -397,7 +416,7 @@ std::string MapView3D::hitTestLayer(QPoint px) const
     float best_d2 = kPickRadius * kPickRadius;
     std::string best_id;
 
-    // ── Pass 1: Nav tracks — screen-space proximity ───────────────────────
+    // -- Pass 1: Nav tracks — screen-space proximity -----------------------
     for (const auto& L : m_layers) {
         if (!L.visible || L.raw_track.empty()) continue;
         const int step = std::max(1, int(L.raw_track.size()) / 500);
@@ -415,7 +434,7 @@ std::string MapView3D::hitTestLayer(QPoint px) const
         }
     }
 
-    // ── Pass 2: Sonar drapes — ground-plane bbox (fallback when no track hit) ──
+    // -- Pass 2: Sonar drapes — ground-plane bbox (fallback when no track hit) --
     // Drapes cover wide swath areas; pick them when the cursor falls inside the
     // bbox but not close enough to the nav track center line.
     if (best_id.empty() && m_has_origin && !m_drape_layers.empty()) {
@@ -467,30 +486,32 @@ void MapView3D::pickAt(QPoint px)
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Camera
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void MapView3D::resetCamera()
 {
-    m_camera.target   = {0.f, 0.f, 0.f};
-    m_camera.distance = m_scene_radius * 2.5f;
-    m_camera.yaw      = 0.f;
-    m_camera.pitch    = 45.f;
+    m_camera.target      = {0.f, 0.f, 0.f};
+    m_camera.distance    = m_scene_radius * 2.5f;
+    m_camera.yaw         = 0.f;
+    m_camera.pitch       = 45.f;
+    m_camera_user_moved  = false;
     update();
 }
 
 void MapView3D::fitToScene()
 {
-    m_camera.target   = {0.f, 0.f, 0.f};
-    m_camera.distance = m_scene_radius / std::tan(m_camera.fov * float(M_PI) / 360.f) * 1.3f;
-    m_camera.distance = qMax(m_camera.distance, 10.f);
+    m_camera.target      = {0.f, 0.f, 0.f};
+    m_camera.distance    = m_scene_radius / std::tan(m_camera.fov * float(M_PI) / 360.f) * 1.3f;
+    m_camera.distance    = qMax(m_camera.distance, 10.f);
+    m_camera_user_moved  = false;
     update();
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Coordinate helper (used by data API + geometry builders)
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 bool MapView3D::groundHit(QPoint px, QPointF& geo) const
 {
@@ -511,6 +532,7 @@ bool MapView3D::groundHit(QPoint px, QPointF& geo) const
     // Unproject near and far clip points
     const QVector4D pn = invVP * QVector4D(nx, ny, -1.f, 1.f);
     const QVector4D pf = invVP * QVector4D(nx, ny,  1.f, 1.f);
+    if (std::abs(pn.w()) < 1e-7f || std::abs(pf.w()) < 1e-7f) return false;
     const QVector3D near_w = pn.toVector3D() / pn.w();
     const QVector3D far_w  = pf.toVector3D() / pf.w();
     const QVector3D dir    = (far_w - near_w).normalized();

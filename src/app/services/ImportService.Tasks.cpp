@@ -124,7 +124,7 @@ void completeImport(ImportService*                   svc,
 
     applyImportResultToLayer(*dl, result);
 
-    // ── Module routing ────────────────────────────────────────────────────────
+    // -- Module routing --------------------------------------------------------
     // Policy: one DataLayer per artifact family. Readers decode what exists;
     // import routes each family to its own module layer. dl receives the first
     // non-empty family in kModuleArtifactTypes order (SSS → SBP → MAG → MBES).
@@ -160,7 +160,7 @@ void completeImport(ImportService*                   svc,
         }
     }
 
-    // ── Dual-frequency split (SSS only) ──────────────────────────────────────
+    // -- Dual-frequency split (SSS only) --------------------------------------
     // For dual-frequency sidescan files, never create a combined layer.
     // import_hf / import_lf control which bands the user wants.
     // This split operates only on the SSS layer produced by module routing above.

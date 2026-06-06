@@ -1,4 +1,4 @@
-﻿// MainWindow.Shell.cpp — setupCentralWidget.
+// MainWindow.Shell.cpp — setupCentralWidget.
 // Panel construction is split across companion files:
 //   MainWindow.ContextPanels.cpp  — buildContextPanel, makeContextPlaceholder
 //   MainWindow.MainArea.cpp       — buildMainArea, buildPropertiesPanel
@@ -18,6 +18,7 @@
 #include <QLabel>
 #include <QListWidget>
 #include <QStackedWidget>
+#include <QTimer>
 #include <QToolButton>
 #include <QVBoxLayout>
 #include <QWidget>
@@ -41,7 +42,7 @@ void MainWindow::setupCentralWidget()
 
     buildContextPanel(root);
 
-    // ── Left edge strip — collapse/expand toggle for the context panel ────────
+    // -- Left edge strip — collapse/expand toggle for the context panel --------
     m_left_edge_strip = new QWidget(root);
     m_left_edge_strip->setObjectName("leftEdgeStrip");
     m_left_edge_strip->setFixedWidth(kEdgeStripW);
@@ -64,7 +65,7 @@ void MainWindow::setupCentralWidget()
 
     buildPropertiesPanel(root);
 
-    // ── Right edge strip — collapse/expand toggle for the properties panel ────
+    // -- Right edge strip — collapse/expand toggle for the properties panel ----
     m_right_edge_strip = new QWidget(root);
     m_right_edge_strip->setObjectName("rightEdgeStrip");
     m_right_edge_strip->setFixedWidth(kEdgeStripW);
@@ -92,11 +93,19 @@ void MainWindow::setupCentralWidget()
     connect(m_line_list, &LineListPanel::importFilesRequested,
             this, &MainWindow::onImportFile);
     connect(m_line_list, &LineListPanel::recentProjectRequested,
-            this, [this](const QString& path) { loadProject(path.toStdString()); });
+            this, [this](const QString& path) {
+                QTimer::singleShot(0, this, [this, path]() { loadProject(path.toStdString()); });
+            });
 
     // Import hint button on the empty map canvas
     connect(m_viewport_host, &MapViewportHost::importFilesRequested,
             this, &MainWindow::onImportFile);
+
+    // Keep the toolbar 3D button in sync with the viewport's internal overlay toggle.
+    connect(m_viewport_host, &MapViewportHost::modeChanged,
+            this, [this](bool is_3d) {
+                if (m_3d_btn) { QSignalBlocker sb(m_3d_btn); m_3d_btn->setChecked(is_3d); }
+            });
 
     connect(m_line_list, &LineListPanel::layerSelected,
             this, &MainWindow::onLayerSelected);
@@ -106,15 +115,16 @@ void MainWindow::setupCentralWidget()
             this, &MainWindow::onLayerVisibilityChanged);
     connect(m_line_list, &LineListPanel::layerMultiSelected,
             this, [this](const std::vector<std::string>& ids) {
-        if (m_map_view)       m_map_view->setSelectedLayers(ids);
         if (m_viewport_host)  m_viewport_host->setSelectedLayers(ids);
+        else if (m_map_view)  m_map_view->setSelectedLayers(ids);
     });
     connect(m_line_list, &LineListPanel::navTrackVisibilityChanged,
             this, [this](const std::string& id, bool visible) {
-        if (m_map_view) m_map_view->setNavTrackVisible(id, visible);
+        if (m_viewport_host) m_viewport_host->setNavTrackVisible(id, visible);
+        else if (m_map_view) m_map_view->setNavTrackVisible(id, visible);
     });
 
-    // ── Context menu actions ──────────────────────────────────────────────────
+    // -- Context menu actions --------------------------------------------------
     connect(m_line_list, &LineListPanel::openInWaterfallRequested,
             this, [this](const std::string& id) {
         onLayerSelected(id);

@@ -1,4 +1,4 @@
-﻿// NodeGraphViewGeometry.cpp — coordinate transforms, node geometry, auto-layout, zoom/frame.
+// NodeGraphViewGeometry.cpp — coordinate transforms, node geometry, auto-layout, zoom/frame.
 #include "ui/features/nodegraph/NodeGraphView.h"
 #include "pipeline/NodeGraph.h"
 
@@ -9,9 +9,9 @@
 
 namespace dolphin::ui {
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Coordinate transforms
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 QPointF NodeGraphView::canvasToWidget(QPointF cp) const
 {
@@ -23,9 +23,9 @@ QPointF NodeGraphView::widgetToCanvas(QPointF wp) const
     return QPointF((wp.x() - m_pan.x()) / m_zoom, (wp.y() - m_pan.y()) / m_zoom);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Geometry
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 QRectF NodeGraphView::nodeRect(const std::string& id) const
 {
@@ -50,9 +50,9 @@ QPointF NodeGraphView::inPortPos(const std::string& id, int port) const
     return QPointF(r.left(), r.top() + r.height() * frac);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Auto-layout / frame
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void NodeGraphView::computeAutoLayout()
 {

@@ -1,4 +1,4 @@
-﻿// NodeInspectorPanel.cpp — auto-generated parameter editor.
+// NodeInspectorPanel.cpp — auto-generated parameter editor.
 #include "ui/features/nodegraph/NodeInspectorPanel.h"
 #include "ui/shell/Theme.h"
 #include "pipeline/NodeGraph.h"
@@ -111,7 +111,7 @@ void NodeInspectorPanel::rebuild()
     auto* node = node_ptr.get();
     const pipeline::NodeSchema schema = node->schema();
 
-    // ── Header ────────────────────────────────────────────────────────────────
+    // -- Header ----------------------------------------------------------------
     auto* hdr = new QFrame(m_content);
     hdr->setObjectName("panelHdr");
     auto* hdr_l = new QVBoxLayout(hdr);
@@ -157,7 +157,7 @@ void NodeInspectorPanel::rebuild()
         return;
     }
 
-    // ── Parameter form ────────────────────────────────────────────────────────
+    // -- Parameter form --------------------------------------------------------
     auto* form_w = new QWidget(m_content);
     auto* form   = new QFormLayout(form_w);
     form->setContentsMargins(Theme::kSpacing4, Theme::kSpacing4, Theme::kSpacing4, Theme::kSpacing4);

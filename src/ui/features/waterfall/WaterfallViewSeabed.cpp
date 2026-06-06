@@ -1,4 +1,4 @@
-﻿// WaterfallViewSeabed.cpp — seabed editing helpers
+// WaterfallViewSeabed.cpp — seabed editing helpers
 //   applyManualSeabedPicks — overlays persistent manual picks onto freshly assembled rows
 //   interpolateSeabedGaps  — fills eraser gaps with straight-line interpolation
 //   detectSeabedInBox      — threshold-detects seabed within a box selection
@@ -11,9 +11,9 @@
 
 namespace dolphin::ui {
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Persistent manual picks — applied after every assembly/detection pass
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void WaterfallView::applyManualSeabedPicks()
 {
@@ -26,9 +26,9 @@ void WaterfallView::applyManualSeabedPicks()
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Eraser gap fill — straight-line interpolation between valid neighbours
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void WaterfallView::interpolateSeabedGaps()
 {
@@ -62,9 +62,9 @@ void WaterfallView::interpolateSeabedGaps()
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Box tool — threshold-detect seabed within rows [r0,r1] × [range_min, range_max]
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void WaterfallView::detectSeabedInBox(int r0, int r1, float range_min_m, float range_max_m)
 {
@@ -140,9 +140,9 @@ void WaterfallView::detectSeabedInBox(int r0, int r1, float range_min_m, float r
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Smart pen snap — peak amplitude within ±kSnapRadius samples of the cursor
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 float WaterfallView::smartPenRange(int row, int screen_x) const
 {

@@ -1,4 +1,4 @@
-﻿// MainWindow.Chrome.cpp — title/menu bar and status bar chrome.
+// MainWindow.Chrome.cpp — title/menu bar and status bar chrome.
 //   setupStatusBar()  — MainStatusBar construction
 //   setupTitleBar()   — MenuBarFilter, CommandBar (centred search), window buttons
 #include "ui/mainwindow/MainWindow.h"
@@ -31,7 +31,7 @@ void MainWindow::setupTitleBar()
     auto* mb_filter = new MenuBarFilter(this);
     menuBar()->installEventFilter(mb_filter);
 
-    // ── Left flank: back / forward navigation arrows ──────────────────────────
+    // -- Left flank: back / forward navigation arrows --------------------------
     {
         auto* nav = new QWidget(menuBar());
         auto* l   = new QHBoxLayout(nav);
@@ -59,7 +59,7 @@ void MainWindow::setupTitleBar()
         mb_filter->setLeftFlank(nav);
     }
 
-    // ── Centre: unified command / Conversation / Assistant pill ─────────────────
+    // -- Centre: unified command / Conversation / Assistant pill -----------------
     {
         auto* uni = new QFrame(menuBar());
         uni->setObjectName("uniBar");
@@ -129,7 +129,7 @@ void MainWindow::setupTitleBar()
     cl->setContentsMargins(0, 0, 0, 0);
     cl->setSpacing(0);
 
-    // ── Layout toggle buttons ─────────────────────────────────────────────────
+    // -- Layout toggle buttons -------------------------------------------------
     auto makeLayoutBtn = [&](const char* icon_path, const QString& tip,
                               bool checkable) -> QPushButton* {
         auto* btn = new QPushButton(corner);
@@ -205,7 +205,7 @@ void MainWindow::setupTitleBar()
     sep->setFixedSize(Theme::kSepSz, kCornerSepH);
     cl->addWidget(sep);
 
-    // ── Window control buttons ────────────────────────────────────────────────
+    // -- Window control buttons ------------------------------------------------
     auto makeWinBtn = [&](const QString& glyph, const QString& tip,
                            bool is_close = false) -> QPushButton* {
         auto* btn = new QPushButton(glyph, corner);

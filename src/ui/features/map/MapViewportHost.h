@@ -6,6 +6,7 @@
 #include <QString>
 #include <QWidget>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 class QLabel;
@@ -18,7 +19,7 @@ namespace dolphin::ui {
 class MapView;
 class MapView3D;
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  MapViewportHost — owns the 2D / 3D viewport stack.
 //
 //  Layout:
@@ -29,7 +30,7 @@ class MapView3D;
 //  MainWindow keeps m_map_view = host->view2D() so all existing call sites
 //  work unchanged.  Nav-track data is forwarded to the 3D view automatically
 //  via the MapView::layerDataUpdated signal.
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 class MapViewportHost : public QWidget {
     Q_OBJECT
@@ -61,8 +62,9 @@ public slots:
     void setGratLabelSize     (int size);
     void setGratLabelRotated  (bool rotated);
     void setGratCoordFormat   (int fmt);
-    void setLayerVisible   (const std::string& layer_id, bool visible);
-    void setActiveLayer    (const std::string& layer_id);
+    void setLayerVisible      (const std::string& layer_id, bool visible);
+    void setNavTrackVisible   (const std::string& layer_id, bool visible);
+    void setActiveLayer       (const std::string& layer_id);
     void setSelectedLayers (const std::vector<std::string>& ids);
     // Show or hide the "Import Files…" hint button overlaid on the empty map.
     void setShowImportHint (bool show);
@@ -106,6 +108,18 @@ private:
     QLabel*         m_terrain_label   = nullptr;   // "Loading…" feedback
     QPushButton*    m_import_hint_btn = nullptr;   // empty-state CTA
     bool            m_is_3d           = false;
+
+    // Cached display settings — applyLiveSettings always runs before ensureView3D(),
+    // so these are populated before the 3D view is created and applied on creation.
+    bool   m_grid_visible       = true;
+    QColor m_map_bg_color;
+    QColor m_grid_minor_3d;
+    QColor m_grid_major_3d;
+    int    m_grat_label_size    = 1;
+    bool   m_grat_label_rotated = false;
+    int    m_grat_coord_fmt     = 0;
+    ToolMode m_tool_mode        = ToolMode::Pan;
+    std::unordered_map<std::string, bool> m_layer_visibility;
 };
 
 } // namespace dolphin::ui

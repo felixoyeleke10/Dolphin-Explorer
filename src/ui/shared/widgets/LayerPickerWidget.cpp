@@ -1,4 +1,4 @@
-﻿#include "ui/shared/widgets/LayerPickerWidget.h"
+#include "ui/shared/widgets/LayerPickerWidget.h"
 #include "ui/shared/panels/LineListPanel.h"
 #include "ui/shell/Theme.h"
 
@@ -29,7 +29,7 @@ QColor panelShadow()
 
 static constexpr int kChevronSz = 16;  // chevron expand/collapse indicator size
 
-// ── Small painted chevron widget ──────────────────────────────────────────────
+// -- Small painted chevron widget ----------------------------------------------
 class ChevronWidget : public QWidget {
 public:
     bool expanded = false;
@@ -51,7 +51,7 @@ public:
     }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 LayerPickerWidget::LayerPickerWidget(QWidget* parent)
     : QWidget(parent)
@@ -65,7 +65,7 @@ LayerPickerWidget::LayerPickerWidget(QWidget* parent)
     // Load the layers SVG icon
     m_icon_svg = new QSvgRenderer(QString(":/icons/layers.svg"), this);
 
-    // ── Layout ────────────────────────────────────────────────────────────────
+    // -- Layout ----------------------------------------------------------------
     auto* root = new QVBoxLayout(this);
     root->setContentsMargins(1, 1, 1, 1);   // 1px inset for border
     root->setSpacing(0);
@@ -116,37 +116,41 @@ void LayerPickerWidget::paintEvent(QPaintEvent*)
 {
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
+    // Clip to our own rect so the shadow loop below never pushes dirty regions
+    // outside the window bounds (which causes UpdateLayeredWindowIndirect to fail
+    // on Windows when WA_TranslucentBackground is set).
+    p.setClipRect(rect());
 
     const QRectF r = QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5);
 
-    // ── Drop shadow ───────────────────────────────────────────────────────────
+    // -- Drop shadow -----------------------------------------------------------
     for (int i = 6; i >= 1; --i) {
         QPainterPath shadow;
         shadow.addRoundedRect(r.adjusted(i, i, i, i), kRadius, kRadius);
         p.fillPath(shadow, panelShadow());
     }
 
-    // ── Panel background ──────────────────────────────────────────────────────
+    // -- Panel background ------------------------------------------------------
     QPainterPath panel;
     panel.addRoundedRect(r, kRadius, kRadius);
     QColor panel_bg(Theme::kBgElevated);
     panel_bg.setAlpha(230);
     p.fillPath(panel, panel_bg);
 
-    // ── Border ────────────────────────────────────────────────────────────────
+    // -- Border ----------------------------------------------------------------
     QColor border(Theme::kBorderMenu);
     border.setAlpha(180);
     p.setPen(QPen(border, 1.0));
     p.drawPath(panel);
 
-    // ── Header divider (only when expanded) ───────────────────────────────────
+    // -- Header divider (only when expanded) -----------------------------------
     if (m_expanded) {
         p.setPen(QPen(QColor(Theme::kBorder), 1));
         double y = kCollapsedH - 0.5;
         p.drawLine(QPointF(kRadius, y), QPointF(width() - kRadius, y));
     }
 
-    // ── Layers icon (top-left of header) ─────────────────────────────────────
+    // -- Layers icon (top-left of header) -------------------------------------
     if (m_icon_svg && m_icon_svg->isValid()) {
         QRectF ico_rect(11, (kCollapsedH - 14) / 2.0, 14, 14);
         m_icon_svg->render(&p, ico_rect);

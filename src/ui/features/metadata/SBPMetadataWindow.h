@@ -29,9 +29,9 @@ namespace dolphin::ui {
 
 class SSSMetadataPlotWidget;   // defined in SSSMetadataWindow.h; used for the chart pane
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Per-field display configuration (mirrors SSSFieldConfig)
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 struct SBPFieldConfig {
     bool   visible   = true;
     bool   show_plot = false;
@@ -41,9 +41,9 @@ struct SBPFieldConfig {
     int    precision = -1;
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  SBPNavModel — virtual table model backed by SubBottomTrace nav data.
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 class SBPNavModel : public QAbstractTableModel {
     Q_OBJECT
 public:
@@ -77,7 +77,7 @@ private:
     bool m_coords_projected = false;
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  SBPMetadataWindow — per-trace SBP nav and acquisition spreadsheet + charts.
 //
 //  Features (parity with SSSMetadataWindow):
@@ -88,7 +88,7 @@ private:
 //    • Export to CSV (all or selection)
 //    • Left panel: field checklist + per-field plot config
 //    • Chart panel: Line / Scatter / Histogram with axis selectors + zoom/pan
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 class SBPMetadataWindow : public QWidget {
     Q_OBJECT
 public:
@@ -154,7 +154,7 @@ private:
     QString buildTabText(bool selection_only, bool with_headers) const;
     void    exportToCsv (bool selection_only);
 
-    // ── Project / data ────────────────────────────────────────────────────────
+    // -- Project / data --------------------------------------------------------
     app::Project*        m_project        = nullptr;
     app::ImportService*  m_import_service = nullptr;
     std::string          m_active_layer_id;
@@ -163,31 +163,31 @@ private:
 
     QVector<SBPFieldConfig> m_field_cfg;
 
-    // ── Model / view ──────────────────────────────────────────────────────────
+    // -- Model / view ----------------------------------------------------------
     SBPNavModel*           m_model  = nullptr;
     QSortFilterProxyModel* m_proxy  = nullptr;
     QTableView*            m_table  = nullptr;
     SSSMetadataPlotWidget* m_plot   = nullptr;
 
-    // ── Chart dock/toggle state ───────────────────────────────────────────────
+    // -- Chart dock/toggle state -----------------------------------------------
     QSplitter*   m_outer_vsplit     = nullptr;
     QWidget*     m_chart_pane       = nullptr;
     QToolButton* m_btn_toggle_chart = nullptr;
     QToolButton* m_btn_undock_chart = nullptr;
     bool         m_chart_floating   = false;
 
-    // ── Top bar ───────────────────────────────────────────────────────────────
+    // -- Top bar ---------------------------------------------------------------
     QToolButton* m_line_btn    = nullptr;
     QMenu*       m_line_menu   = nullptr;
     QLabel*      m_load_status = nullptr;
 
-    // ── Selection status bar (below table) ───────────────────────────────────
+    // -- Selection status bar (below table) -----------------------------------
     QLabel* m_sel_status = nullptr;
 
-    // ── Left panel — field list ───────────────────────────────────────────────
+    // -- Left panel — field list -----------------------------------------------
     QListWidget* m_field_list    = nullptr;
 
-    // ── Left panel — per-field config ─────────────────────────────────────────
+    // -- Left panel — per-field config -----------------------------------------
     QLabel*      m_cfg_name      = nullptr;
     QCheckBox*   m_cfg_plot_cb   = nullptr;
     QToolButton* m_cfg_color_btn = nullptr;
@@ -198,7 +198,7 @@ private:
     int          m_selected_field = -1;
     bool         m_updating_cfg   = false;
 
-    // ── Chart toolbar ─────────────────────────────────────────────────────────
+    // -- Chart toolbar ---------------------------------------------------------
     QComboBox* m_chart_type_cb  = nullptr;
     QLabel*    m_chart_x_lbl    = nullptr;
     QComboBox* m_chart_x_cb     = nullptr;

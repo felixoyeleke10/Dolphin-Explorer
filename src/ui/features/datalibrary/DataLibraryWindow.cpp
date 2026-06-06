@@ -42,14 +42,14 @@
 
 namespace dolphin::ui {
 
-// ── Constants ─────────────────────────────────────────────────────────────────
+// -- Constants -----------------------------------------------------------------
 namespace {
     constexpr QRgb kClrReady   = 0xff28a745u;
     constexpr QRgb kClrFailed  = 0xffdc3545u;
     constexpr QRgb kClrPending = 0xfffd7e14u;
 }
 
-// ── Formatting helpers ────────────────────────────────────────────────────────
+// -- Formatting helpers --------------------------------------------------------
 
 static QString fmtBytes(uint64_t b)
 {
@@ -137,7 +137,7 @@ static QString fmtConfidence(core::Confidence c)
     return {};
 }
 
-// ── Constructor ───────────────────────────────────────────────────────────────
+// -- Constructor ---------------------------------------------------------------
 
 DataLibraryWindow::DataLibraryWindow(QWidget* parent)
     : QMainWindow(parent)
@@ -150,7 +150,7 @@ DataLibraryWindow::DataLibraryWindow(QWidget* parent)
     buildMenuBar();
     buildNavBar();
 
-    // ── 3-way horizontal splitter: [Filters | Tables | Formats] ─────────────
+    // -- 3-way horizontal splitter: [Filters | Tables | Formats] -------------
     auto* splitter = new QSplitter(Qt::Horizontal);
     splitter->setChildrenCollapsible(false);
     splitter->setHandleWidth(1);
@@ -173,7 +173,7 @@ DataLibraryWindow::DataLibraryWindow(QWidget* parent)
     setCentralWidget(splitter);
 }
 
-// ── Menu bar ──────────────────────────────────────────────────────────────────
+// -- Menu bar ------------------------------------------------------------------
 
 void DataLibraryWindow::buildMenuBar()
 {
@@ -199,7 +199,7 @@ void DataLibraryWindow::buildMenuBar()
     view->addAction(compact);
 }
 
-// ── Navigation toolbar ────────────────────────────────────────────────────────
+// -- Navigation toolbar --------------------------------------------------------
 // Tab buttons + modality switcher dropdown.
 
 void DataLibraryWindow::buildNavBar()
@@ -274,7 +274,7 @@ void DataLibraryWindow::buildNavBar()
     tb->addWidget(m_modality_btn);
 }
 
-// ── Left panel — Filters ──────────────────────────────────────────────────────
+// -- Left panel — Filters ------------------------------------------------------
 
 QWidget* DataLibraryWindow::buildFilterPanel()
 {
@@ -289,7 +289,7 @@ QWidget* DataLibraryWindow::buildFilterPanel()
     vlay->setContentsMargins(8, 8, 8, 8);
     vlay->setSpacing(4);
 
-    // ── Header ───────────────────────────────────────────────────────────────
+    // -- Header ---------------------------------------------------------------
     {
         auto* row   = new QHBoxLayout;
         auto* title = new QLabel(tr("Filters"), panel);
@@ -313,7 +313,7 @@ QWidget* DataLibraryWindow::buildFilterPanel()
         vlay->addLayout(row);
     }
 
-    // ── Match ANY / ALL ───────────────────────────────────────────────────────
+    // -- Match ANY / ALL -------------------------------------------------------
     {
         auto* grp      = new QButtonGroup(panel);
         m_match_any    = new QRadioButton(tr("Match ANY set of rules"), panel);
@@ -334,7 +334,7 @@ QWidget* DataLibraryWindow::buildFilterPanel()
         vlay->addSpacing(2);
     };
 
-    // ── Text section ──────────────────────────────────────────────────────────
+    // -- Text section ----------------------------------------------------------
     addSep();
     {
         m_text_chk = new QCheckBox(tr("Text"), panel);
@@ -367,7 +367,7 @@ QWidget* DataLibraryWindow::buildFilterPanel()
         vlay->addLayout(sub);
     }
 
-    // ── Status section ────────────────────────────────────────────────────────
+    // -- Status section --------------------------------------------------------
     addSep();
     {
         auto* lbl = new QLabel(tr("Status"), panel);
@@ -391,7 +391,7 @@ QWidget* DataLibraryWindow::buildFilterPanel()
     return scroll;
 }
 
-// ── Right panel — Formats (column visibility) ─────────────────────────────────
+// -- Right panel — Formats (column visibility) ---------------------------------
 
 QWidget* DataLibraryWindow::buildFormatsPanel()
 {
@@ -446,7 +446,7 @@ QWidget* DataLibraryWindow::buildFormatsPanel()
                                         item->checkState() != Qt::Checked);
     });
 
-    // ── Bottom icon buttons ───────────────────────────────────────────────────
+    // -- Bottom icon buttons ---------------------------------------------------
     auto* sep = new QFrame(panel); sep->setFrameShape(QFrame::HLine);
     vlay->addWidget(sep);
 
@@ -486,7 +486,7 @@ QWidget* DataLibraryWindow::buildFormatsPanel()
     return scroll;
 }
 
-// ── Page builders ─────────────────────────────────────────────────────────────
+// -- Page builders -------------------------------------------------------------
 
 void DataLibraryWindow::buildLayersPage()
 {
@@ -595,7 +595,7 @@ void DataLibraryWindow::buildIssuesPage()
     });
 }
 
-// ── Page switching ────────────────────────────────────────────────────────────
+// -- Page switching ------------------------------------------------------------
 
 void DataLibraryWindow::switchPage(Page page)
 {
@@ -608,7 +608,7 @@ void DataLibraryWindow::switchPage(Page page)
     applyFilters();
 }
 
-// ── Modality filter ───────────────────────────────────────────────────────────
+// -- Modality filter -----------------------------------------------------------
 
 void DataLibraryWindow::setModalityFilter(int modality)
 {
@@ -618,7 +618,7 @@ void DataLibraryWindow::setModalityFilter(int modality)
     updateStatusBar();
 }
 
-// ── Filter application ────────────────────────────────────────────────────────
+// -- Filter application --------------------------------------------------------
 
 void DataLibraryWindow::applyFilters()
 {
@@ -687,7 +687,7 @@ void DataLibraryWindow::applyFilters()
     updateTabCounts();
 }
 
-// ── Project binding ───────────────────────────────────────────────────────────
+// -- Project binding -----------------------------------------------------------
 
 void DataLibraryWindow::setProject(app::Project* project)
 {
@@ -717,7 +717,7 @@ void DataLibraryWindow::setProject(app::Project* project)
     refreshAll();
 }
 
-// ── Refresh ───────────────────────────────────────────────────────────────────
+// -- Refresh -------------------------------------------------------------------
 
 void DataLibraryWindow::updateWindowTitle()
 {

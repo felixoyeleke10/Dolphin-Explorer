@@ -7,7 +7,7 @@
 namespace dolphin::ui {
 namespace detail {
 
-// ── Delegate ──────────────────────────────────────────────────────────────────
+// -- Delegate ------------------------------------------------------------------
 
 PaletteDelegate::PaletteDelegate(const QList<CommandPaletteItem>* items, QObject* p)
     : QStyledItemDelegate(p), m_items(items) {}

@@ -1,4 +1,4 @@
-﻿// WaterfallAnalysisPanelContact.cpp
+// WaterfallAnalysisPanelContact.cpp
 //
 // buildContactSection() — CONTACT PICKING panel section.
 // buildFeatureSection() — FEATURE PICKING panel section (Phase 2 placeholder).
@@ -19,18 +19,18 @@
 
 namespace dolphin::ui {
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  CONTACT PICKING section
 //
 //  Contacts are single-point picks.  Each click while the pick tool is active
 //  places one contact at (ping, channel, range) with the selected classification.
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void WaterfallAnalysisPanel::buildContactSection(QVBoxLayout* vl, QWidget* container)
 {
     auto* bl = makeSection(tr("Contact Picking"), /*expanded=*/true, container, vl);
 
-    // ── Pick tool button ──────────────────────────────────────────────────
+    // -- Pick tool button --------------------------------------------------
     {
         auto* row = new QWidget;
         auto* rl  = new QHBoxLayout(row);
@@ -57,7 +57,7 @@ void WaterfallAnalysisPanel::buildContactSection(QVBoxLayout* vl, QWidget* conta
                 });
     }
 
-    // ── Classification combo — point-object types only ────────────────────
+    // -- Classification combo — point-object types only --------------------
     // "Feature" is intentionally absent: features are polygon/line annotations
     // handled by the separate FEATURE PICKING section (Phase 2).
     {
@@ -109,7 +109,7 @@ void WaterfallAnalysisPanel::buildContactSection(QVBoxLayout* vl, QWidget* conta
                 });
     }
 
-    // ── Clear button ──────────────────────────────────────────────────────
+    // -- Clear button ------------------------------------------------------
     {
         auto* row = new QWidget;
         auto* rl  = new QHBoxLayout(row);
@@ -131,13 +131,13 @@ void WaterfallAnalysisPanel::buildContactSection(QVBoxLayout* vl, QWidget* conta
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  FEATURE PICKING section — Phase 2 placeholder
 //
 //  Features are SHAPE annotations: polygons, polylines, freehand outlines.
 //  Unlike contacts (single point picks), a feature encloses or traces an area
 //  or boundary — e.g., a debris field outline, a cable corridor, a sand wave.
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void WaterfallAnalysisPanel::buildFeatureSection(QVBoxLayout* vl, QWidget* container)
 {

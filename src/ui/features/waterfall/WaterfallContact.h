@@ -3,7 +3,7 @@
 
 namespace dolphin::ui {
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  WfContact — a single-point contact pick placed on the waterfall canvas.
 //
 //  Contacts are point annotations (boulder, debris, anomaly, …).
@@ -12,7 +12,7 @@ namespace dolphin::ui {
 //  Stored relative to the currently loaded window (row_idx is window-local).
 //  WaterfallWindow converts to core::Contact (with artifact_id / lat / lon)
 //  when persisting to the project.
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 // Classification labels for point contacts.
 enum class ContactClass {

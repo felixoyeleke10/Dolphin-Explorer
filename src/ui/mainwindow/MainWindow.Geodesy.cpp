@@ -1,4 +1,4 @@
-﻿// MainWindow.Geodesy.cpp — onGeodeticSettings standalone window.
+// MainWindow.Geodesy.cpp — onGeodeticSettings standalone window.
 #include "ui/mainwindow/MainWindow.h"
 #include "ui/features/geodesy/GeodesyPanel.h"
 #include "ui/features/map/MapView.h"
@@ -19,7 +19,7 @@ static constexpr int kGeodesyMinH = 500;
 
 void MainWindow::onGeodeticSettings()
 {
-    // ── Create the window once; reuse on subsequent calls ─────────────────
+    // -- Create the window once; reuse on subsequent calls -----------------
     if (!m_geodesy_win) {
         m_geodesy_win = new QDialog(this, Qt::Dialog);
         m_geodesy_win->setObjectName("geodesyWin");
@@ -34,7 +34,7 @@ void MainWindow::onGeodeticSettings()
         m_geodesy_panel = new GeodesyPanel(m_geodesy_win);
         vl->addWidget(m_geodesy_panel);
 
-        // ── Signal wiring ─────────────────────────────────────────────────
+        // -- Signal wiring -------------------------------------------------
         connect(m_geodesy_panel, &GeodesyPanel::crsChanged,
                 this, [this](const core::SpatialRef& crs) {
                     m_pending_crs = crs;

@@ -5,7 +5,7 @@
 
 namespace dolphin::util {
 
-// ── Statics ───────────────────────────────────────────────────────────────────
+// -- Statics -------------------------------------------------------------------
 
 static const JsonValue s_null_value;
 
@@ -15,7 +15,7 @@ const JsonValue& JsonValue::get(const std::string& key) const
     return it != m_obj.end() ? it->second : s_null_value;
 }
 
-// ── Serialiser ────────────────────────────────────────────────────────────────
+// -- Serialiser ----------------------------------------------------------------
 
 static std::string escapeStr(const std::string& s)
 {
@@ -45,9 +45,12 @@ std::string JsonValue::dump(int indent, int depth) const
     case Type::Null:   return "null";
     case Type::Bool:   return m_bool ? "true" : "false";
     case Type::Number: {
-        // Emit without trailing .000000 noise when the value is integral
+        // Emit without trailing .000000 noise when the value is integral.
+        // Threshold is 2^53 (9.007e15) — the largest integer exactly representable
+        // as a double.  This covers microsecond timestamps (~1.7e15 for year 2024)
+        // which previously fell through to the lossy ostringstream path.
         if (m_num == static_cast<double>(static_cast<int64_t>(m_num))
-            && m_num >= -1e15 && m_num <= 1e15) {
+            && m_num >= -9.007199254740992e15 && m_num <= 9.007199254740992e15) {
             return std::to_string(static_cast<int64_t>(m_num));
         }
         std::ostringstream ss;
@@ -86,7 +89,7 @@ std::string JsonValue::dump(int indent, int depth) const
     return "null";
 }
 
-// ── Parser ────────────────────────────────────────────────────────────────────
+// -- Parser --------------------------------------------------------------------
 
 struct Parser {
     const std::string& src;

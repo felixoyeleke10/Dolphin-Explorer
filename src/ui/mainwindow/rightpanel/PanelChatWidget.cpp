@@ -54,7 +54,7 @@ static const ModelEntry kModels[] = {
 };
 static constexpr int kDefaultModel = 0;
 
-// ── Construction / destruction ────────────────────────────────────────────────
+// -- Construction / destruction ------------------------------------------------
 
 PanelChatWidget::PanelChatWidget(QWidget* parent) : QWidget(parent)
 {
@@ -66,7 +66,7 @@ PanelChatWidget::PanelChatWidget(QWidget* parent) : QWidget(parent)
     root->setContentsMargins(0, 0, 0, 0);
     root->setSpacing(0);
 
-    // ── Header ────────────────────────────────────────────────────────────────
+    // -- Header ----------------------------------------------------------------
     auto* hdr = new QWidget(this);
     hdr->setObjectName("panelChatHdr");
     hdr->setFixedHeight(Theme::kPanelHdrH);
@@ -105,13 +105,13 @@ PanelChatWidget::PanelChatWidget(QWidget* parent) : QWidget(parent)
     hl->addWidget(new_btn);
     root->addWidget(hdr);
 
-    // ── Separator ─────────────────────────────────────────────────────────────
+    // -- Separator -------------------------------------------------------------
     auto* sep = new QFrame(this);
     sep->setObjectName("panelChatSep");
     sep->setFixedHeight(Theme::kSepSz);
     root->addWidget(sep);
 
-    // ── Message scroll area ───────────────────────────────────────────────────
+    // -- Message scroll area ---------------------------------------------------
     m_scroll = new QScrollArea(this);
     m_scroll->setObjectName("panelChatScroll");
     m_scroll->setWidgetResizable(true);
@@ -130,13 +130,13 @@ PanelChatWidget::PanelChatWidget(QWidget* parent) : QWidget(parent)
     m_scroll->setWidget(msg_widget);
     root->addWidget(m_scroll, 1);
 
-    // ── Input separator ───────────────────────────────────────────────────────
+    // -- Input separator -------------------------------------------------------
     auto* sep2 = new QFrame(this);
     sep2->setObjectName("panelChatSep");
     sep2->setFixedHeight(Theme::kSepSz);
     root->addWidget(sep2);
 
-    // ── Input area ────────────────────────────────────────────────────────────
+    // -- Input area ------------------------------------------------------------
     auto* input_box = new QFrame(this);
     input_box->setObjectName("panelChatInputBox");
     auto* il = new QVBoxLayout(input_box);
@@ -194,7 +194,7 @@ PanelChatWidget::~PanelChatWidget()
     // Leave the ollama server running — it's a system-level service
 }
 
-// ── Accessors ─────────────────────────────────────────────────────────────────
+// -- Accessors -----------------------------------------------------------------
 
 QString PanelChatWidget::currentModelId() const
 {
@@ -213,7 +213,7 @@ bool PanelChatWidget::eventFilter(QObject* obj, QEvent* evt)
     return QWidget::eventFilter(obj, evt);
 }
 
-// ── Send entry point ──────────────────────────────────────────────────────────
+// -- Send entry point ----------------------------------------------------------
 
 void PanelChatWidget::onSend()
 {
@@ -244,7 +244,7 @@ void PanelChatWidget::onSend()
     checkOllamaAndSend();
 }
 
-// ── Setup chain: check → [start] → [pull] → send ─────────────────────────────
+// -- Setup chain: check → [start] → [pull] → send -----------------------------
 
 void PanelChatWidget::checkOllamaAndSend()
 {
@@ -276,7 +276,7 @@ void PanelChatWidget::handleTagsReply(QNetworkReply* reply)
     checkModelAndSend(data);
 }
 
-// ── Ollama process management ─────────────────────────────────────────────────
+// -- Ollama process management -------------------------------------------------
 
 QString PanelChatWidget::findOllamaExe()
 {
@@ -373,7 +373,7 @@ void PanelChatWidget::pollForReady()
     });
 }
 
-// ── Model pull ────────────────────────────────────────────────────────────────
+// -- Model pull ----------------------------------------------------------------
 
 void PanelChatWidget::checkModelAndSend(const QByteArray& tags_json)
 {
@@ -465,7 +465,7 @@ void PanelChatWidget::onPullFinished()
     sendChatRequest();
 }
 
-// ── Chat request ──────────────────────────────────────────────────────────────
+// -- Chat request --------------------------------------------------------------
 
 void PanelChatWidget::sendChatRequest()
 {
@@ -560,7 +560,7 @@ void PanelChatWidget::onChatFinished()
     setInputEnabled(true);
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// -- Helpers -------------------------------------------------------------------
 
 void PanelChatWidget::setStreamStatus(const QString& text)
 {
@@ -611,7 +611,7 @@ void PanelChatWidget::appendStreamingBubble()
     scrollToBottom();
 }
 
-// ── Empty state ───────────────────────────────────────────────────────────────
+// -- Empty state ---------------------------------------------------------------
 
 void PanelChatWidget::buildEmptyState(QVBoxLayout* into)
 {
@@ -709,7 +709,7 @@ void PanelChatWidget::clearChat()
     buildEmptyState(m_msg_layout);
 }
 
-// ── Message append ────────────────────────────────────────────────────────────
+// -- Message append ------------------------------------------------------------
 
 void PanelChatWidget::appendMessage(const QString& text, bool is_user)
 {

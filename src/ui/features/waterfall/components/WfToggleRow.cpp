@@ -10,7 +10,7 @@
 
 namespace dolphin::ui {
 
-// ── Layout ────────────────────────────────────────────────────────────────────
+// -- Layout --------------------------------------------------------------------
 static constexpr int    kRowH      = 28;
 static constexpr int    kLabelL    = 14;
 static constexpr int    kSwitchR   = 10;   // right margin (matches WfValueRow kPillR)
@@ -19,14 +19,14 @@ static constexpr int    kSwitchH   = 20;
 static constexpr int    kThumbD    = 16;   // thumb diameter
 static constexpr int    kThumbInset = 2;   // gap between thumb and track edge
 
-// ── Colors ────────────────────────────────────────────────────────────────────
+// -- Colors --------------------------------------------------------------------
 static const QColor kLabelCol   ( QLatin1String(Theme::kTextSubtle) );  // #8e8e93
 static const QColor kAccent     ( QLatin1String(Theme::kAccent) );       // #0a84ff
 static const QColor kTrackOff   { 255, 255, 255,  38 };  // white 15% — rendering constant
 static const QColor kThumbShadow{   0,   0,   0,  40 };  // black 16% — rendering constant
 static constexpr int kTrackHoverBoost = 18;  // alpha increment when hovered-off
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 WfToggleRow::WfToggleRow(const QString& label, bool checked, QWidget* parent)
     : QWidget(parent)
@@ -53,16 +53,16 @@ void WfToggleRow::setChecked(bool v)
     update();
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Paint
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void WfToggleRow::paintEvent(QPaintEvent*)
 {
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
 
-    // ── Track ─────────────────────────────────────────────────────────────
+    // -- Track -------------------------------------------------------------
     const QRect track(width() - kSwitchR - kSwitchW,
                       (height() - kSwitchH) / 2,
                       kSwitchW, kSwitchH);
@@ -88,7 +88,7 @@ void WfToggleRow::paintEvent(QPaintEvent*)
     p.setBrush(bg);
     p.drawRoundedRect(QRectF(track), kSwitchH / 2.0, kSwitchH / 2.0);
 
-    // ── Thumb ─────────────────────────────────────────────────────────────
+    // -- Thumb -------------------------------------------------------------
     const qreal travel = kSwitchW - kThumbD - kThumbInset * 2;
     const qreal thumbX = track.left() + kThumbInset + m_anim_pos * travel;
     const qreal thumbY = track.top()  + kThumbInset;
@@ -100,7 +100,7 @@ void WfToggleRow::paintEvent(QPaintEvent*)
     p.setBrush(Qt::white);
     p.drawEllipse(QRectF(thumbX, thumbY, kThumbD, kThumbD));
 
-    // ── Label ─────────────────────────────────────────────────────────────
+    // -- Label -------------------------------------------------------------
     QFont f = font();
     f.setPixelSize(11);
     p.setFont(f);
@@ -112,9 +112,9 @@ void WfToggleRow::paintEvent(QPaintEvent*)
                p.fontMetrics().elidedText(m_label, Qt::ElideRight, lw));
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Input
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void WfToggleRow::mousePressEvent(QMouseEvent* e)
 {

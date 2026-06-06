@@ -24,7 +24,7 @@ void MainWindow::onMapDiagnosticsReady(const QString& layer_id, const NavStats& 
         return QString::number(100.0 * static_cast<double>(n) / total, 'f', 1);
     };
 
-    // ── CRS ───────────────────────────────────────────────────────────────────
+    // -- CRS -------------------------------------------------------------------
     if (!stats.unsupported_crs_id.empty()) {
         m_diag_hub->postProblem(
             tr("Unsupported coordinate system \"%1\" — positions approximated using "
@@ -33,7 +33,7 @@ void MainWindow::onMapDiagnosticsReady(const QString& layer_id, const NavStats& 
             DiagnosticsHub::Severity::Warning, layer_id);
     }
 
-    // ── Position ──────────────────────────────────────────────────────────────
+    // -- Position --------------------------------------------------------------
     if (stats.invalid_nav == stats.total_pings) {
         m_diag_hub->postProblem(
             tr("No valid GPS position in any ping - check vessel nav source or file format"),
@@ -50,7 +50,7 @@ void MainWindow::onMapDiagnosticsReady(const QString& layer_id, const NavStats& 
             DiagnosticsHub::Severity::Warning, layer_id);
     }
 
-    // ── Heading ───────────────────────────────────────────────────────────────
+    // -- Heading ---------------------------------------------------------------
     if (stats.skipped_no_heading == stats.total_pings) {
         m_diag_hub->postProblem(
             tr("No heading data in any ping - select a heading source in Heading / Georeference settings"),
@@ -67,7 +67,7 @@ void MainWindow::onMapDiagnosticsReady(const QString& layer_id, const NavStats& 
             DiagnosticsHub::Severity::Warning, layer_id);
     }
 
-    // ── Sonar samples ─────────────────────────────────────────────────────────
+    // -- Sonar samples ---------------------------------------------------------
     if (static_cast<double>(stats.skipped_no_samples) / total > 0.5) {
         m_diag_hub->postProblem(
             tr("%1 pings (%2%) have no sonar samples - recording may have been interrupted")
@@ -80,7 +80,7 @@ void MainWindow::onMapDiagnosticsReady(const QString& layer_id, const NavStats& 
             DiagnosticsHub::Severity::Info, layer_id);
     }
 
-    // ── GPS fix quality ───────────────────────────────────────────────────────
+    // -- GPS fix quality -------------------------------------------------------
     // Repeated fixes are normal: GPS typically updates at 1–5 Hz while
     // sonar pings at 5–20 Hz, so 50–90% repetition is expected.
     // Only warn when GPS is essentially frozen (>90% identical).
@@ -108,7 +108,7 @@ void MainWindow::onMapDiagnosticsReady(const QString& layer_id, const NavStats& 
             DiagnosticsHub::Severity::Warning, layer_id);
     }
 
-    // ── Preview / coverage output ─────────────────────────────────────────────
+    // -- Preview / coverage output ---------------------------------------------
     if (stats.strips_built > 0 && stats.preview_pixels_written == 0) {
         m_diag_hub->postProblem(
             tr("Sonar preview built but no pixels rendered - heading may be incorrect or swath geometry degenerate"),
@@ -125,7 +125,7 @@ void MainWindow::onMapDiagnosticsReady(const QString& layer_id, const NavStats& 
             DiagnosticsHub::Severity::Warning, layer_id);
     }
 
-    // ── Stitch / rasterization quality ────────────────────────────────────────
+    // -- Stitch / rasterization quality ----------------------------------------
     if (stats.strips_built > 4) {
         const double attempts = static_cast<double>(stats.strips_built - 1);
         if (static_cast<double>(stats.stitch_heading_rejects) / attempts > 0.4) {
@@ -143,14 +143,14 @@ void MainWindow::onMapDiagnosticsReady(const QString& layer_id, const NavStats& 
         }
     }
 
-    // ── View state problems ───────────────────────────────────────────────────
+    // -- View state problems ---------------------------------------------------
     if (stats.layer_active && !stats.layer_visible) {
         m_diag_hub->postProblem(
             tr("Active layer is hidden - enable visibility in the layer list to see it on the map"),
             DiagnosticsHub::Severity::Warning, layer_id);
     }
 
-    // ── Output log summary ────────────────────────────────────────────────────
+    // -- Output log summary ----------------------------------------------------
     const auto fcoord = [](double lo, double hi) -> QString {
         if (lo > 1e17 || hi < -1e17) return QStringLiteral("?");
         return QString("%1..%2").arg(lo, 0, 'f', 5).arg(hi, 0, 'f', 5);

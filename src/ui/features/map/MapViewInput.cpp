@@ -18,9 +18,9 @@
 
 namespace dolphin::ui {
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Input mode
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void MapView::setInputMode(MapInputMode mode)
 {
@@ -66,9 +66,9 @@ void MapView::zoomAtPoint(QPointF pos, double factor)
     update();
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Hit-testing helpers
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 std::string MapView::hitTestLayer(QPoint px) const
 {
@@ -141,9 +141,9 @@ std::vector<std::string> MapView::layersInRect(QRect px_rect) const
     return result;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Mouse events
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void MapView::resizeEvent(QResizeEvent* e)
 {
@@ -193,7 +193,7 @@ void MapView::mousePressEvent(QMouseEvent* event)
         return;
     }
 
-    // Pick-contact mode: emit position and stay in mode for continuous placement.
+    // Pick-contact mode: emit position; stay in contact-pick mode (sticky tool).
     if (m_input_mode == ModePickContact && event->button() == Qt::LeftButton) {
         const QPointF geo = pixelToGeo(event->pos());
         emit contactPickedOnMap(geo.x(), geo.y());

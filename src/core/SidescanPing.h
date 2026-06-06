@@ -1,5 +1,6 @@
 #pragma once
 #include "core/NavPoint.h"
+#include <cmath>
 #include <cstdint>
 #include <vector>
 
@@ -12,7 +13,7 @@ struct SidescanSample {
     float    range_m   = 0.f;  // slant range; negative = water column (masked)
 };
 
-// ── Correction history ────────────────────────────────────────────────────────
+// -- Correction history --------------------------------------------------------
 // Each processing node ORs its flag into SidescanPing::correction_flags so
 // downstream code can inspect what has already been applied without re-running
 // the pipeline.
@@ -27,13 +28,14 @@ enum class CorrectionFlag : uint32_t {
     BandPass      = 1u << 6,  // band-pass filter applied
     SpeckleFilter = 1u << 7,  // speckle / texture filter applied
     GeoCorrect    = 1u << 8,  // layback / towfish position correction applied
+    Arc           = 1u << 9,  // angle range correction applied
 };
 inline uint32_t& operator|=(uint32_t& flags, CorrectionFlag f)
     { return flags |= static_cast<uint32_t>(f); }
 inline bool hasCorrectionFlag(uint32_t flags, CorrectionFlag f)
     { return (flags & static_cast<uint32_t>(f)) != 0; }
 
-// ── QC flags ──────────────────────────────────────────────────────────────────
+// -- QC flags ------------------------------------------------------------------
 // Bitmask for data quality.  Set by QC nodes, detection algorithms, or the user.
 enum class QcFlag : uint8_t {
     Ok         = 0,
@@ -49,17 +51,17 @@ inline uint8_t& operator|=(uint8_t& flags, QcFlag f)
 inline bool hasQcFlag(uint8_t flags, QcFlag f)
     { return (flags & static_cast<uint8_t>(f)) != 0; }
 
-// ── Bottom detection result ───────────────────────────────────────────────────
+// -- Bottom detection result ---------------------------------------------------
 // Written by BottomDetectNode; read by SlantRangeNode and the waterfall renderer.
 struct BottomPick {
     float   range_m    = -1.f; // detected bottom slant range in metres; -1 = no detection
     float   confidence =  0.f; // 0..1 algorithm confidence; 0 when range_m < 0
     uint8_t source     =  0;   // 0 = none, 1 = auto-detected, 2 = user-edited
 
-    bool valid() const { return range_m >= 0.f; }
+    bool valid() const { return range_m >= 0.f && std::isfinite(range_m); }
 };
 
-// ── Sidescan ping ─────────────────────────────────────────────────────────────
+// -- Sidescan ping -------------------------------------------------------------
 struct SidescanPing {
     uint64_t                    id                 = 0;
     int64_t                     timestamp_us       = 0;     // µs since Unix epoch

@@ -17,7 +17,7 @@ namespace dolphin::pipeline { class NodeGraph; struct NodeGroup; }
 
 namespace dolphin::ui {
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  NodeGraphView — interactive node graph canvas.
 //
 //  Pan    : Middle-drag  or  Alt+Left-drag
@@ -27,7 +27,7 @@ namespace dolphin::ui {
 //  Connect: Drag from output port (right circle) → input port (left circle)
 //  Delete : Delete/Backspace on selected node; right-click → Remove Connection
 //  Frame  : Press F to fit all nodes
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 class NodeGraphView : public QWidget {
     Q_OBJECT
 public:

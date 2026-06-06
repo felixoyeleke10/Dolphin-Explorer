@@ -1,4 +1,4 @@
-﻿// MainWindow.ToolBar.cpp — buildActivityBar, buildRightToolBar, setupToolBar.
+// MainWindow.ToolBar.cpp — buildActivityBar, buildRightToolBar, setupToolBar.
 #include "ui/mainwindow/MainWindow.h"
 #include "ui/shared/AppCommands.h"
 #include "ui/shared/widgets/AnimatedToolButton.h"
@@ -39,24 +39,62 @@ QFrame* MainWindow::buildActivityBar(QWidget* parent)
         m_activity_btns[panel] = btn;
     };
 
+    // Primary panels — always visible
     addBtn(":/icons/layers.svg",    "Explorer — project layers, contacts, and features",  PanelExplorer);
-    addBtn(":/icons/waterfall.svg", "Sidescan Sonar viewer — SSS only",                      PanelWaterfall);
+    addBtn(":/icons/waterfall.svg", "Sidescan Sonar viewer — SSS only",                   PanelWaterfall);
+
+    // Secondary panels — each gets a direct button; if any are enabled, also
+    // add a ··· overflow button so secondary panels can be reached without
+    // knowing which feature flags are on.
+    constexpr bool kHasSecondary = Features::kDataLibrary || Features::kNodeGraph
+                                || Features::kContacts    || Features::kAnalyze
+                                || Features::kAI          || Features::kPresent
+                                || Features::kReport;
+
     if constexpr (Features::kDataLibrary)
         addBtn(":/icons/database.svg",
                "Data Library — sources, layers, contacts, and project health.",
                PanelDataLibrary);
     if constexpr (Features::kNodeGraph)
-        addBtn(":/icons/run_all.svg",    "Processing",      PanelProcessing);
+        addBtn(":/icons/run_all.svg",   "Processing",       PanelProcessing);
     if constexpr (Features::kContacts)
-        addBtn(":/icons/contacts.svg",   "Contacts",        PanelContacts);
+        addBtn(":/icons/contacts.svg",  "Contacts",         PanelContacts);
     if constexpr (Features::kAnalyze)
-        addBtn(":/icons/analyze.svg",  "Analyze",         PanelAnalyze);
+        addBtn(":/icons/analyze.svg",   "Analyze",          PanelAnalyze);
     if constexpr (Features::kAI)
-        addBtn(":/icons/ai.svg",       "AI",              PanelAI);
+        addBtn(":/icons/ai.svg",        "AI",               PanelAI);
     if constexpr (Features::kPresent)
-        addBtn(":/icons/present.svg",  "Present",         PanelPresent);
+        addBtn(":/icons/present.svg",   "Present",          PanelPresent);
     if constexpr (Features::kReport)
-        addBtn(":/icons/report.svg",   "Report Generator",PanelReport);
+        addBtn(":/icons/report.svg",    "Report Generator", PanelReport);
+
+    if constexpr (kHasSecondary) {
+        layout->addSpacing(2);
+        auto* more_btn = new AnimatedToolButton(bar);
+        more_btn->setIcon(QIcon(":/icons/more.svg"));
+        more_btn->setIconSize(QSize(Theme::kIconSideBar, Theme::kIconSideBar));
+        more_btn->setToolTip(tr("More panels"));
+        more_btn->setFixedSize(Theme::kActivityBarW, Theme::kSideButtonH);
+        more_btn->setPopupMode(QToolButton::InstantPopup);
+
+        auto* more_menu = new QMenu(more_btn);
+        struct PanelEntry { bool enabled; const char* icon; const char* label; int panel; };
+        for (const auto& e : {
+                PanelEntry{Features::kDataLibrary, ":/icons/database.svg", "Data Library",    PanelDataLibrary},
+                PanelEntry{Features::kNodeGraph,   ":/icons/run_all.svg",  "Processing",      PanelProcessing},
+                PanelEntry{Features::kContacts,    ":/icons/contacts.svg", "Contacts",        PanelContacts},
+                PanelEntry{Features::kAnalyze,     ":/icons/analyze.svg",  "Analyze",         PanelAnalyze},
+                PanelEntry{Features::kAI,          ":/icons/ai.svg",       "AI",              PanelAI},
+                PanelEntry{Features::kPresent,     ":/icons/present.svg",  "Present",         PanelPresent},
+                PanelEntry{Features::kReport,      ":/icons/report.svg",   "Report Generator",PanelReport},
+            }) {
+            auto* act = more_menu->addAction(QIcon(e.icon), tr(e.label),
+                                             this, [this, panel = e.panel]{ togglePanel(panel); });
+            act->setEnabled(e.enabled);
+        }
+        more_btn->setMenu(more_menu);
+        layout->addWidget(more_btn);
+    }
 
     layout->addStretch();
 
@@ -90,9 +128,12 @@ QFrame* MainWindow::buildRightToolBar(QWidget* parent)
         return d;
     };
 
-    auto addToolBtn = [&](const char* icon, const char* tip,
-                          QButtonGroup* group, void (MainWindow::*slot)(),
-                          bool checked = false) {
+    // One exclusive group covers all interactive tools — exactly one active at a time.
+    auto* tool_grp = new QButtonGroup(bar);
+    tool_grp->setExclusive(true);
+
+    auto addToolBtn = [&](QToolButton*& out, const char* icon, const QString& tip,
+                          void (MainWindow::*slot)(), bool checked = false) {
         auto* btn = new AnimatedToolButton(bar);
         btn->setIcon(QIcon(icon));
         btn->setIconSize(QSize(Theme::kIconSideBar, Theme::kIconSideBar));
@@ -100,69 +141,62 @@ QFrame* MainWindow::buildRightToolBar(QWidget* parent)
         btn->setCheckable(true);
         btn->setChecked(checked);
         btn->setFixedSize(Theme::kToolBarW, Theme::kSideButtonH);
-        group->addButton(btn);
+        tool_grp->addButton(btn);
         connect(btn, &QToolButton::clicked, this, slot);
         layout->addWidget(btn);
+        out = btn;
     };
 
-    // Cursor / Select toggle — icon shows the mode you will switch TO on click.
-    // Starts in cursor (pan) mode, so the button shows the select icon.
-    m_cursor_select_btn = new AnimatedToolButton(bar);
-    m_cursor_select_btn->setIcon(QIcon(":/icons/select.svg"));
-    m_cursor_select_btn->setIconSize(QSize(Theme::kIconSideBar, Theme::kIconSideBar));
-    m_cursor_select_btn->setToolTip(tr("Switch to Select (S)"));
-    m_cursor_select_btn->setFixedSize(Theme::kToolBarW, Theme::kSideButtonH);
-    connect(m_cursor_select_btn, &QToolButton::clicked, this, &MainWindow::onToolCursorSelectToggle);
-    layout->addWidget(m_cursor_select_btn);
+    // Navigation tools — mutually exclusive, Cursor active by default.
+    addToolBtn(m_cursor_btn,  ":/icons/cursor.svg",      tr("Cursor (V)     — pan and inspect"),                      &MainWindow::onToolCursor, true);
+    addToolBtn(m_select_btn,  ":/icons/select.svg",      tr("Select (S)     — click to select a layer or feature"),    &MainWindow::onToolSelect);
+    layout->addWidget(makeDivider());
+    addToolBtn(m_zoom_btn,    ":/icons/zoom.svg",         tr("Zoom (Z)       — scroll or drag to zoom the map"),        &MainWindow::onToolZoom);
+    addToolBtn(m_measure_btn, ":/icons/measure.svg",      tr("Measure (M)    — click points to measure distance"),      &MainWindow::onToolMeasure);
+    layout->addWidget(makeDivider());
+    addToolBtn(m_contact_btn, ":/icons/add_contact.svg",  tr("Contact (C)    — click map to place a contact pick.\n"
+                                                             "Stays active; switch tools to stop placing."),            &MainWindow::onAddContact);
     layout->addWidget(makeDivider());
 
-    // View tools
-    auto* view_grp = new QButtonGroup(bar);
-    view_grp->setExclusive(true);
-    addToolBtn(":/icons/zoom.svg",    "Zoom (Z)",    view_grp, &MainWindow::onToolZoom);
-    addToolBtn(":/icons/measure.svg", "Measure (M)", view_grp, &MainWindow::onToolMeasure);
-    layout->addWidget(makeDivider());
-
-    // Contact / annotation actions
-    struct Item {
-        const char* icon;
-        const char* tip;
-        void (MainWindow::*slot)();
-        bool enabled;
-    };
-    for (const auto& item : {
-            Item{":/icons/add_contact.svg",
-                 "Add Contact — click on the map to place a point pick (target, shadow, anomaly, etc.).",
-                 &MainWindow::onAddContact,    true },
-            Item{":/icons/reset_raw.svg",
-                 "Reset to Raw Navigation — SSS only\n"
-                 "Discards all navigation corrections for the current sidescan layer\n"
-                 "and reloads it with the original recorded GPS positions.",
-                 &MainWindow::onResetRaw,      true },
-            Item{":/icons/clear_contacts.svg",
-                 "Clear All Contacts — removes every contact pick from this project.",
-                 &MainWindow::onClearContacts, true },
-        }) {
+    // Destructive actions hidden behind ···
+    {
         auto* btn = new AnimatedToolButton(bar);
-        btn->setIcon(QIcon(item.icon));
+        btn->setIcon(QIcon(":/icons/more.svg"));
         btn->setIconSize(QSize(Theme::kIconSideBar, Theme::kIconSideBar));
-        btn->setToolTip(item.tip);
-        btn->setEnabled(item.enabled);
+        btn->setToolTip(tr("More actions"));
         btn->setFixedSize(Theme::kToolBarW, Theme::kSideButtonH);
-        connect(btn, &QToolButton::clicked, this, item.slot);
+        btn->setPopupMode(QToolButton::InstantPopup);
+
+        auto* menu = new QMenu(btn);
+        auto* act_reset = menu->addAction(
+            QIcon(":/icons/reset_raw.svg"),
+            tr("Reset to Raw Navigation"),
+            this, &MainWindow::onResetRaw);
+        act_reset->setToolTip(
+            tr("Discards all navigation corrections for the current sidescan layer\n"
+               "and reloads it with the original recorded GPS positions."));
+        auto* act_clear = menu->addAction(
+            QIcon(":/icons/clear_contacts.svg"),
+            tr("Clear All Contacts"),
+            this, &MainWindow::onClearContacts);
+        act_clear->setToolTip(tr("Removes every contact pick from this project."));
+
+        btn->setMenu(menu);
         layout->addWidget(btn);
     }
 
     layout->addStretch();
 
-    // Settings gear — pinned at the bottom of the right toolbar.
-    auto* btn_settings = new AnimatedToolButton(bar);
-    btn_settings->setIcon(QIcon(":/icons/settings.svg"));
-    btn_settings->setIconSize(QSize(Theme::kIconSideBar, Theme::kIconSideBar));
-    btn_settings->setToolTip(tr("Application Settings"));
-    btn_settings->setFixedSize(Theme::kToolBarW, Theme::kSideButtonH);
-    connect(btn_settings, &QToolButton::clicked, this, &MainWindow::onAppSettings);
-    layout->addWidget(btn_settings);
+    // 3D view toggle — pinned at the bottom, not part of the tool group.
+    layout->addWidget(makeDivider());
+    m_3d_btn = new AnimatedToolButton(bar);
+    m_3d_btn->setIcon(QIcon(":/icons/layers.svg"));
+    m_3d_btn->setIconSize(QSize(Theme::kIconSideBar, Theme::kIconSideBar));
+    m_3d_btn->setToolTip(tr("3D View — switch to OpenGL terrain/sonar-drape view.\nClick again to return to 2D plan view."));
+    m_3d_btn->setCheckable(true);
+    m_3d_btn->setFixedSize(Theme::kToolBarW, Theme::kSideButtonH);
+    connect(m_3d_btn, &QToolButton::clicked, this, &MainWindow::onToggle3D);
+    layout->addWidget(m_3d_btn);
 
     return bar;
 }
@@ -176,7 +210,7 @@ void MainWindow::setupToolBar()
     tb->setIconSize(QSize(Theme::kIconToolBar, Theme::kIconToolBar));
     tb->setToolButtonStyle(Qt::ToolButtonIconOnly);
 
-    // ── File ────────────────────────────────────────────────────────────────
+    // -- File ----------------------------------------------------------------
     auto* act_new = makeAction(CommandId::NewProject, this);
     connect(act_new, &QAction::triggered, this, &MainWindow::onNewProject);
     tb->addAction(act_new);
@@ -196,7 +230,7 @@ void MainWindow::setupToolBar()
     connect(act_import, &QAction::triggered, this, &MainWindow::onImportFile);
     tb->addAction(act_import);
 
-    // ── Export (dropdown button) ─────────────────────────────────────────────
+    // -- Export (dropdown button) ---------------------------------------------
     m_export_btn = new QToolButton(tb);
     m_export_btn->setIcon(QIcon(":/icons/export.svg"));
     m_export_btn->setToolButtonStyle(Qt::ToolButtonIconOnly);
@@ -233,7 +267,7 @@ void MainWindow::setupToolBar()
 
     tb->addSeparator();
 
-    // ── Module shortcuts ─────────────────────────────────────────────────────
+    // -- Module shortcuts -----------------------------------------------------
     struct ModuleBtn { CommandId id; const char* tip; bool checkable; bool enabled; };
     const ModuleBtn module_btns[] = {
         { CommandId::GeodeticSettings,
@@ -262,14 +296,14 @@ void MainWindow::setupToolBar()
         module_tb_btns[i] = btn;
     }
 
-    m_btn_bottom_track = module_tb_btns[1];
+    m_btn_sbp_open = module_tb_btns[1];
 
     connect(module_tb_btns[0], &QToolButton::clicked, this,
             &MainWindow::onGeodeticSettings);
-    connect(m_btn_bottom_track, &QToolButton::clicked, this, &MainWindow::onSubBottomOpen);
+    connect(m_btn_sbp_open, &QToolButton::clicked, this, &MainWindow::onSubBottomOpen);
     connect(module_tb_btns[2], &QToolButton::clicked, this, &MainWindow::onWaterfallOpen);
 
-    // ── Map tool keyboard shortcuts ──────────────────────────────────────────
+    // -- Map tool keyboard shortcuts ------------------------------------------
     // ApplicationShortcut so V/S/Z/M fire even when a viewer window has focus.
     auto addShortcut = [this](const QKeySequence& key, void (MainWindow::*slot)()) {
         auto* act = new QAction(this);
@@ -282,6 +316,7 @@ void MainWindow::setupToolBar()
     addShortcut(QKeySequence("S"), &MainWindow::onToolSelect);
     addShortcut(QKeySequence("Z"), &MainWindow::onToolZoom);
     addShortcut(QKeySequence("M"), &MainWindow::onToolMeasure);
+    addShortcut(QKeySequence("C"), &MainWindow::onAddContact);
 }
 
 } // namespace dolphin::ui

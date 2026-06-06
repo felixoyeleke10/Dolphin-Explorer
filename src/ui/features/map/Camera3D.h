@@ -5,7 +5,7 @@
 
 namespace dolphin::ui {
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Camera3D — orbit camera for the 3D map view.
 //
 //  Coordinate system (Z-up, right-hand):
@@ -18,7 +18,7 @@ namespace dolphin::ui {
 //    yaw=90  → camera is west  of target (looking east)
 //    pitch=5 → low oblique (nearly horizontal)
 //    pitch=89→ nearly top-down
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 struct Camera3D {
     QVector3D target   = {0.f, 0.f, 0.f};

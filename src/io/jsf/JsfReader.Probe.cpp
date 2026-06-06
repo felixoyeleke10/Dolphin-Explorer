@@ -29,7 +29,7 @@ ProbeResult JsfReader::probe(const std::string& path)
         return r;
     }
 
-    // ── Scan up to 200 messages for modality, nav, and heading ──────────────
+    // -- Scan up to 200 messages for modality, nav, and heading --------------
     double min_x = std::numeric_limits<double>::max();
     double max_x = std::numeric_limits<double>::lowest();
     double min_y = std::numeric_limits<double>::max();

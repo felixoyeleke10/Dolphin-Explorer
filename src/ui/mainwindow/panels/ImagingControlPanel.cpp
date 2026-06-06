@@ -21,7 +21,7 @@ ImagingControlPanel::ImagingControlPanel(QWidget* parent) : QWidget(parent)
     fl->setContentsMargins(0, 0, 0, 0);
     fl->setSpacing(0);
 
-    // ── Scrollable content ────────────────────────────────────────────────────
+    // -- Scrollable content ----------------------------------------------------
     auto* scroll = new QScrollArea(this);
     scroll->setWidgetResizable(true);
     scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
@@ -35,7 +35,7 @@ ImagingControlPanel::ImagingControlPanel(QWidget* parent) : QWidget(parent)
     vl->setSpacing(Theme::kSpacing1);
     scroll->setWidget(container);
 
-    // ── ARN ───────────────────────────────────────────────────────────────────
+    // -- ARN -------------------------------------------------------------------
     m_arn_en = new QCheckBox(tr("ARN"), container);
     m_arn_en->setObjectName("ctrlToggle");
     m_arn_en->setToolTip(
@@ -63,7 +63,7 @@ ImagingControlPanel::ImagingControlPanel(QWidget* parent) : QWidget(parent)
     arn_l->addWidget(m_arn_gain_cap);
     vl->addWidget(arn_rows);
 
-    // ── Destripe ──────────────────────────────────────────────────────────────
+    // -- Destripe --------------------------------------------------------------
     auto* div1 = new QFrame(container); div1->setObjectName("ctrlDivider");
     div1->setFixedHeight(Theme::kSepSz); vl->addWidget(div1);
 
@@ -88,7 +88,7 @@ ImagingControlPanel::ImagingControlPanel(QWidget* parent) : QWidget(parent)
     ds_l->addWidget(m_destripe_capping);
     vl->addWidget(ds_rows);
 
-    // ── Beam Pattern ──────────────────────────────────────────────────────────
+    // -- Beam Pattern ----------------------------------------------------------
     auto* div2 = new QFrame(container); div2->setObjectName("ctrlDivider");
     div2->setFixedHeight(Theme::kSepSz); vl->addWidget(div2);
 
@@ -113,7 +113,7 @@ ImagingControlPanel::ImagingControlPanel(QWidget* parent) : QWidget(parent)
     bpn_l->addWidget(m_bpn_strength);
     vl->addWidget(bpn_rows);
 
-    // ── ML Enhance ────────────────────────────────────────────────────────────
+    // -- ML Enhance ------------------------------------------------------------
     auto* div3 = new QFrame(container); div3->setObjectName("ctrlDivider");
     div3->setFixedHeight(Theme::kSepSz); vl->addWidget(div3);
 
@@ -138,7 +138,7 @@ ImagingControlPanel::ImagingControlPanel(QWidget* parent) : QWidget(parent)
     ml_l->addWidget(m_ml_clip_limit);
     vl->addWidget(ml_rows);
 
-    // ── Slant Range Correction ────────────────────────────────────────────────
+    // -- Slant Range Correction ------------------------------------------------
     auto* div4 = new QFrame(container); div4->setObjectName("ctrlDivider");
     div4->setFixedHeight(Theme::kSepSz); vl->addWidget(div4);
 
@@ -154,7 +154,7 @@ ImagingControlPanel::ImagingControlPanel(QWidget* parent) : QWidget(parent)
 
     vl->addStretch(1);
 
-    // ── Apply buttons (pinned below scroll) ───────────────────────────────────
+    // -- Apply buttons (pinned below scroll) -----------------------------------
     auto* sep = new QFrame(this);
     sep->setFrameShape(QFrame::HLine);
     sep->setObjectName("ctrlDivider");

@@ -23,6 +23,15 @@ public:
         const std::vector<core::SidescanPing>& pings,
         const WaterfallParams&                 params);
 
+    // Waterfall input contract — call before assembly or pipeline entry.
+    // Removes pings with fewer than 2 samples or a non-finite / non-positive
+    // slant_range_m (NaN, Inf, 0, negative all rejected).
+    // Clears per-sample range_m that is NaN or Inf only — negative values are
+    // preserved because they carry the "masked/water-column" semantic that
+    // SSSAmplitudeProcessor::physical16() uses to zero those samples.
+    // Returns the number of pings removed.
+    static int sanitize(std::vector<core::SidescanPing>& pings);
+
 private:
     static constexpr int64_t kTolUs = 50'000;
 

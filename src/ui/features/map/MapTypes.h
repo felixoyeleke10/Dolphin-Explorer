@@ -8,7 +8,7 @@
 
 namespace dolphin::ui {
 
-// ── Map sonar preview quality ─────────────────────────────────────────────────
+// -- Map sonar preview quality -------------------------------------------------
 // Controls whether a raster sonar image is built for the map view and at what
 // fidelity. Persisted in QSettings ("display/mapSonarQuality").
 // Default: CoverageOnly — fast, stable, always available.
@@ -28,7 +28,7 @@ enum class MapSonarQuality : int {
     Full         = 5,
 };
 
-// ── Coverage display (always built for CoverageOnly+, fast, no amplitude) ─────
+// -- Coverage display (always built for CoverageOnly+, fast, no amplitude) -----
 struct SwathCoverage {
     core::SidescanChannel channel = core::SidescanChannel::Port;
 
@@ -37,7 +37,7 @@ struct SwathCoverage {
     std::vector<std::vector<QPointF>> ribbons;
 };
 
-// ── Mosaic types (reserved for future on-demand tiled mosaic builder) ─────────
+// -- Mosaic types (reserved for future on-demand tiled mosaic builder) ---------
 //
 // NOT built automatically. A future "Build Mosaic" action will generate these
 // in a background job with progress, cancel, memory budget, and export.
@@ -57,7 +57,7 @@ struct SssStrip {
     std::vector<SssPoint> points;
 };
 
-// ── Nav quality statistics ────────────────────────────────────────────────────
+// -- Nav quality statistics ----------------------------------------------------
 // Collected by buildSwathNavTrack from the raw ping set. Displayed as
 // warning badges in the map view and used for QC diagnostics.
 struct NavStats {
@@ -102,14 +102,14 @@ struct NavStats {
     int    image_width   = 0;   // QImage pixel dimensions
     int    image_height  = 0;
 
-    // ── Build parameters (set by SidescanViewController in background task) ─────
+    // -- Build parameters (set by SidescanViewController in background task) -----
     MapSonarQuality quality_used    = MapSonarQuality::Low;
     size_t          pings_available = 0;    // total ping groups in store (before thinning)
     bool            memory_reduced  = false; // true if Full quality was auto-downgraded
     std::string     crs_label;              // e.g. "EPSG:32632 projected exact"
     std::string     unsupported_crs_id;     // non-empty if any pings used pseudo-degree fallback
 
-    // ── View state (set post-placement on main thread) ────────────────────────
+    // -- View state (set post-placement on main thread) ------------------------
     bool  layer_visible  = true;
     bool  layer_active   = true;
     bool  fit_applied    = false;   // true if auto-fit ran; false = user had interacted
@@ -117,7 +117,7 @@ struct NavStats {
     bool  paint_onscreen = false;   // paint_rect intersects the current viewport
 };
 
-// ── Track nav quality statistics ─────────────────────────────────────────────
+// -- Track nav quality statistics ---------------------------------------------
 // Collected by buildTrackLayerMapData (and future track-type builders for
 // MAG, MBE, etc.).  Parallels NavStats but covers only the fields meaningful for
 // a single-modality nav track — no swath, heading, or image concepts.
@@ -158,7 +158,7 @@ struct LayerMosaic {
     bool    valid      = false;
 };
 
-// ── Layer map kind ────────────────────────────────────────────────────────────
+// -- Layer map kind ------------------------------------------------------------
 // Describes what kind of geometry a LayerMapData entry contributes to the map.
 // Set by the builder (buildSwathNavTrack, buildTrackLayerMapData, etc.);
 // used by paint and diagnostics code to apply modality-appropriate rendering.
@@ -169,7 +169,7 @@ enum class LayerMapKind : uint8_t {
     Profile = 3,  // vertical acoustic profile: nav track + per-trace scalar (SBP)
 };
 
-// ── Per-layer data held by MapView ────────────────────────────────────────────
+// -- Per-layer data held by MapView --------------------------------------------
 
 struct LayerMapData {
     LayerMapKind kind = LayerMapKind::Unknown;
@@ -210,7 +210,7 @@ struct LayerMapData {
     // Track quality statistics populated by buildTrackLayerMapData (MAG / MBE).
     TrackStats track_stats;
 
-    // ── Profile data (Profile layers / SBP only) ──────────────────────────────
+    // -- Profile data (Profile layers / SBP only) ------------------------------
     // One scalar value per nav_track entry; NaN = gap sentinel or no data.
     // Values represent bottom depth in metres (from bottom_sample_idx pick).
     // scalar_min / scalar_max give the range for colorisation.

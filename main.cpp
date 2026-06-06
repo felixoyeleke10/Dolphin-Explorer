@@ -13,11 +13,44 @@
 #include "pipeline/NodeRegistry.h"
 #ifdef _WIN32
 #include <windows.h>
+#include <dbghelp.h>
 #endif
 
 using namespace dolphin::ui;
 
 static FILE* g_log_file = nullptr;
+
+#ifdef _WIN32
+static void writeCrashStack(FILE* f)
+{
+    void* frames[64] = {};
+    const USHORT count = CaptureStackBackTrace(0, 64, frames, nullptr);
+
+    static char sym_buf[sizeof(SYMBOL_INFO) + MAX_SYM_NAME];
+    HANDLE proc = GetCurrentProcess();
+    static bool sym_initialized = false;
+    if (!sym_initialized) {
+        SymInitialize(proc, nullptr, TRUE);
+        sym_initialized = true;
+    }
+
+    fprintf(f, "=== call stack ===\n");
+    for (USHORT i = 0; i < count; ++i) {
+        DWORD64 addr = reinterpret_cast<DWORD64>(frames[i]);
+        SYMBOL_INFO* sym = reinterpret_cast<SYMBOL_INFO*>(sym_buf);
+        memset(sym, 0, sizeof(SYMBOL_INFO) + MAX_SYM_NAME);
+        sym->SizeOfStruct = sizeof(SYMBOL_INFO);
+        sym->MaxNameLen   = MAX_SYM_NAME;
+        DWORD64 disp = 0;
+        if (SymFromAddr(proc, addr, &disp, sym))
+            fprintf(f, "  [%2u] 0x%016llX  %s + 0x%llX\n", i, addr, sym->Name, (unsigned long long)disp);
+        else
+            fprintf(f, "  [%2u] 0x%016llX\n", i, addr);
+    }
+    fprintf(f, "=== end stack ===\n");
+    fflush(f);
+}
+#endif
 
 static void debugMessageHandler(QtMsgType type, const QMessageLogContext&, const QString& msg)
 {
@@ -29,6 +62,16 @@ static void debugMessageHandler(QtMsgType type, const QMessageLogContext&, const
     fprintf(stderr, "%s\n", ba.constData());
     fflush(stderr);
     dolphin::ui::RuntimeLogBridge::publish(type, msg);
+
+    // Q_ASSERT → qFatal calls this handler, then calls abort() from inside Qt's DLL.
+    // The DLL's CRT has a different signal table so SIGABRT handlers on the exe side
+    // never fire.  Capture the stack here, while we're still alive, before abort() runs.
+    if (type == QtFatalMsg) {
+#ifdef _WIN32
+        writeCrashStack(stderr);
+        if (g_log_file) writeCrashStack(g_log_file);
+#endif
+    }
 }
 
 static void terminateHandler()
@@ -43,16 +86,35 @@ static void terminateHandler()
 }
 
 #ifdef _WIN32
-static LONG WINAPI sehCrashHandler(EXCEPTION_POINTERS*)
+static LONG WINAPI sehCrashHandler(EXCEPTION_POINTERS* ep)
 {
-    fprintf(stderr, "\n=== FATAL: unhandled exception (access violation / SEH) ===\n");
+    // Write a minidump alongside the exe so it can be loaded in Visual Studio /
+    // WinDbg to get the exact crash location and full call stack.
+    HANDLE hFile = CreateFileA("dolphin_crash.dmp", GENERIC_WRITE, 0, nullptr,
+                               CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (hFile != INVALID_HANDLE_VALUE) {
+        MINIDUMP_EXCEPTION_INFORMATION mei{};
+        mei.ThreadId          = GetCurrentThreadId();
+        mei.ExceptionPointers = ep;
+        mei.ClientPointers    = FALSE;
+        const MINIDUMP_TYPE dumpType = static_cast<MINIDUMP_TYPE>(
+            MiniDumpWithDataSegs | MiniDumpWithThreadInfo | MiniDumpWithUnloadedModules);
+        MiniDumpWriteDump(GetCurrentProcess(), GetCurrentProcessId(),
+                          hFile, dumpType, &mei, nullptr, nullptr);
+        CloseHandle(hFile);
+        fprintf(stderr, "[crash] minidump written → dolphin_crash.dmp\n");
+        if (g_log_file)
+            fprintf(g_log_file, "[crash] minidump written → dolphin_crash.dmp\n");
+    }
+
+    const DWORD code = ep ? ep->ExceptionRecord->ExceptionCode : 0;
+    fprintf(stderr, "\n=== FATAL: SEH 0x%08lX ===\n", code);
     dolphin::app::ImportLog::dumpCrashTrace(stderr);
     if (g_log_file) {
-        fprintf(g_log_file, "\n=== FATAL: unhandled exception (access violation / SEH) ===\n");
+        fprintf(g_log_file, "\n=== FATAL: SEH 0x%08lX ===\n", code);
         dolphin::app::ImportLog::dumpCrashTrace(g_log_file);
         fflush(g_log_file);
     }
-    // EXCEPTION_CONTINUE_SEARCH lets Windows Error Reporting generate a minidump.
     return EXCEPTION_CONTINUE_SEARCH;
 }
 #endif

@@ -1,4 +1,4 @@
-﻿// SubBottomDisplayPanel.cpp — right display/processing panel for SubBottomWindow.
+// SubBottomDisplayPanel.cpp — right display/processing panel for SubBottomWindow.
 
 #include "ui/features/subbottom/panels/SubBottomDisplayPanel.h"
 #include "ui/shell/Theme.h"
@@ -77,7 +77,7 @@ SubBottomDisplayPanel::SubBottomDisplayPanel(QWidget* parent)
     vl->setSpacing(0);
     scroll->setWidget(container);
 
-    // ── DISPLAY ─────────────────────────────────────────────────────────────
+    // -- DISPLAY -------------------------------------------------------------
     {
         auto* bl = makeSection("Display", true, container, vl);
 
@@ -189,7 +189,7 @@ SubBottomDisplayPanel::SubBottomDisplayPanel(QWidget* parent)
                 this, [this](bool) { emitParams(); });
     }
 
-    // ── BOTTOM TRACK ─────────────────────────────────────────────────────────
+    // -- BOTTOM TRACK ---------------------------------------------------------
     {
         auto* bl = makeSection("Bottom Track", true, container, vl);
 
@@ -223,7 +223,7 @@ SubBottomDisplayPanel::SubBottomDisplayPanel(QWidget* parent)
         bl->addWidget(bt_row);
     }
 
-    // ── ACQUISITION ──────────────────────────────────────────────────────────
+    // -- ACQUISITION ----------------------------------------------------------
     {
         auto* bl = makeSection("Acquisition", false, container, vl);
 

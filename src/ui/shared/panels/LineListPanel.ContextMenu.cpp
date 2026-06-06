@@ -20,7 +20,7 @@ using namespace dolphin::ui::detail;
 
 namespace dolphin::ui {
 
-// ── Tag menu helper ───────────────────────────────────────────────────────────
+// -- Tag menu helper -----------------------------------------------------------
 
 // Builds a 16×16 filled-circle icon for a palette entry.
 static QIcon makePaletteIcon(const TagPaletteEntry& e)
@@ -68,7 +68,7 @@ static QMenu* buildTagMenu(QWidget* parent,
     return menu;
 }
 
-// ── Group assignment submenu helper ──────────────────────────────────────────
+// -- Group assignment submenu helper ------------------------------------------
 
 static QMenu* buildGroupMenu(QWidget* parent,
                               const std::vector<app::ItemGroup>& groups,
@@ -110,7 +110,7 @@ static QMenu* buildGroupMenu(QWidget* parent,
     return menu;
 }
 
-// ── Main context menu handler ─────────────────────────────────────────────────
+// -- Main context menu handler -------------------------------------------------
 
 void LineListPanel::onContextMenuRequested(const QPoint& pos)
 {
@@ -120,7 +120,7 @@ void LineListPanel::onContextMenuRequested(const QPoint& pos)
     const auto   type = itemTypeOf(item);
     const QPoint gpos = m_tree->viewport()->mapToGlobal(pos);
 
-    // ── Layer item ────────────────────────────────────────────────────────────
+    // -- Layer item ------------------------------------------------------------
     if (type == ItemType::Layer) {
         const std::string clicked_id = item->data(0, kRoleId).toString().toStdString();
 
@@ -142,7 +142,7 @@ void LineListPanel::onContextMenuRequested(const QPoint& pos)
 
         QMenu menu(this);
 
-        // ── Open in viewer ────────────────────────────────────────────────────
+        // -- Open in viewer ----------------------------------------------------
         if (!multi) {
             using M = app::Modality;
             const auto mod = static_cast<M>(item->data(0, kRoleModality).toInt());
@@ -168,7 +168,7 @@ void LineListPanel::onContextMenuRequested(const QPoint& pos)
 
         menu.addSeparator();
 
-        // ── Export ────────────────────────────────────────────────────────────
+        // -- Export ------------------------------------------------------------
         QMenu* exp = menu.addMenu(tr("Export"));
         exp->addAction(tr("CSV Table"),       this, [this, ids] { emit exportLayersRequested(ids, "csv");     });
         exp->addAction(tr("Navigation Data"), this, [this, ids] { emit exportLayersRequested(ids, "nav");     });
@@ -183,7 +183,7 @@ void LineListPanel::onContextMenuRequested(const QPoint& pos)
 
         menu.addSeparator();
 
-        // ── Tags and groups (single-layer only) ───────────────────────────────
+        // -- Tags and groups (single-layer only) -------------------------------
         if (!multi) {
             const auto* layer = m_project->findLayer(clicked_id);
             if (layer) {
@@ -227,7 +227,7 @@ void LineListPanel::onContextMenuRequested(const QPoint& pos)
 
             menu.addSeparator();
 
-            // ── Order ─────────────────────────────────────────────────────────
+            // -- Order ---------------------------------------------------------
             menu.addAction(tr("Move to Top"),    this, [this, item, grp_size] { moveLayerInTree(item, -grp_size); })->setEnabled(can_up);
             menu.addAction(tr("Move Up"),        this, [this, item]           { moveLayerInTree(item, -1);        })->setEnabled(can_up);
             menu.addAction(tr("Move Down"),      this, [this, item]           { moveLayerInTree(item, +1);        })->setEnabled(can_down);
@@ -235,7 +235,7 @@ void LineListPanel::onContextMenuRequested(const QPoint& pos)
 
             menu.addSeparator();
 
-            // ── Nav track ─────────────────────────────────────────────────────
+            // -- Nav track -----------------------------------------------------
             const bool nav_shown = m_visible_nav_tracks.count(clicked_id) > 0;
             menu.addAction(
                 nav_shown ? tr("Hide Navigation Track") : tr("Show Navigation Track"),
@@ -254,7 +254,7 @@ void LineListPanel::onContextMenuRequested(const QPoint& pos)
                 emit removeLayerRequested(clicked_id);
             });
         } else {
-            // ── Multi-layer tags (bulk clear only) ────────────────────────────
+            // -- Multi-layer tags (bulk clear only) ----------------------------
             menu.addSeparator();
             menu.addAction(tr("Remove %1 Layers…").arg(n), this, [this, ids] {
                 emit removeLayersRequested(ids);
@@ -263,7 +263,7 @@ void LineListPanel::onContextMenuRequested(const QPoint& pos)
 
         menu.exec(gpos);
 
-    // ── Layer group item ──────────────────────────────────────────────────────
+    // -- Layer group item ------------------------------------------------------
     } else if (type == ItemType::LayerGroup) {
         const std::string group_id = item->data(0, kRoleGroupId).toString().toStdString();
         QMenu menu(this);
@@ -309,7 +309,7 @@ void LineListPanel::onContextMenuRequested(const QPoint& pos)
 
         menu.exec(gpos);
 
-    // ── Source item ───────────────────────────────────────────────────────────
+    // -- Source item -----------------------------------------------------------
     } else if (type == ItemType::Source) {
         const std::string source_id = item->data(0, kRoleId).toString().toStdString();
         QMenu menu(this);
@@ -318,7 +318,7 @@ void LineListPanel::onContextMenuRequested(const QPoint& pos)
         });
         menu.exec(gpos);
 
-    // ── Contact item ──────────────────────────────────────────────────────────
+    // -- Contact item ----------------------------------------------------------
     } else if (type == ItemType::Contact) {
         const uint64_t contact_id = item->data(0, kRoleId).toULongLong();
 
@@ -381,7 +381,7 @@ void LineListPanel::onContextMenuRequested(const QPoint& pos)
         });
         menu.exec(gpos);
 
-    // ── Contact group item ────────────────────────────────────────────────────
+    // -- Contact group item ----------------------------------------------------
     } else if (type == ItemType::ContactGroup) {
         const std::string group_id = item->data(0, kRoleGroupId).toString().toStdString();
         QMenu menu(this);

@@ -13,6 +13,8 @@ namespace dolphin::ui {
 
 void MapView::paintEvent(QPaintEvent*)
 {
+    ensureCombined();
+
     QPainter p(this);
     p.setRenderHints(QPainter::Antialiasing |
                      QPainter::TextAntialiasing |

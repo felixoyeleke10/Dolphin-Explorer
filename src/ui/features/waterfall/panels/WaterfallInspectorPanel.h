@@ -1,9 +1,12 @@
 #pragma once
 #include <QFrame>
 #include <string>
+#include <utility>
+#include <vector>
 
 class QComboBox;
 class QLabel;
+class QListWidget;
 class QPushButton;
 class QToolButton;
 class QVBoxLayout;
@@ -16,7 +19,7 @@ class DataLayer;
 
 namespace dolphin::ui {
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  WaterfallInspectorPanel — left metadata panel in the Waterfall window.
 //
 //  QFrame subclass extracted from WaterfallWindow::buildInspectorPanel().
@@ -28,7 +31,7 @@ namespace dolphin::ui {
 //    prevLineRequested()  → onPrevFix()
 //    nextLineRequested()  → onNextFix()
 //    paletteChanged()     → pushParams()
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 class WaterfallInspectorPanel : public QFrame {
     Q_OBJECT
@@ -38,8 +41,6 @@ public:
     // Refresh all labels from the data layer and current window state.
     // Pass nullptr for layer to reset everything to em-dash.
     void refresh(const app::DataLayer*  layer,
-                 const std::string&     source_path,
-                 uint64_t               source_size_bytes,
                  int                    total_ssc_entries,
                  float                  entries_per_row,
                  int                    samples_per_ping,
@@ -52,9 +53,18 @@ public:
     int  currentPaletteIndex() const;
     void setPalette(int idx);           // external sync — does NOT re-emit
 
+    // Amp-bar toggle — external sync — does NOT re-emit ampBarToggled.
+    void setAmpBarChecked(bool on);
+
+    // Populate the FILES list with all sidescan layers in the project.
+    void setProjectLayers(const std::vector<std::pair<std::string, std::string>>& layers);
+    // Highlight the active file (does not emit layerChangeRequested).
+    void setActiveLine(const std::string& id);
+
 signals:
     void prevLineRequested();
     void nextLineRequested();
+    void layerChangeRequested(const std::string& id);
     void paletteChanged(int idx);       // emitted when the palette combo changes
     void verticalScaleChanged(float);   // pings/cm  (0 = auto)
     void horizontalScaleChanged(float); // samples/cm (0 = auto)
@@ -62,7 +72,7 @@ signals:
     void ampBarToggled(bool show);      // amplitude chart show/hide
 
 private:
-    // ── Section helpers ────────────────────────────────────────────────────
+    // -- Section helpers ----------------------------------------------------
     static QVBoxLayout* makeSection(const QString& title, bool expanded,
                                     QWidget* parent, QVBoxLayout* parent_layout);
 
@@ -70,15 +80,14 @@ private:
                      const QString& obj_name = "wfMetaVal");
     void makeWideRow(QVBoxLayout* bl, const QString& key, QLabel*& val_out);
 
-    // ── Widgets ────────────────────────────────────────────────────────────
+    // -- Widgets ------------------------------------------------------------
+    // Files list
+    QListWidget* m_files_list = nullptr;
     // Survey data
     QLabel* m_val_pings     = nullptr;
     QLabel* m_val_samples   = nullptr;
     QLabel* m_val_duration  = nullptr;
     QLabel* m_val_length    = nullptr;
-    // Source file
-    QLabel* m_val_filename  = nullptr;
-    QLabel* m_val_fmt_size  = nullptr;
     // Coordinate system
     QLabel*      m_val_crs       = nullptr;
     QLabel*      m_val_crs_kind  = nullptr;

@@ -13,6 +13,12 @@
 // FIX-009  bad packet magic → ResyncedPacket diagnostic emitted
 // FIX-010  BytesPerSample=0 in header → InferredBytesPerSample diagnostic emitted
 // FIX-011  zero-nav pings backfilled from PACKET_NAV → InterpolatedNavigation diagnostic
+// FIX-012  bathymetry channel (TypeOfChannel=3) → UnsupportedChannelType diagnostic
+// FIX-013  unknown packet HeaderType → UnsupportedPacketType diagnostic, pings kept
+// FIX-014  split-packet sidescan (one channel per PACKET_PING) → 2 entries, port+stbd
+// FIX-015  dual-frequency (Edgetech 4200-style SubChannelNumber routing) → LF+HF bands
+// FIX-016  real Edgetech 4200.E via Isis → 4-chan dual-freq, NavUnits=3 overridden Geographic
+// FIX-017  real TST 500 kHz, 32-bit samples → NavUnits=0 overridden Projected
 //
 // Run via: ctest --output-on-failure
 // No external test framework — same minimal assertion helper as test_parsed_cache.
@@ -232,6 +238,25 @@ struct XtfBuilder {
         bytes[pkt + 20] = sec;
         wf64(bytes, pkt + 160, lat);
         wf64(bytes, pkt + 168, lon);
+        return pkt;
+    }
+
+    // Generic 256-byte packet with an arbitrary HeaderType and no channels.
+    // Used to exercise unsupported/unknown packet-type handling.
+    size_t writeSimplePacket(uint8_t header_type,
+                             uint16_t year, uint16_t julian_day,
+                             uint8_t hour, uint8_t min, uint8_t sec) {
+        const size_t pkt = bytes.size();
+        bytes.resize(pkt + 256, 0);
+        w16(bytes, pkt +  0, 0xFACE);
+        bytes[pkt + 2] = header_type;
+        w32(bytes, pkt + 10, 256);              // NumBytesThisRecord
+        w16(bytes, pkt + 14, year);
+        bytes[pkt + 22] = static_cast<uint8_t>(julian_day & 0xFF);
+        bytes[pkt + 23] = static_cast<uint8_t>((julian_day >> 8) & 0xFF);
+        bytes[pkt + 18] = hour;
+        bytes[pkt + 19] = min;
+        bytes[pkt + 20] = sec;
         return pkt;
     }
 
@@ -667,6 +692,308 @@ static void test_fix011_interpolated_nav_diagnostic()
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+//  FIX-012 — bathymetry channel (TypeOfChannel=3) → UnsupportedChannelType
+//
+//  A file declaring one port SSS channel plus one bathymetry channel.  The SSS
+//  ping is still indexed, while the recognized-but-unsupported bathymetry
+//  channel produces an UnsupportedChannelType diagnostic instead of silently
+//  vanishing.
+// ─────────────────────────────────────────────────────────────────────────────
+
+static void test_fix012_bathymetry_channel_unsupported()
+{
+    TempFile tmp;
+    {
+        XtfBuilder b;
+        b.writeFileHeader(/*nav_units=*/0, /*num_sss=*/1, /*num_bathy=*/1);
+        b.writeChanInfo(/*type=*/1, 0, 2, 4, "Port");          // supported SSS
+        b.writeChanInfo(/*type=*/3, 0, 2, 4, "Bathy", 200.f);  // bathymetry
+        b.padTo1024();
+        b.writePing(48.0, 2.0, 2000, 100, 12, 0, 0, 1,
+                    { {0, 75.f, {1000, 2000, 3000, 4000}} });
+        CHECK(b.saveTo(tmp.path));
+    }
+
+    dolphin::io::XtfReader reader;
+    CHECK(reader.open(tmp.path));
+    const auto index = reader.buildIndex();
+
+    // Only the SSS ping is indexed; the bathymetry channel is not.
+    CHECK(index.size() == 1);
+    if (!index.empty())
+        CHECK(index.entries[0].type == dolphin::core::ArtifactType::Sidescan);
+
+    // The declared bathymetry channel must be reported, not silently dropped.
+    CHECK(hasDiagnostic(reader,
+                        dolphin::core::ImportDiagnosticCode::UnsupportedChannelType));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  FIX-013 — unknown packet type → UnsupportedPacketType, valid ping still kept
+//
+//  A junk packet with an unrecognized HeaderType sits between two valid pings.
+//  buildIndex must emit an UnsupportedPacketType diagnostic and still index both
+//  surrounding sidescan pings.
+// ─────────────────────────────────────────────────────────────────────────────
+
+static void test_fix013_unknown_packet_type()
+{
+    TempFile tmp;
+    {
+        XtfBuilder b;
+        b.writeFileHeader(0, 1);
+        b.writeChanInfo(1, 0, 2, 4, "Port");
+        b.padTo1024();
+        b.writePing(48.0, 2.0, 2000, 100, 12, 0, 0, 1,
+                    { {0, 75.f, {100, 200, 300, 400}} });
+        // Unrecognized packet type 99 between the two pings.
+        b.writeSimplePacket(/*header_type=*/99, 2000, 100, 12, 0, 1);
+        b.writePing(48.1, 2.1, 2000, 100, 12, 0, 2, 2,
+                    { {0, 75.f, {500, 600, 700, 800}} });
+        CHECK(b.saveTo(tmp.path));
+    }
+
+    dolphin::io::XtfReader reader;
+    CHECK(reader.open(tmp.path));
+    const auto index = reader.buildIndex();
+
+    // Both valid pings indexed; the unknown packet between them is skipped.
+    CHECK(index.size() == 2);
+    CHECK(hasDiagnostic(reader,
+                        dolphin::core::ImportDiagnosticCode::UnsupportedPacketType));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  FIX-014 — split-packet sidescan: one channel per PACKET_PING
+//
+//  Unlike FIX-002 (both channels in one ping), here port and starboard arrive as
+//  two separate PACKET_PING records, each with NumChansToFollow=1.  Both must be
+//  indexed and classified as Port and Starboard respectively.
+// ─────────────────────────────────────────────────────────────────────────────
+
+static void test_fix014_split_packet_sidescan()
+{
+    TempFile tmp;
+    {
+        XtfBuilder b;
+        b.writeFileHeader(/*nav_units=*/0, /*num_sss=*/2);
+        b.writeChanInfo(/*type=*/1, 0, 2, 4, "Port",      100.f);
+        b.writeChanInfo(/*type=*/2, 0, 2, 4, "Starboard", 100.f);
+        b.padTo1024();
+        // Port arrives in its own packet …
+        b.writePing(48.0, 2.0, 2000, 100, 12, 0, 0, 1,
+                    { {0, 75.f, {1000, 2000, 3000, 4000}} });
+        // … starboard in the next packet.
+        b.writePing(48.0, 2.0, 2000, 100, 12, 0, 1, 2,
+                    { {1, 75.f, {5000, 6000, 7000, 8000}} });
+        CHECK(b.saveTo(tmp.path));
+    }
+
+    dolphin::io::XtfReader reader;
+    CHECK(reader.open(tmp.path));
+
+    const auto index = reader.buildIndex();
+    CHECK(index.size() == 2);
+    if (index.size() < 2) return;
+
+    bool found_port = false;
+    bool found_stbd = false;
+    for (const auto& e : index.entries) {
+        CHECK(e.type == dolphin::core::ArtifactType::Sidescan);
+        auto art = reader.readArtifact(e);
+        CHECK(art.has_value());
+        if (!art) continue;
+        const auto& ping = std::get<dolphin::core::SidescanPing>(*art);
+        if (ping.channel == dolphin::core::SidescanChannel::Port)      found_port = true;
+        if (ping.channel == dolphin::core::SidescanChannel::Starboard) found_stbd = true;
+    }
+    CHECK(found_port);
+    CHECK(found_stbd);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  FIX-015 — dual-frequency sidescan (Edgetech 4200-style SubChannelNumber routing)
+//
+//  File header declares 4 SSS channels: LF port/stbd (100 kHz) and HF port/stbd
+//  (400 kHz).  Packets reuse ChannelNumber 0/1 and select the band via
+//  pkt.SubChannelNumber: 0 → LF (chan-info index 0/1), 1 → HF (index 2/3).
+//  The reader must route each ping to the correct channel-info entry so both
+//  frequency bands are detected and stamped onto the right artifacts.
+// ─────────────────────────────────────────────────────────────────────────────
+
+static void test_fix015_dual_frequency_routing()
+{
+    TempFile tmp;
+    {
+        XtfBuilder b;
+        b.writeFileHeader(/*nav_units=*/0, /*num_sss=*/4);
+        b.writeChanInfo(/*type=*/1, 0, 2, 4, "LF Port", 100.f);
+        b.writeChanInfo(/*type=*/2, 1, 2, 4, "LF Stbd", 100.f);
+        b.writeChanInfo(/*type=*/1, 0, 2, 4, "HF Port", 400.f);
+        b.writeChanInfo(/*type=*/2, 1, 2, 4, "HF Stbd", 400.f);
+        b.padTo1024();
+        // LF ping — SubChannelNumber=0 (default), ChannelNumbers 0/1 → index 0/1.
+        b.writePing(48.0, 2.0, 2000, 100, 12, 0, 0, 1,
+                    { {0, 75.f, {100, 200, 300, 400}},
+                      {1, 75.f, {500, 600, 700, 800}} });
+        // HF ping — SubChannelNumber=1, ChannelNumbers 0/1 → index 2/3.
+        const size_t hf_pkt =
+            b.writePing(48.0, 2.0, 2000, 100, 12, 0, 1, 2,
+                        { {0, 75.f, {110, 220, 330, 440}},
+                          {1, 75.f, {550, 660, 770, 880}} });
+        b.bytes[hf_pkt + 3] = 1;   // XtfPacketHeader::SubChannelNumber = 1 (HF band)
+        CHECK(b.saveTo(tmp.path));
+    }
+
+    dolphin::io::XtfReader reader;
+    CHECK(reader.open(tmp.path));
+
+    const auto index = reader.buildIndex();
+    CHECK(index.size() == 4);
+    if (index.size() < 4) return;
+
+    // Both frequency bands must be discovered and ordered HF (primary) > LF.
+    const auto meta = reader.metadata();
+    CHECK_CLOSE(meta.frequency_hz,     400000.f, 1.f);
+    CHECK_CLOSE(meta.low_frequency_hz, 100000.f, 1.f);
+
+    // Each entry must carry the frequency of the band it was routed to.
+    int lf_count = 0, hf_count = 0;
+    for (const auto& e : index.entries) {
+        if (std::abs(e.frequency_hz - 100000.f) < 1.f) ++lf_count;
+        if (std::abs(e.frequency_hz - 400000.f) < 1.f) ++hf_count;
+    }
+    CHECK(lf_count == 2);
+    CHECK(hf_count == 2);
+
+    // Round-trip the HF entries: frequency and channel must survive decode.
+    for (const auto& e : index.entries) {
+        if (std::abs(e.frequency_hz - 400000.f) >= 1.f) continue;
+        auto art = reader.readArtifact(e);
+        CHECK(art.has_value());
+        if (!art) continue;
+        const auto& ping = std::get<dolphin::core::SidescanPing>(*art);
+        CHECK_CLOSE(ping.frequency_hz, 400000.f, 1.f);
+        CHECK(ping.channel == dolphin::core::SidescanChannel::Port
+           || ping.channel == dolphin::core::SidescanChannel::Starboard);
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Real-vendor reduced fixtures (Slice 02D)
+//
+//  Unlike FIX-001…FIX-015 (synthetic XtfBuilder byte streams), these load
+//  reduced captures of real vendor files checked into tests/fixtures/.  Each
+//  keeps the original 1024-byte file-header block plus the first 8 ping packets
+//  (see scripts/xtf_reduce.ps1).  They satisfy the Stage 02 ">=2 real
+//  vendor/recorder families" bar.
+// ─────────────────────────────────────────────────────────────────────────────
+
+#ifndef XTF_FIXTURE_DIR
+#define XTF_FIXTURE_DIR "fixtures"
+#endif
+
+static std::string fixturePath(const char* name)
+{
+    return (std::filesystem::path(XTF_FIXTURE_DIR) / name).string();
+}
+
+// FIX-016 — Edgetech 4200.E recorded via Triton Isis (NBP0505 survey).
+// 4 SSS channels (PORT_LOW/STBD_LOW @120 kHz, PORT_HI/STBD_HI @410 kHz),
+// 16-bit samples.  The header declares NavUnits=3 (projected), but the fixes
+// are real lat/lon degrees, so the reader overrides the CRS to Geographic.
+static void test_fix016_edgetech4200_isis_real()
+{
+    const std::string path = fixturePath("fix016_edgetech4200_isis_reduced.xtf");
+
+    dolphin::io::XtfReader reader;
+    CHECK(reader.open(path));
+    if (!reader.isOpen()) return;
+
+    const auto index = reader.buildIndex();
+    const auto meta  = reader.metadata();
+
+    // Sonar identified from header (SonarType=38 / SonarName "Edgetech_4200.E").
+    CHECK(meta.sonar_name.find("4200") != std::string::npos);
+
+    // NavUnits=3 declared Projected, but magnitudes fit WGS-84 → overridden.
+    CHECK(meta.coordinate_ref.kind == dolphin::core::SpatialRefKind::Geographic);
+    CHECK(hasDiagnostic(reader,
+                        dolphin::core::ImportDiagnosticCode::CoordinateSystemOverridden));
+
+    // Dual-frequency must be detected: 410 kHz primary, 120 kHz secondary.
+    CHECK_CLOSE(meta.frequency_hz,     410000.f, 1.f);
+    CHECK_CLOSE(meta.low_frequency_hz, 120000.f, 1.f);
+
+    // 8 kept pings × 4 channels → 32 sidescan entries, all flagged geographic.
+    CHECK(index.size() == 32);
+    bool found_port = false, found_stbd = false, found_lf = false, found_hf = false;
+    bool samples_ok = false;
+    for (const auto& e : index.entries) {
+        CHECK(e.type == dolphin::core::ArtifactType::Sidescan);
+        CHECK(!e.is_projected);
+        if (std::abs(e.frequency_hz - 120000.f) < 1.f) found_lf = true;
+        if (std::abs(e.frequency_hz - 410000.f) < 1.f) found_hf = true;
+        auto art = reader.readArtifact(e);
+        CHECK(art.has_value());
+        if (!art) continue;
+        const auto& ping = std::get<dolphin::core::SidescanPing>(*art);
+        if (!ping.samples.empty()) samples_ok = true;
+        if (ping.channel == dolphin::core::SidescanChannel::Port)      found_port = true;
+        if (ping.channel == dolphin::core::SidescanChannel::Starboard) found_stbd = true;
+    }
+    CHECK(found_port);
+    CHECK(found_stbd);
+    CHECK(found_lf);
+    CHECK(found_hf);
+    CHECK(samples_ok);
+}
+
+// FIX-017 — TST 2024 recorder, 500 kHz, 32-bit samples (BytesPerSample=4),
+// 2 SSS channels (port + starboard).  The header declares NavUnits=0
+// (geographic), but the fixes are projected metres, so the reader overrides
+// the CRS to Projected.  This is the only fixture exercising the 32-bit path.
+static void test_fix017_tst500k_32bit_real()
+{
+    const std::string path = fixturePath("fix017_tst500k_32bit_reduced.xtf");
+
+    dolphin::io::XtfReader reader;
+    CHECK(reader.open(path));
+    if (!reader.isOpen()) return;
+
+    const auto index = reader.buildIndex();
+    const auto meta  = reader.metadata();
+
+    // NavUnits=0 declared Geographic, but magnitudes exceed WGS-84 → overridden.
+    CHECK(meta.coordinate_ref.kind == dolphin::core::SpatialRefKind::Projected);
+    CHECK(hasDiagnostic(reader,
+                        dolphin::core::ImportDiagnosticCode::CoordinateSystemOverridden));
+
+    // Single 500 kHz band: primary set, no second band.
+    CHECK_CLOSE(meta.frequency_hz, 500000.f, 1.f);
+    CHECK(meta.low_frequency_hz == 0.f);
+
+    // 8 kept pings × 2 channels → 16 sidescan entries, all flagged projected.
+    // The 32-bit sample path must decode to non-empty pings on both channels.
+    CHECK(index.size() == 16);
+    bool found_port = false, found_stbd = false, samples_ok = false;
+    for (const auto& e : index.entries) {
+        CHECK(e.type == dolphin::core::ArtifactType::Sidescan);
+        CHECK(e.is_projected);
+        auto art = reader.readArtifact(e);
+        CHECK(art.has_value());
+        if (!art) continue;
+        const auto& ping = std::get<dolphin::core::SidescanPing>(*art);
+        if (!ping.samples.empty()) samples_ok = true;
+        if (ping.channel == dolphin::core::SidescanChannel::Port)      found_port = true;
+        if (ping.channel == dolphin::core::SidescanChannel::Starboard) found_stbd = true;
+    }
+    CHECK(found_port);
+    CHECK(found_stbd);
+    CHECK(samples_ok);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 //  main
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -683,6 +1010,12 @@ int main()
     test_fix009_bad_magic_diagnostic();
     test_fix010_bps_inference_diagnostic();
     test_fix011_interpolated_nav_diagnostic();
+    test_fix012_bathymetry_channel_unsupported();
+    test_fix013_unknown_packet_type();
+    test_fix014_split_packet_sidescan();
+    test_fix015_dual_frequency_routing();
+    test_fix016_edgetech4200_isis_real();
+    test_fix017_tst500k_32bit_real();
 
     std::printf("%d passed, %d failed\n", g_pass, g_fail);
     return g_fail == 0 ? 0 : 1;

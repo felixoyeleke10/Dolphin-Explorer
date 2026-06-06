@@ -36,7 +36,7 @@ void WaterfallOverlayPainter::paintAmplitudeBar(
     const int bar_y = h - kWfAmpBarH;
     const int bar_h = kWfAmpBarH;
 
-    // ── Background ────────────────────────────────────────────────────────────
+    // -- Background ------------------------------------------------------------
     p.fillRect(0,     bar_y, nadir,    bar_h, QColor(Theme::kBg));
     p.fillRect(nadir, bar_y, w - nadir, bar_h, QColor(Theme::kBg));
 
@@ -73,7 +73,7 @@ void WaterfallOverlayPainter::paintAmplitudeBar(
 
     p.setRenderHint(QPainter::Antialiasing);
 
-    // ── Port line ─────────────────────────────────────────────────────────────
+    // -- Port line -------------------------------------------------------------
     {
         QVector<QPointF> pts;
         pts.reserve(nadir);
@@ -89,7 +89,7 @@ void WaterfallOverlayPainter::paintAmplitudeBar(
         }
     }
 
-    // ── Starboard line ────────────────────────────────────────────────────────
+    // -- Starboard line --------------------------------------------------------
     {
         QVector<QPointF> pts;
         pts.reserve(w - nadir);

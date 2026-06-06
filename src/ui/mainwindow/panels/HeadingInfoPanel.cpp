@@ -19,7 +19,7 @@ HeadingInfoPanel::HeadingInfoPanel(QWidget* parent) : QWidget(parent)
     fl->setContentsMargins(0, 0, 0, 0);
     fl->setSpacing(0);
 
-    // ── Scrollable content ────────────────────────────────────────────────────
+    // -- Scrollable content ----------------------------------------------------
     auto* scroll = new QScrollArea(this);
     scroll->setWidgetResizable(true);
     scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
@@ -33,7 +33,7 @@ HeadingInfoPanel::HeadingInfoPanel(QWidget* parent) : QWidget(parent)
     vl->setSpacing(Theme::kSpacing1);
     scroll->setWidget(container);
 
-    // ── Attitude offset rows ──────────────────────────────────────────────────
+    // -- Attitude offset rows --------------------------------------------------
     m_hdg_offset = new WfValueRow(tr("Heading offset"), -360.0, 360.0, 0.0, 0.5, 1, " °", container);
     m_hdg_offset->setToolTip(
         tr("Adds a constant offset to every ping's heading value.\n"
@@ -60,7 +60,7 @@ HeadingInfoPanel::HeadingInfoPanel(QWidget* parent) : QWidget(parent)
     vl->addWidget(m_roll_offset);
     vl->addStretch(1);
 
-    // ── Apply buttons (pinned below scroll) ───────────────────────────────────
+    // -- Apply buttons (pinned below scroll) -----------------------------------
     auto* sep = new QFrame(this);
     sep->setFrameShape(QFrame::HLine);
     sep->setObjectName("ctrlDivider");

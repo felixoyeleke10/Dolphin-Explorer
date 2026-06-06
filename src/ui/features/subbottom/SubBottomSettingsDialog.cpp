@@ -1,4 +1,4 @@
-﻿// SubBottomSettingsDialog.cpp — constructor, read-back, colour helper, apply.
+// SubBottomSettingsDialog.cpp — constructor, read-back, colour helper, apply.
 #include "ui/features/subbottom/SubBottomSettingsDialog.h"
 #include "ui/shared/UiUtils.h"
 #include "ui/shell/Theme.h"
@@ -49,6 +49,8 @@ SubBottomSettingsDialog::SubBottomSettingsDialog(const SubBottomDisplayParams& p
     // Populate from params
     m_palette_combo->setCurrentIndex(params.palette_index);
     m_gain_spin->setValue(static_cast<double>(params.gain));
+    m_contrast_spin->setValue(static_cast<double>(params.contrast));
+    m_polarity_check->setChecked(params.polarity_invert);
     m_bt_check->setChecked(params.show_bottom_track);
     updateColorButton(m_bt_color_btn, m_bt_color);
     m_bt_thickness_spin->setValue(style.bt_thickness);
@@ -86,15 +88,17 @@ SubBottomSettingsDialog::SubBottomSettingsDialog(const SubBottomDisplayParams& p
     connect(bbox, &QDialogButtonBox::rejected, this, &QDialog::reject);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Read-back
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 SubBottomDisplayParams SubBottomSettingsDialog::displayParams() const
 {
     SubBottomDisplayParams p;
     p.palette_index     = m_palette_combo->currentIndex();
     p.gain              = static_cast<float>(m_gain_spin->value());
+    p.contrast          = static_cast<float>(m_contrast_spin->value());
+    p.polarity_invert   = m_polarity_check->isChecked();
     p.show_bottom_track = m_bt_check->isChecked();
     p.sound_speed_ms    = static_cast<float>(m_speed_spin->value());
     return p;
@@ -124,9 +128,9 @@ SubBottomViewStyle SubBottomSettingsDialog::viewStyle() const
     return s;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Colour button swatch helper
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 // static
 void SubBottomSettingsDialog::updateColorButton(QPushButton* btn, const QColor& c)
@@ -135,9 +139,9 @@ void SubBottomSettingsDialog::updateColorButton(QPushButton* btn, const QColor& 
     btn->setText(c.name().toUpper());
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Apply / persist
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void SubBottomSettingsDialog::onApply()
 {
@@ -146,10 +150,12 @@ void SubBottomSettingsDialog::onApply()
     const auto st = viewStyle();
 
     QSettings qs;
-    qs.setValue("sbpDisplay/palette",  dp.palette_index);
-    qs.setValue("sbpDisplay/gain",     static_cast<double>(dp.gain));
-    qs.setValue("sbpDisplay/showBt",   dp.show_bottom_track);
-    qs.setValue("sbpDisplay/speed",    static_cast<double>(dp.sound_speed_ms));
+    qs.setValue("sbpDisplay/palette",        dp.palette_index);
+    qs.setValue("sbpDisplay/gain",           static_cast<double>(dp.gain));
+    qs.setValue("sbpDisplay/contrast",       static_cast<double>(dp.contrast));
+    qs.setValue("sbpDisplay/polarityInvert", dp.polarity_invert);
+    qs.setValue("sbpDisplay/showBt",         dp.show_bottom_track);
+    qs.setValue("sbpDisplay/speed",          static_cast<double>(dp.sound_speed_ms));
     qs.setValue("sbpView/pxPerTrace",  vs.px_per_trace);
     qs.setValue("sbpView/pxPerSample", static_cast<double>(vs.px_per_sample));
     qs.setValue("sbpStyle/xhairShow",    st.xhair_show);

@@ -1,4 +1,4 @@
-﻿// SidescanCorrectionDialog.cpp — constructor, headingParams, and slots.
+// SidescanCorrectionDialog.cpp — constructor, headingParams, and slots.
 //
 // Section builders + static helpers  → SidescanCorrectionDialog.Layout.cpp
 #include "ui/features/map/sidescan/SidescanCorrectionDialog.h"
@@ -41,7 +41,7 @@ SidescanCorrectionDialog::SidescanCorrectionDialog(Mode           mode,
     root->setContentsMargins(0, 0, 0, 0);
     root->setSpacing(0);
 
-    // ── Header ────────────────────────────────────────────────────────────
+    // -- Header ------------------------------------------------------------
     {
         auto* hdr = new QFrame(this);
         hdr->setObjectName("dlgHeader");
@@ -68,7 +68,7 @@ SidescanCorrectionDialog::SidescanCorrectionDialog(Mode           mode,
         root->addWidget(hdr);
     }
 
-    // ── Divider ───────────────────────────────────────────────────────────
+    // -- Divider -----------------------------------------------------------
     {
         auto* div = new QFrame(this);
         div->setFixedHeight(Theme::kSepSz);
@@ -76,7 +76,7 @@ SidescanCorrectionDialog::SidescanCorrectionDialog(Mode           mode,
         root->addWidget(div);
     }
 
-    // ── Scrollable body ───────────────────────────────────────────────────
+    // -- Scrollable body ---------------------------------------------------
     auto* body_widget = new QWidget;
     body_widget->setObjectName("dlgBody");
     auto* bl = new QVBoxLayout(body_widget);
@@ -105,7 +105,7 @@ SidescanCorrectionDialog::SidescanCorrectionDialog(Mode           mode,
     scroll->setFrameShape(QFrame::NoFrame);
     root->addWidget(scroll, 1);
 
-    // ── Footer ────────────────────────────────────────────────────────────
+    // -- Footer ------------------------------------------------------------
     {
         auto* foot = new QFrame(this);
         foot->setObjectName("dlgFooter");
@@ -166,7 +166,7 @@ SidescanCorrectionDialog::SidescanCorrectionDialog(Mode           mode,
     }
 }
 
-// ── headingParams ─────────────────────────────────────────────────────────────
+// -- headingParams -------------------------------------------------------------
 
 SssGeorefParams SidescanCorrectionDialog::headingParams() const
 {
@@ -217,7 +217,7 @@ SssGeorefParams SidescanCorrectionDialog::headingParams() const
     return p;
 }
 
-// ── Slots ─────────────────────────────────────────────────────────────────────
+// -- Slots ---------------------------------------------------------------------
 
 void SidescanCorrectionDialog::onApply()
 {

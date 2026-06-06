@@ -1,4 +1,4 @@
-﻿#include "ui/features/import/ImportProgressDialog.h"
+#include "ui/features/import/ImportProgressDialog.h"
 #include "ui/shell/Theme.h"
 
 #include <QDateTime>
@@ -31,7 +31,7 @@ QString sizeMbStr(float mb)
 
 } // namespace
 
-// ── Constructor ────────────────────────────────────────────────────────────────
+// -- Constructor ----------------------------------------------------------------
 
 ExecutionProgressDialog::ExecutionProgressDialog(QWidget* parent)
     : QDialog(parent, Qt::Dialog | Qt::CustomizeWindowHint
@@ -42,12 +42,12 @@ ExecutionProgressDialog::ExecutionProgressDialog(QWidget* parent)
     setFixedWidth(kDialogW);
 
 
-    // ── Root layout ───────────────────────────────────────────────────────────
+    // -- Root layout -----------------------------------------------------------
     auto* root = new QVBoxLayout(this);
     root->setContentsMargins(0, 0, 0, 0);
     root->setSpacing(0);
 
-    // ── Header ────────────────────────────────────────────────────────────────
+    // -- Header ----------------------------------------------------------------
     auto* header = new QWidget(this);
     header->setObjectName("epdHeader");
     auto* hdr_lay = new QVBoxLayout(header);
@@ -73,7 +73,7 @@ ExecutionProgressDialog::ExecutionProgressDialog(QWidget* parent)
 
     root->addWidget(header);
 
-    // ── Scrollable file list ──────────────────────────────────────────────────
+    // -- Scrollable file list --------------------------------------------------
     m_scroll = new QScrollArea(this);
     m_scroll->setWidgetResizable(true);
     m_scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
@@ -91,7 +91,7 @@ ExecutionProgressDialog::ExecutionProgressDialog(QWidget* parent)
     m_scroll->setWidget(m_list_body);
     root->addWidget(m_scroll, 1);
 
-    // ── Footer ────────────────────────────────────────────────────────────────
+    // -- Footer ----------------------------------------------------------------
     auto* footer = new QWidget(this);
     footer->setObjectName("epdFooter");
     auto* foot_lay = new QHBoxLayout(footer);
@@ -115,13 +115,13 @@ ExecutionProgressDialog::ExecutionProgressDialog(QWidget* parent)
 
     root->addWidget(footer);
 
-    // ── Elapsed timer ─────────────────────────────────────────────────────────
+    // -- Elapsed timer ---------------------------------------------------------
     m_timer = new QTimer(this);
     m_timer->setInterval(1000);
     connect(m_timer, &QTimer::timeout, this, &ExecutionProgressDialog::onTick);
 }
 
-// ── Public API ─────────────────────────────────────────────────────────────────
+// -- Public API -----------------------------------------------------------------
 
 void ExecutionProgressDialog::setQueueTotal(int n)
 {
@@ -291,7 +291,7 @@ void ExecutionProgressDialog::failJob(const std::string& layer_id,
     checkAllDone();
 }
 
-// ── Private helpers ────────────────────────────────────────────────────────────
+// -- Private helpers ------------------------------------------------------------
 
 ExecutionProgressDialog::FileRow*
 ExecutionProgressDialog::findRow(const std::string& id)

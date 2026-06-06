@@ -26,7 +26,7 @@
 
 namespace dolphin::app {
 
-// ── Job-tracking state (file-local, accessed by import_detail helpers below) ──
+// -- Job-tracking state (file-local, accessed by import_detail helpers below) --
 namespace {
 std::mutex            g_active_source_jobs_mutex;
 std::set<std::string> g_active_source_jobs;
@@ -69,6 +69,7 @@ void applyImportResultToLayer(DataLayer& layer, const ImportTaskResult& result)
     layer.low_frequency_hz        = result.low_frequency_hz;
     layer.bottom_track_kind       = result.bottom_track_kind;
     layer.index_built             = !layer.artifact_index.empty();
+    layer.pipeline_applied        = false;  // raw DLPD — pipeline has not been run yet
 }
 
 void applyImportResultToSource(ProjectSource& source, const ImportTaskResult& result)
@@ -168,7 +169,7 @@ void removeArtifactStoreFileIfUnused(const Project& project,
 
 } // namespace import_detail
 
-// ── File-local helpers (used only by importFile / reindexLayer) ───────────────
+// -- File-local helpers (used only by importFile / reindexLayer) ---------------
 namespace {
 
 bool isSupportedFormat(const std::string& format)
@@ -203,7 +204,7 @@ bool tryAcquireSourceJob(const std::string& source_id)
 
 } // namespace
 
-// ── Public methods ────────────────────────────────────────────────────────────
+// -- Public methods ------------------------------------------------------------
 
 ImportService::ImportService(QObject* parent) : QObject(parent) {}
 

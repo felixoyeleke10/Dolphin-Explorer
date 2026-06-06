@@ -12,7 +12,7 @@ class QTabWidget;
 
 namespace dolphin::ui {
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  SubBottomSettingsDialog — professional tabbed settings for SubBottomWindow.
 //
 //  Tabs:
@@ -23,7 +23,7 @@ namespace dolphin::ui {
 //    Grid         — depth-time grid show, colour, opacity, interval
 //
 //  Persists all values to QSettings.  Emits applied() on Apply / OK.
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 class SubBottomSettingsDialog : public QDialog {
     Q_OBJECT
 public:
@@ -58,22 +58,24 @@ private:
 
     static void updateColorButton(QPushButton* btn, const QColor& c);
 
-    // ── Display ───────────────────────────────────────────────────────────
+    // -- Display -----------------------------------------------------------
     QComboBox*      m_palette_combo     = nullptr;
     QDoubleSpinBox* m_gain_spin         = nullptr;
+    QDoubleSpinBox* m_contrast_spin     = nullptr;
+    QCheckBox*      m_polarity_check    = nullptr;
     QCheckBox*      m_bt_check          = nullptr;
     QPushButton*    m_bt_color_btn      = nullptr;
     QSpinBox*       m_bt_thickness_spin = nullptr;
     QColor          m_bt_color;
 
-    // ── Acquisition ───────────────────────────────────────────────────────
+    // -- Acquisition -------------------------------------------------------
     QDoubleSpinBox* m_speed_spin        = nullptr;
 
-    // ── View Scale ────────────────────────────────────────────────────────
+    // -- View Scale --------------------------------------------------------
     QSpinBox*       m_trace_w_spin      = nullptr;
     QDoubleSpinBox* m_depth_s_spin      = nullptr;
 
-    // ── Crosshair ─────────────────────────────────────────────────────────
+    // -- Crosshair ---------------------------------------------------------
     QCheckBox*      m_xhair_show_check  = nullptr;
     QPushButton*    m_xhair_color_btn   = nullptr;
     QComboBox*      m_xhair_style_combo = nullptr;
@@ -81,7 +83,7 @@ private:
     QSpinBox*       m_xhair_opacity_spin= nullptr;
     QColor          m_xhair_color;
 
-    // ── Grid ──────────────────────────────────────────────────────────────
+    // -- Grid --------------------------------------------------------------
     QCheckBox*      m_grid_show_check   = nullptr;
     QPushButton*    m_grid_color_btn    = nullptr;
     QSpinBox*       m_grid_opacity_spin = nullptr;

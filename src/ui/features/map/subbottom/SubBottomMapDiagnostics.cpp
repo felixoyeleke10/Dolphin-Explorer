@@ -23,7 +23,7 @@ void postSubBottomMapDiagnostics(DiagnosticsHub*   hub,
 {
     hub->clearProblems(layer_id);
 
-    // ── Emptiness ─────────────────────────────────────────────────────────────
+    // -- Emptiness -------------------------------------------------------------
     if (s.total_traces == 0) {
         hub->postProblem(
             T("Layer contains no sub-bottom traces — file may be empty or unsupported"),
@@ -36,7 +36,7 @@ void postSubBottomMapDiagnostics(DiagnosticsHub*   hub,
         return static_cast<int>(100.0 * static_cast<double>(n) / total + 0.5);
     };
 
-    // ── Navigation quality ────────────────────────────────────────────────────
+    // -- Navigation quality ----------------------------------------------------
     const size_t bad_nav = s.invalid_nav + s.zero_coords;
     if (bad_nav == s.total_traces) {
         hub->postProblem(
@@ -64,7 +64,7 @@ void postSubBottomMapDiagnostics(DiagnosticsHub*   hub,
             DiagnosticsHub::Severity::Info, layer_id);
     }
 
-    // ── Repeated fixes ────────────────────────────────────────────────────────
+    // -- Repeated fixes --------------------------------------------------------
     const size_t plotted_plus_rep = s.track_points + s.repeated_fixes;
     if (plotted_plus_rep > 0 && s.repeated_fixes > 0) {
         const double rep_pct =
@@ -81,7 +81,7 @@ void postSubBottomMapDiagnostics(DiagnosticsHub*   hub,
         }
     }
 
-    // ── Trace spacing ─────────────────────────────────────────────────────────
+    // -- Trace spacing ---------------------------------------------------------
     if (s.avg_spacing_m > 10.0 && s.track_points > 10) {
         hub->postProblem(
             QCoreApplication::translate("SubBottomMapDiagnostics",
@@ -90,7 +90,7 @@ void postSubBottomMapDiagnostics(DiagnosticsHub*   hub,
             DiagnosticsHub::Severity::Warning, layer_id);
     }
 
-    // ── Segment gaps ──────────────────────────────────────────────────────────
+    // -- Segment gaps ----------------------------------------------------------
     if (s.large_jumps > 0) {
         hub->postProblem(
             s.large_jumps == 1
@@ -101,14 +101,14 @@ void postSubBottomMapDiagnostics(DiagnosticsHub*   hub,
             DiagnosticsHub::Severity::Info, layer_id);
     }
 
-    // ── View state ────────────────────────────────────────────────────────────
+    // -- View state ------------------------------------------------------------
     if (!s.layer_visible) {
         hub->postProblem(
             T("Layer is hidden — enable visibility in the layer list to see it on the map"),
             DiagnosticsHub::Severity::Warning, layer_id);
     }
 
-    // ── Output log summary ────────────────────────────────────────────────────
+    // -- Output log summary ----------------------------------------------------
     hub->logOutput(
         QCoreApplication::translate("SubBottomMapDiagnostics",
             "[%1] %2 traces · %3 plotted · %4 invalid nav · %5 zero-coord · "

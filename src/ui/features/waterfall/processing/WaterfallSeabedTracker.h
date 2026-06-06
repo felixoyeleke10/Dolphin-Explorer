@@ -6,16 +6,16 @@
 
 namespace dolphin::ui {
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  WaterfallSeabedTracker — drag-edit UI state for the seabed line.
 //
 //  Handles hit-testing, drag start/apply/end for the manual seabed pen tool.
 //  Auto-detection logic has moved to SeabedAutoDetector.
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 class WaterfallSeabedTracker {
 public:
-    // ── Drag-edit state ────────────────────────────────────────────────────
+    // -- Drag-edit state ----------------------------------------------------
     bool isDragging() const { return m_drag_row >= 0; }
     int  dragRow()    const { return m_drag_row; }
 

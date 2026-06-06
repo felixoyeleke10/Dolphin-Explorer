@@ -16,9 +16,15 @@ struct SeabedDetectionResult {
 //
 // Amplitudes are stored as 16-bit physical samples. Display transforms
 // (stretch, gain, contrast, threshold, palette) are applied at render time.
+// Per-sample slant ranges are preserved when the source file provides them so
+// the seabed detector can use the true non-linear sample spacing.  When the
+// source does not provide per-sample ranges the vectors are left empty and the
+// detector falls back to linear interpolation from 0..slant_range_m.
 struct PingRow {
     std::vector<uint16_t> port;          // 0-65535 amplitude, nadir at index 0
     std::vector<uint16_t> stbd;          // 0-65535 amplitude, nadir at index 0
+    std::vector<float>    port_ranges;   // per-sample slant range (m); empty = linear
+    std::vector<float>    stbd_ranges;   // per-sample slant range (m); empty = linear
     int64_t               timestamp_us  = 0;
     float                 slant_range_m = 0.f;
     SeabedDetectionResult seabed;        // bottom-track result + manual-edit flag

@@ -45,7 +45,7 @@ bool buildSwathPreviewImage(const std::vector<core::SidescanPing>& pings,
     if (pings.empty()) return false;
     if (ld.lon_min >= ld.lon_max || ld.lat_min >= ld.lat_max) return false;
 
-    // ── Compute image dimensions in metre-correct proportions ────────────────
+    // -- Compute image dimensions in metre-correct proportions ----------------
     // Apply cos(center_lat) to the longitude extent so the image has equal
     // pixels-per-metre in both axes.  MapView's Mercator geoToPixel applies the
     // same factor when placing the image on screen, giving a distortion-free mosaic.
@@ -62,7 +62,7 @@ bool buildSwathPreviewImage(const std::vector<core::SidescanPing>& pings,
     int img_w = std::clamp(static_cast<int>(std::round(dlon_m * scale)), 4, max_image_dim);
     int img_h = std::clamp(static_cast<int>(std::round(dlat_m * scale)), 4, max_image_dim);
 
-    // ── Hard memory cap: 64 MB (4 bytes per pixel) ────────────────────────────
+    // -- Hard memory cap: 64 MB (4 bytes per pixel) ----------------------------
     constexpr int64_t kMaxBytes = 64LL * 1024 * 1024;
     if (static_cast<int64_t>(img_w) * img_h * 4 > kMaxBytes) {
         const double factor = std::sqrt(static_cast<double>(kMaxBytes) /
@@ -81,7 +81,7 @@ bool buildSwathPreviewImage(const std::vector<core::SidescanPing>& pings,
     ld.nav_stats.image_width  = img_w;
     ld.nav_stats.image_height = img_h;
 
-    // ── Georeference pings → strips ───────────────────────────────────────────
+    // -- Georeference pings → strips -------------------------------------------
     auto gr = georeferenceSidescanPings(pings, georef_params);
     ld.nav_stats.skipped_no_position = gr.skipped_no_position;
     ld.nav_stats.skipped_no_heading  = gr.skipped_no_heading;
@@ -107,7 +107,7 @@ bool buildSwathPreviewImage(const std::vector<core::SidescanPing>& pings,
     if (gr.strips.empty()) return false;
     if (cancelled.load(std::memory_order_relaxed)) return false;
 
-    // ── Create transparent image + intensity cache ────────────────────────────
+    // -- Create transparent image + intensity cache ----------------------------
     // Rasterized cells write fully-opaque pixels; cells with no data stay
     // transparent (alpha 0).  MapView draws the image at 0.88 opacity, so
     // gaps between pings show the map background rather than a solid fill.
@@ -130,7 +130,7 @@ bool buildSwathPreviewImage(const std::vector<core::SidescanPing>& pings,
                  (ld.lat_max - lat) * sy };
     };
 
-    // ── Quick auto-stretch: 1st / 99th percentile of strip amplitudes ─────────
+    // -- Quick auto-stretch: 1st / 99th percentile of strip amplitudes ---------
     float disp_low = 0.0f, disp_high = 1.0f;
     {
         std::vector<uint16_t> samp;
@@ -160,7 +160,7 @@ bool buildSwathPreviewImage(const std::vector<core::SidescanPing>& pings,
 
     QRgb* pixels = reinterpret_cast<QRgb*>(img.bits());
 
-    // ── Debug mode: skip stitching; render each strip as individual sample dots ──
+    // -- Debug mode: skip stitching; render each strip as individual sample dots --
     // Enabled by the explicit flag or by georef_params.debug_ping_lines_only.
     // If stretching disappears in this mode, the stitch logic is the root cause.
     if (ping_lines_only || georef_params.debug_ping_lines_only) {
@@ -182,7 +182,7 @@ bool buildSwathPreviewImage(const std::vector<core::SidescanPing>& pings,
         return true;
     }
 
-    // ── Rasterize per-channel: group strip indices by channel first ───────────
+    // -- Rasterize per-channel: group strip indices by channel first -----------
     // Strips are interleaved port/stbd — separate before iterating pairs.
     //
     // Gap decision uses the actual vessel-centre nav stored on each strip
@@ -313,7 +313,7 @@ bool buildSwathPreviewImage(const std::vector<core::SidescanPing>& pings,
             if (qAlpha(bits[k]) > 0) ++px_written;
     }
 
-    // ── 3×3 hole-fill pass (normal preview only) ──────────────────────────────
+    // -- 3×3 hole-fill pass (normal preview only) ------------------------------
     // Closes pinhole gaps left where rasterized quads nearly meet but leave an
     // isolated transparent pixel.  Skipped in debug/ping-line modes so QC views
     // show the raw rasterization unmodified.

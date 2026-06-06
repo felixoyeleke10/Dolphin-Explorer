@@ -1,15 +1,19 @@
-﻿// WaterfallInspectorPanel.Layout.cpp — constructor and section builder helpers.
+// WaterfallInspectorPanel.Layout.cpp — constructor and section builder helpers.
 #include "ui/features/waterfall/panels/WaterfallInspectorPanel.h"
 #include "render/sonar/SSSPalette.h"
 #include "ui/features/waterfall/components/WfValueRow.h"
+#include "ui/shared/dialogs/SettingsDialog.h"
 #include "ui/shell/Theme.h"
 
 #include <QComboBox>
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QListWidget>
 #include <QPushButton>
 #include <QScrollArea>
+#include <QSettings>
+#include <QSignalBlocker>
 #include <QToolButton>
 #include <QVBoxLayout>
 
@@ -25,7 +29,7 @@ WaterfallInspectorPanel::WaterfallInspectorPanel(QWidget* parent)
     fl->setContentsMargins(0, 0, 0, 0);
     fl->setSpacing(0);
 
-    // ── Scrollable content area ───────────────────────────────────────────
+    // -- Scrollable content area -------------------------------------------
     auto* scroll = new QScrollArea(this);
     scroll->setObjectName("av_panel_scroll");
     scroll->setWidgetResizable(true);
@@ -40,7 +44,26 @@ WaterfallInspectorPanel::WaterfallInspectorPanel(QWidget* parent)
     vl->setSpacing(0);
     scroll->setWidget(container);
 
-    // ── SURVEY DATA (expanded) ─────────────────────────────────────────────
+    // -- FILES (expanded) --------------------------------------------------
+    {
+        auto* bl = makeSection("Files", true, container, vl);
+
+        m_files_list = new QListWidget(container);
+        m_files_list->setObjectName("avFilesList");
+        m_files_list->setFrameShape(QFrame::NoFrame);
+        m_files_list->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        m_files_list->setMaximumHeight(120);
+        bl->addWidget(m_files_list);
+
+        connect(m_files_list, &QListWidget::itemClicked,
+                this, [this](QListWidgetItem* item) {
+                    if (item)
+                        emit layerChangeRequested(
+                            item->data(Qt::UserRole).toString().toStdString());
+                });
+    }
+
+    // -- SURVEY DATA (expanded) ---------------------------------------------
     {
         auto* bl = makeSection("Survey Data", true, container, vl);
         makeRow(bl, tr("Pings"),    m_val_pings);
@@ -49,14 +72,7 @@ WaterfallInspectorPanel::WaterfallInspectorPanel(QWidget* parent)
         makeRow(bl, tr("Length"),   m_val_length);
     }
 
-    // ── SOURCE FILE (expanded) ─────────────────────────────────────────────
-    {
-        auto* bl = makeSection("Source File", true, container, vl);
-        makeWideRow(bl, tr("File"),   m_val_filename);
-        makeRow    (bl, tr("Format"), m_val_fmt_size);
-    }
-
-    // ── COORDINATE SYSTEM (collapsed) ─────────────────────────────────────
+    // -- COORDINATE SYSTEM (collapsed) -------------------------------------
     {
         auto* bl = makeSection("Coordinate System", false, container, vl);
         makeRow(bl, tr("CRS"),  m_val_crs);
@@ -78,7 +94,7 @@ WaterfallInspectorPanel::WaterfallInspectorPanel(QWidget* parent)
                 this, &WaterfallInspectorPanel::setCrsRequested);
     }
 
-    // ── SONAR (expanded) ──────────────────────────────────────────────────
+    // -- SONAR (expanded) --------------------------------------------------
     {
         auto* bl = makeSection("Sonar", true, container, vl);
         makeRow(bl, tr("Model"),     m_val_sonar_model);
@@ -86,14 +102,14 @@ WaterfallInspectorPanel::WaterfallInspectorPanel(QWidget* parent)
         makeRow(bl, tr("Sound spd"), m_val_sound_spd);
     }
 
-    // ── VESSEL (collapsed) ────────────────────────────────────────────────
+    // -- VESSEL (collapsed) ------------------------------------------------
     {
         auto* bl = makeSection("Vessel", false, container, vl);
         makeRow(bl, tr("Survey"), m_val_survey);
         makeRow(bl, tr("Vessel"), m_val_vessel);
     }
 
-    // ── VIEW SETTINGS (expanded) — palette combo ──────────────────────────
+    // -- VIEW SETTINGS (expanded) — palette combo --------------------------
     {
         auto* bl = makeSection("View Settings", true, container, vl);
 
@@ -114,7 +130,17 @@ WaterfallInspectorPanel::WaterfallInspectorPanel(QWidget* parent)
                "Greyscale is best for QC; high-contrast palettes can help reveal weak targets or shadows."));
         for (int i = 0; i < PaletteIndex::Count; ++i)
             m_palette_combo->addItem(SSSPalette::name(i));
-        m_palette_combo->setCurrentIndex(PaletteIndex::Greyscale);
+        {
+            QSettings qs;
+            const QVariant sss_idx = qs.value(QStringLiteral("sss/paletteIdx"));
+            if (sss_idx.isValid()) {
+                m_palette_combo->setCurrentIndex(sss_idx.toInt());
+            } else {
+                m_palette_combo->setCurrentIndex(SSSPalette::indexFromName(
+                    qs.value(SettingsDialog::kKeyDefaultPalette,
+                             QStringLiteral("Gray")).toString()));
+            }
+        }
 
         rl->addWidget(k);
         rl->addWidget(m_palette_combo, 1);
@@ -123,7 +149,7 @@ WaterfallInspectorPanel::WaterfallInspectorPanel(QWidget* parent)
         connect(m_palette_combo, qOverload<int>(&QComboBox::currentIndexChanged),
                 this, [this](int idx) { emit paletteChanged(idx); });
 
-        // ── Scale rows ────────────────────────────────────────────────────
+        // -- Scale rows ----------------------------------------------------
         m_scale_v = new WfValueRow(tr("V. Scale"), 0, 300, 0, 1, 0, tr(" p/cm"), container);
         m_scale_v->setSpecialValueText(0.0, tr("Auto"));
         m_scale_v->setToolTip(
@@ -149,7 +175,7 @@ WaterfallInspectorPanel::WaterfallInspectorPanel(QWidget* parent)
             emit horizontalScaleChanged(static_cast<float>(v));
         });
 
-        // ── Amplitude bar toggle ───────────────────────────────────────────
+        // -- Amplitude bar toggle -------------------------------------------
         auto* amp_row = new QWidget(container);
         amp_row->setFixedHeight(Theme::kDialogBtnH);
         auto* arl = new QHBoxLayout(amp_row);
@@ -162,9 +188,13 @@ WaterfallInspectorPanel::WaterfallInspectorPanel(QWidget* parent)
 
         m_amp_bar_toggle = new QToolButton(container);
         m_amp_bar_toggle->setObjectName("avToggleBtn");
-        m_amp_bar_toggle->setText(tr("On"));
         m_amp_bar_toggle->setCheckable(true);
-        m_amp_bar_toggle->setChecked(true);
+        {
+            const bool amp_on = QSettings().value(
+                QStringLiteral("waterfall/showAmpBar"), true).toBool();
+            m_amp_bar_toggle->setChecked(amp_on);
+            m_amp_bar_toggle->setText(amp_on ? tr("On") : tr("Off"));
+        }
         m_amp_bar_toggle->setFixedWidth(kToggleBtnW);
         m_amp_bar_toggle->setToolTip(
             tr("Show or hide the amplitude profile chart at the bottom of the waterfall.\n"
@@ -181,7 +211,7 @@ WaterfallInspectorPanel::WaterfallInspectorPanel(QWidget* parent)
 
     vl->addStretch();
 
-    // ── NAV BUTTONS — pinned below scroll, always visible ─────────────────
+    // -- NAV BUTTONS — pinned below scroll, always visible -----------------
     {
         auto* sep = new QFrame(this);
         sep->setFrameShape(QFrame::HLine);
@@ -302,6 +332,32 @@ void WaterfallInspectorPanel::makeWideRow(QVBoxLayout*  bl,
     gl->addWidget(k);
     gl->addWidget(val_out);
     bl->addWidget(grp);
+}
+
+void WaterfallInspectorPanel::setProjectLayers(
+    const std::vector<std::pair<std::string, std::string>>& layers)
+{
+    if (!m_files_list) return;
+    QSignalBlocker sb(m_files_list);
+    m_files_list->clear();
+    for (const auto& [id, label] : layers) {
+        auto* item = new QListWidgetItem(QString::fromStdString(label));
+        item->setData(Qt::UserRole, QString::fromStdString(id));
+        m_files_list->addItem(item);
+    }
+}
+
+void WaterfallInspectorPanel::setActiveLine(const std::string& id)
+{
+    if (!m_files_list) return;
+    QSignalBlocker sb(m_files_list);
+    const QString qid = QString::fromStdString(id);
+    for (int i = 0; i < m_files_list->count(); ++i) {
+        if (m_files_list->item(i)->data(Qt::UserRole).toString() == qid) {
+            m_files_list->setCurrentRow(i);
+            return;
+        }
+    }
 }
 
 } // namespace dolphin::ui

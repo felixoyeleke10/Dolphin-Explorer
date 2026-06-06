@@ -21,7 +21,7 @@ class LayerPickerWidget;
 // Bring FileImportAction into the ui namespace so existing call sites are unchanged.
 using FileImportAction = app::FileImportAction;
 
-// ── ExecutionController ───────────────────────────────────────────────────────
+// -- ExecutionController -------------------------------------------------------
 // Thin UI adapter over ImportJobManager.
 // Drives ExecutionProgressDialog, LayerPickerWidget, and the status bar in
 // response to job events from the manager. Queue and dispatch logic live in

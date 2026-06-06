@@ -87,9 +87,15 @@ public:
     {}
 
     void redo() override {
+        const auto& before = m_project->contacts();
+        const size_t prev_sz = before.size();
         m_project->addContact(m_contact);
-        if (!m_project->contacts().empty())
-            m_assigned_id = m_project->contacts().back().id;
+        const auto& after = m_project->contacts();
+        // Find the newly assigned ID: the contact that was not present before.
+        for (auto it = after.begin() + static_cast<ptrdiff_t>(prev_sz); it != after.end(); ++it)
+            m_assigned_id = it->id;
+        if (m_assigned_id == 0 && !after.empty())
+            m_assigned_id = after.back().id;
         if (m_on_applied) m_on_applied();
     }
 
@@ -125,9 +131,13 @@ public:
     }
 
     void undo() override {
+        const size_t prev_sz = m_project->contacts().size();
         m_project->addContact(m_contact);
-        if (!m_project->contacts().empty())
-            m_contact.id = m_project->contacts().back().id;
+        const auto& after = m_project->contacts();
+        for (auto it = after.begin() + static_cast<ptrdiff_t>(prev_sz); it != after.end(); ++it)
+            m_contact.id = it->id;
+        if (m_contact.id == 0 && !after.empty())
+            m_contact.id = after.back().id;
         if (m_on_applied) m_on_applied();
     }
 
@@ -159,9 +169,13 @@ public:
 
     void undo() override {
         for (auto& c : m_contacts) {
+            const size_t prev_sz = m_project->contacts().size();
             m_project->addContact(c);
-            if (!m_project->contacts().empty())
-                c.id = m_project->contacts().back().id;
+            const auto& after = m_project->contacts();
+            for (auto it = after.begin() + static_cast<ptrdiff_t>(prev_sz); it != after.end(); ++it)
+                c.id = it->id;
+            if (c.id == 0 && !after.empty())
+                c.id = after.back().id;
         }
         if (m_on_applied) m_on_applied();
     }

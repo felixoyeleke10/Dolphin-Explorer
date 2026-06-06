@@ -79,7 +79,7 @@ LayerMapData buildTrackLayerMapData(const core::ArtifactIndex& index,
         if (entry.type != artifact_type) continue;
         ++ld.track_stats.total_traces;
 
-        // ── Coordinate validity ───────────────────────────────────────────
+        // -- Coordinate validity -------------------------------------------
         if (!geo::isFiniteCoordinate(entry.lat, entry.lon)) {
             ++ld.track_stats.invalid_nav;
             continue;
@@ -89,7 +89,7 @@ LayerMapData buildTrackLayerMapData(const core::ArtifactIndex& index,
             continue;
         }
 
-        // ── CRS normalization ─────────────────────────────────────────────
+        // -- CRS normalization ---------------------------------------------
         // Use the file-level CRS only when it has been confirmed by the user
         // (exact = true). An unconfirmed CRS (e.g. "PROJECTED:SEGY") is only
         // a hint from the parser; each entry's own spatial_ref_kind is more
@@ -120,13 +120,13 @@ LayerMapData buildTrackLayerMapData(const core::ArtifactIndex& index,
         const double lat = norm.lat;
         if (norm.is_projected) ld.is_projected = true;
 
-        // ── Repeated-fix filter ───────────────────────────────────────────
+        // -- Repeated-fix filter -------------------------------------------
         if (lon == prev_lon && lat == prev_lat) {
             ++ld.track_stats.repeated_fixes;
             continue;
         }
 
-        // ── Spacing statistics + segment-break detection ──────────────────
+        // -- Spacing statistics + segment-break detection ------------------
         if (have_prev) {
             const double step_m = geo::navDistanceMetres(prev_norm_pt, norm);
             spacing_sum += step_m;
@@ -161,7 +161,7 @@ LayerMapData buildTrackLayerMapData(const core::ArtifactIndex& index,
         have_prev    = true;
     }
 
-    // ── Derived statistics ────────────────────────────────────────────────────
+    // -- Derived statistics ----------------------------------------------------
     if (spacing_n > 0)
         ld.track_stats.avg_spacing_m = spacing_sum / static_cast<double>(spacing_n);
 
@@ -182,7 +182,7 @@ LayerMapData buildTrackLayerMapData(const core::ArtifactIndex& index,
         ld.track_stats.crs_label = "unknown";
     }
 
-    // ── Bbox padding ──────────────────────────────────────────────────────────
+    // -- Bbox padding ----------------------------------------------------------
     if (ld.lon_min < ld.lon_max) {
         const double pad = ld.is_projected ? kPadProjM : kPadGeo;
         ld.lon_min -= pad; ld.lon_max += pad;

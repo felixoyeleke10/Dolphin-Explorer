@@ -1,4 +1,4 @@
-﻿// ImportSetupDialog.cpp — sensor-type selection screen (step 1 of import flow).
+// ImportSetupDialog.cpp — sensor-type selection screen (step 1 of import flow).
 // Text-based rows: no custom-painted icons, no tile frames.
 #include "ui/features/import/ImportSetupDialog.h"
 #include "ui/shell/Theme.h"
@@ -42,7 +42,7 @@ ImportSetupDialog::ImportSetupDialog(QWidget* parent)
     root->setContentsMargins(0, 0, 0, 0);
     root->setSpacing(0);
 
-    // ── Header ────────────────────────────────────────────────────────────
+    // -- Header ------------------------------------------------------------
     {
         auto* hdr = new QFrame(this);
         hdr->setObjectName("dlgHeader");
@@ -70,7 +70,7 @@ ImportSetupDialog::ImportSetupDialog(QWidget* parent)
         root->addWidget(div);
     }
 
-    // ── Body ──────────────────────────────────────────────────────────────
+    // -- Body --------------------------------------------------------------
     {
         auto* body = new QWidget(this);
         body->setObjectName("dlgBody");
@@ -112,7 +112,7 @@ ImportSetupDialog::ImportSetupDialog(QWidget* parent)
         root->addWidget(body, 1);
     }
 
-    // ── Footer ────────────────────────────────────────────────────────────
+    // -- Footer ------------------------------------------------------------
     {
         auto* div = new QFrame(this);
         div->setFixedHeight(Theme::kSepSz);

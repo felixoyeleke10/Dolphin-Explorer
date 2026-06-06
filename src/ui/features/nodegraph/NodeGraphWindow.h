@@ -23,7 +23,7 @@ class NodeGraphView;
 class NodePaletteView;
 class NodeInspectorPanel;
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  NodeGraphWindow — top-level window hosting the visual node graph editor.
 //
 //  Layout (vertical):
@@ -33,7 +33,7 @@ class NodeInspectorPanel;
 //
 //  Each tab shows the graph of one project worker (Processing / QC / Reporting).
 //  The layer combo selects which layer to run against.
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 class NodeGraphWindow : public QWidget {
     Q_OBJECT
 public:

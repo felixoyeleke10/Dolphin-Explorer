@@ -48,7 +48,7 @@ MapViewportHost::MapViewportHost(QWidget* parent)
 
     layout->addWidget(m_stack);
 
-    // ── 2D/3D toggle button (overlaid bottom-right) ──────────────────────
+    // -- 2D/3D toggle button (overlaid bottom-right) ----------------------
     m_btn = new QToolButton(this);
     m_btn->setText(tr("3D"));
     m_btn->setObjectName("map3DBtn");
@@ -56,7 +56,7 @@ MapViewportHost::MapViewportHost(QWidget* parent)
     m_btn->setToolTip(tr("Switch to 3D OpenGL view"));
     connect(m_btn, &QToolButton::clicked, this, [this]() { setMode3D(!m_is_3d); });
 
-    // ── Load Terrain button (visible in 3D mode only) ────────────────────
+    // -- Load Terrain button (visible in 3D mode only) --------------------
     m_terrain_btn = new QToolButton(this);
     m_terrain_btn->setText(tr("⊞ Terrain"));
     m_terrain_btn->setObjectName("map3DTerrainBtn");
@@ -85,7 +85,9 @@ MapViewportHost::MapViewportHost(QWidget* parent)
     connect(m_view2d, &MapView::cursorMoved,
             this, &MapViewportHost::cursorMoved);
 
-    // Forward layer data to the 3D view whenever a 2D layer is loaded/updated.
+    // Forward layer data to the 3D view only if it already exists.
+    // The 3D view is created lazily on first setMode3D(true); at that point
+    // setMode3D replays all current 2D layer data so nothing is lost.
     connect(m_view2d, &MapView::layerDataUpdated, this, [this](const std::string& lid) {
         if (!m_view3d) return;
         const LayerMapData* ld = m_view2d->layerData(lid);
@@ -104,12 +106,31 @@ MapView3D* MapViewportHost::ensureView3D()
     m_view3d = new MapView3D(m_stack);
     m_stack->addWidget(m_view3d);
 
+    // Apply the display settings that were pushed to the host before the 3D view existed.
+    m_view3d->setShowGrid(m_grid_visible);
+    m_view3d->setMapBgColor(m_map_bg_color);
+    m_view3d->setGridColors(m_grid_minor_3d, m_grid_major_3d);
+    m_view3d->setGratLabelSize(m_grat_label_size);
+    m_view3d->setGratLabelRotated(m_grat_label_rotated);
+    m_view3d->setGratCoordFormat(m_grat_coord_fmt);
+    m_view3d->setToolMode(static_cast<int>(m_tool_mode));
+
     connect(m_view3d, &MapView3D::terrainLoadFinished, this,
             [this](const std::string& /*id*/, bool ok, const QString& err) {
                 m_terrain_label->hide();
                 m_terrain_btn->setEnabled(true);
-                if (!ok)
+                if (!ok) {
                     QMessageBox::warning(this, tr("Terrain Load Error"), err);
+                    return;
+                }
+                // Terrain may have auto-adopted a scene origin; re-push any SSS
+                // layers that were skipped earlier because there was no origin yet.
+                if (m_view3d && m_view3d->hasOrigin()) {
+                    for (const auto& lid : m_view2d->layerDataIds()) {
+                        if (const LayerMapData* data = m_view2d->layerData(lid))
+                            onLayerDataLoaded(lid, *data, colorForLayer(lid));
+                    }
+                }
             });
     connect(m_view3d, &MapView3D::cursorMoved,
             this, &MapViewportHost::cursorMoved);
@@ -141,52 +162,70 @@ QImage MapViewportHost::grabViewportImage()
 
 void MapViewportHost::setShowGrid(bool show)
 {
+    m_grid_visible = show;
     m_view2d->setShowGrid(show);
     if (m_view3d) m_view3d->setShowGrid(show);
 }
 
 void MapViewportHost::setMapBgColor(QColor c)
 {
+    m_map_bg_color = c;
     m_view2d->setMapBgColor(c);
     if (m_view3d) m_view3d->setMapBgColor(c);
 }
 
 void MapViewportHost::setGridColors(QColor line2d, QColor minor3d, QColor major3d)
 {
+    m_grid_minor_3d = minor3d;
+    m_grid_major_3d = major3d;
     m_view2d->setGridColor(line2d);
     if (m_view3d) m_view3d->setGridColors(minor3d, major3d);
 }
 
 void MapViewportHost::setGratLabelSize(int size)
 {
+    m_grat_label_size = size;
     m_view2d->setGratLabelSize(size);
     if (m_view3d) m_view3d->setGratLabelSize(size);
 }
 
 void MapViewportHost::setGratLabelRotated(bool rotated)
 {
+    m_grat_label_rotated = rotated;
     m_view2d->setGratLabelRotated(rotated);
     if (m_view3d) m_view3d->setGratLabelRotated(rotated);
 }
 
 void MapViewportHost::setGratCoordFormat(int fmt)
 {
+    m_grat_coord_fmt = fmt;
     m_view2d->setGratCoordFormat(fmt);
     if (m_view3d) m_view3d->setGratCoordFormat(fmt);
 }
 
 void MapViewportHost::setLayerVisible(const std::string& layer_id, bool visible)
 {
+    m_layer_visibility[layer_id] = visible;
+    m_view2d->setLayerVisible(layer_id, visible);
+    if (m_view3d) m_view3d->setLayerVisible(layer_id, visible);
+}
+
+void MapViewportHost::setNavTrackVisible(const std::string& layer_id, bool visible)
+{
+    m_layer_visibility[layer_id] = visible;
+    m_view2d->setNavTrackVisible(layer_id, visible);
     if (m_view3d) m_view3d->setLayerVisible(layer_id, visible);
 }
 
 void MapViewportHost::setActiveLayer(const std::string& layer_id)
 {
+    m_view2d->setActiveLayer(layer_id);
     if (m_view3d) m_view3d->setActiveLayer(layer_id);
 }
 
 void MapViewportHost::setSelectedLayers(const std::vector<std::string>& ids)
 {
+    m_view2d->setSelectedLayers(ids);
     if (m_view3d) m_view3d->setSelectedLayers(ids);
 }
 
@@ -195,10 +234,14 @@ void MapViewportHost::setMode3D(bool on)
     if (m_is_3d == on) return;
     m_is_3d = on;
     if (on) {
+        const bool first_open = (m_view3d == nullptr);
         auto* view3d = ensureView3D();
-        for (const auto& id : m_view2d->layerDataIds()) {
-            if (const LayerMapData* data = m_view2d->layerData(id))
-                onLayerDataLoaded(id, *data, colorForLayer(id));
+        if (first_open) {
+            // Replay all layer data that arrived while we were in 2D mode.
+            for (const auto& lid : m_view2d->layerDataIds()) {
+                if (const LayerMapData* ld = m_view2d->layerData(lid))
+                    onLayerDataLoaded(lid, *ld, colorForLayer(lid));
+            }
         }
         m_stack->setCurrentWidget(view3d);
     } else {
@@ -261,6 +304,12 @@ void MapViewportHost::onLayerDataLoaded(const std::string& layer_id,
 
     if (m_view3d->hasOrigin()) {
         m_view3d->updateNavTrack(layer_id, data, color);
+        // Replay any explicit hide set before the 3D layer was created.
+        {
+            auto it = m_layer_visibility.find(layer_id);
+            if (it != m_layer_visibility.end() && !it->second)
+                m_view3d->setLayerVisible(layer_id, false);
+        }
 
         if (data.kind == LayerMapKind::Profile) {
             m_view3d->setProfileCurtain(layer_id, data);
@@ -326,6 +375,8 @@ void MapViewportHost::onLayerDataLoaded(const std::string& layer_id,
 
 void MapViewportHost::onLayerRemoved(const std::string& layer_id)
 {
+    m_layer_visibility.erase(layer_id);
+    m_view2d->removeLayerData(layer_id);
     if (!m_view3d) return;
     m_view3d->removeLayer(layer_id);
     m_view3d->removeProfileCurtain(layer_id);
@@ -334,6 +385,8 @@ void MapViewportHost::onLayerRemoved(const std::string& layer_id)
 
 void MapViewportHost::clearScene()
 {
+    m_layer_visibility.clear();
+    m_view2d->clearAllLayerData();
     if (m_view3d) m_view3d->clearScene();
 }
 
@@ -352,6 +405,7 @@ void MapViewportHost::setShowImportHint(bool show)
 
 void MapViewportHost::setToolMode(ToolMode mode)
 {
+    m_tool_mode = mode;
     if (m_view3d)
         m_view3d->setToolMode(static_cast<int>(mode));
 }

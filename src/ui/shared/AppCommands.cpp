@@ -20,7 +20,7 @@ static const AppCommandDef kDefs[] = {
   /* AddContact      */ {":/icons/add_contact.svg",     "Add Contact",              "Add a contact to the map",              "",              "contact pick mark",             "Tools"      },
   /* ClearContacts   */ {":/icons/clear_contacts.svg",  "Clear All Contacts",       nullptr,                                 "",              "clear contacts delete",         "Tools"      },
   /* Measure         */ {":/icons/measure.svg",         "Measure",                  "Measure distance on the map",           "M",             "measure distance",              "Tools"      },
-  /* BottomTrack     */ {":/icons/bottom_track.svg",    "Bottom Track",             "Bottom tracking / seabed QC tool",      "B",             "bottom track seabed",           "Tools"      },
+  /* BottomTrack     */ {":/icons/bottom_track.svg",    "Sub-bottom Viewer",        "Open the sub-bottom profiler viewer",   "B",             "subbottom sbp profiler chirp bottom track", "Tools"      },
   /* WaterfallOpen   */ {":/icons/waterfall.svg",       "Open Waterfall",           "Open the sidescan waterfall view",      "Ctrl+Shift+W",  "waterfall sss sonar",           "Navigate"   },
   /* SubBottomOpen   */ {":/icons/bottom_track.svg",   "Open Sub-Bottom Viewer",   "Open the sub-bottom profiler viewer",   "Ctrl+Shift+B",  "sbp subbottom profiler chirp",  "Navigate"   },
   /* RunSelectedLayer*/ {":/icons/run_line.svg",        "Run Selected Layer",       nullptr,                                 "Ctrl+Shift+R",  "run layer process",             "Processing" },

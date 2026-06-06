@@ -46,7 +46,7 @@ public:
         // Reset: show all actions so we can snapshot their natural geometry
         for (auto* a : actions) a->setVisible(true);
 
-        // ── True-centre: centre in the full bar minus corner-widget width ─────
+        // -- True-centre: centre in the full bar minus corner-widget width -----
         const int bar_w    = mb->width();
         const int corner_w = [mb]() -> int {
             auto* cw = mb->cornerWidget(Qt::TopRightCorner);
@@ -65,13 +65,13 @@ public:
         m_search->setFixedWidth(sw);
         m_search->move(x, y);
 
-        // ── Snapshot all-visible geometries before touching visibility ────────
+        // -- Snapshot all-visible geometries before touching visibility --------
         // (actionGeometry recomputes on demand, so capture while all are shown)
         QHash<QAction*, int> right_edge;
         for (auto* a : actions)
             right_edge[a] = mb->actionGeometry(a).right();
 
-        // ── Hide actions whose right edge intrudes into the clear zone ────────
+        // -- Hide actions whose right edge intrudes into the clear zone --------
         // The clear zone extends left to make room for the left-flank widget
         // (nav arrows) plus a gap, so menu items don't overlap them.
         const int left_flank_w = m_left_flank ? m_left_flank->width() : 0;
@@ -84,7 +84,7 @@ public:
             }
         }
 
-        // ── Overflow "…" button — lazily created, positioned after last item ──
+        // -- Overflow "…" button — lazily created, positioned after last item --
         if (!m_overflow_btn) {
             m_overflow_btn = new QPushButton(QStringLiteral("…"), mb);
             m_overflow_btn->setObjectName("menuOverflowBtn");
@@ -111,7 +111,7 @@ public:
             m_overflow_btn->hide();
         }
 
-        // ── Left flank (back / forward nav arrows) ────────────────────────────
+        // -- Left flank (back / forward nav arrows) ----------------------------
         if (m_left_flank) {
             const int lh = m_left_flank->height();
             m_left_flank->move(x - left_flank_w - 4, (mb->height() - lh) / 2);
@@ -119,7 +119,7 @@ public:
             m_left_flank->raise();
         }
 
-        // ── Right flank (Conversation / Assistant action buttons) ────────────────
+        // -- Right flank (Conversation / Assistant action buttons) ----------------
         if (m_right_flank) {
             const int rh = m_right_flank->height();
             m_right_flank->move(x + sw + 4, (mb->height() - rh) / 2);

@@ -1,7 +1,9 @@
 #pragma once
 #include "io/IFormatReader.h"
+#include "core/Artifact.h"
 #include <cstdio>
 #include <string>
+#include <vector>
 
 namespace dolphin::io {
 
@@ -23,10 +25,12 @@ public:
     std::string formatName() const override { return "DPCACHE"; }
 
 private:
-    FILE*       m_file = nullptr;
+    FILE*       m_file         = nullptr;
     std::string m_path;
     FormatMeta  m_meta;
-    uint64_t    m_fileSize = 0;
+    uint64_t    m_fileSize     = 0;
+    uint32_t    m_file_version = 0;
+    uint64_t    m_cur_pos      = UINT64_MAX; // tracked to skip redundant seeks on sequential reads
 };
 
 bool writeParsedCache(const std::string& cache_path,
@@ -34,6 +38,14 @@ bool writeParsedCache(const std::string& cache_path,
                       IFormatReader& source_reader,
                       core::ArtifactIndex& cache_index,
                       ProgressFn progress = {});
+
+// Write a processed artifact buffer directly to a DLPD cache file.
+// Used by ProcessingService to persist graph-pipeline output without going
+// through a reader.  On success populates out_index and returns true.
+bool writeArtifactBufferToCache(const std::string& cache_path,
+                                const std::vector<core::Artifact>& buffer,
+                                const FormatMeta& meta,
+                                core::ArtifactIndex& out_index);
 
 // Returns true only if the file exists, has the correct magic, and matches
 // the current cache version. Use this to detect stale caches without a full open.

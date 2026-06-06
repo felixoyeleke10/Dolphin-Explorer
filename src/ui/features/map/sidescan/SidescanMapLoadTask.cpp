@@ -1,6 +1,7 @@
-﻿// SidescanMapLoadTask.cpp — activateLayer: background ping load, coverage build,
+// SidescanMapLoadTask.cpp — activateLayer: background ping load, coverage build,
 //                           preview raster, and finished-handler wiring.
 //   Types: QualityParams, SidescanLoadResult → SidescanMapLoadParams.h
+#include <QDebug>
 #include "ui/features/map/sidescan/SidescanViewController.h"
 #include "ui/features/map/sidescan/SidescanMapLoadParams.h"
 #include "ui/shared/CoordFormat.h"
@@ -25,7 +26,7 @@ using detail::SidescanLoadResult;
 using detail::paramsForQuality;
 using detail::kFullSafeLimit;
 
-// ── activateLayer ─────────────────────────────────────────────────────────────
+// -- activateLayer -------------------------------------------------------------
 
 void SidescanViewController::activateLayer(const std::string& layer_id,
                                            app::Project*      project)
@@ -67,7 +68,7 @@ void SidescanViewController::activateLayer(const std::string& layer_id,
 
     auto* src = project->findSource(layer->source_id);
 
-    // ── Snapshot all fields needed by the background task ─────────────────────
+    // -- Snapshot all fields needed by the background task ---------------------
     const std::string store_path     = layer->artifact_store_path;
     const std::string store_format   = layer->artifact_store_format;
     const core::ArtifactIndex idx    = layer->artifact_index;
@@ -94,7 +95,7 @@ void SidescanViewController::activateLayer(const std::string& layer_id,
     if (m_map_view)
         m_map_view->setActiveLayer(layer_id);
 
-    // ── Set up per-layer cancellation and generation guard ────────────────────
+    // -- Set up per-layer cancellation and generation guard --------------------
     // Only cancel a previous load of the SAME layer. Other layers' background
     // tasks are unaffected, allowing multiple layers to load concurrently.
     auto& layer_cancel = m_layer_cancel_flags[layer_id];
@@ -105,7 +106,7 @@ void SidescanViewController::activateLayer(const std::string& layer_id,
     const uint64_t gen = ++m_layer_generations[layer_id];
     auto           cancel = layer_cancel;   // shared ownership into lambda
 
-    // ── Kick off the background load ──────────────────────────────────────────
+    // -- Kick off the background load ------------------------------------------
     auto* watcher = new QFutureWatcher<SidescanLoadResult>(this);
 
     connect(watcher, &QFutureWatcher<SidescanLoadResult>::finished, this,
@@ -205,7 +206,7 @@ void SidescanViewController::activateLayer(const std::string& layer_id,
                 }
             }
 
-            // ── Status bar ────────────────────────────────────────────────────
+            // -- Status bar ----------------------------------------------------
             if (res.has_sample_nav) {
                 if (m_status_pos)
                     m_status_pos->setText(
@@ -271,7 +272,7 @@ void SidescanViewController::activateLayer(const std::string& layer_id,
             result.layer_id   = layer_id;
             result.generation = gen;
 
-            // ── Build bounded preview index ───────────────────────────────────
+            // -- Build bounded preview index -----------------------------------
             core::ArtifactIndex map_idx = idx;
 
             // For pinned single-band layers, remove the other frequency band.
@@ -334,7 +335,7 @@ void SidescanViewController::activateLayer(const std::string& layer_id,
             auto map_pings = geo::normalizeSidescanPingsForMap(
                 std::move(raw), display_ref, &result.unresolved_crs);
 
-            // ── Coverage + nav track (always built for CoverageOnly+) ─────────
+            // -- Coverage + nav track (always built for CoverageOnly+) ---------
             // is_projected must be set before the build calls: both functions use
             // it to pick degree vs. metre gap thresholds and bbox padding units.
             for (const auto& ping : map_pings)
@@ -346,19 +347,15 @@ void SidescanViewController::activateLayer(const std::string& layer_id,
             buildSwathNavTrack(map_pings, result.layer_data);
             buildSwathCoverage(map_pings, result.layer_data, georef_params);
 
-
-            // ── Sonar preview image (quality >= Low) ──────────────────────────
+            // -- Sonar preview image (quality >= Low) --------------------------
             if (qp.max_image_dim > 0 && !cancel->load(std::memory_order_relaxed)) {
                 const bool built = buildSwathPreviewImage(
                     map_pings, result.layer_data,
                     qp.max_image_dim, palette_idx, *cancel,
                     georef_params, qp.min_strip_cos, qp.cell_budget_div);
-                result.quality_reduced = !built
-                    ? false   // not built = cancelled or empty; don't flag
-                    : result.layer_data.preview_reduced;
+                result.quality_reduced = built && result.layer_data.preview_reduced;
             }
-
-            // ── Build / CRS fields for diagnostics ───────────────────────────
+            // -- Build / CRS fields for diagnostics ---------------------------
             result.layer_data.nav_stats.quality_used    =
                 result.quality_reduced ? MapSonarQuality::High : current_quality;
             result.layer_data.nav_stats.pings_available = total_groups;
@@ -388,7 +385,7 @@ void SidescanViewController::activateLayer(const std::string& layer_id,
                 result.layer_data.nav_stats.unsupported_crs_id =
                     result.unresolved_crs.front().id;
 
-            // ── Pre-compute status bar values ─────────────────────────────────
+            // -- Pre-compute status bar values ---------------------------------
             for (const auto& ping : map_pings) {
                 if (ping.nav.valid) {
                     result.has_sample_nav = true;

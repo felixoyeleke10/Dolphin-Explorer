@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include "ui/features/map/MapTypes.h"
 #include "ui/shell/Theme.h"
 #include <QColor>
@@ -114,6 +114,7 @@ protected:
 private:
     void    rebuildNavTrack();
     void    rebuildCombined();
+    void    ensureCombined();   // rebuilds if m_combined_dirty, then clears the flag
     QPointF geoToPixel(double lon, double lat) const;
     QPointF pixelToGeo(QPointF px)             const;
     double  baseScale() const;
@@ -133,7 +134,7 @@ private:
     // Zoom by factor centered on pos (pixel coords).
     void zoomAtPoint(QPointF pos, double factor);
 
-    // ── View state ────────────────────────────────────────────────────────────
+    // -- View state ------------------------------------------------------------
     bool         m_show_grid           = true;
     QColor       m_map_bg_color        { Theme::kBg };
     QColor       m_grid_color          { Theme::kBorder };
@@ -156,21 +157,22 @@ private:
     app::Project* m_project = nullptr;
     std::string   m_active_layer_id;
 
-    // ── Per-layer data ────────────────────────────────────────────────────────
+    // -- Per-layer data --------------------------------------------------------
     std::unordered_map<std::string, LayerMapData> m_layer_data;
 
-    // ── Selection set (coverage polygon highlight) ────────────────────────────
+    // -- Selection set (coverage polygon highlight) ----------------------------
     std::set<std::string> m_selected_layer_ids;
 
-    // ── Combined nav track + bounding box ────────────────────────────────────
+    // -- Combined nav track + bounding box ------------------------------------
     std::vector<QPointF> m_nav_track;
     double m_bbox_lon_min =  1e18, m_bbox_lon_max = -1e18;
     double m_bbox_lat_min =  1e18, m_bbox_lat_max = -1e18;
+    bool   m_combined_dirty = false;  // true when m_layer_data changed since last rebuildCombined
 
-    // ── Contact selection ─────────────────────────────────────────────────────
+    // -- Contact selection -----------------------------------------------------
     uint64_t m_selected_contact_id = 0;
 
-    // ── Measure tool state (multi-point polyline) ─────────────────────────────
+    // -- Measure tool state (multi-point polyline) -----------------------------
     std::vector<QPointF> m_measure_pts_geo;              // confirmed anchor points (lon, lat)
     std::vector<QPoint>  m_measure_pts_px;               // confirmed anchor pixels
     std::vector<double>  m_measure_seg_dist;             // committed segment distances (metres)

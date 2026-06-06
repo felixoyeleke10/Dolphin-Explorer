@@ -20,7 +20,7 @@ NavInfoPanel::NavInfoPanel(QWidget* parent) : QWidget(parent)
     fl->setContentsMargins(0, 0, 0, 0);
     fl->setSpacing(0);
 
-    // ── Scrollable content ────────────────────────────────────────────────────
+    // -- Scrollable content ----------------------------------------------------
     auto* scroll = new QScrollArea(this);
     scroll->setWidgetResizable(true);
     scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
@@ -34,7 +34,7 @@ NavInfoPanel::NavInfoPanel(QWidget* parent) : QWidget(parent)
     vl->setSpacing(Theme::kSpacing1);
     scroll->setWidget(container);
 
-    // ── GPS Smoothing ─────────────────────────────────────────────────────────
+    // -- GPS Smoothing ---------------------------------------------------------
     m_smooth_en = new QCheckBox(tr("GPS Smooth"), container);
     m_smooth_en->setObjectName("ctrlToggle");
     m_smooth_en->setToolTip(
@@ -57,7 +57,7 @@ NavInfoPanel::NavInfoPanel(QWidget* parent) : QWidget(parent)
     smooth_l->addWidget(m_smooth_win);
     vl->addWidget(smooth_rows);
 
-    // ── Layback ───────────────────────────────────────────────────────────────
+    // -- Layback ---------------------------------------------------------------
     auto* div1 = new QFrame(container);
     div1->setObjectName("ctrlDivider");
     div1->setFixedHeight(Theme::kSepSz);
@@ -86,7 +86,7 @@ NavInfoPanel::NavInfoPanel(QWidget* parent) : QWidget(parent)
 
     vl->addStretch(1);
 
-    // ── Apply buttons (pinned below scroll) ───────────────────────────────────
+    // -- Apply buttons (pinned below scroll) -----------------------------------
     auto* sep = new QFrame(this);
     sep->setFrameShape(QFrame::HLine);
     sep->setObjectName("ctrlDivider");

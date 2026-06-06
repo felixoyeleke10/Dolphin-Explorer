@@ -6,9 +6,9 @@ QString qssAcousticViews()
 {
     return QString(
 
-        // ─────────────────────────────────────────────────────────────────────
+        // ---------------------------------------------------------------------
         // Acoustic Viewer Chrome  (WaterfallWindow + SubBottomWindow)
-        // ─────────────────────────────────────────────────────────────────────
+        // ---------------------------------------------------------------------
 
         "WaterfallWindow  { background: @bg; font-family: @font; }"
         "SubBottomWindow  { background: @bg; font-family: @font; }"

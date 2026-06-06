@@ -3,10 +3,13 @@
 #include "ui/mainwindow/commands/LayerCommands.h"
 #include "ui/shell/AppInfo.h"
 #include "ui/features/map/sidescan/SidescanViewController.h"
+#include "ui/features/map/MapView.h"
+#include "ui/features/map/MapViewportHost.h"
 #include "app/project/Project.h"
 #include "app/layers/DataLayer.h"
 
 #include <algorithm>
+#include <QApplication>
 #include <QDesktopServices>
 #include <QDir>
 #include <QFileDialog>
@@ -14,6 +17,7 @@
 #include <QMenu>
 #include <QMessageBox>
 #include <QSettings>
+#include <QTimer>
 #include <QUrl>
 
 namespace {
@@ -33,6 +37,7 @@ void MainWindow::addToRecentProjects(const QString& path)
     if (list.size() > kMaxRecent) list.resize(kMaxRecent);
     s.setValue(kRecentKey, list);
     refreshSidebarSections(list);
+    rebuildRecentMenu();
 }
 
 void MainWindow::rebuildRecentMenu()
@@ -71,7 +76,10 @@ void MainWindow::onNewProject()
                 .arg(QString::fromStdString(m_project->name())),
             QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel);
         if (reply == QMessageBox::Cancel) return;
-        if (reply == QMessageBox::Save) onSaveProject();
+        if (reply == QMessageBox::Save) {
+            onSaveProject();
+            if (m_project_dirty) return;  // save was cancelled or failed
+        }
     }
 
     const QString path = QFileDialog::getSaveFileName(
@@ -193,28 +201,68 @@ void MainWindow::onCloseProject()
                 .arg(QString::fromStdString(m_project->name())),
             QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel);
         if (reply == QMessageBox::Cancel) return;
-        if (reply == QMessageBox::Save) onSaveProject();
+        if (reply == QMessageBox::Save) {
+            onSaveProject();
+            if (m_project_dirty) return;  // save was cancelled or failed
+        }
     }
+
+    // Suppress map repaints during the clear+bind so the viewport doesn't flash
+    // a blank frame between the old project being cleared and the empty state.
+    if (m_viewport_host) m_viewport_host->setUpdatesEnabled(false);
 
     m_op_mgr->cancelAll();
     if (m_sss_ctrl) m_sss_ctrl->deactivate(true);
     m_active_layer_id.clear();
     clearNavigationHistory();
+    ++m_project_load_gen;
+    m_undo_stack->clear();
     m_project.reset();
     bindProjectUi();
+
+    if (m_viewport_host) m_viewport_host->setUpdatesEnabled(true);
     appendJobMessage("Project closed.");
 }
 
 void MainWindow::loadProject(const std::string& path)
 {
+    // Double-click on sidebar emits itemClicked twice → two deferred loadProject calls.
+    // Short-circuit if this project is already cleanly open.
+    if (!m_project_dirty && m_project
+            && m_project->manifestPath() == path)
+        return;
+
+    if (m_project && m_project_dirty) {
+        const auto reply = QMessageBox::question(
+            this, tr("Open Project"),
+            m_project->isTempProject()
+                ? tr("You have unsaved changes. Save before opening a project?")
+                : tr("Save changes to \"%1\" before opening?")
+                      .arg(QString::fromStdString(m_project->name())),
+            QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel);
+        if (reply == QMessageBox::Cancel) return;
+        if (reply == QMessageBox::Save) {
+            onSaveProject();
+            if (m_project_dirty) return;
+        }
+    }
+
+    // Suppress map repaints for the entire clear→bind→first-activation sequence.
+    // Without this the viewport flashes a blank frame between deactivate() clearing
+    // old layer data and the deferred first-layer activation on the next tick.
+    if (m_viewport_host) m_viewport_host->setUpdatesEnabled(false);
+
     m_op_mgr->cancelAll();
     if (m_sss_ctrl) m_sss_ctrl->deactivate(true);
     m_active_layer_id.clear();
     clearNavigationHistory();
+    ++m_project_load_gen;
+    m_undo_stack->clear();
 
     if (path.empty()) {
         m_project.reset();
         bindProjectUi();
+        if (m_viewport_host) m_viewport_host->setUpdatesEnabled(true);
         return;
     }
 
@@ -223,6 +271,7 @@ void MainWindow::loadProject(const std::string& path)
         const QString qpath = QString::fromStdString(path);
         m_diag_hub->postProblem(tr("Could not open: %1").arg(qpath),
                                 DiagnosticsHub::Severity::Error, "project");
+        if (m_viewport_host) m_viewport_host->setUpdatesEnabled(true);
         QMessageBox::warning(this, tr("Open Project"),
             tr("Could not open: %1").arg(qpath));
         return;
@@ -231,6 +280,58 @@ void MainWindow::loadProject(const std::string& path)
     bindProjectUi();
     appendJobMessage(QString("Opened: %1")
         .arg(QString::fromStdString(m_project->name())));
+
+    // Defer layer pre-population to the next event-loop tick.
+    // Calling activateLayer() synchronously here emits loadingStarted which calls
+    // setVisible() on the status-bar progress widget.  On Windows that synchronous
+    // ShowWindow triggers Win32 message processing mid-call-stack, which can dispatch
+    // queued Qt events against partially-initialised receivers and fault inside
+    // QMetaObject::activate.  Deferring lets loadProject() unwind fully first.
+    const uint64_t load_gen = m_project_load_gen;
+    QTimer::singleShot(0, this, [this, load_gen]() {
+        // Re-enable updates at this point regardless of whether layers activate:
+        // the bind phase is complete and the viewport should reflect current state.
+        if (m_viewport_host) m_viewport_host->setUpdatesEnabled(true);
+
+        if (!m_project || load_gen != m_project_load_gen) return;
+        using M = app::Modality;
+        std::string first_layer_id;
+        std::string first_sss_id;
+        for (const auto& layer : m_project->layers()) {
+            if (!layer || !layer->index_built || layer->artifact_index.empty()) continue;
+            if (layer->modality == M::Sidescan) {
+                if (m_sss_ctrl && first_sss_id.empty()) {
+                    m_sss_ctrl->activateLayer(layer->id, m_project.get());
+                    first_sss_id = layer->id;
+                }
+            } else if (m_map_view) {
+                m_map_view->setActiveLayer(layer->id);
+                m_map_view->setNavTrackVisible(layer->id, true);
+            }
+            if (first_layer_id.empty())
+                first_layer_id = layer->id;
+        }
+        if (m_viewport_host) m_viewport_host->setActiveLayer({});
+
+        // Select the first layer so m_active_layer_id is populated, the inspector
+        // shows the layer, and the waterfall (if already open) loads it immediately.
+        if (!first_layer_id.empty())
+            onLayerSelected(first_layer_id);
+
+        // Auto-trigger processing for any indexed layer that has not yet been
+        // run through the pipeline. Skip if all layers are already processed to
+        // avoid re-applying corrections on data that was already corrected.
+        bool any_needs_processing = false;
+        for (const auto& layer : m_project->layers()) {
+            if (layer && layer->index_built && !layer->pipeline_applied
+                    && layer->modality == M::Sidescan) {
+                any_needs_processing = true;
+                break;
+            }
+        }
+        if (any_needs_processing)
+            triggerAutoProcessing();
+    });
 }
 
 void MainWindow::onRemoveContact(uint64_t contact_id)
@@ -260,6 +361,10 @@ void MainWindow::onAutoSave()
 {
     if (!m_project || !m_project_dirty) return;
     if (m_project->isTempProject() || m_project->manifestPath().empty()) return;
+    // Only skip if a save-file dialog is open — other modals (Settings, Import)
+    // don't conflict with a silent file write.
+    if (auto* w = QApplication::activeModalWidget();
+        w && w->inherits("QFileDialog")) return;
     if (m_project->save()) {
         m_project_dirty = false;
         setWindowTitleFromProject();

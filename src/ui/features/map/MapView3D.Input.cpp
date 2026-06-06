@@ -11,7 +11,7 @@
 
 namespace dolphin::ui {
 
-// ── Tool mode ─────────────────────────────────────────────────────────────────
+// -- Tool mode -----------------------------------------------------------------
 
 static Qt::CursorShape cursorForMode(int mode)
 {
@@ -30,7 +30,7 @@ void MapView3D::setToolMode(int mode)
         setCursor(cursorForMode(mode));
 }
 
-// ── Mouse handlers ────────────────────────────────────────────────────────────
+// -- Mouse handlers ------------------------------------------------------------
 
 void MapView3D::mousePressEvent(QMouseEvent* ev)
 {
@@ -58,6 +58,7 @@ void MapView3D::mousePressEvent(QMouseEvent* ev)
         }
         m_orbiting    = true;
         m_orbit_moved = false;
+        m_had_orbit   = false;
         m_drag_start  = ev->pos();
         m_drag_yaw0   = m_camera.yaw;
         m_drag_pitch0 = m_camera.pitch;
@@ -69,8 +70,10 @@ void MapView3D::mouseMoveEvent(QMouseEvent* ev)
 {
     if (m_panning) {
         const QPoint d = ev->pos() - m_pan_start;
-        if (!m_pan_moved && (std::abs(d.x()) > 3 || std::abs(d.y()) > 3))
+        if (!m_pan_moved && (std::abs(d.x()) > 3 || std::abs(d.y()) > 3)) {
             m_pan_moved = true;
+            m_camera_user_moved = true;
+        }
         const float scale = m_camera.distance / float(height()) * 2.f;
         const float yr = m_camera.yaw * float(M_PI) / 180.f;
         const QVector3D right( std::cos(yr), std::sin(yr), 0.f);
@@ -81,8 +84,11 @@ void MapView3D::mouseMoveEvent(QMouseEvent* ev)
         update();
     } else if (m_orbiting) {
         const QPoint d = ev->pos() - m_drag_start;
-        if (!m_orbit_moved && (std::abs(d.x()) > 3 || std::abs(d.y()) > 3))
+        if (!m_orbit_moved && (std::abs(d.x()) > 3 || std::abs(d.y()) > 3)) {
             m_orbit_moved = true;
+            m_had_orbit   = true;
+            m_camera_user_moved = true;
+        }
         m_camera.yaw   = std::fmod(m_drag_yaw0   - d.x() * 0.4f + 360.f, 360.f);
         m_camera.pitch = std::clamp(m_drag_pitch0 + d.y() * 0.25f, 5.f, 89.f);
         update();
@@ -116,7 +122,8 @@ void MapView3D::mouseReleaseEvent(QMouseEvent* ev)
         setCursor(cursorForMode(m_tool_mode));
     }
     if (ev->button() == Qt::RightButton) {
-        m_orbiting = false;
+        m_orbiting    = false;
+        m_orbit_moved = false;
         setCursor(cursorForMode(m_tool_mode));
     }
 }
@@ -133,7 +140,9 @@ void MapView3D::wheelEvent(QWheelEvent* ev)
 
 void MapView3D::contextMenuEvent(QContextMenuEvent* ev)
 {
-    if (m_orbit_moved) { ev->accept(); return; }    // suppress after right-drag orbit
+    // m_orbit_moved is reset in mouseReleaseEvent before WM_CONTEXTMENU arrives;
+    // m_had_orbit persists until the next right-press so the suppress still works.
+    if (m_had_orbit) { m_had_orbit = false; ev->accept(); return; }
 
     const std::string hit = hitTestLayer(ev->pos());
     if (!hit.empty()) {

@@ -57,7 +57,7 @@ SegyReader::readArtifact(const core::ArtifactIndexEntry& entry)
            : core::makeUnknownProjectedSpatialRef("PROJECTED:SEGY"))
         : core::makeWgs84SpatialRef();
 
-    // ── Decode amplitude samples (bulk read) ──────────────────────────────────
+    // -- Decode amplitude samples (bulk read) ----------------------------------
     core::SubBottomTrace trace;
     trace.id             = entry.artifact_id;
     trace.timestamp_us   = entry.timestamp_us;
@@ -174,7 +174,7 @@ SegyReader::readArtifact(const core::ArtifactIndexEntry& entry)
 
     if (ns == 0) return std::nullopt;
 
-    // ── Amplitude normalisation ───────────────────────────────────────────────
+    // -- Amplitude normalisation -----------------------------------------------
     // Normalise to [-1, 1] only when samples exceed the unit range, so that
     // data already in [-1, 1] (e.g. format 3 int16) is untouched.
     // Use the 99th-percentile absolute value rather than the raw peak so that
@@ -190,7 +190,7 @@ SegyReader::readArtifact(const core::ArtifactIndexEntry& entry)
             s = std::clamp(s * inv, -1.f, 1.f);
     }
 
-    // ── Seabed first-return detection ─────────────────────────────────────────
+    // -- Seabed first-return detection -----------------------------------------
     trace.bottom_sample_idx = detectBottomSample(
         trace.samples.data(), static_cast<int>(ns));
 

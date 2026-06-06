@@ -41,9 +41,14 @@ DisplayModule::DisplayModule(QWidget* parent)
 
     {
         QSettings qs;
-        m_palette->setCurrentIndex(SSSPalette::indexFromName(
-            qs.value(SettingsDialog::kKeyDefaultPalette,
-                     QStringLiteral("Gray")).toString()));
+        const QVariant sss_idx = qs.value(QStringLiteral("sss/paletteIdx"));
+        if (sss_idx.isValid()) {
+            m_palette->setCurrentIndex(sss_idx.toInt());
+        } else {
+            m_palette->setCurrentIndex(SSSPalette::indexFromName(
+                qs.value(SettingsDialog::kKeyDefaultPalette,
+                         QStringLiteral("Gray")).toString()));
+        }
     }
 
     connect(m_palette, qOverload<int>(&QComboBox::currentIndexChanged),
@@ -53,6 +58,22 @@ DisplayModule::DisplayModule(QWidget* parent)
     rl->addWidget(m_palette, 1);
     vl->addWidget(row);
     vl->addStretch(1);
+}
+
+void DisplayModule::setLayer(app::DataLayer* layer)
+{
+    if (!m_palette || !layer) return;
+    int pal = layer->sss_palette;
+    if (pal < 0) {
+        QSettings qs;
+        const QVariant v = qs.value(QStringLiteral("sss/paletteIdx"));
+        pal = v.isValid() ? v.toInt()
+                          : SSSPalette::indexFromName(
+                                qs.value(SettingsDialog::kKeyDefaultPalette,
+                                         QStringLiteral("Gray")).toString());
+    }
+    QSignalBlocker sb(m_palette);
+    m_palette->setCurrentIndex(pal);
 }
 
 int DisplayModule::currentPaletteIndex() const

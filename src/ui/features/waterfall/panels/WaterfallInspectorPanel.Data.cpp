@@ -7,10 +7,10 @@
 #include "ui/shell/Theme.h"
 
 #include <QComboBox>
-#include <QFileInfo>
 #include <QPushButton>
 #include <QLabel>
 #include <QSignalBlocker>
+#include <QToolButton>
 #include <cmath>
 
 namespace dolphin::ui {
@@ -29,14 +29,6 @@ QString formatDuration(double secs)
     return QString("%1s").arg(s);
 }
 
-QString formatBytes(qint64 bytes)
-{
-    if (bytes <= 0) return "—";
-    const float mb = bytes / (1024.f * 1024.f);
-    if (mb >= 1000.f) return QString("%1 GB").arg(mb / 1024.f, 0, 'f', 2);
-    return QString("%1 MB").arg(mb, 0, 'f', 1);
-}
-
 } // anonymous namespace
 
 int WaterfallInspectorPanel::currentPaletteIndex() const
@@ -51,9 +43,15 @@ void WaterfallInspectorPanel::setPalette(int idx)
     m_palette_combo->setCurrentIndex(idx);
 }
 
+void WaterfallInspectorPanel::setAmpBarChecked(bool on)
+{
+    if (!m_amp_bar_toggle) return;
+    QSignalBlocker sb(m_amp_bar_toggle);
+    m_amp_bar_toggle->setChecked(on);
+    m_amp_bar_toggle->setText(on ? tr("On") : tr("Off"));
+}
+
 void WaterfallInspectorPanel::refresh(const app::DataLayer*  layer,
-                                       const std::string&     source_path,
-                                       uint64_t               source_size_bytes,
                                        int                    total_ssc_entries,
                                        float                  entries_per_row,
                                        int                    samples_per_ping,
@@ -66,14 +64,14 @@ void WaterfallInspectorPanel::refresh(const app::DataLayer*  layer,
 
     if (!layer) {
         for (auto* l : { m_val_pings, m_val_samples, m_val_duration, m_val_length,
-                         m_val_filename, m_val_fmt_size, m_val_crs, m_val_crs_kind,
+                         m_val_crs, m_val_crs_kind,
                          m_val_sonar_model, m_val_freq, m_val_sound_spd,
                          m_val_survey, m_val_vessel })
             dash(l);
         return;
     }
 
-    // ── Survey data ───────────────────────────────────────────────────────
+    // -- Survey data -------------------------------------------------------
     const int survey_pings = total_ssc_entries > 0
         ? static_cast<int>(total_ssc_entries / std::max(entries_per_row, 1.0f))
         : 0;
@@ -95,25 +93,7 @@ void WaterfallInspectorPanel::refresh(const app::DataLayer*  layer,
         m_val_length->setText("—");
     }
 
-    // ── Source file ───────────────────────────────────────────────────────
-    const QFileInfo fi(QString::fromStdString(source_path));
-    const QString fname = fi.fileName().isEmpty() ? "—" : fi.fileName();
-    {
-        const int avail = m_val_filename->width() > 0 ? m_val_filename->width() : 190;
-        const QString elided = m_val_filename->fontMetrics().elidedText(
-            fname, Qt::ElideMiddle, avail);
-        m_val_filename->setText(elided);
-    }
-    m_val_filename->setToolTip(fname == "—" ? QString{} : fname);
-
-    const uint64_t sz = source_size_bytes > 0
-        ? source_size_bytes
-        : static_cast<uint64_t>(fi.size());
-    const QString ext  = fi.suffix().toUpper();
-    const QString size = formatBytes(static_cast<qint64>(sz));
-    m_val_fmt_size->setText(ext.isEmpty() ? size : ext + "  ·  " + size);
-
-    // ── Coordinate system ─────────────────────────────────────────────────
+    // -- Coordinate system -------------------------------------------------
     {
         const core::SpatialRef& ref = layer->source_spatial_ref.empty()
             ? core::SpatialRef{} : layer->source_spatial_ref;
@@ -139,7 +119,7 @@ void WaterfallInspectorPanel::refresh(const app::DataLayer*  layer,
             m_btn_set_crs->setVisible(unconfirmed || ref.kind == core::SpatialRefKind::Unknown);
     }
 
-    // ── Sonar parameters ──────────────────────────────────────────────────
+    // -- Sonar parameters --------------------------------------------------
     {
         const std::string& sn = sonar_name.empty() ? layer->sonar_name : sonar_name;
         m_val_sonar_model->setText(sn.empty() ? "—" : QString::fromStdString(sn));
@@ -166,7 +146,7 @@ void WaterfallInspectorPanel::refresh(const app::DataLayer*  layer,
         ? QString("%1 m/s").arg(qRound(sound_velocity_ms))
         : "—");
 
-    // ── Vessel / survey ───────────────────────────────────────────────────
+    // -- Vessel / survey ---------------------------------------------------
     m_val_survey->setText(layer->survey_name.empty()
         ? "—" : QString::fromStdString(layer->survey_name));
     m_val_vessel->setText(layer->vessel_name.empty()

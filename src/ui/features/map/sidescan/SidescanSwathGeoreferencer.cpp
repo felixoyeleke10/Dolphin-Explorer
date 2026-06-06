@@ -33,14 +33,14 @@ SwathGeorefResult georeferenceSidescanPings(
 
     result.is_projected = raw_pings[order.front()].nav.is_projected;
 
-    // ── Build corrected nav table ─────────────────────────────────────────────
+    // -- Build corrected nav table ---------------------------------------------
     // Resolves heading (COG/EMA/backward-fill), position (fish/vessel/layback),
     // and applies smoothing.  Coverage building calls the same function so both
     // outputs share identical per-ping position and heading.
     const std::vector<CorrectedSssNav> cnav =
         buildCorrectedNavTable(raw_pings, order, params, &result.heading_stats);
 
-    // ── Georeference samples for each ping ────────────────────────────────────
+    // -- Georeference samples for each ping ------------------------------------
     result.strips.reserve(raw_pings.size());
 
     for (size_t pi = 0; pi < raw_pings.size(); ++pi) {

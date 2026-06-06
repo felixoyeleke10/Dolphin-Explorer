@@ -57,7 +57,7 @@ void SubBottomInspectorPanel::refresh(const app::DataLayer* layer,
         return;
     }
 
-    // ── Survey data ───────────────────────────────────────────────────────
+    // -- Survey data -------------------------------------------------------
     m_val_traces->setText(trace_count > 0
         ? QString("%L1").arg(trace_count) : "—");
 
@@ -78,7 +78,7 @@ void SubBottomInspectorPanel::refresh(const app::DataLayer* layer,
         m_val_length->setText("—");
     }
 
-    // ── Source file ───────────────────────────────────────────────────────
+    // -- Source file -------------------------------------------------------
     const QFileInfo fi(QString::fromStdString(source_path));
     const QString fname = fi.fileName().isEmpty() ? "—" : fi.fileName();
     {
@@ -94,7 +94,7 @@ void SubBottomInspectorPanel::refresh(const app::DataLayer* layer,
     const QString size = formatBytes(static_cast<qint64>(sz));
     m_val_fmt_size->setText(ext.isEmpty() ? size : ext + "  ·  " + size);
 
-    // ── Coordinate system ─────────────────────────────────────────────────
+    // -- Coordinate system -------------------------------------------------
     const core::SpatialRef& ref = layer->source_spatial_ref;
     m_val_crs->setText(ref.empty() ? "—" : spatialRefDisplayName(ref));
     switch (ref.kind) {
@@ -104,7 +104,7 @@ void SubBottomInspectorPanel::refresh(const app::DataLayer* layer,
     default:                               m_val_crs_kind->setText("—");              break;
     }
 
-    // ── Sonar ─────────────────────────────────────────────────────────────
+    // -- Sonar -------------------------------------------------------------
     const float hz = frequency_hz > 0.f ? frequency_hz : layer->frequency_hz;
     if (hz > 0.f) {
         const float khz = hz / 1000.f;
@@ -117,7 +117,7 @@ void SubBottomInspectorPanel::refresh(const app::DataLayer* layer,
         ? QString("%1 m/s").arg(qRound(sound_speed_ms))
         : "—");
 
-    // ── Vessel ────────────────────────────────────────────────────────────
+    // -- Vessel ------------------------------------------------------------
     m_val_survey->setText(layer->survey_name.empty()
         ? "—" : QString::fromStdString(layer->survey_name));
     m_val_vessel->setText(layer->vessel_name.empty()

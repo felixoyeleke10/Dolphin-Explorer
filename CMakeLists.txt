@@ -36,6 +36,9 @@ target_link_libraries(DolphinExplorer PRIVATE
     dolphin-ui
     Qt6::Widgets
 )
+if(WIN32)
+    target_link_libraries(DolphinExplorer PRIVATE dbghelp)
+endif()
 
 set_target_properties(DolphinExplorer PROPERTIES
     WIN32_EXECUTABLE TRUE

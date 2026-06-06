@@ -17,7 +17,7 @@ static int64_t nowUs()
         steady_clock::now().time_since_epoch()).count();
 }
 
-// ── GraphJob helpers ──────────────────────────────────────────────────────────
+// -- GraphJob helpers ----------------------------------------------------------
 
 std::string GraphJob::summary() const
 {
@@ -79,7 +79,7 @@ std::string GraphJob::toJson() const
     return ss.str();
 }
 
-// ── Core executor ─────────────────────────────────────────────────────────────
+// -- Core executor -------------------------------------------------------------
 
 ArtifactBuffer GraphRunner::run(NodeGraph&            graph,
                                  const ArtifactBuffer& source,
@@ -105,7 +105,7 @@ ArtifactBuffer GraphRunner::run(NodeGraph&            graph,
     return result;
 }
 
-// ── Line runner ───────────────────────────────────────────────────────────────
+// -- Line runner ---------------------------------------------------------------
 
 ArtifactBuffer GraphRunner::runLine(NodeGraph&                  graph,
                                      const core::ArtifactIndex& index,
@@ -125,7 +125,7 @@ ArtifactBuffer GraphRunner::runLine(NodeGraph&                  graph,
     return run(graph, source, job, opts);
 }
 
-// ── Batch runner ──────────────────────────────────────────────────────────────
+// -- Batch runner --------------------------------------------------------------
 
 std::vector<GraphJob>
 GraphRunner::runBatch(NodeGraph&                                   graph,

@@ -12,14 +12,14 @@ namespace dolphin::pipeline { class NodeGraph; }
 
 namespace dolphin::ui {
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  NodeInspectorPanel — auto-generated parameter editor for a selected node.
 //
 //  Call showNode() when the canvas selection changes; clearNode() to reset.
 //  Each parameter widget is built from NodeSchema::params, respecting type
 //  (bool → QCheckBox, int → QSpinBox, float/double → QDoubleSpinBox,
 //   string → QLineEdit) and min/max bounds.
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 class NodeInspectorPanel : public QScrollArea {
     Q_OBJECT
 public:

@@ -9,9 +9,9 @@
 
 namespace dolphin::ui {
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  setViewStyle — trigger repaint only if the style actually changed
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void SubBottomView::setViewStyle(const SubBottomViewStyle& s)
 {
@@ -119,7 +119,7 @@ void SubBottomView::paintEvent(QPaintEvent*)
     else
         p.fillRect(rect(), Qt::black);
 
-    // ── Depth grid ────────────────────────────────────────────────────────
+    // -- Depth grid --------------------------------------------------------
     if (m_style.grid_show && m_px_per_sample > 0.f) {
         // Determine interval in ms (two-way travel time).
         // Auto: pick a nice round value giving roughly 6-8 visible lines.
@@ -160,7 +160,7 @@ void SubBottomView::paintEvent(QPaintEvent*)
         }
     }
 
-    // ── Crosshair ─────────────────────────────────────────────────────────
+    // -- Crosshair ---------------------------------------------------------
     if (m_style.xhair_show && m_cursor_x >= 0 && m_cursor_y >= 0) {
         QColor xc = m_style.xhair_color;
         xc.setAlphaF(m_style.xhair_opacity / 100.0);

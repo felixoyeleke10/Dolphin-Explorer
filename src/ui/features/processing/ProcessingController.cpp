@@ -18,6 +18,13 @@ ProcessingController::ProcessingController(app::ProcessingService* processing_se
             this, &ProcessingController::onRunFailed);
     connect(m_processing_service, &app::ProcessingService::batchProgress,
             this, &ProcessingController::onBatchProgress);
+    connect(m_processing_service, &app::ProcessingService::runPersisted,
+            this, [this](const std::string& id,
+                         const std::string& proc_path,
+                         const core::ArtifactIndex& proc_index,
+                         bool slant_range_corrected) {
+                emit processingPersisted(id, proc_path, proc_index, slant_range_corrected);
+            });
 }
 
 void ProcessingController::setProject(std::shared_ptr<app::Project> project)

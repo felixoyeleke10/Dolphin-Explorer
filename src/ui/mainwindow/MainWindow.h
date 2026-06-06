@@ -16,6 +16,8 @@
 #include "ui/features/map/MapTypes.h"
 #include "ui/features/waterfall/NavProcessingParams.h"
 #include "ui/features/waterfall/WaterfallParams.h"
+#include "ui/features/subbottom/SbpGainParams.h"
+#include "ui/features/subbottom/SbpSignalParams.h"
 #include "app/tasks/OperationManager.h"
 #include "ui/mainwindow/AppSettingsDialog.h"
 #include "ui/mainwindow/AppState.h"
@@ -42,6 +44,8 @@ class DataLayer;
 class ImportJobManager;
 class ImportService;
 class ProcessingService;
+class SidescanCorrectionService;
+class SubBottomCorrectionService;
 }
 
 namespace dolphin::ui {
@@ -73,6 +77,7 @@ class HeadingInfoPanel;
 class ImagingControlPanel;
 class MainStatusBar;
 class NavInfoPanel;
+class ProcessingDialog;
 class ProcessingWindow;
 
 class MainWindow : public QMainWindow {
@@ -113,11 +118,12 @@ private slots:
     void onRunAllLayers();
     void onRunSelectedLayer();
     void onOpenProcessingWindow();
+    void triggerAutoProcessing();  // opens ProcessingWindow + runAll(); impl in MainWindow.cpp
 
     // Tool stubs
     void onToolCursor();
     void onToolSelect();
-    void onToolCursorSelectToggle();
+    void onToggle3D();
     void onToolZoom();
     void onToolMeasure();
     void onNavEditor();
@@ -268,12 +274,23 @@ private:
     QWidget* makeContextPlaceholder(const QString& title, const QString& body);
     void     refreshSidebarSections(const QStringList& paths);
 
+    // Processing dialog — shared across all long-running operations.
+    void taskBegin(const QString& id, const QString& label);
+    void taskStep (const QString& id, const QString& label);
+    void taskDone (const QString& id);
+    void taskFail (const QString& id, const QString& error = {});
+    void onCancelProcessing();
+
+    ProcessingDialog* m_processing_dlg = nullptr;
+
     DiagnosticsHub*   m_diag_hub     = nullptr;
     BottomDockPanel*  m_bottom_panel = nullptr;
 
     std::shared_ptr<app::Project> m_project;
     std::string                   m_active_layer_id;
-    bool                          m_project_dirty = false;
+    bool                          m_project_dirty    = false;
+    uint64_t                      m_project_load_gen = 0;   // incremented on every load/close; guards deferred timer
+    bool                          m_save_in_progress = false; // suppresses autosave while a save dialog is open
     core::SpatialRef              m_pending_crs;   // set before any project is open; pre-fills ImportDialog  // unsaved changes indicator
 
     app::OperationManager*  m_op_mgr = nullptr;  // central job runner + cancel registry
@@ -286,9 +303,11 @@ private:
     // Maps OperationManager op_id → DiagnosticsHub job_id for bridge.
     std::unordered_map<uint32_t, uint32_t>    m_op_job_ids;
 
-    SidescanViewController* m_sss_ctrl    = nullptr;
-    ExecutionController*    m_import_ctrl = nullptr;
-    ProcessingController*   m_proc_ctrl   = nullptr;
+    SidescanViewController*            m_sss_ctrl        = nullptr;
+    ExecutionController*               m_import_ctrl     = nullptr;
+    ProcessingController*              m_proc_ctrl       = nullptr;
+    app::SidescanCorrectionService*    m_correction_svc      = nullptr;
+    app::SubBottomCorrectionService*   m_sbp_correction_svc  = nullptr;
 
     // Map sonar preview quality actions (index == MapSonarQuality int value)
     std::array<QAction*, 6> m_act_map_quality{};
@@ -304,9 +323,13 @@ private:
     QAction* m_act_run_layer = nullptr;
     QAction* m_act_run_all   = nullptr;
     QToolButton* m_export_btn          = nullptr;
-    QToolButton* m_cursor_select_btn   = nullptr;
-    QToolButton* m_btn_bottom_track    = nullptr;
-    bool         m_in_select_mode      = false;
+    QToolButton* m_cursor_btn          = nullptr;
+    QToolButton* m_select_btn          = nullptr;
+    QToolButton* m_zoom_btn            = nullptr;
+    QToolButton* m_measure_btn         = nullptr;
+    QToolButton* m_contact_btn         = nullptr;
+    QToolButton* m_3d_btn              = nullptr;
+    QToolButton* m_btn_sbp_open        = nullptr;
     std::vector<QAction*> m_export_actions;
 
     // Activity bar button map: panel_id → button (for check state management)
@@ -396,6 +419,14 @@ private:
     // Per-layer waterfall display params — captured on paramsApplied,
     // restored each time the waterfall opens a layer.
     std::unordered_map<std::string, WaterfallParams> m_layer_wf_params;
+
+    // Per-layer SBP processing params — captured when the user hits Apply,
+    // restored each time the sub-bottom viewer opens or switches to a layer.
+    struct SbpLayerParams {
+        SbpGainParams   gain;
+        SbpSignalParams signal;
+    };
+    std::unordered_map<std::string, SbpLayerParams> m_layer_sbp_params;
 
     // Layer IDs with an in-flight SubBottom profile build. Guards onLayerSelected
     // against spawning a second QFutureWatcher for the same layer.

@@ -6,9 +6,9 @@ QString qssDialogs()
 {
     return QString(
 
-        // ─────────────────────────────────────────────────────────────────────
+        // ---------------------------------------------------------------------
         // App Settings Dialog — sidebar nav + page chrome
-        // ─────────────────────────────────────────────────────────────────────
+        // ---------------------------------------------------------------------
 
         "AppSettingsDialog { background: @bg; }"
 
@@ -53,10 +53,10 @@ QString qssDialogs()
         "  color: @textMuted; font-family: @font; font-size: @fontSm; line-height: 1.5;"
         "}"
 
-        // ─────────────────────────────────────────────────────────────────────
+        // ---------------------------------------------------------------------
         // QDialogButtonBox — themed button bar shared by all QDialog subclasses.
         // Secondary role (Cancel / Close / Discard).
-        // ─────────────────────────────────────────────────────────────────────
+        // ---------------------------------------------------------------------
 
         "QDialogButtonBox QPushButton {"
         "  background: @overlayEl; border: 1px solid @borderMenu;"
@@ -81,10 +81,10 @@ QString qssDialogs()
         "  background: rgba(@accentRgb,0.30); color: rgba(255,255,255,0.35);"
         "}"
 
-        // ─────────────────────────────────────────────────────────────────────
+        // ---------------------------------------------------------------------
         // Dialog tab widget  (QTabWidget#dlgTabs — import wizard and any future
         // dialog that needs an in-body tab strip)
-        // ─────────────────────────────────────────────────────────────────────
+        // ---------------------------------------------------------------------
 
         "QTabWidget#dlgTabs::pane {"
         "  border: none; border-top: 1px solid @border; background: transparent;"
@@ -106,9 +106,9 @@ QString qssDialogs()
         "  color: @textDisabled;"
         "}"
 
-        // ─────────────────────────────────────────────────────────────────────
+        // ---------------------------------------------------------------------
         // Import Dialog
-        // ─────────────────────────────────────────────────────────────────────
+        // ---------------------------------------------------------------------
 
         "ImportDialog { background: @bg; }"
 
@@ -126,7 +126,7 @@ QString qssDialogs()
         "  background: @bgEl; border: 1px solid @border; border-radius: 8px;"
         "}"
 
-        // ── Shared semantic labels (import wizard, metadata windows, etc.) ─────
+        // -- Shared semantic labels (import wizard, metadata windows, etc.) -----
         "QLabel#dlgLabelMeta {"
         "  color: @textMuted; font-family: @font; font-size: @fontSm;"
         "}"
@@ -144,9 +144,9 @@ QString qssDialogs()
         "QLabel#importFileStatus[state=\"caution\"] { color: @caution; }"
         "QLabel#importFileStatus[state=\"error\"]   { color: @danger;  }"
 
-        // ─────────────────────────────────────────────────────────────────────
+        // ---------------------------------------------------------------------
         // Metadata windows (SBP + SSS)
-        // ─────────────────────────────────────────────────────────────────────
+        // ---------------------------------------------------------------------
 
         "QWidget#metaToolbar {"
         "  background: @bgEl; border-bottom: 1px solid @border;"
@@ -271,9 +271,9 @@ QString qssDialogs()
         "#dlgBtnAdd:pressed  { background: rgba(@accentRgb,0.05); }"
         "#dlgBtnAdd:disabled { border-color: @border; color: @textDisabled; }"
 
-        // ─────────────────────────────────────────────────────────────────────
+        // ---------------------------------------------------------------------
         // Import panel action buttons
-        // ─────────────────────────────────────────────────────────────────────
+        // ---------------------------------------------------------------------
 
         "QPushButton#importActionBtn {"
         "  background: @overlayMut; border: 1px solid @borderMenu; border-radius: @radius2;"
@@ -293,9 +293,9 @@ QString qssDialogs()
         "QPushButton#importPrimaryBtn:pressed  { background: rgba(@accentRgb,0.08); }"
         "QPushButton#importPrimaryBtn:disabled { background: rgba(@accentRgb,0.04); border-color: rgba(@accentRgb,0.15); color: @textDisabled; }"
 
-        // ─────────────────────────────────────────────────────────────────────
+        // ---------------------------------------------------------------------
         // Contact list table
-        // ─────────────────────────────────────────────────────────────────────
+        // ---------------------------------------------------------------------
 
         "QTableWidget#contactTable {"
         "  background: @bgPanel; border: none;"
@@ -316,9 +316,9 @@ QString qssDialogs()
         "  color: @textMuted; font-family: @font; font-size: @fontSm;"
         "}"
 
-        // ─────────────────────────────────────────────────────────────────────
+        // ---------------------------------------------------------------------
         // Geodesy panel
-        // ─────────────────────────────────────────────────────────────────────
+        // ---------------------------------------------------------------------
 
         "QLabel#geoAutoDetect { color: @textSubtle; font-family: @font; font-size: @fontSm; }"
         "QLabel#geoLayerRow   { color: @textSecond; font-family: @font; font-size: @fontSm; }"
@@ -328,18 +328,18 @@ QString qssDialogs()
 
         "QWidget#panelBody { background: @bgPanel; }"
 
-        // ─────────────────────────────────────────────────────────────────────
+        // ---------------------------------------------------------------------
         // Import / Correction Dialogs (shared patterns)
-        // ─────────────────────────────────────────────────────────────────────
+        // ---------------------------------------------------------------------
 
         "SidescanCorrectionDialog { background: @bg; }"
         "QDialog#geodesyWin { background: @bg; }"
 
         // QCheckBox#dlgCheckBox — legacy alias; global QCheckBox style in AppStyleBase now covers all checkboxes.
 
-        // ─────────────────────────────────────────────────────────────────────
+        // ---------------------------------------------------------------------
         // Execution Progress Dialog
-        // ─────────────────────────────────────────────────────────────────────
+        // ---------------------------------------------------------------------
 
         "ExecutionProgressDialog { background: @bgEl; }"
         "QWidget#epdHeader { background: @bgEl; border-bottom: 1px solid @border; }"

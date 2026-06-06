@@ -1,4 +1,4 @@
-﻿// MainWindow.ContextPanels.cpp — buildContextPanel, makeContextPlaceholder,
+// MainWindow.ContextPanels.cpp — buildContextPanel, makeContextPlaceholder,
 //   refreshSidebarSections.
 #include "ui/mainwindow/MainWindow.h"
 #include "ui/shell/AppInfo.h"
@@ -12,6 +12,7 @@
 #include <QLabel>
 #include <QListWidget>
 #include <QSettings>
+#include <QTimer>
 #include <QStackedWidget>
 #include <QVBoxLayout>
 #include <QWidget>
@@ -29,7 +30,7 @@ void MainWindow::buildContextPanel(QWidget* parent)
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
 
-    // ── Panel header ──────────────────────────────────────────────────────────
+    // -- Panel header ----------------------------------------------------------
     auto* hdr   = new QFrame(page);
     hdr->setObjectName("panelHdr");
     auto* hdr_l = new QHBoxLayout(hdr);
@@ -46,11 +47,11 @@ void MainWindow::buildContextPanel(QWidget* parent)
     hdr_l->addWidget(m_context_title, 1);
     layout->addWidget(hdr);
 
-    // ── Project tree ──────────────────────────────────────────────────────────
+    // -- Project tree ----------------------------------------------------------
     m_line_list = new LineListPanel(page, LineListPanel::ContentMode::Explorer);
     layout->addWidget(m_line_list, 1);
 
-    // ── Recent Projects section ───────────────────────────────────────────────
+    // -- Recent Projects section -----------------------------------------------
     auto* recent_sec = new CollapsibleSection(tr("Recent Projects"), page);
     recent_sec->setIcon(QStringLiteral(":/icons/recent_projects.svg"));
     m_sidebar_recent_list = new QListWidget(recent_sec);
@@ -59,12 +60,19 @@ void MainWindow::buildContextPanel(QWidget* parent)
     m_sidebar_recent_list->setMaximumHeight(8 * 24);
     connect(m_sidebar_recent_list, &QListWidget::itemClicked,
             this, [this](QListWidgetItem* item) {
-                loadProject(item->data(Qt::UserRole).toString().toStdString());
+                // Defer so the mouse-release event fully unwinds before loadProject
+                // starts calling setVisible() inside bindProjectUi().  On Windows,
+                // ShowWindow mid-click-handler flushes the Win32 message queue and
+                // can cause the main window to blink or lose focus.
+                const QString path = item->data(Qt::UserRole).toString();
+                QTimer::singleShot(0, this, [this, path]() {
+                    loadProject(path.toStdString());
+                });
             });
     recent_sec->setContent(m_sidebar_recent_list);
     layout->addWidget(recent_sec);
 
-    // ── Recycle Bin section ───────────────────────────────────────────────────
+    // -- Recycle Bin section ---------------------------------------------------
     auto* recycle_sec = new CollapsibleSection(tr("Recycle Bin"), page);
     recycle_sec->setIcon(QStringLiteral(":/icons/recycle_bin.svg"));
     recycle_sec->setExpanded(false);

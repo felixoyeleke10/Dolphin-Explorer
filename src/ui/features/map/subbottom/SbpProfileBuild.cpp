@@ -51,7 +51,7 @@ LayerMapData buildSbpProfileMapData(
     for (const auto& trace : traces) {
         ++ld.track_stats.total_traces;
 
-        // ── Nav validity ──────────────────────────────────────────────────────
+        // -- Nav validity ------------------------------------------------------
         if (!trace.nav.valid || !geo::isFiniteCoordinate(trace.nav.lat, trace.nav.lon)) {
             ++ld.track_stats.invalid_nav;
             ld.nav_track.push_back({kDNaN, kDNaN});
@@ -67,7 +67,7 @@ LayerMapData buildSbpProfileMapData(
             continue;
         }
 
-        // ── CRS normalisation ─────────────────────────────────────────────────
+        // -- CRS normalisation -------------------------------------------------
         core::NavPoint nav = trace.nav;
         if (use_exact_crs) {
             nav.spatial_ref  = source_crs;
@@ -90,7 +90,7 @@ LayerMapData buildSbpProfileMapData(
 
         if (norm.is_projected) ld.is_projected = true;
 
-        // ── Repeated-fix filter ───────────────────────────────────────────────
+        // -- Repeated-fix filter -----------------------------------------------
         if (!ld.nav_track.empty()) {
             const QPointF& prev = ld.nav_track.back();
             if (!std::isnan(prev.x()) && prev.x() == norm.lon && prev.y() == norm.lat) {
@@ -99,7 +99,7 @@ LayerMapData buildSbpProfileMapData(
             }
         }
 
-        // ── Gap detection ─────────────────────────────────────────────────────
+        // -- Gap detection -----------------------------------------------------
         if (have_prev) {
             const double step_m = geo::navDistanceMetres(prev_norm_pt, norm);
             spacing_sum += step_m;
@@ -125,7 +125,7 @@ LayerMapData buildSbpProfileMapData(
         ld.track_stats.last_lon = norm.lon;
         ld.track_stats.last_lat = norm.lat;
 
-        // ── Bottom depth scalar ───────────────────────────────────────────────
+        // -- Bottom depth scalar -----------------------------------------------
         float depth = kFNaN;
         if (trace.bottom_sample_idx >= 0 && trace.sample_rate_hz > 0.f) {
             depth = static_cast<float>(trace.bottom_sample_idx)
@@ -135,7 +135,7 @@ LayerMapData buildSbpProfileMapData(
         }
         ld.trace_scalar.push_back(depth);
 
-        // ── Bottom amplitude scalar ───────────────────────────────────────────
+        // -- Bottom amplitude scalar -------------------------------------------
         float amp = 0.f;
         if (!trace.samples.empty()) {
             const int bidx = trace.bottom_sample_idx;
@@ -148,7 +148,7 @@ LayerMapData buildSbpProfileMapData(
         }
         ld.trace_amplitude.push_back(amp);
 
-        // ── Bbox ──────────────────────────────────────────────────────────────
+        // -- Bbox --------------------------------------------------------------
         ld.lon_min = std::min(ld.lon_min, norm.lon);
         ld.lon_max = std::max(ld.lon_max, norm.lon);
         ld.lat_min = std::min(ld.lat_min, norm.lat);
@@ -158,13 +158,13 @@ LayerMapData buildSbpProfileMapData(
         have_prev    = true;
     }
 
-    // ── Scalar range ──────────────────────────────────────────────────────────
+    // -- Scalar range ----------------------------------------------------------
     if (depth_min <= depth_max) {
         ld.scalar_min = depth_min;
         ld.scalar_max = depth_max;
     }
 
-    // ── TrackStats ────────────────────────────────────────────────────────────
+    // -- TrackStats ------------------------------------------------------------
     if (spacing_n > 0)
         ld.track_stats.avg_spacing_m = spacing_sum / static_cast<double>(spacing_n);
 
@@ -187,7 +187,7 @@ LayerMapData buildSbpProfileMapData(
     else
         ld.track_stats.crs_label = "unknown";
 
-    // ── Bbox padding ──────────────────────────────────────────────────────────
+    // -- Bbox padding ----------------------------------------------------------
     if (ld.lon_min < ld.lon_max) {
         const double pad = ld.is_projected ? kPadProjM : kPadGeo;
         ld.lon_min -= pad;  ld.lon_max += pad;

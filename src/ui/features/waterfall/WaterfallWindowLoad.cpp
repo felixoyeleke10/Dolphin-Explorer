@@ -1,11 +1,14 @@
-﻿// WaterfallWindowLoad.cpp — layer management, async data loading, navigation slots
+// WaterfallWindowLoad.cpp — layer management, async data loading, navigation slots
 
+#include <QDebug>
 #include "ui/features/waterfall/WaterfallWindow.h"
+#include "ui/features/waterfall/WaterfallQcStrip.h"
 #include "ui/mainwindow/AppState.h"
 #include "ui/features/waterfall/WaterfallView.h"
 #include "ui/features/waterfall/panels/WaterfallInspectorPanel.h"
 #include "ui/features/waterfall/panels/WaterfallAnalysisPanel.h"
 #include "ui/features/waterfall/processing/SeabedAutoDetector.h"
+#include "ui/features/waterfall/processing/WaterfallPingAssembler.h"
 #include "app/layers/DataLayer.h"
 #include "app/layers/LayerUtils.h"
 #include "app/services/ImportService.h"
@@ -27,6 +30,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <vector>
 
 namespace dolphin::ui {
@@ -56,15 +60,112 @@ static int countSidescanForBand(const app::DataLayer* layer, float target_hz)
 
 } // namespace
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
+//  QC range persistence
+// -----------------------------------------------------------------------------
+
+QString WaterfallWindow::qcSettingsKey() const
+{
+    if (!m_layer) return {};
+    return m_selected_frequency_hz > 0.f
+        ? QString("qc/%1/band_%2")
+              .arg(QString::fromStdString(m_layer->id))
+              .arg(static_cast<int>(m_selected_frequency_hz))
+        : QString("qc/%1").arg(QString::fromStdString(m_layer->id));
+}
+
+void WaterfallWindow::saveQcRanges()
+{
+    if (!m_layer || m_viewed_ranges.empty()) return;
+
+    QSettings s;
+    const QString key = qcSettingsKey();
+
+    QStringList parts;
+    for (const auto& [a, b] : m_viewed_ranges)
+        parts << QString("%1-%2").arg(a).arg(b);
+    s.setValue(key + "/viewedRanges",  parts.join(','));
+    s.setValue(key + "/entriesPerRow", static_cast<double>(m_entries_per_row));
+
+    m_layer->qc_viewed_fraction = m_qc_fraction;
+}
+
+void WaterfallWindow::loadQcRanges()
+{
+    m_viewed_ranges.clear();
+    // Seed from the JSON-persisted value so cross-machine / fresh-install
+    // sessions preserve the fraction even when QSettings has no range data.
+    m_qc_fraction = m_layer ? m_layer->qc_viewed_fraction : 0.f;
+
+    if (!m_layer) return;
+
+    QSettings s;
+    const QString key = qcSettingsKey();
+
+    // Restore the previously measured entries-per-row ratio so estimatedTotalRows()
+    // returns the right denominator instead of the freshly-reset 1.0 default.
+    const float saved_epr = static_cast<float>(
+        s.value(key + "/entriesPerRow", 1.0).toDouble());
+    if (saved_epr > 1.01f && saved_epr <= 2.1f)
+        m_entries_per_row = saved_epr;
+
+    const QString saved = s.value(key + "/viewedRanges").toString();
+    if (!saved.isEmpty()) {
+        for (const QString& seg : saved.split(',')) {
+            const QStringList p = seg.split('-');
+            if (p.size() == 2) {
+                bool ok1 = false, ok2 = false;
+                const int a = p[0].toInt(&ok1);
+                const int b = p[1].toInt(&ok2);
+                if (ok1 && ok2 && a >= 0 && a < b)
+                    m_viewed_ranges.push_back({a, b});
+            }
+        }
+    }
+
+    // Recompute fraction only when the entry count is known and QSettings had
+    // range data.  Falls back to the JSON-seeded fraction when entries are
+    // unknown (placeholder layer) or QSettings is empty (new machine / cleared).
+    if (m_total_ssc_entries > 0 && !m_viewed_ranges.empty()) {
+        const int total = estimatedTotalRows();
+        if (total > 0) {
+            int64_t viewed = 0;
+            for (const auto& [a, b] : m_viewed_ranges)
+                viewed += static_cast<int64_t>(b) - a;
+            m_qc_fraction = std::clamp(
+                static_cast<float>(viewed) / static_cast<float>(total), 0.f, 1.f);
+            m_layer->qc_viewed_fraction = m_qc_fraction;
+        }
+    }
+
+    if (m_qc_strip) {
+        const int total = m_total_ssc_entries > 0 ? estimatedTotalRows() : 0;
+        m_qc_strip->setData(total, m_viewed_ranges, 0, 0, m_qc_fraction);
+    }
+}
+
+WaterfallWindow::~WaterfallWindow()
+{
+    saveQcRanges();
+}
+
+void WaterfallWindow::closeEvent(QCloseEvent* ev)
+{
+    saveQcRanges();
+    QWidget::closeEvent(ev);
+}
+
+// -----------------------------------------------------------------------------
 //  Data API
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void WaterfallWindow::setLayer(app::DataLayer*     layer,
                                app::ImportService* import_service,
                                const std::string&  source_path,
                                uint64_t            source_size_bytes)
 {
+    saveQcRanges();   // persist ranges for the outgoing layer before replacing it
+
     m_scroll_debounce->stop();
     m_pending_abs_row   = -1;
     m_layer             = layer;
@@ -124,6 +225,8 @@ void WaterfallWindow::setLayer(app::DataLayer*     layer,
     m_entries_per_row   = 1.0f;
     m_reset_view_next   = true;
 
+    loadQcRanges();   // restore QC progress for the incoming layer
+
     // Clear window-local contact overlays so picks from the previous layer
     // don't bleed through onto the new waterfall image.
     resetContactTool();
@@ -133,6 +236,17 @@ void WaterfallWindow::setLayer(app::DataLayer*     layer,
     m_view->resetSeabedForNewLayer();
 
     refreshInspector();
+    if (m_inspector && layer)
+        m_inspector->setActiveLine(layer->id);
+
+    // Restore per-layer palette; fall back to the app default for layers where
+    // the user has not yet made an explicit palette choice.
+    if (layer && m_inspector) {
+        const int pal = (layer->sss_palette >= 0)
+            ? layer->sss_palette
+            : (m_app_state ? m_app_state->current().default_palette : PaletteIndex::Greyscale);
+        m_inspector->setPalette(pal);   // does NOT re-emit paletteChanged
+    }
 
     // Restore the per-layer SRC state so the analysis panel and view reflect the
     // persisted flag before loadWindow triggers pushParams.
@@ -166,9 +280,12 @@ void WaterfallWindow::resetContactTool()
 
 void WaterfallWindow::clearLayer()
 {
+    saveQcRanges();   // persist before dropping the layer pointer
+
     m_scroll_debounce->stop();
     m_pending_abs_row = -1;
     m_load_cancel.cancel();
+    m_load_cancel.reset();   // fresh token so the next loadWindow() doesn't bail immediately
     m_load_gen++;
     setDataState(ViewerDataState::Idle);
     m_layer                   = nullptr;
@@ -177,6 +294,9 @@ void WaterfallWindow::clearLayer()
     m_selected_frequency_hz   = 0.f;
     m_total_ssc_entries       = 0;
     m_window_first_row        = 0;
+    m_viewed_ranges.clear();
+    m_qc_fraction             = 0.f;
+    if (m_qc_strip) m_qc_strip->reset();
     if (m_freq_selector) {
         QSignalBlocker sb(m_freq_selector);
         m_freq_selector->clear();
@@ -193,7 +313,7 @@ void WaterfallWindow::clearLayer()
 void WaterfallWindow::refreshInspector()
 {
     if (m_inspector)
-        m_inspector->refresh(m_layer, m_source_path, m_source_size_bytes,
+        m_inspector->refresh(m_layer,
                              m_total_ssc_entries, m_entries_per_row,
                              m_view->samplesPerPing(),
                              m_view->lineLengthMetres(),
@@ -207,8 +327,6 @@ void WaterfallWindow::pushParams()
     if (!m_view || !m_analysis || !m_inspector) return;
     WaterfallParams p = m_analysis->currentParams(m_inspector->currentPaletteIndex());
     p.display_channel = m_display_channel;
-    // Seabed line is only meaningful before SRC is applied; hide it once corrected.
-    m_view->setShowSeabedLine(!p.slant_range_correction);
     m_view->setParams(p);
 }
 
@@ -232,7 +350,8 @@ void WaterfallWindow::scheduleNavProcessing(const NavProcessingParams& nav)
     startProgress();
 
     const WaterfallParams  params  = m_view->params();
-    const SeabedAutoParams seabed  = m_view->seabedAutoParams();
+    const SeabedAutoParams seabed  = m_analysis ? m_analysis->currentSeabedAutoParams()
+                                                 : m_view->seabedAutoParams();
     const bool seabed_en           = m_view->seabedEnabled();
     auto raw = m_view->rawPings();
 
@@ -293,11 +412,10 @@ const std::string& WaterfallWindow::currentLayerId() const
 
 WaterfallSettingsDialog::Settings WaterfallWindow::wfSettings() const
 {
-    // Start with persisted defaults (covers overlay params), then override
-    // with the live state for params we store in member variables.
     WaterfallSettingsDialog::Settings s = WaterfallSettingsDialog::loadDefaults();
     s.window_size     = m_window_size;
     s.display_channel = m_display_channel;
+    s.show_amp_bar    = m_show_amp_bar;
     if (m_view)
         s.overlay = m_view->overlayParams();
     return s;
@@ -307,18 +425,20 @@ void WaterfallWindow::applyWfSettings(const WaterfallSettingsDialog::Settings& s
 {
     m_window_size     = s.window_size;
     m_display_channel = s.display_channel;
+    m_show_amp_bar    = s.show_amp_bar;
     if (m_view) {
         m_view->setShowAmpBar(s.show_amp_bar);
         m_view->setOverlayParams(s.overlay);
         pushParams();  // applies display_channel to the live view immediately
     }
+    if (m_inspector)
+        m_inspector->setAmpBarChecked(s.show_amp_bar);
 }
 
 void WaterfallWindow::applyExternalParams(const WaterfallParams& p)
 {
     if (!m_view) return;
     if (m_analysis) m_analysis->setParams(p);
-    m_view->setShowSeabedLine(!p.slant_range_correction);
 
     // Params that affect the processing pipeline (TVG/ARC/AGC/ARN/destripe/
     // beam-pattern/ML) must run off the UI thread.  Display-only changes
@@ -349,15 +469,22 @@ void WaterfallWindow::applyExternalParamsToAll(const WaterfallParams& p)
     emit applyToAllRequested();
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Async data loading
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void WaterfallWindow::loadWindow(int abs_row)
 {
     if (!m_layer || !m_import_service) {
         m_view->clear();
         m_vscroll->setRange(0, 0);
+        return;
+    }
+
+    if (m_layer->modality != app::Modality::Sidescan) {
+        m_view->clear();
+        m_vscroll->setRange(0, 0);
+        setDataState(ViewerDataState::Failed);
         return;
     }
 
@@ -400,7 +527,8 @@ void WaterfallWindow::loadWindow(int abs_row)
     // Snapshot display params and seabed config so the background pipeline
     // can assemble and detect seabed without touching UI-thread state.
     const WaterfallParams  snap_params         = m_view->params();
-    const SeabedAutoParams snap_seabed_params  = m_view->seabedAutoParams();
+    const SeabedAutoParams snap_seabed_params  = m_analysis ? m_analysis->currentSeabedAutoParams()
+                                                             : m_view->seabedAutoParams();
     const bool             snap_seabed_enabled = m_view->seabedEnabled();
 
     struct LoadResult {
@@ -411,7 +539,8 @@ void WaterfallWindow::loadWindow(int abs_row)
     auto* watcher = new QFutureWatcher<LoadResult>(this);
     connect(watcher, &QFutureWatcher<LoadResult>::finished,
             this, [this, watcher, gen, first_entry, entries_in_window,
-                   target_local, reset_view, snap_params]() {
+                   target_local, reset_view, snap_params,
+                   snap_seabed_params, snap_seabed_enabled]() {
                 watcher->deleteLater();
                 if (gen != m_load_gen) return;
 
@@ -424,6 +553,13 @@ void WaterfallWindow::loadWindow(int abs_row)
                 } catch (...) {
                     setDataState(ViewerDataState::Failed);
                     m_status_left->setText(tr("Failed to load data"));
+                    return;
+                }
+
+                if (res.raw_pings.empty()) {
+                    m_view->clear();
+                    setDataState(ViewerDataState::Failed);
+                    m_status_left->setText(tr("No valid pings — check slant range or source data"));
                     return;
                 }
 
@@ -458,6 +594,11 @@ void WaterfallWindow::loadWindow(int abs_row)
                     m_view->setPreassembledRows(std::move(raw_pings),
                                                 std::move(res.pipeline), !reset_view);
 
+                // Tell the view which seabed params were used so any subsequent
+                // setParams rebuild (triggered by pushParams below) uses the same
+                // params rather than stale C++ defaults.
+                m_view->setSeabedAutoParamsOnly(snap_seabed_params, snap_seabed_enabled);
+
                 // Sync seabed line visibility and colour table with current panel state.
                 pushParams();
 
@@ -481,8 +622,8 @@ void WaterfallWindow::loadWindow(int abs_row)
                 // Stays in Processing state until the second pass completes.
                 if (pipeline_stale) {
                     setDataState(ViewerDataState::Processing);
-                    const SeabedAutoParams rerun_seabed    = m_view->seabedAutoParams();
-                    const bool             rerun_seabed_en = m_view->seabedEnabled();
+                    const SeabedAutoParams rerun_seabed    = snap_seabed_params;
+                    const bool             rerun_seabed_en = snap_seabed_enabled;
                     const int              rerun_gen       = m_load_gen;
                     auto* rw = new QFutureWatcher<LoadResult>(this);
                     connect(rw, &QFutureWatcher<LoadResult>::finished,
@@ -570,6 +711,12 @@ void WaterfallWindow::loadWindow(int abs_row)
             auto normalised = geo::normalizeSidescanPingsForMap(
                 std::move(raw), core::makeWgs84SpatialRef());
 
+            WaterfallPingAssembler::sanitize(normalised);
+            if (normalised.empty()) {
+                qWarning("[WF-LOAD] all pings rejected by sanitize — aborting load");
+                return {};
+            }
+
             if (cancel.isCancelled()) return {};
 
             // Run TVG/ARC/AGC → assemble rows → beam/ARN/destripe/ML → seabed → stretch
@@ -585,9 +732,9 @@ void WaterfallWindow::loadWindow(int abs_row)
         }));
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Navigation slots
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void WaterfallWindow::onPrevFix()
 {
@@ -602,18 +749,24 @@ void WaterfallWindow::onNextFix()
 void WaterfallWindow::onFrequencyBandChanged(int index)
 {
     if (!m_freq_selector || !m_layer) return;
+    saveQcRanges();   // persist ranges for the outgoing band before changing state
+    m_viewed_ranges.clear();
+    m_qc_fraction = 0.f;
+    if (m_qc_strip) m_qc_strip->reset();
+
     const QVariant data = m_freq_selector->itemData(index);
     m_selected_frequency_hz = data.isValid() ? data.toFloat() : 0.f;
     m_total_ssc_entries = countSidescanForBand(m_layer, m_selected_frequency_hz);
     m_window_first_row  = 0;
     m_entries_per_row   = 1.0f;
     m_reset_view_next   = true;
+    loadQcRanges();    // restore QC progress for the incoming band
     loadWindow(0);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Contact overlay sync
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void WaterfallWindow::setProjectContacts(std::vector<core::Contact> contacts)
 {
@@ -635,15 +788,27 @@ void WaterfallWindow::invalidateProcessedCache()
 {
     if (!m_view || m_view->rawPings().empty()) return;
 
+    // Cancel any in-flight task immediately — no point finishing stale params.
     m_load_cancel.cancel();
-    m_load_cancel.reset();
-    auto cancel = m_load_cancel;
-    const int gen = ++m_load_gen;
     setDataState(ViewerDataState::Processing);
     startProgress();
 
+    // Defer the actual launch so rapid param changes (slider drags) collapse
+    // into a single pipeline run once the user settles.
+    m_repipe_debounce->start();
+}
+
+void WaterfallWindow::onRepipeDebounce()
+{
+    if (!m_view || m_view->rawPings().empty()) return;
+
+    m_load_cancel.reset();
+    auto cancel = m_load_cancel;
+    const int gen = ++m_load_gen;
+
     const WaterfallParams  params         = m_view->params();
-    const SeabedAutoParams seabed_params  = m_view->seabedAutoParams();
+    const SeabedAutoParams seabed_params  = m_analysis ? m_analysis->currentSeabedAutoParams()
+                                                        : m_view->seabedAutoParams();
     const bool             seabed_enabled = m_view->seabedEnabled();
     auto raw = m_view->rawPings();   // copy raw pings for the background task
 

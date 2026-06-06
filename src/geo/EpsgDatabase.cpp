@@ -16,7 +16,7 @@ static std::vector<EpsgEntry> buildDatabase()
     std::vector<EpsgEntry> db;
     db.reserve(300);
 
-    // ── Geographic ──────────────────────────────────────────────────────────
+    // -- Geographic ----------------------------------------------------------
     db.push_back({4326, "WGS 84",  "WGS 84",  Kind::Geographic, true});
     db.push_back({4258, "ETRS89",  "ETRS89",  Kind::Geographic, false});
     db.push_back({4283, "GDA94",   "GDA94",   Kind::Geographic, false});
@@ -24,14 +24,14 @@ static std::vector<EpsgEntry> buildDatabase()
     db.push_back({4269, "NAD83",   "NAD83",   Kind::Geographic, false});
     db.push_back({4230, "ED50",    "ED50",    Kind::Geographic, false});
 
-    // ── Common national grids ───────────────────────────────────────────────
+    // -- Common national grids -----------------------------------------------
     db.push_back({27700, "British National Grid",    "OSGB36 / British National Grid",       Kind::Projected, true});
     db.push_back({28992, "RD New (Netherlands)",     "Amersfoort / RD New",                  Kind::Projected, false});
     db.push_back({ 2056, "Swiss LV95",               "CH1903+ / LV95",                       Kind::Projected, false});
     db.push_back({ 3006, "SWEREF99 TM",              "SWEREF99 TM",                          Kind::Projected, false});
     db.push_back({ 3857, "Web Mercator",             "WGS 84 / Pseudo-Mercator",             Kind::Projected, false});
 
-    // ── WGS 84 / UTM zones — all 120 ───────────────────────────────────────
+    // -- WGS 84 / UTM zones — all 120 ---------------------------------------
     // Zones 28–37 cover most of Europe, North Sea, and Atlantic — mark common.
     // Zones 10–20 cover the Americas — mark common.
     // Zones 50–58 cover Asia-Pacific / Australia — mark common.
@@ -53,7 +53,7 @@ static std::vector<EpsgEntry> buildDatabase()
         });
     }
 
-    // ── ETRS89 / UTM (European reference, zones 28–38) ─────────────────────
+    // -- ETRS89 / UTM (European reference, zones 28–38) ---------------------
     for (int z = 28; z <= 38; ++z) {
         const std::string zs = std::to_string(z);
         db.push_back({
@@ -64,7 +64,7 @@ static std::vector<EpsgEntry> buildDatabase()
         });
     }
 
-    // ── NAD83 / UTM (North America, zones 1–23) ────────────────────────────
+    // -- NAD83 / UTM (North America, zones 1–23) ----------------------------
     for (int z = 1; z <= 23; ++z) {
         const std::string zs = std::to_string(z);
         db.push_back({
@@ -75,7 +75,7 @@ static std::vector<EpsgEntry> buildDatabase()
         });
     }
 
-    // ── GDA94 / MGA (Australia, zones 49–56) ───────────────────────────────
+    // -- GDA94 / MGA (Australia, zones 49–56) -------------------------------
     for (int z = 49; z <= 56; ++z) {
         const std::string zs = std::to_string(z);
         db.push_back({
@@ -86,7 +86,7 @@ static std::vector<EpsgEntry> buildDatabase()
         });
     }
 
-    // ── GDA2020 / MGA (Australia, zones 49–56) ─────────────────────────────
+    // -- GDA2020 / MGA (Australia, zones 49–56) -----------------------------
     for (int z = 49; z <= 56; ++z) {
         const std::string zs = std::to_string(z);
         db.push_back({
@@ -97,7 +97,7 @@ static std::vector<EpsgEntry> buildDatabase()
         });
     }
 
-    // ── ED50 / UTM (legacy European surveys, zones 28–38) ──────────────────
+    // -- ED50 / UTM (legacy European surveys, zones 28–38) ------------------
     for (int z = 28; z <= 38; ++z) {
         const std::string zs = std::to_string(z);
         const bool common = (z >= 29 && z <= 32);  // North Sea / NW Europe

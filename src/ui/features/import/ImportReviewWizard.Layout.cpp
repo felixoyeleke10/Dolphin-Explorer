@@ -1,4 +1,4 @@
-﻿// ImportReviewWizard.Layout.cpp — section builders: file list, tabs, project form.
+// ImportReviewWizard.Layout.cpp — section builders: file list, tabs, project form.
 #include "ui/features/import/ImportReviewWizard.h"
 #include "app/project/Project.h"
 #include "ui/shell/Theme.h"
@@ -18,9 +18,9 @@
 
 namespace dolphin::ui {
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Layout helpers
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void ImportReviewWizard::buildFileSection(QVBoxLayout* root)
 {
@@ -92,7 +92,7 @@ void ImportReviewWizard::buildTabSection(QVBoxLayout* root)
         m_tab_specs.push_back({ kind, m_tabs->addTab(scroll, label) });
     };
 
-    // ── Register tabs — order = display order ─────────────────────────────
+    // -- Register tabs — order = display order -----------------------------
     // Visibility predicates live in updateTabVisibility(); add a case there
     // when introducing a new TabKind.
     makeTab(TabKind::Summary,  tr("Summary"),  m_summary_content, m_summary_layout);
@@ -192,9 +192,9 @@ void ImportReviewWizard::buildProjectSection(QVBoxLayout* root)
     onProjectTargetChanged();
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Project section slots
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void ImportReviewWizard::onProjectTargetChanged()
 {

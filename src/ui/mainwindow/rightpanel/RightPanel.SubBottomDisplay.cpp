@@ -1,4 +1,4 @@
-﻿#include "ui/mainwindow/rightpanel/RightPanel.SubBottomDisplay.h"
+#include "ui/mainwindow/rightpanel/RightPanel.SubBottomDisplay.h"
 #include "ui/shell/Theme.h"
 #include "ui/features/subbottom/SubBottomPalette.h"
 
@@ -37,7 +37,7 @@ SubBottomDisplayModule::SubBottomDisplayModule(QWidget* parent)
         return rl;
     };
 
-    // ── Palette ───────────────────────────────────────────────────────────────
+    // -- Palette ---------------------------------------------------------------
     {
         auto* rl = makeRow(tr("Palette"));
         m_palette = new QComboBox(this);
@@ -55,7 +55,7 @@ SubBottomDisplayModule::SubBottomDisplayModule(QWidget* parent)
         rl->addWidget(m_palette, 1);
     }
 
-    // ── Gain ──────────────────────────────────────────────────────────────────
+    // -- Gain ------------------------------------------------------------------
     {
         auto* rl = makeRow(tr("Gain"));
         m_gain = new QDoubleSpinBox(this);
@@ -73,7 +73,7 @@ SubBottomDisplayModule::SubBottomDisplayModule(QWidget* parent)
         rl->addWidget(m_gain, 1);
     }
 
-    // ── Contrast ─────────────────────────────────────────────────────────────────
+    // -- Contrast -----------------------------------------------------------------
     {
         auto* rl = makeRow(tr("Contrast"));
         m_contrast = new QDoubleSpinBox(this);
@@ -91,7 +91,7 @@ SubBottomDisplayModule::SubBottomDisplayModule(QWidget* parent)
         rl->addWidget(m_contrast, 1);
     }
 
-    // ── Polarity ──────────────────────────────────────────────────────────────
+    // -- Polarity --------------------------------------------------------------
     {
         auto* rl = makeRow(tr("Polarity"));
         m_polarity = new QCheckBox(tr("Invert"), this);
@@ -106,7 +106,7 @@ SubBottomDisplayModule::SubBottomDisplayModule(QWidget* parent)
         rl->addStretch(1);
     }
 
-    // ── Bottom track ──────────────────────────────────────────────────────────
+    // -- Bottom track ----------------------------------------------------------
     {
         auto* rl = makeRow(tr("Bottom track"));
         m_bt_check = new QCheckBox(tr("Show"), this);

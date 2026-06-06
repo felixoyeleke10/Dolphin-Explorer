@@ -1,11 +1,10 @@
-﻿// WaterfallViewData.cpp — data API, params API, query API, and row rebuild
+// WaterfallViewData.cpp — data API, params API, query API, and row rebuild
 
 #include "ui/features/waterfall/WaterfallView.h"
 #include "ui/features/waterfall/processing/SeabedAutoDetector.h"
 #include "ui/features/waterfall/processing/WaterfallPingAssembler.h"
 #include "ui/mainwindow/AppSettingsDialog.h"
 #include "geo/GeoUtils.h"
-
 #include <QFutureWatcher>
 #include <QSettings>
 #include <QtConcurrent/QtConcurrent>
@@ -16,9 +15,9 @@
 
 namespace dolphin::ui {
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Data API
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void WaterfallView::setPings(const std::vector<core::SidescanPing>& pings,
                               bool preserve_view)
@@ -36,17 +35,17 @@ void WaterfallView::setPings(const std::vector<core::SidescanPing>& pings,
         else                       doStretchRawAmplitudes(work);
         m_rows = WaterfallPingAssembler::assemble(work, m_params);
     }
-    // Post-assembly order: BPN → ARN → destripe → ML enhance.
+    // Seabed detection runs on clean calibrated rows (before display enhancements).
+    if (m_seabed_enabled) {
+        SeabedAutoDetector::detectAll(m_rows, m_seabed_auto_params);
+        if (m_seabed_auto_params.smoothing > 0.f)
+            SeabedAutoDetector::smooth(m_rows, static_cast<int>(m_seabed_auto_params.smoothing));
+    }
+    // Post-assembly display enhancements: BPN → ARN → destripe → ML enhance.
     if (m_params.beam_pattern.enabled) doApplyBeamPattern(m_rows);
     if (m_params.arn.enabled)          doApplyArn(m_rows);
     if (m_params.destripe.enabled)     doApplyDestripe(m_rows);
     if (m_params.ml_enhance.enabled)   doApplyMlEnhance(m_rows);
-    if (m_seabed_enabled) {
-        SeabedAutoDetector::detectAll(m_rows, m_seabed_auto_params);
-        if (m_seabed_auto_params.smoothing > 0.f
-                && m_seabed_auto_params.method != SeabedMethod::ContinuityAware)
-            SeabedAutoDetector::smooth(m_rows, static_cast<int>(m_seabed_auto_params.smoothing));
-    }
     applyManualSeabedPicks();
     computeAutoStretch();
     m_dirty              = true;
@@ -247,6 +246,7 @@ void WaterfallView::clearSeabedDetection()
 
 void WaterfallView::resetSeabedForNewLayer()
 {
+    m_seabed_enabled = true;
     m_manual_seabed.clear();
     for (auto& row : m_rows)
         row.seabed = {};
@@ -259,18 +259,42 @@ void WaterfallView::redetectSeabed(const SeabedAutoParams& params)
 {
     m_seabed_enabled     = true;
     m_seabed_auto_params = params;
-    SeabedAutoDetector::detectAll(m_rows, params);
-    if (params.smoothing > 0.f && params.method != SeabedMethod::ContinuityAware)
-        SeabedAutoDetector::smooth(m_rows, static_cast<int>(params.smoothing));
+
+    if (!m_raw_pings.empty()) {
+        // Detect on clean calibrated rows (pre-display) so beam/ARN/destripe/ML
+        // output cannot bias amplitude structure seen by the detector.
+        std::vector<core::SidescanPing> work = m_raw_pings;
+        if (m_params.tvg.enabled)  doApplyTvg(work);
+        if (m_params.arc.enabled)  doApplyArc(work);
+        if (m_params.agc.enabled)  doNormalizeRawAmplitudes(work);
+        else                       doStretchRawAmplitudes(work);
+        std::vector<PingRow> clean = WaterfallPingAssembler::assemble(work, m_params);
+        SeabedAutoDetector::detectAll(clean, params);
+        if (params.smoothing > 0.f)
+            SeabedAutoDetector::smooth(clean, static_cast<int>(params.smoothing));
+        // Splice picks into display rows. Guard against size mismatch that can
+        // occur if the assembler pairs differently on re-assembly (e.g., first
+        // ping dropped due to nav filtering).
+        const std::size_t splice_n = std::min(m_rows.size(), clean.size());
+        for (std::size_t i = 0; i < splice_n; ++i)
+            m_rows[i].seabed = clean[i].seabed;
+        // Clear any tail rows that the clean assembly did not cover.
+        for (std::size_t i = splice_n; i < m_rows.size(); ++i)
+            m_rows[i].seabed = {};
+    } else {
+        SeabedAutoDetector::detectAll(m_rows, params);
+        if (params.smoothing > 0.f)
+            SeabedAutoDetector::smooth(m_rows, static_cast<int>(params.smoothing));
+    }
     applyManualSeabedPicks();
     m_dirty        = true;
     m_gl_src_dirty = true;
     update();
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Params API
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void WaterfallView::setParams(const WaterfallParams& p)
 {
@@ -318,9 +342,9 @@ void WaterfallView::setParamsNoRebuild(const WaterfallParams& p)
     update();
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Query API
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 int WaterfallView::rowCount() const
 {
@@ -385,14 +409,14 @@ void WaterfallView::scrollToEnd()
     update();
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Auto stretch — non-destructive percentile-based display normalisation.
 //
 //  Scans the assembled uint16 amplitude rows (already in physical space) and
 //  finds the 1st / 99th percentile values.  These are stored in m_stretch_low/
 //  high (normalised 0–1) so the viewer always uses the
 //  full palette range regardless of the XTF's raw numeric range.
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void WaterfallView::computeAutoStretch()
 {

@@ -23,7 +23,7 @@ AnimatedToolButton::AnimatedToolButton(QWidget* parent)
     m_glow_anim->setEasingCurve(QEasingCurve::OutCubic);
 }
 
-// ── Property setter ───────────────────────────────────────────────────────────
+// -- Property setter -----------------------------------------------------------
 
 void AnimatedToolButton::setGlowAlpha(qreal v)
 {
@@ -31,7 +31,7 @@ void AnimatedToolButton::setGlowAlpha(qreal v)
     update();  // trigger repaint at each animation step
 }
 
-// ── Events ────────────────────────────────────────────────────────────────────
+// -- Events --------------------------------------------------------------------
 
 void AnimatedToolButton::enterEvent(QEnterEvent* e)
 {
@@ -68,7 +68,7 @@ void AnimatedToolButton::mouseReleaseEvent(QMouseEvent* e)
     animateGlowTo(hovering ? 1.0 : 0.0, 130);
 }
 
-// ── Custom painting — soft accent glow drawn on top of the normal button ─────
+// -- Custom painting — soft accent glow drawn on top of the normal button -----
 
 void AnimatedToolButton::paintEvent(QPaintEvent* e)
 {
@@ -87,7 +87,7 @@ void AnimatedToolButton::paintEvent(QPaintEvent* e)
     p.drawRoundedRect(rect().adjusted(3, 3, -3, -3), 5, 5);
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// -- Helpers -------------------------------------------------------------------
 
 void AnimatedToolButton::animateIconTo(QSize target, int ms)
 {

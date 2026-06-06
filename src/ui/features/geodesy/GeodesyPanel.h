@@ -12,7 +12,7 @@ namespace dolphin::app { class Project; }
 
 namespace dolphin::ui {
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  GeodesyPanel — left-context panel for CRS / coordinate management.
 //
 //  Shows the active source CRS (or "Auto-detect"), a summary of per-layer
@@ -21,7 +21,7 @@ namespace dolphin::ui {
 //
 //  The panel is intentionally thin: it emits signals and lets MainWindow
 //  own the state (m_pending_crs) and drive ImportService.
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 class GeodesyPanel : public QWidget {
     Q_OBJECT

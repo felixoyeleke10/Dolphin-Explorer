@@ -14,13 +14,13 @@ enum class ImportDiagnosticSeverity {
 };
 
 enum class ImportDiagnosticCode {
-    // ── Structural / resync ────────────────────────────────────────────────────
+    // -- Structural / resync ----------------------------------------------------
     BadPacketMagic,             // invalid magic encountered; seeking for resync
     ResyncedPacket,             // successfully resynced after skipping N bytes
     TruncatedRecord,            // declared record length exceeds remaining file size
     ImplausibleRecordSize,      // record size beyond sanity limit (> 64 MiB)
     TraceChainBroken,           // expected next trace offset does not hold a plausible header
-    // ── Channel / sample encoding ──────────────────────────────────────────────
+    // -- Channel / sample encoding ----------------------------------------------
     UnsupportedPacketType,      // packet HeaderType not recognised or handled
     UnsupportedChannelType,     // channel TypeOfChannel not supported
     InferredBytesPerSample,     // BPS not declared in channel header; inferred from geometry
@@ -28,17 +28,17 @@ enum class ImportDiagnosticCode {
     UnsupportedSampleEncoding,  // sample format code not supported by this reader
     EncodingInferred,           // byte order or sample format chosen by trace-chain probe
     SamplesPerTraceMismatch,    // per-trace ns differs from binary file header ns
-    // ── Navigation ────────────────────────────────────────────────────────────
+    // -- Navigation ------------------------------------------------------------
     MissingNavigation,          // artifact has no usable nav even after backfill
     InterpolatedNavigation,     // nav linearly interpolated between two fixes
     ExtrapolatedNavigation,     // nav extrapolated beyond available fix coverage
-    // ── Coordinate reference system ───────────────────────────────────────────
+    // -- Coordinate reference system -------------------------------------------
     CoordinateSystemInferred,   // CRS determined from coordinate magnitudes, not declared
     CoordinateSystemOverridden, // declared CRS contradicted by actual data and overridden
     SuspiciousCoordinateMagnitude, // coordinate values outside expected range
     CoordinateEncodingAmbiguous,// units field absent or ambiguous; encoding inferred
     CoordinateSwappedXY,        // X/Y fields appear to be transposed (longitude in Y, latitude in X)
-    // ── Miscellaneous ─────────────────────────────────────────────────────────
+    // -- Miscellaneous ---------------------------------------------------------
     MissingFrequency,           // channel frequency not available in header
 };
 

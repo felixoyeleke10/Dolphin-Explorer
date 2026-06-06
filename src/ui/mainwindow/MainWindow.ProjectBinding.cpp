@@ -31,6 +31,7 @@ void MainWindow::bindProjectUi()
     m_pending_sbp_builds.clear();
     m_layer_nav_params.clear();
     m_layer_wf_params.clear();
+    m_layer_sbp_params.clear();
     if (m_undo_stack) m_undo_stack->clear();
     updateActionStates();
     setWindowTitleFromProject();
@@ -98,7 +99,7 @@ void MainWindow::bindProjectUi()
         m_geodesy_panel->refresh(raw, m_pending_crs);
 
     if (m_processing_win)
-        m_processing_win->setProject(m_project, m_processing_service, m_sss_ctrl);
+        m_processing_win->setProject(m_project, m_processing_service);
 
     if constexpr (Features::kNodeGraph) {
         if (m_node_graph_win) {

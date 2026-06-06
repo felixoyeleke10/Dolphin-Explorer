@@ -1,4 +1,4 @@
-﻿// LineListPanel.cpp — widget setup, event handling, and filter logic.
+// LineListPanel.cpp — widget setup, event handling, and filter logic.
 // Tree construction lives in LineListPanel.Tree.cpp.
 // Context menu and reorder logic lives in LineListPanel.ContextMenu.cpp.
 #include "ui/shared/panels/LineListPanel.h"
@@ -94,7 +94,7 @@ LineListPanel::LineListPanel(QWidget* parent, ContentMode mode)
     m_tree->setContextMenuPolicy(Qt::CustomContextMenu);
     layout->addWidget(m_tree, 1);
 
-    // ── Empty state (shown when no project is open) ───────────────────────────
+    // -- Empty state (shown when no project is open) ---------------------------
     m_empty_state = new QWidget(this);
     auto* el = new QVBoxLayout(m_empty_state);
     el->setContentsMargins(0, Theme::kSpacing3, 0, 0);

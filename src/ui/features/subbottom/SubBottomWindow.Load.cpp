@@ -61,6 +61,11 @@ void SubBottomWindow::setLayer(app::DataLayer*     layer,
     const core::ArtifactIndex idx  = layer->artifact_index;
     auto* svc                      = import_service;
 
+    // Snapshot the layer ID so the watcher lambda never dereferences m_layer
+    // directly (m_layer may be cleared or point to freed memory if the layer
+    // is deleted while the background load is in flight).
+    const std::string lid = layer->id;
+
     struct LoadResult {
         std::vector<core::SubBottomTrace> traces;
         int   n_samples  = 0;
@@ -71,7 +76,7 @@ void SubBottomWindow::setLayer(app::DataLayer*     layer,
 
     auto* watcher = new QFutureWatcher<LoadResult>(this);
     connect(watcher, &QFutureWatcher<LoadResult>::finished,
-            this, [this, watcher, gen]() {
+            this, [this, watcher, gen, lid]() {
                 watcher->deleteLater();
                 if (gen != m_load_gen) return;
 
@@ -90,10 +95,11 @@ void SubBottomWindow::setLayer(app::DataLayer*     layer,
                 if (m_status_left) m_status_left->clear();
 
                 m_total_traces = static_cast<int>(res.traces.size());
-                m_traces_raw   = std::move(res.traces);
+                m_traces_raw   = std::make_shared<const std::vector<core::SubBottomTrace>>(
+                    std::move(res.traces));
                 scheduleProcessing();
 
-                if (m_inspector && m_layer) {
+                if (m_inspector && m_layer && m_layer->id == lid) {
                     const float spd = m_display
                         ? m_display->currentParams().sound_speed_ms : 1500.f;
                     m_inspector->refresh(m_layer, m_source_path, m_source_size_bytes,
@@ -136,7 +142,7 @@ void SubBottomWindow::clearLayer()
     m_import_service    = nullptr;
     m_source_path.clear();
     m_total_traces      = 0;
-    m_traces_raw.clear();
+    m_traces_raw.reset();
     m_view->clear();
     if (m_hscroll)      m_hscroll->setRange(0, 0);
     if (m_status_left)  m_status_left->clear();

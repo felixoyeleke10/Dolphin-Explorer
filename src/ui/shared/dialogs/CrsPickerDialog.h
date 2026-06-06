@@ -9,13 +9,13 @@ class QTableWidgetItem;
 
 namespace dolphin::ui {
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  CrsPickerDialog — searchable coordinate reference system picker.
 //
 //  Presents a curated list of survey-relevant EPSG CRS (from EpsgDatabase).
 //  Common entries are pinned at the top; the search box filters both name and
 //  EPSG code.  On accept, selectedRef() returns a fully-populated SpatialRef.
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 class CrsPickerDialog : public QDialog {
     Q_OBJECT

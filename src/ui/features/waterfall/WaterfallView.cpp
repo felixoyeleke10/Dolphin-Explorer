@@ -1,4 +1,4 @@
-﻿// WaterfallView.cpp — construction and layout
+// WaterfallView.cpp — construction and layout
 //
 // Data API (setPings, setParams, setSeabedTool, …) → WaterfallViewData.cpp
 // Paint / overlay                                  → WaterfallViewPaint.cpp
@@ -10,27 +10,42 @@
 #include "render/sonar/SSSPalette.h"
 
 #include <QOpenGLContext>
+#include <QSurfaceFormat>
 
 namespace dolphin::ui {
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Compatibility forwarder
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 const char* WaterfallView::paletteName(int idx)
 {
     return SSSPalette::name(idx);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Construction
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 WaterfallView::WaterfallView(QWidget* parent)
     : QOpenGLWidget(parent)
 {
     setMouseTracking(true);
     setMinimumSize(200, 100);
+
+    // Explicitly request the same context the shaders require.
+    // Without this, Qt uses the OS default (often 2.0 compat), which silently
+    // rejects GL_R16 textures and #version 330 core shaders on the first real
+    // GPU upload, causing an OpenGL driver fault.
+    QSurfaceFormat fmt;
+    fmt.setVersion(3, 3);
+    fmt.setProfile(QSurfaceFormat::CoreProfile);
+    fmt.setDepthBufferSize(0);
+    fmt.setAlphaBufferSize(0);
+    fmt.setStencilBufferSize(0);
+    fmt.setSwapBehavior(QSurfaceFormat::DoubleBuffer);
+    fmt.setSamples(0);
+    setFormat(fmt);
 
     m_scroll.setScrollChangedCallback(
         [this](int sr, int tr, int vr) {
@@ -53,9 +68,9 @@ WaterfallView::~WaterfallView()
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Layout
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void WaterfallView::updateLayout()
 {

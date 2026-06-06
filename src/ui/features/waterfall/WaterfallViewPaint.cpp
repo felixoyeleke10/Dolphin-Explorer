@@ -1,4 +1,4 @@
-﻿// WaterfallViewPaint.cpp — OpenGL initialisation, resize, paint, and cleanup
+// WaterfallViewPaint.cpp — OpenGL initialisation, resize, paint, and cleanup
 //
 // GPU path (default — requires OpenGL 3.3 core):
 //   initializeGL — compile shaders
@@ -12,6 +12,7 @@
 #include "ui/features/waterfall/WaterfallView.h"
 #include "ui/features/waterfall/painters/WaterfallOverlayPainter.h"
 
+#include <QDebug>
 #include <QOpenGLContext>
 #include <QPainter>
 
@@ -23,9 +24,9 @@ const QColor kExternalContact (  0, 210, 220, 220);  // contacts from external d
 
 namespace dolphin::ui {
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  initializeGL
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void WaterfallView::initializeGL()
 {
@@ -33,19 +34,36 @@ void WaterfallView::initializeGL()
             this, &WaterfallView::cleanupGL,
             Qt::UniqueConnection);
 
-    m_gl_initialized = m_gl_renderer.initialize();
-
-    if (m_gl_initialized) {
-        if (!m_rows.empty())
-            m_gl_renderer.uploadAmplitude(m_rows);
-        m_gl_data_dirty = false;
-        m_gl_src_dirty  = false;
+    // Verify the driver actually delivered OpenGL 3.3 Core Profile before
+    // attempting shader/VAO initialisation.  Qt silently degrades the context
+    // when the hardware or driver cannot fulfil the request, so we check the
+    // format that was actually obtained rather than the one we asked for.
+    const QSurfaceFormat actual = context()->format();
+    const bool have_33 = (actual.majorVersion() > 3)
+                      || (actual.majorVersion() == 3 && actual.minorVersion() >= 3);
+    if (!have_33 || actual.profile() != QSurfaceFormat::CoreProfile) {
+        qWarning("[WF-GL] CPU fallback: got OpenGL %d.%d %s, need 3.3 Core",
+                 actual.majorVersion(), actual.minorVersion(),
+                 actual.profile() == QSurfaceFormat::CoreProfile ? "Core" : "Compat");
+        return;   // m_gl_initialized stays false — CPU path handles all painting
     }
+
+    m_gl_initialized = m_gl_renderer.initialize();
+    if (!m_gl_initialized) {
+        qWarning("[WF-GL] CPU fallback: GPU renderer initialisation failed "
+                 "(shader compile or VAO error)");
+        return;
+    }
+
+    if (!m_rows.empty())
+        m_gl_renderer.uploadAmplitude(m_rows);
+    m_gl_data_dirty = false;
+    m_gl_src_dirty  = false;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  resizeGL
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void WaterfallView::resizeGL(int /*w*/, int /*h*/)
 {
@@ -53,9 +71,9 @@ void WaterfallView::resizeGL(int /*w*/, int /*h*/)
     m_scroll.clampToMax(rowCount(), m_renderer.maxVisible());
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  paintGL
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void WaterfallView::paintGL()
 {
@@ -68,7 +86,7 @@ void WaterfallView::paintGL()
 
     const WfLayout& lay = m_renderer.layout();
 
-    // ── GPU path ─────────────────────────────────────────────────────────────
+    // -- GPU path -------------------------------------------------------------
     if (m_gl_initialized) {
         // Flush any pending texture uploads (context is guaranteed current here).
         if (m_gl_data_dirty) {
@@ -105,7 +123,7 @@ void WaterfallView::paintGL()
         // No amplitude data uploaded yet — fall through to CPU path.
     }
 
-    // ── CPU fallback path ────────────────────────────────────────────────────
+    // -- CPU fallback path ----------------------------------------------------
     if (m_dirty) {
         m_renderer.rebuild(m_rows,
                            m_scroll.scrollRow(),
@@ -120,14 +138,15 @@ void WaterfallView::paintGL()
     paintOverlays(p, lay);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  paintOverlays — common to both GPU and CPU paths
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void WaterfallView::paintOverlays(QPainter& p, const WfLayout& lay)
 {
-    if (m_seabed_tool > 0 || m_show_seabed_line)
+    if (m_seabed_tool > 0 || m_show_seabed_line) {
         WaterfallOverlayPainter::paintSeabedOverlay(p, m_rows, lay, m_scroll);
+    }
 
     if (m_seabed_tool == 2 && m_box_press_sx >= 0 && m_cursor_x >= 0) {
         const QRect band(QPoint(qMin(m_box_press_sx, m_cursor_x),
@@ -144,11 +163,13 @@ void WaterfallView::paintOverlays(QPainter& p, const WfLayout& lay)
         p.restore();
     }
 
-    if (!m_external_contacts.empty())
+    if (!m_external_contacts.empty()) {
         WaterfallOverlayPainter::paintContactOverlay(p, m_external_contacts, m_rows, lay,
                                                      m_scroll, kExternalContact);
-    if (!m_contacts.empty())
+    }
+    if (!m_contacts.empty()) {
         WaterfallOverlayPainter::paintContactOverlay(p, m_contacts, m_rows, lay, m_scroll);
+    }
     WaterfallOverlayPainter::paintScaleBar(p, m_rows, lay, m_scroll, samplesPerPing());
     if (m_show_amp_bar) {
         if (m_amp_profile_dirty || m_scroll.scrollRow() != m_amp_profile_scroll_row) {
@@ -163,9 +184,9 @@ void WaterfallView::paintOverlays(QPainter& p, const WfLayout& lay)
     WaterfallOverlayPainter::paintEmptyState (p, rect(), m_rows.empty());
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  GPU acceleration control
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 bool WaterfallView::isGpuRendering() const { return m_gl_initialized; }
 
@@ -188,9 +209,9 @@ void WaterfallView::setGpuAccel(bool enabled)
     update();
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  cleanupGL — called via aboutToBeDestroyed while context is current
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void WaterfallView::cleanupGL()
 {

@@ -21,7 +21,7 @@ class QVBoxLayout;
 
 namespace dolphin::ui {
 
-// ── ImportDialogResult ────────────────────────────────────────────────────────
+// -- ImportDialogResult --------------------------------------------------------
 struct ImportDialogResult {
     enum class ProjectTarget { Current, New };
 
@@ -33,7 +33,7 @@ struct ImportDialogResult {
     bool accepted = false;
 };
 
-// ── ImportDialog ─────────────────────────────────────────────────────────────
+// -- ImportDialog -------------------------------------------------------------
 // Shown after the user has selected sensor types in ImportSetupDialog and
 // picked files via the system file picker.
 //

@@ -28,11 +28,11 @@ void WaterfallWindow::buildToolbar()
     connect(m_toolbar, &ViewerToolbar::metaRequested,     this, &WaterfallWindow::metadataRequested);
     connect(m_toolbar, &ViewerToolbar::settingsRequested, this, &WaterfallWindow::settingsRequested);
 
-    // ── SSS-specific right section ────────────────────────────────────────────
+    // -- SSS-specific right section --------------------------------------------
     auto* btn_measure = m_toolbar->addButton(":/icons/measure.svg",
         tr("Measure distance on the waterfall. Shortcut: M. This tool is not enabled yet."));
     auto* btn_bttrack = m_toolbar->addButton(":/icons/bottom_track.svg",
-        tr("Bottom Track tool for seabed picking/QC. Shortcut: B. Use the Seabed Picking panel for current controls."));
+        tr("Sub-bottom Viewer. Shortcut: B. Open the sub-bottom profiler for the current survey."));
     auto* btn_range   = m_toolbar->addButton(":/icons/zoom.svg",
         tr("Range Gate tool for limiting inspection to a range interval. Shortcut: R. This tool is not enabled yet."));
 

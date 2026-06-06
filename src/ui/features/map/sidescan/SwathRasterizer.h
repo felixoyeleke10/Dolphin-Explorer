@@ -8,9 +8,9 @@
 //
 // Corner layout (matches MapViewPaint variable names):
 //
-//   pa ─── na     ← previous ping strip (top edge)
-//   │          │
-//   pb ─── nb     ← current  ping strip (bottom edge)
+//   pa --- na     ← previous ping strip (top edge)
+//   |          |
+//   pb --- nb     ← current  ping strip (bottom edge)
 //
 //   a00 = amplitude at pa    a10 = amplitude at na
 //   a01 = amplitude at pb    a11 = amplitude at nb
@@ -74,7 +74,7 @@ private:
     std::array<QRgb, 65536> m_lut{};
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 inline void SwathRasterizer::buildLut(const SonarDisplayParams& params,
                                       int palette_index)

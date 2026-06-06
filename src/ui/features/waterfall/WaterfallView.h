@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include "ui/features/waterfall/NavProcessingParams.h"
 #include "ui/features/waterfall/PingRow.h"
 #include "ui/features/waterfall/processing/SeabedAutoDetector.h"
@@ -20,7 +20,7 @@
 
 namespace dolphin::ui {
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  WaterfallView — scrolling sidescan waterfall canvas (thin orchestrator).
 //
 //  All rendering logic lives in WaterfallRenderer.
@@ -30,12 +30,12 @@ namespace dolphin::ui {
 //
 //  This class owns the data (m_rows), wires the modules together, and handles
 //  Qt event dispatch.
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 class WaterfallView : public QOpenGLWidget {
     Q_OBJECT
 public:
-    // ── Compatibility aliases ──────────────────────────────────────────────
+    // -- Compatibility aliases ----------------------------------------------
     // WaterfallWindow still uses Params and kPalette* in a few call sites.
     // These are forwarding aliases — remove once all callers use the module types.
     using Params = WaterfallParams;
@@ -49,7 +49,7 @@ public:
     explicit WaterfallView(QWidget* parent = nullptr);
     ~WaterfallView() override;
 
-    // ── Data API ───────────────────────────────────────────────────────────
+    // -- Data API -----------------------------------------------------------
     // preserve_view: keep h-zoom / h-pan state (set false on new file open).
     void setPings(const std::vector<core::SidescanPing>& pings,
                   bool preserve_view = false);
@@ -78,7 +78,7 @@ public:
 
     void clear();
 
-    // ── Display API ────────────────────────────────────────────────────────
+    // -- Display API --------------------------------------------------------
     void setParams(const WaterfallParams& p);
     // Store params without triggering a pipeline rebuild.
     // Use when the caller is about to schedule an async re-pipeline.
@@ -91,13 +91,13 @@ public:
                       const NavProcessingParams& params);
     const WaterfallParams& params() const { return m_params; }
 
-    // ── Scale API ─────────────────────────────────────────────────────────
+    // -- Scale API ---------------------------------------------------------
     // Set vertical (along-track) scale.  0 = auto (kWfRowHeight default).
     void setVerticalScale(float pings_per_cm);
     // Set horizontal (across-track) scale.  0 = auto-fit all samples.
     void setHorizontalScale(float samples_per_cm);
 
-    // ── Seabed API ────────────────────────────────────────────────────────
+    // -- Seabed API --------------------------------------------------------
     // Set the active manual tool: 0=none, 1=pen (drag), 2=insert, 3=remove.
     void setSeabedTool(int tool);
     // Set which side manual seabed tools edit: 0=Both, 1=Port, 2=Starboard.
@@ -105,6 +105,12 @@ public:
     // Re-run auto-detection on every currently-loaded row using the given params.
     // Also sets the internal enabled flag so subsequent window loads re-apply.
     void redetectSeabed(const SeabedAutoParams& params);
+    // Update the cached seabed params without re-running detection.
+    // Called by the loader after it has already baked picks into pre-assembled rows.
+    void setSeabedAutoParamsOnly(const SeabedAutoParams& p, bool enabled) {
+        m_seabed_auto_params = p;
+        m_seabed_enabled     = enabled;
+    }
     // Clear auto-detection results and disable auto-re-apply on window loads.
     void clearSeabedDetection();
     // Clear seabed picks for a new layer without disabling auto-detection.
@@ -118,7 +124,7 @@ public:
     const WfOverlayParams& overlayParams() const { return m_overlay_params; }
     void setOverlayParams(const WfOverlayParams& p);
 
-    // ── Contact API ───────────────────────────────────────────────────────
+    // -- Contact API -------------------------------------------------------
     // Set the active contact tool: 0=none, 1=pick.
     // Activating any contact tool deactivates the seabed tool and vice versa.
     void setContactTool(int tool);
@@ -134,7 +140,7 @@ public:
     void refreshExternalContacts(const std::vector<core::Contact>& contacts,
                                   int window_first_row);
 
-    // ── Query API ─────────────────────────────────────────────────────────
+    // -- Query API ---------------------------------------------------------
     int   rowCount()       const;
     // Returns the raw ping at index idx, or nullptr if out of range.
     const core::SidescanPing* pingAt(int idx) const;
@@ -230,7 +236,7 @@ private:
     // actual dynamic range to the full palette range.
     void computeAutoStretch();
 
-    // ── Members ────────────────────────────────────────────────────────────
+    // -- Members ------------------------------------------------------------
     std::vector<core::SidescanPing>   m_raw_pings;          // stored for re-assembly on Apply
     std::vector<PingRow>              m_rows;
     std::unordered_map<int64_t,float> m_manual_seabed;     // timestamp_us → range_m; survives window changes
@@ -256,13 +262,13 @@ private:
     WfOverlayParams m_overlay_params;
     int  m_seabed_tool  = 0;   // 0=none, 1=pen (drag), 2=box (drag straight line), 3=eraser
 
-    // ── Box tool drag state (tool == 2) ───────────────────────────────────
+    // -- Box tool drag state (tool == 2) -----------------------------------
     int   m_box_anchor_row   = -1;   // row at press; -1 when not dragging
     float m_box_anchor_range = 0.f;
     int   m_box_press_sx     = -1;   // screen coords at press (rubber-band preview)
     int   m_box_press_sy     = -1;
 
-    // ── Pen last position for gap interpolation (tool == 1) ──────────────
+    // -- Pen last position for gap interpolation (tool == 1) --------------
     int   m_pen_last_row     = -1;
     float m_pen_last_range   = 0.f;
     int          m_contact_tool  = 0;               // 0=none, 1=pick

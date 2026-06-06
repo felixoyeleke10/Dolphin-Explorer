@@ -2,10 +2,14 @@
 
 #include "ui/features/waterfall/WaterfallWindow.h"
 #include "ui/features/waterfall/WaterfallView.h"
+#include "ui/features/waterfall/WaterfallQcStrip.h"
+#include "app/layers/DataLayer.h"
 #include "ui/shared/CoordFormat.h"
 #include "ui/shared/widgets/CommandBar.h"
 
+#include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <QLabel>
 #include <QLineEdit>
 #include <QScrollBar>
@@ -13,9 +17,59 @@
 
 namespace dolphin::ui {
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
+//  QC range tracking
+// -----------------------------------------------------------------------------
+
+void WaterfallWindow::markRowsAsViewed(int abs_first, int abs_last)
+{
+    if (abs_first >= abs_last) return;
+    // Skip fraction update while the entry count is not yet known — avoids
+    // emitting a bogus 100% when estimatedTotalRows() falls back to 1.
+    if (m_total_ssc_entries <= 0) return;
+
+    m_viewed_ranges.push_back({ abs_first, abs_last });
+
+    // Merge overlapping / adjacent intervals (keep sorted).
+    // Skip the full sort when the new range arrives in order (the common path
+    // during forward scrolling) — the vector is already sorted in that case.
+    if (m_viewed_ranges.size() > 1) {
+        const auto& prev = m_viewed_ranges[m_viewed_ranges.size() - 2];
+        if (abs_first < prev.first)
+            std::sort(m_viewed_ranges.begin(), m_viewed_ranges.end());
+    }
+    std::vector<std::pair<int,int>> merged;
+    merged.reserve(m_viewed_ranges.size());
+    for (const auto& iv : m_viewed_ranges) {
+        if (!merged.empty() && iv.first <= merged.back().second)
+            merged.back().second = std::max(merged.back().second, iv.second);
+        else
+            merged.push_back(iv);
+    }
+    m_viewed_ranges = std::move(merged);
+
+    // Recompute fraction.
+    const int total = estimatedTotalRows();
+    if (total <= 0) return;
+
+    int64_t viewed = 0;
+    for (const auto& [a, b] : m_viewed_ranges)
+        viewed += static_cast<int64_t>(b) - a;
+    const float new_frac = std::clamp(
+        static_cast<float>(viewed) / static_cast<float>(total), 0.f, 1.f);
+
+    if (new_frac - m_qc_fraction >= 0.005f || m_qc_fraction - new_frac >= 0.005f) {
+        m_qc_fraction = new_frac;
+        if (m_layer) {
+            m_layer->qc_viewed_fraction = m_qc_fraction;   // keep DataLayer in sync live
+            emit qcViewedFractionChanged(m_layer->id, m_qc_fraction);
+        }
+    }
+}
+
+// -----------------------------------------------------------------------------
 //  Scroll helpers
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 int WaterfallWindow::estimatedTotalRows() const
 {
@@ -32,20 +86,28 @@ void WaterfallWindow::onViewScrollChanged(int scroll_row, int total_rows, int vi
     // The external scrollbar covers the full estimated survey extent, not just
     // the currently-loaded window.
     const int estimated_total = estimatedTotalRows();
-    const int abs_row         = m_window_first_row + scroll_row;
+    const int abs_first       = m_window_first_row + scroll_row;
 
     m_vscroll->blockSignals(true);
     m_vscroll->setRange(0, std::max(0, estimated_total - visible_rows));
     m_vscroll->setPageStep(visible_rows);
-    m_vscroll->setValue(abs_row);
+    m_vscroll->setValue(abs_first);
     m_vscroll->blockSignals(false);
+
+    // Mark the rows currently on screen as viewed and update the QC strip.
+    const int abs_last = std::min(abs_first + visible_rows, estimated_total);
+    markRowsAsViewed(abs_first, abs_last);
+
+    if (m_qc_strip)
+        m_qc_strip->setData(estimated_total, m_viewed_ranges,
+                            abs_first, visible_rows, m_qc_fraction);
 
     Q_UNUSED(total_rows)
 }
 
 void WaterfallWindow::onScrollBeyondBounds(int direction)
 {
-    if (!m_layer) return;
+    if (!m_layer || !m_view) return;
 
     const int step            = m_window_size / 4;
     const int cur_abs         = m_window_first_row;
@@ -74,6 +136,7 @@ void WaterfallWindow::onScrollbarMoved(int abs_row)
         m_pending_abs_row = abs_row;
         return;
     }
+    if (!m_view) return;
 
     const int local_row = abs_row - m_window_first_row;
     if (local_row >= 0 && local_row < m_view->rowCount()) {
@@ -95,9 +158,9 @@ void WaterfallWindow::onScrollDebounce()
     m_pending_abs_row = -1;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Status and command slots
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void WaterfallWindow::onModeChanged(int mode)
 {

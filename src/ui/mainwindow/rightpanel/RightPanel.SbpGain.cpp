@@ -1,4 +1,4 @@
-﻿#include "ui/mainwindow/rightpanel/RightPanel.SbpGain.h"
+#include "ui/mainwindow/rightpanel/RightPanel.SbpGain.h"
 #include "ui/shell/Theme.h"
 
 #include <QCheckBox>
@@ -37,7 +37,7 @@ SbpGainModule::SbpGainModule(QWidget* parent) : QWidget(parent)
     vl->setSpacing(Theme::kSpacing1);
     scroll->setWidget(container);
 
-    // ── Static Gain ────────────────────────────────────────────────────────────
+    // -- Static Gain ------------------------------------------------------------
     m_static_en = new QCheckBox(tr("Static Gain"), container);
     m_static_en->setObjectName("ctrlToggle");
     m_static_en->setToolTip(
@@ -69,7 +69,7 @@ SbpGainModule::SbpGainModule(QWidget* parent) : QWidget(parent)
     sg->addWidget(m_static_db, 0, 1);
     vl->addWidget(sg_grid);
 
-    // ── AGC ────────────────────────────────────────────────────────────────────
+    // -- AGC --------------------------------------------------------------------
     auto* div1 = new QFrame(container); div1->setObjectName("ctrlDivider");
     div1->setFixedHeight(Theme::kSepSz); vl->addWidget(div1);
 
@@ -105,7 +105,7 @@ SbpGainModule::SbpGainModule(QWidget* parent) : QWidget(parent)
     ag->addWidget(m_agc_window, 0, 1);
     vl->addWidget(agc_grid);
 
-    // ── Normalize ──────────────────────────────────────────────────────────────
+    // -- Normalize --------------------------------------------------------------
     auto* div2 = new QFrame(container); div2->setObjectName("ctrlDivider");
     div2->setFixedHeight(Theme::kSepSz); vl->addWidget(div2);
 
@@ -121,7 +121,7 @@ SbpGainModule::SbpGainModule(QWidget* parent) : QWidget(parent)
 
     vl->addStretch(1);
 
-    // ── Apply buttons (pinned below scroll) ───────────────────────────────────
+    // -- Apply buttons (pinned below scroll) -----------------------------------
     auto* sep = new QFrame(this);
     sep->setFrameShape(QFrame::HLine);
     sep->setObjectName("ctrlDivider");

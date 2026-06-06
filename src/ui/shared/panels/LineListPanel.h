@@ -11,7 +11,7 @@ class QTreeWidgetItem;
 
 namespace dolphin::ui {
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  LineListPanel — project tree panel used in two modes:
 //
 //    Explorer mode:
@@ -30,7 +30,7 @@ namespace dolphin::ui {
 //    layerSelected(layer_id)      — user clicked a layer row
 //    sourceSelected(source_id)    — user clicked a source file row
 //    contactSelected(contact_id)  — user clicked a contact row
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 class LineListPanel : public QWidget {
     Q_OBJECT

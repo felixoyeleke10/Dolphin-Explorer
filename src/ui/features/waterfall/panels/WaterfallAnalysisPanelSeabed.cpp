@@ -1,4 +1,4 @@
-﻿// WaterfallAnalysisPanelSeabed.cpp — SEABED PICKING section
+// WaterfallAnalysisPanelSeabed.cpp — SEABED PICKING section
 
 #include "ui/features/waterfall/panels/WaterfallAnalysisPanel.h"
 #include "ui/features/waterfall/components/WfValueRow.h"
@@ -48,7 +48,7 @@ void WaterfallAnalysisPanel::buildSeabedSection(QVBoxLayout* vl, QWidget* contai
 {
     auto* bl = makeSection(tr("Seabed Picking"), false, container, vl, &m_seabed_hdr);
 
-    // ── AUTO sub-section ──────────────────────────────────────────────────
+    // -- AUTO sub-section --------------------------------------------------
     {
         auto* sub = new QLabel(tr("AUTO"), container);
         sub->setObjectName("wfSubSectionLabel");
@@ -59,18 +59,16 @@ void WaterfallAnalysisPanel::buildSeabedSection(QVBoxLayout* vl, QWidget* contai
     m_seabed_method_combo = addComboRow(bl, tr("Method"), container);
     m_seabed_method_combo->addItem(tr("Threshold"));
     m_seabed_method_combo->addItem(tr("First Return"));
-    m_seabed_method_combo->addItem(tr("Continuity Aware"));
-    m_seabed_method_combo->setCurrentIndex(2);
+    m_seabed_method_combo->setCurrentIndex(0);
     m_seabed_method_combo->setToolTip(
         tr("Choose the automatic seabed detection method.\n"
            "Threshold: first sustained return above a percentage of the ping peak; good general start.\n"
-           "First Return: first sample above the noise/SNR gate; useful for clean, sharp bottom returns.\n"
-           "Continuity Aware: combines threshold, first-return, gradient, and heuristic classifiers, then tracks continuity across pings; best for noisy or uneven data."));
+           "First Return: first sample above the noise/SNR gate; useful for clean, sharp bottom returns."));
 
-    addValueRow(bl, tr("Blanking"),       m_seabed_blank,    0,  30,  5, 1,   0, tr("%"));
+    addValueRow(bl, tr("Blanking"),       m_seabed_blank,    0,  30, 10, 1,   0, tr("%"));
     m_seabed_blank->setToolTip(
         tr("Ignore the near-nadir water-column area before searching for seabed.\n"
-           "Start at 5%. Increase if the detector grabs nadir/water-column noise.\n"
+           "Start at 10%. Increase if the detector grabs nadir/water-column noise.\n"
            "Use lower values only when the seabed begins very close to nadir."));
     addValueRow(bl, tr("Threshold"),      m_seabed_thresh,   1,  50, 17, 1,   0, tr("%"));
     m_seabed_thresh->setToolTip(
@@ -85,12 +83,16 @@ void WaterfallAnalysisPanel::buildSeabedSection(QVBoxLayout* vl, QWidget* contai
     m_seabed_outlier->setToolTip(
         tr("Maximum allowed seabed jump from neighboring pings before a pick is rejected.\n"
            "Start at 5 m. Use 0 to turn off. Increase for steep slopes; decrease for flat seabed."));
+    addValueRow(bl, tr("Ch. Agree"), m_seabed_ch_agree, 0.5, 20.0, 3.0, 0.5, 1, tr(" m"));
+    m_seabed_ch_agree->setToolTip(
+        tr("Maximum port/starboard range disagreement before falling back to the stronger channel.\n"
+           "Start at 3 m. Lower for shallow surveys; raise for deep water with steep slopes."));
     addValueRow(bl, tr("Smoothing"),      m_seabed_smooth,   0,  20,  0, 1,   0);
     m_seabed_smooth->setToolTip(
         tr("Moving-average smoothing radius for the automatic seabed line.\n"
            "Start at 0. Use 2-5 to reduce jitter. Avoid high values where the real seabed changes quickly."));
 
-    // ── MANUAL sub-section ────────────────────────────────────────────────
+    // -- MANUAL sub-section ------------------------------------------------
     {
         auto* sep = new QFrame(container);
         sep->setFrameShape(QFrame::HLine);
@@ -164,21 +166,22 @@ void WaterfallAnalysisPanel::buildSeabedSection(QVBoxLayout* vl, QWidget* contai
         bl->addWidget(row);
     }
 
-    // ── Dirty indicator connections ───────────────────────────────────────
+    // -- Dirty indicator connections ---------------------------------------
     {
         auto refresh = [this](auto) { refreshSeabedDirty(); };
-        connect(m_seabed_blank,   &WfValueRow::valueChanged, this, refresh);
-        connect(m_seabed_thresh,  &WfValueRow::valueChanged, this, refresh);
-        connect(m_seabed_snr,     &WfValueRow::valueChanged, this, refresh);
-        connect(m_seabed_outlier, &WfValueRow::valueChanged, this, refresh);
-        connect(m_seabed_smooth,  &WfValueRow::valueChanged, this, refresh);
+        connect(m_seabed_blank,    &WfValueRow::valueChanged, this, refresh);
+        connect(m_seabed_thresh,   &WfValueRow::valueChanged, this, refresh);
+        connect(m_seabed_snr,      &WfValueRow::valueChanged, this, refresh);
+        connect(m_seabed_outlier,  &WfValueRow::valueChanged, this, refresh);
+        connect(m_seabed_ch_agree, &WfValueRow::valueChanged, this, refresh);
+        connect(m_seabed_smooth,   &WfValueRow::valueChanged, this, refresh);
         connect(m_seabed_method_combo,  QOverload<int>::of(&QComboBox::currentIndexChanged),
                 this, [this](int) { refreshSeabedDirty(); });
         connect(m_seabed_channel_combo, QOverload<int>::of(&QComboBox::currentIndexChanged),
                 this, [this](int ch) { emit seabedChannelChanged(ch); });
     }
 
-    // ── Manual tool mutual exclusion ──────────────────────────────────────
+    // -- Manual tool mutual exclusion --------------------------------------
     auto onTool = [this](QToolButton* pressed, int tool) {
         for (auto* b : { m_tool_pen, m_tool_box, m_tool_erase })
             if (b != pressed) { QSignalBlocker sb(b); b->setChecked(false); }

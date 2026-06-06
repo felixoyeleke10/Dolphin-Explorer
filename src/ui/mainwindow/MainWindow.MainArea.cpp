@@ -1,4 +1,4 @@
-﻿// MainWindow.MainArea.cpp — buildMainArea and buildPropertiesPanel.
+// MainWindow.MainArea.cpp — buildMainArea and buildPropertiesPanel.
 //
 // buildPropertiesPanel builds the right-side panel as a scroll area hosting
 // InspectorPanel, which internally manages all right-panel modules via RightPanelHost.
@@ -78,7 +78,7 @@ public:
         p->setRenderHint(QPainter::Antialiasing);
 
         if (idx.data(kHRoleSect).toBool()) {
-            // ── Section header (Today / Yesterday / …) ───────────────────
+            // -- Section header (Today / Yesterday / …) -------------------
             QFont f = opt.font;
             f.setPixelSize(9);
             f.setWeight(QFont::DemiBold);
@@ -88,7 +88,7 @@ public:
                         Qt::AlignVCenter | Qt::AlignLeft,
                         idx.data(Qt::DisplayRole).toString().toUpper());
         } else {
-            // ── Activity row ──────────────────────────────────────────────
+            // -- Activity row ----------------------------------------------
             const bool sel  = opt.state & QStyle::State_Selected;
             const bool hov  = opt.state & QStyle::State_MouseOver;
 
@@ -181,7 +181,7 @@ void MainWindow::buildPropertiesPanel(QWidget* parent)
     content_l->setContentsMargins(0, 0, 0, 0);
     content_l->setSpacing(0);
 
-    // ── Tab bar — Tools | Chats | History ────────────────────────────────
+    // -- Tab bar — Tools | Chats | History --------------------------------
     auto* hdr = new QFrame(content);
     hdr->setObjectName("propsTabs");
     hdr->setFixedHeight(Theme::kPanelHdrH);
@@ -223,7 +223,7 @@ void MainWindow::buildPropertiesPanel(QWidget* parent)
     hdr_l->addWidget(m_props_tab_history);
     content_l->addWidget(hdr);
 
-    // ── Stacked body — one page per tab ──────────────────────────────────
+    // -- Stacked body — one page per tab ----------------------------------
     m_props_stack = new QStackedWidget(content);
     m_props_stack->setObjectName("propsStack");
 

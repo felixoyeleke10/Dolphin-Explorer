@@ -1,11 +1,13 @@
-﻿#pragma once
+#pragma once
 #include "ui/shell/ViewerWindow.h"
+#include "render/sonar/SonarDisplayParams.h"
 #include <QObject>
 #include <QImage>
 #include <QRgb>
 #include <array>
 #include <atomic>
 #include <memory>
+#include <optional>
 #include <set>
 #include <string>
 #include <unordered_map>
@@ -25,7 +27,7 @@ class Project;
 namespace dolphin::ui {
 class MapView;
 
-// ── Intensity cache ───────────────────────────────────────────────────────────
+// -- Intensity cache -----------------------------------------------------------
 // Stores the raw per-pixel amplitude from the last successful rasterization so
 // the preview image can be rebuilt with a new palette without any disk I/O or
 // geometry work.  Sentinel: 0 = transparent (no sonar return).
@@ -37,7 +39,7 @@ struct IntensityCache {
     bool valid() const { return !pixels.empty() && w > 0 && h > 0; }
 };
 
-// ── Per-quality-tier pre-built result ─────────────────────────────────────────
+// -- Per-quality-tier pre-built result -----------------------------------------
 // Populated by prebuildTier() (called from ProcessingWindow).
 // Holds everything needed to display a layer at a given quality level without
 // any background task — quality changes become an O(pixels) palette lookup.
@@ -93,11 +95,18 @@ public:
     // map immediately reflects the new colour scheme.
     void setPaletteIndex(int idx);
 
+    // Apply display parameters (stretch, gain, contrast) globally to all loaded
+    // layers.  Triggers an O(pixels) LUT recolor — no disk I/O.
+    // display_low/high from dp override the per-layer auto-stretch unless they
+    // are at the identity defaults (0.0 / 1.0), in which case the cache values
+    // computed at rasterization time are used instead.
+    void setDisplayParams(const SonarDisplayParams& dp);
+
     // IViewerWindow
     void onViewerRefresh(ViewerRefreshReason reason,
                          const std::string& layer_id = {}) override;
 
-    // ── ProcessingWindow API ──────────────────────────────────────────────────
+    // -- ProcessingWindow API --------------------------------------------------
     // Build and cache a single quality tier for a layer without displaying it.
     // Safe to call for any quality, including the currently active one.
     // Emits prebuildTierComplete when the background task finishes.
@@ -108,8 +117,12 @@ public:
     bool hasCachedTier(const std::string& layer_id, MapSonarQuality quality) const;
 
     // Build a colored QImage from an IntensityCache without any disk I/O.
+    // dp supplies stretch/gain overrides; if dp.display_low == 0 && dp.display_high == 1
+    // (identity / not set) the cache's own percentile stretch is used instead.
     // Returns a null QImage when the cache is empty.
-    static QImage colorizeIntensityCache(const IntensityCache& cache, int palette_idx);
+    static QImage colorizeIntensityCache(const IntensityCache& cache,
+                                         const std::optional<SonarDisplayParams>& dp,
+                                         int palette_idx);
 
 signals:
     void contactPicked(double lat, double lon, uint64_t artifact_id, uint32_t sample_idx);
@@ -134,6 +147,7 @@ private:
     MapSonarQuality  m_quality        = MapSonarQuality::CoverageOnly;
     SssGeorefParams  m_georef_params;
     int              m_palette_idx   = 1;   // PaletteIndex::Greyscale
+    std::optional<SonarDisplayParams> m_display_params;  // nullopt = use per-layer auto-stretch
 
     // Per-layer generation counters and cancel flags.
     std::unordered_map<std::string, uint64_t>                          m_layer_generations;

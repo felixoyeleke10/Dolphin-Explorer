@@ -1,4 +1,4 @@
-﻿// ImportReviewWizard.Tabs.cpp — Summary, Nav, CRS tab rebuilds + tab visibility + import button state.
+// ImportReviewWizard.Tabs.cpp — Summary, Nav, CRS tab rebuilds + tab visibility + import button state.
 #include "ui/features/import/ImportReviewWizard.h"
 #include "ui/shared/dialogs/CrsPickerDialog.h"
 #include "ui/shared/UiUtils.h"
@@ -26,9 +26,9 @@ QString ImportReviewWizard::modalityString(const io::ProbeResult& r) const
     return parts.isEmpty() ? tr("Unknown") : parts.join(" / ");
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Summary tab
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void ImportReviewWizard::rebuildSummaryTab()
 {
@@ -106,9 +106,9 @@ void ImportReviewWizard::rebuildSummaryTab()
     m_summary_layout->addStretch();
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Nav tab
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void ImportReviewWizard::rebuildNavTab()
 {
@@ -208,9 +208,9 @@ void ImportReviewWizard::rebuildNavTab()
     m_nav_layout->addStretch();
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  CRS tab
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void ImportReviewWizard::rebuildCrsTab()
 {
@@ -250,7 +250,7 @@ void ImportReviewWizard::rebuildCrsTab()
         return;
     }
 
-    // ── Single project-level CRS picker ──────────────────────────────────────
+    // -- Single project-level CRS picker --------------------------------------
     auto* sect = new QFrame(m_crs_content);
     sect->setObjectName("dlgSection");
     auto* vl = new QVBoxLayout(sect);
@@ -314,7 +314,7 @@ void ImportReviewWizard::rebuildCrsTab()
     vl->addWidget(crs_row);
     m_crs_layout->addWidget(sect);
 
-    // ── Per-file diagnostic rows (info only) ─────────────────────────────────
+    // -- Per-file diagnostic rows (info only) ---------------------------------
     for (const auto& e : m_entries) {
         if (!e.done || !e.result.success || !e.result.needs_crs_review) continue;
         const io::ProbeResult& r = e.result;
@@ -358,9 +358,9 @@ void ImportReviewWizard::rebuildCrsTab()
     m_crs_layout->addStretch();
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Tab visibility + import button state
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void ImportReviewWizard::updateTabVisibility()
 {
@@ -380,7 +380,7 @@ void ImportReviewWizard::updateTabVisibility()
         if (!e.result.text_header_excerpt.empty()) has_header   = true;
     }
 
-    // ── Per-kind visibility rules ─────────────────────────────────────────
+    // -- Per-kind visibility rules -----------------------------------------
     // Summary  — always: every import needs an overview.
     // Nav      — while probing (show "Scanning...") or when any file has coords.
     //            Hidden after all probes finish with no positional data at all.

@@ -1,4 +1,4 @@
-﻿// MapView.cpp — data API, coordinate helpers, nav-track assembly.
+// MapView.cpp — data API, coordinate helpers, nav-track assembly.
 //
 // Painting:    MapViewPaint.cpp           (paintEvent)
 // Input:       MapViewInput.cpp           (resizeEvent, mouse/wheel/leave events)
@@ -21,13 +21,13 @@
 
 namespace dolphin::ui {
 
-// ── Constants ─────────────────────────────────────────────────────────────────
+// -- Constants -----------------------------------------------------------------
 
 static constexpr double kDegToRad  = M_PI / 180.0;
 static constexpr double kPixPerDeg = 6.0;
 static constexpr double kPixPerM   = 0.5;
 
-// ── Constructor ───────────────────────────────────────────────────────────────
+// -- Constructor ---------------------------------------------------------------
 
 MapView::MapView(QWidget* parent)
     : QWidget(parent)
@@ -82,7 +82,7 @@ void MapView::setGratCoordFormat(int fmt)
     update();
 }
 
-// ── Data API ──────────────────────────────────────────────────────────────────
+// -- Data API ------------------------------------------------------------------
 
 void MapView::setProject(app::Project* project)
 {
@@ -105,7 +105,7 @@ void MapView::setActiveLayer(const std::string& layer_id)
 
 void MapView::refreshLayerOrder()
 {
-    rebuildCombined();
+    m_combined_dirty = true;
     update();
 }
 
@@ -121,12 +121,12 @@ void MapView::setSelectedContact(uint64_t id)
     update();
 }
 
-// ── rebuildNavTrack ───────────────────────────────────────────────────────────
+// -- rebuildNavTrack -----------------------------------------------------------
 
 void MapView::rebuildNavTrack()
 {
     if (m_active_layer_id.empty() || !m_project) {
-        rebuildCombined();
+        m_combined_dirty = true;
         update();
         return;
     }
@@ -141,7 +141,7 @@ void MapView::rebuildNavTrack()
         if (!it->second.coverage.empty()
                 || k == LayerMapKind::Track
                 || k == LayerMapKind::Profile) {
-            rebuildCombined();
+            m_combined_dirty = true;
             update();
             return;
         }
@@ -149,7 +149,7 @@ void MapView::rebuildNavTrack()
 
     const app::DataLayer* layer = m_project->findLayer(m_active_layer_id);
     if (!layer || !layer->index_built || layer->artifact_index.empty()) {
-        rebuildCombined();
+        m_combined_dirty = true;
         update();
         return;
     }
@@ -175,13 +175,21 @@ void MapView::rebuildNavTrack()
     ld.visible              = visible;
     ld.show_nav_track       = show_nav;
 
-    rebuildCombined();
+    m_combined_dirty = true;
     if (ld.track_stats.track_points > 0)
-        fitToData();
+        fitToData();  // ensureCombined() called inside fitToData()
     update();
+    emit layerDataUpdated(m_active_layer_id);
 }
 
-// ── rebuildCombined ───────────────────────────────────────────────────────────
+// -- ensureCombined / rebuildCombined -----------------------------------------
+
+void MapView::ensureCombined()
+{
+    if (!m_combined_dirty) return;
+    rebuildCombined();
+    m_combined_dirty = false;
+}
 
 void MapView::rebuildCombined()
 {
@@ -225,7 +233,7 @@ void MapView::rebuildCombined()
     }
 }
 
-// ── fitToData / fitToDataAndReset ─────────────────────────────────────────────
+// -- fitToData / fitToDataAndReset ---------------------------------------------
 
 void MapView::fitToDataAndReset()
 {
@@ -235,6 +243,7 @@ void MapView::fitToDataAndReset()
 
 void MapView::fitToData()
 {
+    ensureCombined();
     if (m_bbox_lon_min > m_bbox_lon_max || m_bbox_lat_min > m_bbox_lat_max) return;
 
     if (width() <= 0 || height() <= 0) { m_needs_fit = true; return; }
@@ -299,7 +308,7 @@ void MapView::fitToLayer(const std::string& layer_id)
     update();
 }
 
-// ── Coordinate helpers ────────────────────────────────────────────────────────
+// -- Coordinate helpers --------------------------------------------------------
 
 QPointF MapView::geoToPixel(double lon, double lat) const
 {
@@ -324,7 +333,7 @@ QPointF MapView::pixelToGeo(QPointF px) const
     return {lon, lat};
 }
 
-// ── setLayerMapData ───────────────────────────────────────────────────────────
+// -- setLayerMapData -----------------------------------------------------------
 //
 // Store a LayerMapData that was fully built on a background thread.
 // Cheap: just stores the data and triggers a repaint.
@@ -343,12 +352,12 @@ void MapView::setLayerMapData(const std::string& layer_id, LayerMapData data)
     }
     LayerMapData& ld = it->second;
 
-    rebuildCombined();
+    m_combined_dirty = true;
     // Only auto-fit for the first data arrival; once the user has panned or
     // zoomed m_user_interacted is true and background layer arrivals do not
     // yank the view.
     if (!m_user_interacted && !ld.nav_track.empty())
-        fitToData();
+        fitToData();  // ensureCombined() called inside fitToData()
     update();
     emit layerDataUpdated(layer_id);
 }
@@ -368,7 +377,7 @@ std::vector<std::string> MapView::layerDataIds() const
     return ids;
 }
 
-// ── updatePreviewImage ────────────────────────────────────────────────────────
+// -- updatePreviewImage --------------------------------------------------------
 //
 // Replace only the preview image for an already-loaded layer.
 // All other LayerMapData fields (coverage, nav track, bbox) are unchanged.
@@ -383,12 +392,12 @@ void MapView::updatePreviewImage(const std::string& layer_id, QImage img)
     emit layerDataUpdated(layer_id);
 }
 
-// ── removeLayerData / setLayerVisible / clearAllLayerData ────────────────────
+// -- removeLayerData / setLayerVisible / clearAllLayerData --------------------
 
 void MapView::removeLayerData(const std::string& layer_id)
 {
     m_layer_data.erase(layer_id);
-    rebuildCombined();
+    m_combined_dirty = true;
     update();
 }
 
@@ -398,7 +407,7 @@ void MapView::setLayerVisible(const std::string& layer_id, bool visible)
     if (it == m_layer_data.end()) return;
     if (it->second.visible == visible) return;
     it->second.visible = visible;
-    rebuildCombined();
+    m_combined_dirty = true;
     update();
 }
 
@@ -414,7 +423,7 @@ void MapView::setNavTrackVisible(const std::string& layer_id, bool visible)
     if (it == m_layer_data.end()) return;
     if (it->second.show_nav_track == visible) return;
     it->second.show_nav_track = visible;
-    rebuildCombined();
+    m_combined_dirty = true;
     update();
 }
 
@@ -431,6 +440,7 @@ void MapView::clearAllLayerData()
     m_bbox_lon_min =  1e18; m_bbox_lon_max = -1e18;
     m_bbox_lat_min =  1e18; m_bbox_lat_max = -1e18;
     m_is_projected = false;
+    m_combined_dirty = false;  // already reset above; no rebuild needed
     update();
 }
 

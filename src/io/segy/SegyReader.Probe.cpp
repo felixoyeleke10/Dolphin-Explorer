@@ -38,7 +38,7 @@ ProbeResult SegyReader::probe(const std::string& path)
             0, std::min(m_textHeaderDecoded.size(), size_t{320}));
     }
 
-    // ── Scan up to 50 trace headers ──────────────────────────────────────────
+    // -- Scan up to 50 trace headers ------------------------------------------
     const uint32_t bps    = bytesPerSample();
     uint64_t       offset = m_dataOffset;
 
@@ -82,7 +82,7 @@ ProbeResult SegyReader::probe(const std::string& path)
         offset += kTraceHdrBytes + static_cast<uint64_t>(eff_ns) * bps;
     }
 
-    // ── Summarise ────────────────────────────────────────────────────────────
+    // -- Summarise ------------------------------------------------------------
     if (r.coord_valid) {
         r.coord_min_x        = min_x;
         r.coord_max_x        = max_x;

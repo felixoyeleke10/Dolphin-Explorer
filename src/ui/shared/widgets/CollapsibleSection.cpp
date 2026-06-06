@@ -57,7 +57,7 @@ CollapsibleSection::CollapsibleSection(const QString& title, QWidget* parent)
     m_layout->setContentsMargins(0, 0, 0, 0);
     m_layout->setSpacing(0);
 
-    // ── Clickable header bar ──────────────────────────────────────────────────
+    // -- Clickable header bar --------------------------------------------------
     m_header = new QWidget(this);
     m_header->setObjectName("sectionHdr");
     m_header->setFixedHeight(Theme::kFormBtnH);
@@ -82,7 +82,7 @@ CollapsibleSection::CollapsibleSection(const QString& title, QWidget* parent)
 
     m_layout->addWidget(m_header);
 
-    // ── Smooth expand/collapse animation on this widget's maximumHeight ───────
+    // -- Smooth expand/collapse animation on this widget's maximumHeight -------
     m_anim = new QPropertyAnimation(this, "maximumHeight", this);
     m_anim->setEasingCurve(QEasingCurve::InOutCubic);
     m_anim->setDuration(kAnimMs);

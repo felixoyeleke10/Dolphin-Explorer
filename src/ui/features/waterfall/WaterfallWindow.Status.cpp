@@ -84,6 +84,10 @@ void WaterfallWindow::finishProgress()
 void WaterfallWindow::flashProgress()
 {
     if (!m_progress_bar) return;
+    // Cancel any pending startProgress delay so the bar doesn't reappear as
+    // indeterminate after the 100% flash — the two can be armed in the same
+    // call path when applyExternalParams triggers invalidateProcessedCache().
+    if (m_progress_delay) m_progress_delay->stop();
     m_progress_bar->setRange(0, 100);
     m_progress_bar->setValue(100);
     m_progress_bar->setVisible(true);

@@ -3,14 +3,14 @@
 
 namespace dolphin::io::detail_segy {
 
-// ── File layout ────────────────────────────────────────────────────────────────
+// -- File layout ----------------------------------------------------------------
 static constexpr uint64_t kTextHeaderBytes  = 3200;
 static constexpr uint64_t kBinHeaderBytes   = 400;
 static constexpr uint32_t kTraceHdrBytes    = 240;
 static constexpr uint64_t kMinFileBytes     = kTextHeaderBytes + kBinHeaderBytes;
 static constexpr uint32_t kMaxExtendedHdrs  = 1000;
 
-// ── Sample format validation ───────────────────────────────────────────────────
+// -- Sample format validation ---------------------------------------------------
 // Format 4 (fixed-point with gain) is excluded — it requires per-sample gain
 // words that alter the record geometry and cannot be decoded without them.
 inline bool isKnownSampleFormat(int fmt)

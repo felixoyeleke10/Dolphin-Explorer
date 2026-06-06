@@ -21,7 +21,7 @@ ProbeResult XtfReader::probe(const std::string& path)
     }
     r.file_size_bytes = static_cast<int64_t>(m_fileSize);
 
-    // ── Modalities + channel table from file header ──────────────────────────
+    // -- Modalities + channel table from file header --------------------------
     for (const auto& ch : m_chan_info) {
         if (ch.type == CHAN_PORT_SSS || ch.type == CHAN_STBD_SSS) r.has_sidescan  = true;
         if (ch.type == CHAN_SUBBOT)                                r.has_subbottom = true;
@@ -42,11 +42,11 @@ ProbeResult XtfReader::probe(const std::string& path)
     if (!r.has_sidescan && !r.has_subbottom)
         r.has_sidescan = true;  // default: XTF is predominantly SSS
 
-    // ── CRS from file header ─────────────────────────────────────────────────
+    // -- CRS from file header -------------------------------------------------
     r.is_projected = m_coords_projected;
     r.declared_crs = m_meta.coordinate_ref;
 
-    // ── Scan up to 50 PING packets for nav coordinates ───────────────────────
+    // -- Scan up to 50 PING packets for nav coordinates -----------------------
     if (!detail::seekAbs(m_file, m_dataStartOffset)) {
         close();
         r.success = true;

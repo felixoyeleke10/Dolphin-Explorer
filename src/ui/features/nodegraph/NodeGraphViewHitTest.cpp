@@ -1,4 +1,4 @@
-﻿// NodeGraphViewHitTest.cpp — hit testing, type colours, group bounds.
+// NodeGraphViewHitTest.cpp — hit testing, type colours, group bounds.
 #include "ui/features/nodegraph/NodeGraphView.h"
 #include "pipeline/NodeGraph.h"
 #include "pipeline/NodeRegistry.h"
@@ -9,9 +9,9 @@
 
 namespace dolphin::ui {
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Hit testing
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 std::string NodeGraphView::hitNode(QPointF wp) const
 {
@@ -78,9 +78,9 @@ bool NodeGraphView::hitEdge(QPointF wp, int& edge_idx) const
     return false;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Helpers
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 QColor NodeGraphView::typeColor(const std::string& type_id) const
 {

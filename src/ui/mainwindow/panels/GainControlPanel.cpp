@@ -21,7 +21,7 @@ GainControlPanel::GainControlPanel(QWidget* parent) : QWidget(parent)
     fl->setContentsMargins(0, 0, 0, 0);
     fl->setSpacing(0);
 
-    // ── Scrollable content ────────────────────────────────────────────────────
+    // -- Scrollable content ----------------------------------------------------
     auto* scroll = new QScrollArea(this);
     scroll->setWidgetResizable(true);
     scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
@@ -35,7 +35,7 @@ GainControlPanel::GainControlPanel(QWidget* parent) : QWidget(parent)
     vl->setSpacing(Theme::kSpacing1);
     scroll->setWidget(container);
 
-    // ── TVG ───────────────────────────────────────────────────────────────────
+    // -- TVG -------------------------------------------------------------------
     m_tvg_en = new QCheckBox(tr("TVG"), container);
     m_tvg_en->setObjectName("ctrlToggle");
     m_tvg_en->setToolTip(
@@ -64,7 +64,7 @@ GainControlPanel::GainControlPanel(QWidget* parent) : QWidget(parent)
     tvg_l->addWidget(m_tvg_absorb);
     vl->addWidget(tvg_rows);
 
-    // ── AGC ───────────────────────────────────────────────────────────────────
+    // -- AGC -------------------------------------------------------------------
     auto* div1 = new QFrame(container); div1->setObjectName("ctrlDivider");
     div1->setFixedHeight(Theme::kSepSz); vl->addWidget(div1);
 
@@ -89,7 +89,7 @@ GainControlPanel::GainControlPanel(QWidget* parent) : QWidget(parent)
     agc_l->addWidget(m_agc_strength);
     vl->addWidget(agc_rows);
 
-    // ── ARC ───────────────────────────────────────────────────────────────────
+    // -- ARC -------------------------------------------------------------------
     auto* div2 = new QFrame(container); div2->setObjectName("ctrlDivider");
     div2->setFixedHeight(Theme::kSepSz); vl->addWidget(div2);
 
@@ -120,7 +120,7 @@ GainControlPanel::GainControlPanel(QWidget* parent) : QWidget(parent)
 
     vl->addStretch(1);
 
-    // ── Apply buttons (pinned below scroll) ───────────────────────────────────
+    // -- Apply buttons (pinned below scroll) -----------------------------------
     auto* sep = new QFrame(this);
     sep->setFrameShape(QFrame::HLine);
     sep->setObjectName("ctrlDivider");

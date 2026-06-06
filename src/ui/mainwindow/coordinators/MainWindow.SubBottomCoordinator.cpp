@@ -1,6 +1,7 @@
 // MainWindow.SubBottomCoordinator.cpp — SubBottomWindow lifecycle and state reflection.
 
 #include "ui/mainwindow/MainWindow.h"
+#include "app/corrections/SubBottomCorrectionService.h"
 #include "ui/mainwindow/AppState.h"
 #include "ui/shell/ViewerWindow.h"
 #include "ui/mainwindow/MainStatusBar.h"
@@ -16,10 +17,31 @@
 #include "app/project/Project.h"
 #include "app/layers/DataLayer.h"
 
+#include <algorithm>
+
 namespace dolphin::ui {
 
 void MainWindow::onSubBottomOpen()
 {
+    // Guard: require at least one sub-bottom layer in the project so the
+    // viewer never opens into a permanently-empty/invalid state.
+    if (!m_project) {
+        appendJobMessage(tr("Open a project first."));
+        return;
+    }
+    const bool has_sbp = std::any_of(m_project->layers().begin(),
+                                     m_project->layers().end(),
+                                     [](const auto& l) {
+                                         return l
+                                             && l->modality == app::Modality::SubBottom
+                                             && l->index_built
+                                             && l->subBottomCount() > 0;
+                                     });
+    if (!has_sbp) {
+        appendJobMessage(tr("No indexed sub-bottom data in the current project."));
+        return;
+    }
+
     if (!m_sbp_win) {
         m_sbp_win = new SubBottomWindow(m_app_state, nullptr);
         m_window_registry->registerViewer(m_sbp_win, m_sbp_win);
@@ -65,6 +87,14 @@ void MainWindow::onSubBottomOpen()
                                 // Keep right panel in sync — it only syncs on window open otherwise.
                                 if (m_inspector)
                                     m_inspector->rightPanelHost()->setSbpParams(m_sbp_win->displayParams());
+                                // Persist per-layer SBP palette from settings dialog.
+                                if (!m_project || m_active_layer_id.empty()) return;
+                                auto* layer = m_project->findLayer(m_active_layer_id);
+                                if (layer && layer->sbp_palette != p.palette_index) {
+                                    layer->sbp_palette = p.palette_index;
+                                    m_project_dirty = true;
+                                    setWindowTitleFromProject();
+                                }
                             });
                     dlg->show();
                 });
@@ -121,12 +151,13 @@ void MainWindow::onSubBottomOpen()
         connect(m_sbp_win, &SubBottomWindow::dataStateChanged,
                 this, [this](ViewerDataState s) {
                     refreshLoadingIndicator();
-                    if (s == ViewerDataState::Loading)
+                    if (s == ViewerDataState::Loading) {
                         m_op_mgr->registerExternal("sbp", m_sbp_win->loadToken());
-                    else if (s == ViewerDataState::Processing)
+                    } else if (s == ViewerDataState::Processing) {
                         m_op_mgr->registerExternal("sbp", m_sbp_win->procToken());
-                    else
+                    } else {
                         m_op_mgr->unregisterExternal("sbp");
+                    }
                 });
 
         // Propagate global sound velocity so the depth axis stays correct
@@ -144,26 +175,68 @@ void MainWindow::onSubBottomOpen()
             connect(host, &RightPanelHost::sbpParamsChanged,
                     this, [this](SubBottomDisplayParams p) {
                         if (m_sbp_win) m_sbp_win->applyDisplayParams(p);
+                        // Persist per-layer SBP palette so it survives project close/reopen.
+                        if (!m_project || m_active_layer_id.empty()) return;
+                        auto* layer = m_project->findLayer(m_active_layer_id);
+                        if (layer && layer->sbp_palette != p.palette_index) {
+                            layer->sbp_palette = p.palette_index;
+                            m_project_dirty = true;
+                            setWindowTitleFromProject();
+                        }
                     });
 
             if (auto* gain_mod = host->sbpGainModule()) {
                 connect(gain_mod, &SbpGainModule::applyToLineRequested,
                         this, [this](SbpGainParams p) {
-                            if (m_sbp_win) m_sbp_win->applyGainParams(p);
+                            const std::string lid = m_sbp_win ? m_sbp_win->currentLayerId() : std::string{};
+                            if (lid.empty() || !m_project || !m_sbp_correction_svc) return;
+                            m_layer_sbp_params[lid].gain = p;
+                            auto* layer = m_project->findLayer(lid);
+                            if (!layer) return;
+                            const auto* src = m_project->findSource(layer->source_id);
+                            m_sbp_correction_svc->applyToLine(
+                                lid, layer->artifact_store_path,
+                                layer->artifact_store_format, layer->artifact_index,
+                                src ? src->path : std::string{},
+                                p, m_layer_sbp_params[lid].signal);
                         });
                 connect(gain_mod, &SbpGainModule::applyToAllRequested,
                         this, [this](SbpGainParams p) {
-                            if (m_sbp_win) m_sbp_win->applyGainParams(p);
+                            if (!m_project || !m_sbp_correction_svc) return;
+                            const SbpSignalParams sig = m_sbp_win
+                                ? m_layer_sbp_params[m_sbp_win->currentLayerId()].signal
+                                : SbpSignalParams{};
+                            for (const auto& l : m_project->layers())
+                                if (l && l->modality == app::Modality::SubBottom)
+                                    m_layer_sbp_params[l->id].gain = p;
+                            m_sbp_correction_svc->applyToAll(*m_project, p, sig);
                         });
             }
             if (auto* sig_mod = host->sbpSignalModule()) {
                 connect(sig_mod, &SbpSignalModule::applyToLineRequested,
                         this, [this](SbpSignalParams p) {
-                            if (m_sbp_win) m_sbp_win->applySignalParams(p);
+                            const std::string lid = m_sbp_win ? m_sbp_win->currentLayerId() : std::string{};
+                            if (lid.empty() || !m_project || !m_sbp_correction_svc) return;
+                            m_layer_sbp_params[lid].signal = p;
+                            auto* layer = m_project->findLayer(lid);
+                            if (!layer) return;
+                            const auto* src = m_project->findSource(layer->source_id);
+                            m_sbp_correction_svc->applyToLine(
+                                lid, layer->artifact_store_path,
+                                layer->artifact_store_format, layer->artifact_index,
+                                src ? src->path : std::string{},
+                                m_layer_sbp_params[lid].gain, p);
                         });
                 connect(sig_mod, &SbpSignalModule::applyToAllRequested,
                         this, [this](SbpSignalParams p) {
-                            if (m_sbp_win) m_sbp_win->applySignalParams(p);
+                            if (!m_project || !m_sbp_correction_svc) return;
+                            const SbpGainParams gain = m_sbp_win
+                                ? m_layer_sbp_params[m_sbp_win->currentLayerId()].gain
+                                : SbpGainParams{};
+                            for (const auto& l : m_project->layers())
+                                if (l && l->modality == app::Modality::SubBottom)
+                                    m_layer_sbp_params[l->id].signal = p;
+                            m_sbp_correction_svc->applyToAll(*m_project, gain, p);
                         });
             }
         }
@@ -185,6 +258,22 @@ void MainWindow::onSubBottomOpen()
             m_sbp_win->setLayer(layer, m_import_service,
                                 src ? src->path : std::string{},
                                 src ? src->size_bytes : 0);
+            // Restore per-layer SBP palette; leave at window default if not yet overridden.
+            if (layer->sbp_palette >= 0)
+                m_sbp_win->setPalette(layer->sbp_palette);
+            // Restore per-layer processing params; sync right-panel modules.
+            const auto sbp_it = m_layer_sbp_params.find(layer->id);
+            if (sbp_it != m_layer_sbp_params.end()) {
+                m_sbp_win->applyGainParams(sbp_it->second.gain);
+                m_sbp_win->applySignalParams(sbp_it->second.signal);
+                if (m_inspector) {
+                    auto* host = m_inspector->rightPanelHost();
+                    if (auto* gm = host->sbpGainModule())
+                        gm->setParams(sbp_it->second.gain);
+                    if (auto* sm = host->sbpSignalModule())
+                        sm->setParams(sbp_it->second.signal);
+                }
+            }
             // Sync right panel to reflect SBP window's current display settings.
             if (m_inspector)
                 m_inspector->rightPanelHost()->setSbpParams(m_sbp_win->displayParams());

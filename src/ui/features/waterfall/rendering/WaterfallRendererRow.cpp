@@ -13,9 +13,9 @@
 
 namespace dolphin::ui {
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Per-row image building
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void WaterfallRenderer::rebuildRow(const PingRow& pr, QRgb* line0,
                                    int port_w, int stbd_w,
@@ -99,9 +99,9 @@ void WaterfallRenderer::rebuildRow(const PingRow& pr, QRgb* line0,
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Horizontal smoothing (box filter, port and starboard halves separate)
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void WaterfallRenderer::applyRowSmoothing(QRgb* line, int nadir, int canvas_w) const
 {
@@ -131,13 +131,13 @@ void WaterfallRenderer::applyRowSmoothing(QRgb* line, int nadir, int canvas_w) c
     blurSegment(nadir + 1, canvas_w);     // starboard half (nadir pixel excluded)
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Amplitude processing — delegates to SSSAmplitudeProcessor
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Coordinate mapping: widget pixel → (channel, slant range)
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 bool WaterfallRenderer::xToRange(int x, int row_idx,
                                  const std::vector<PingRow>& rows,
@@ -151,13 +151,14 @@ bool WaterfallRenderer::xToRange(int x, int row_idx,
     const int stbd_w = m_layout.widget_w - nx;
     const int total  = static_cast<int>(rows.size());
 
-    // Resolve max slant range for this row (fallback: first non-zero row)
+    // Resolve max slant range for this row (fallback: first finite non-zero row)
     float max_r = 0.f;
-    if (row_idx >= 0 && row_idx < total)
+    if (row_idx >= 0 && row_idx < total && std::isfinite(rows[row_idx].slant_range_m))
         max_r = rows[row_idx].slant_range_m;
     if (max_r == 0.f)
         for (const auto& r : rows)
-            if (r.slant_range_m > 0.f) { max_r = r.slant_range_m; break; }
+            if (r.slant_range_m > 0.f && std::isfinite(r.slant_range_m))
+                { max_r = r.slant_range_m; break; }
     if (max_r == 0.f) return false;
 
     // Resolve sample counts (fallback: first non-empty row)
@@ -173,7 +174,8 @@ bool WaterfallRenderer::xToRange(int x, int row_idx,
     }
 
     // SRC geometry — mirrors rebuildRow() when SRC is active for this row.
-    const float h_alt = (row_idx >= 0 && row_idx < total) ? rows[row_idx].seabed.range_m : 0.f;
+    const float h_alt_raw = (row_idx >= 0 && row_idx < total) ? rows[row_idx].seabed.range_m : 0.f;
+    const float h_alt = (h_alt_raw > 0.f && std::isfinite(h_alt_raw)) ? h_alt_raw : 0.f;
     const bool  src   = m_params.slant_range_correction && h_alt > 0.f && max_r > 0.f;
     const float max_g = src ? std::sqrt(std::max(0.f, max_r * max_r - h_alt * h_alt)) : 0.f;
 
@@ -192,7 +194,7 @@ bool WaterfallRenderer::xToRange(int x, int row_idx,
             const float z  = (h_zoom > 0.f) ? h_zoom
                            : (port_w > 0 ? float(port_w) / ns : 1.f);
             const int   si = qBound(0, static_cast<int>((nx - 1 - x) / z) + h_pan, ns - 1);
-            range_m = float(si) / float(ns - 1) * max_r;
+            range_m = (ns > 1) ? float(si) / float(ns - 1) * max_r : 0.f;
         }
     } else {
         ch = core::SidescanChannel::Starboard;
@@ -209,7 +211,7 @@ bool WaterfallRenderer::xToRange(int x, int row_idx,
             const float z  = (h_zoom > 0.f) ? h_zoom
                            : (stbd_w > 0 ? float(stbd_w) / ns : 1.f);
             const int   si = qBound(0, static_cast<int>((x - nx) / z) + h_pan, ns - 1);
-            range_m = float(si) / float(ns - 1) * max_r;
+            range_m = (ns > 1) ? float(si) / float(ns - 1) * max_r : 0.f;
         }
     }
     return range_m >= 0.f;

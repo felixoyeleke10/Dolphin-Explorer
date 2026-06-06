@@ -15,7 +15,7 @@
 
 namespace dolphin::ui {
 
-// ── Layout (logical px) ───────────────────────────────────────────────────────
+// -- Layout (logical px) -------------------------------------------------------
 static constexpr int    kRowH     = 28;   // widget fixed height
 static constexpr int    kPillW    = 92;   // total pill width
 static constexpr int    kPillH    = 22;   // pill height
@@ -27,7 +27,7 @@ static constexpr int    kDragPx   = 3;    // drag dead-zone (px)
 static constexpr int    kRepeat0  = 450;  // ms before auto-repeat starts
 static constexpr int    kRepeatN  = 70;   // ms between repeat ticks
 
-// ── Theme colours (from Theme.h) ─────────────────────────────────────────────
+// -- Theme colours (from Theme.h) ---------------------------------------------
 static const QColor kLabelCol       { 0x8e, 0x8e, 0x93      };  // kTextSubtle
 static const QColor kValueCol       { 0xe5, 0xe5, 0xea      };  // kTextSecond
 static const QColor kAccent         {  10,  132, 255        };
@@ -49,9 +49,9 @@ static const QColor kArrowOffCol    { 255,  255, 255,  65   };  // triangle when
 static const QColor kSepOnPill      { 255,  255, 255,  18   };  // separator on hover
 static const QColor kSepOff         { 255,  255, 255,  10   };  // separator at rest
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Construction
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 WfValueRow::WfValueRow(const QString& label,
                         double lo, double hi, double value,
@@ -77,9 +77,9 @@ WfValueRow::WfValueRow(const QString& label,
     connect(m_repeat_timer, &QTimer::timeout, this, &WfValueRow::onRepeatTick);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Public API
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 int  WfValueRow::intValue()    const { return qRound(m_value); }
 bool WfValueRow::isAtDefault() const { return qFuzzyCompare(m_value + 1.0, m_default + 1.0); }
@@ -99,9 +99,9 @@ void WfValueRow::setSpecialValueText(double trigger, const QString& text)
     m_special_text = text;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Geometry
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 QRect WfValueRow::pillRect() const
 {
@@ -141,9 +141,9 @@ WfValueRow::Zone WfValueRow::zoneAt(const QPoint& pos) const
     return Zone::None;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Helpers
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 double WfValueRow::clamp(double v) const { return qBound(m_lo, v, m_hi); }
 
@@ -173,9 +173,9 @@ void WfValueRow::onRepeatTick()
     m_repeat_timer->start(kRepeatN);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Painting
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void WfValueRow::paintEvent(QPaintEvent*)
 {
@@ -189,7 +189,7 @@ void WfValueRow::paintEvent(QPaintEvent*)
     const bool  onPill  = (m_hover_zone != Zone::None);
     const bool  dragging = (m_press_zone == Zone::Value && m_dragging);
 
-    // ── Pill background ───────────────────────────────────────────────────
+    // -- Pill background ---------------------------------------------------
     QColor bg, border;
     if (dragging) {
         bg     = kPillDragBg;
@@ -205,7 +205,7 @@ void WfValueRow::paintEvent(QPaintEvent*)
     p.setBrush(bg);
     p.drawRoundedRect(QRectF(pill).adjusted(0.5, 0.5, -0.5, -0.5), kPillRad, kPillRad);
 
-    // ── Arrow area background (subtle highlight on hover / press) ─────────
+    // -- Arrow area background (subtle highlight on hover / press) ---------
     {
         const bool upHov  = (m_hover_zone == Zone::UpArrow);
         const bool dnHov  = (m_hover_zone == Zone::DownArrow);
@@ -236,14 +236,14 @@ void WfValueRow::paintEvent(QPaintEvent*)
         p.restore();
     }
 
-    // ── Separator line between value and arrow column ─────────────────────
+    // -- Separator line between value and arrow column ---------------------
     {
         const int sx = arrArea.left();
         p.setPen(onPill ? kSepOnPill : kSepOff);
         p.drawLine(sx, pill.top() + 4, sx, pill.bottom() - 4);
     }
 
-    // ── Label ─────────────────────────────────────────────────────────────
+    // -- Label -------------------------------------------------------------
     {
         QFont f = font();
         f.setPixelSize(11);
@@ -256,7 +256,7 @@ void WfValueRow::paintEvent(QPaintEvent*)
                    p.fontMetrics().elidedText(m_label, Qt::ElideRight, lw));
     }
 
-    // ── Value text ────────────────────────────────────────────────────────
+    // -- Value text --------------------------------------------------------
     if (!editing) {
         QFont f = font();
         f.setPixelSize(11);
@@ -267,7 +267,7 @@ void WfValueRow::paintEvent(QPaintEvent*)
                    formatValue());
     }
 
-    // ── Arrow triangles ───────────────────────────────────────────────────
+    // -- Arrow triangles ---------------------------------------------------
     {
         const bool upPrs = (m_press_zone == Zone::UpArrow);
         const bool dnPrs = (m_press_zone == Zone::DownArrow);
@@ -297,9 +297,9 @@ void WfValueRow::paintEvent(QPaintEvent*)
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Mouse events
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void WfValueRow::mousePressEvent(QMouseEvent* e)
 {
@@ -386,9 +386,9 @@ void WfValueRow::leaveEvent(QEvent*)
     update();
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Inline editor
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void WfValueRow::startEdit()
 {

@@ -1,4 +1,4 @@
-﻿// NodeGraphViewInput.cpp — mouse, keyboard, wheel, resize and context menu events.
+// NodeGraphViewInput.cpp — mouse, keyboard, wheel, resize and context menu events.
 #include "ui/features/nodegraph/NodeGraphView.h"
 #include "pipeline/NodeGraph.h"
 #include "pipeline/NodeRegistry.h"
@@ -15,9 +15,9 @@
 
 namespace dolphin::ui {
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Mouse events
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void NodeGraphView::mousePressEvent(QMouseEvent* ev)
 {

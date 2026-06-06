@@ -37,7 +37,7 @@ void buildSwathCoverage(const std::vector<core::SidescanPing>& pings,
     std::stable_sort(order.begin(), order.end(),
         [&](size_t a, size_t b) { return pings[a].timestamp_us < pings[b].timestamp_us; });
 
-    // ── 1. Build corrected nav table ──────────────────────────────────────────
+    // -- 1. Build corrected nav table ------------------------------------------
     // Same call as georeferenceSidescanPings uses, so coverage ribbons and the
     // raster mosaic share identical per-ping positions and headings.
     const double kNoHeading = std::numeric_limits<double>::quiet_NaN();
@@ -67,7 +67,7 @@ void buildSwathCoverage(const std::vector<core::SidescanPing>& pings,
     const double cov_gap_lon = ld.is_projected ? cov_gap_m
         : cov_gap_m / (111320.0 * std::max(0.01, std::cos(cov_cen_lat * kDegToRad)));
 
-    // ── 2. Build ribbon for each channel ──────────────────────────────────────
+    // -- 2. Build ribbon for each channel --------------------------------------
     for (const auto channel : {core::SidescanChannel::Port, core::SidescanChannel::Starboard}) {
 
         SwathCoverage cov;

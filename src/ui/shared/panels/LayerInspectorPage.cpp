@@ -1,4 +1,4 @@
-﻿#include "ui/shared/panels/LayerInspectorPage.h"
+#include "ui/shared/panels/LayerInspectorPage.h"
 #include "ui/shell/Theme.h"
 #include "ui/shared/widgets/CollapsibleSection.h"
 #include "app/layers/LayerUtils.h"
@@ -81,7 +81,7 @@ void LayerInspectorPage::build()
     fl->setContentsMargins(0, 0, 0, 0);
     fl->setSpacing(0);
 
-    // ── INFO ───────────────────────────────────────────────────────────────
+    // -- INFO ---------------------------------------------------------------
     {
         auto* content = new QWidget(this);
         auto* vl = new QVBoxLayout(content);
@@ -115,7 +115,7 @@ void LayerInspectorPage::build()
         addSection(fl, tr("Info"), content);
     }
 
-    // ── DISPLAY ────────────────────────────────────────────────────────────
+    // -- DISPLAY ------------------------------------------------------------
     {
         auto* content = new QWidget(this);
         auto* vl = new QVBoxLayout(content);
@@ -136,10 +136,14 @@ void LayerInspectorPage::build()
                 m_palette->addItem(SSSPalette::name(i));
             {
                 QSettings qs;
-                const int init = SSSPalette::indexFromName(
-                    qs.value(SettingsDialog::kKeyDefaultPalette,
-                             QStringLiteral("Gray")).toString());
-                m_palette->setCurrentIndex(init);
+                const QVariant sss_idx = qs.value(QStringLiteral("sss/paletteIdx"));
+                if (sss_idx.isValid()) {
+                    m_palette->setCurrentIndex(sss_idx.toInt());
+                } else {
+                    m_palette->setCurrentIndex(SSSPalette::indexFromName(
+                        qs.value(SettingsDialog::kKeyDefaultPalette,
+                                 QStringLiteral("Gray")).toString()));
+                }
             }
             connect(m_palette, qOverload<int>(&QComboBox::currentIndexChanged),
                     this, [this](int idx) { emit paletteChanged(idx); });
@@ -166,7 +170,7 @@ void LayerInspectorPage::refresh(app::DataLayer* layer)
         return;
     }
 
-    // ── Record count — label and value both depend on modality ────────────
+    // -- Record count — label and value both depend on modality ------------
     {
         using Mod = app::Modality;
         int count = 0;
@@ -193,15 +197,30 @@ void LayerInspectorPage::refresh(app::DataLayer* layer)
         m_pings_val->setText(count > 0 ? QLocale().toString(count) : "—");
     }
 
-    // ── Display section — only meaningful for sidescan amplitude display ─────
+    // -- Display section — only meaningful for sidescan amplitude display -----
     if (m_display_section)
         m_display_section->setVisible(layer->modality == app::Modality::Sidescan);
 
-    // ── Modality ───────────────────────────────────────────────────────────
+    // -- Palette — sync combo to per-layer override (or app default) -----------
+    if (m_palette && layer->modality == app::Modality::Sidescan) {
+        int pal = layer->sss_palette;
+        if (pal < 0) {
+            QSettings qs;
+            const QVariant v = qs.value(QStringLiteral("sss/paletteIdx"));
+            pal = v.isValid() ? v.toInt()
+                              : SSSPalette::indexFromName(
+                                    qs.value(SettingsDialog::kKeyDefaultPalette,
+                                             QStringLiteral("Gray")).toString());
+        }
+        QSignalBlocker sb(m_palette);
+        m_palette->setCurrentIndex(pal);
+    }
+
+    // -- Modality -----------------------------------------------------------
     m_modality_val->setText(
         QString::fromStdString(app::modalityLabel(layer->modality)));
 
-    // ── Frequency ─────────────────────────────────────────────────────────
+    // -- Frequency ---------------------------------------------------------
     if (layer->frequency_hz > 0.f) {
         QString freq = fmtKhz(layer->frequency_hz);
         if (layer->low_frequency_hz > 0.f
@@ -212,15 +231,15 @@ void LayerInspectorPage::refresh(app::DataLayer* layer)
         m_freq_val->setText("—");
     }
 
-    // ── Duration ──────────────────────────────────────────────────────────
+    // -- Duration ----------------------------------------------------------
     m_duration_val->setText(
         fmtDuration(layer->end_time_utc - layer->start_time_utc));
 
-    // ── Sonar ──────────────────────────────────────────────────────────────
+    // -- Sonar --------------------------------------------------------------
     m_sonar_val->setText(layer->sonar_name.empty()
         ? "—" : QString::fromStdString(layer->sonar_name));
 
-    // ── Date ──────────────────────────────────────────────────────────────
+    // -- Date --------------------------------------------------------------
     if (layer->start_time_utc > 0.0) {
         const QDateTime dt = QDateTime::fromSecsSinceEpoch(
             static_cast<qint64>(layer->start_time_utc), Qt::UTC);
@@ -229,13 +248,13 @@ void LayerInspectorPage::refresh(app::DataLayer* layer)
         m_date_val->setText("—");
     }
 
-    // ── Survey / Vessel ────────────────────────────────────────────────────
+    // -- Survey / Vessel ----------------------------------------------------
     m_survey_val->setText(layer->survey_name.empty()
         ? "—" : QString::fromStdString(layer->survey_name));
     m_vessel_val->setText(layer->vessel_name.empty()
         ? "—" : QString::fromStdString(layer->vessel_name));
 
-    // ── CRS ───────────────────────────────────────────────────────────────
+    // -- CRS ---------------------------------------------------------------
     const QString crs = spatialRefDisplayName(layer->source_spatial_ref);
     m_crs_val->setText(crs.isEmpty() ? "—" : crs);
 }

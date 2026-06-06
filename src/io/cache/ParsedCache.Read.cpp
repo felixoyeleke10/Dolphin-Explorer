@@ -11,7 +11,16 @@ std::optional<core::Artifact>
 ParsedCacheReader::readArtifact(const core::ArtifactIndexEntry& entry)
 {
     if (!m_file) return std::nullopt;
-    if (!seekFile(m_file, entry.file_offset)) return std::nullopt;
+    if (m_cur_pos != entry.file_offset) {
+        if (!seekFile(m_file, entry.file_offset)) {
+            m_cur_pos = UINT64_MAX;
+            return std::nullopt;
+        }
+    }
+
+    // Mark position unknown before reading so any mid-record failure leaves
+    // m_cur_pos = UINT64_MAX, forcing a seek on the next call.
+    m_cur_pos = UINT64_MAX;
 
     CacheRecordHeader header{};
     if (!readRecordHeader(m_file, header)) return std::nullopt;
@@ -82,15 +91,25 @@ ParsedCacheReader::readArtifact(const core::ArtifactIndexEntry& entry)
             out.range_m   = sample.range_m;
             ping.samples.push_back(out);
         }
+        m_cur_pos = entry.file_offset + entry.byte_length;
         return ping;
     }
     case core::ArtifactType::SubBottom: {
-        if (header.payload_size < sizeof(CacheSubBottomPayloadHeader))
+        // v26 added correction_flags + reserved (8 bytes) to CacheSubBottomPayloadHeader.
+        // v25 files have the smaller header; read the old portion and leave correction_flags=0.
+        constexpr uint32_t kNewHdrSize = static_cast<uint32_t>(sizeof(CacheSubBottomPayloadHeader));
+        constexpr uint32_t kOldHdrSize = kNewHdrSize - 8u;
+        const bool use_v25_layout = (m_file_version < 26);
+        const uint32_t hdr_size = use_v25_layout ? kOldHdrSize : kNewHdrSize;
+        if (header.payload_size < hdr_size)
             return std::nullopt;
-        CacheSubBottomPayloadHeader payload{};
-        if (!readPod(m_file, payload)) return std::nullopt;
-        const uint32_t sample_bytes = header.payload_size
-            - static_cast<uint32_t>(sizeof(CacheSubBottomPayloadHeader));
+        CacheSubBottomPayloadHeader payload{};  // zero-init → correction_flags=0 for v25
+        if (use_v25_layout) {
+            if (std::fread(&payload, hdr_size, 1, m_file) != 1) return std::nullopt;
+        } else {
+            if (!readPod(m_file, payload)) return std::nullopt;
+        }
+        const uint32_t sample_bytes = header.payload_size - hdr_size;
         const uint32_t max_samples = sample_bytes / static_cast<uint32_t>(sizeof(float));
         if (payload.sample_count > max_samples)
             return std::nullopt;
@@ -105,12 +124,14 @@ ParsedCacheReader::readArtifact(const core::ArtifactIndexEntry& entry)
         trace.tow_depth_m       = payload.tow_depth_m;
         trace.two_way_time_s    = payload.two_way_time_s;
         trace.bottom_sample_idx = payload.bottom_sample_idx;
+        trace.correction_flags  = payload.correction_flags;
         trace.samples.resize(payload.sample_count);
         if (!trace.samples.empty()) {
             if (std::fread(trace.samples.data(), sizeof(float),
                     trace.samples.size(), m_file) != trace.samples.size())
                 return std::nullopt;
         }
+        m_cur_pos = entry.file_offset + entry.byte_length;
         return trace;
     }
     case core::ArtifactType::Magnetometer: {
@@ -131,6 +152,7 @@ ParsedCacheReader::readArtifact(const core::ArtifactIndexEntry& entry)
         mag.diurnal_nT   = payload.diurnal_nT;
         mag.igrf_nT      = payload.igrf_nT;
         mag.residual_nT  = payload.residual_nT;
+        m_cur_pos = entry.file_offset + entry.byte_length;
         return mag;
     }
     default:
@@ -226,22 +248,95 @@ bool writeParsedCache(const std::string& cache_path,
     }
 
     std::filesystem::rename(std::filesystem::path(temp_path), out_path, ec);
-#ifdef _WIN32
-    if (ec) {
-        std::error_code copy_ec;
-        std::filesystem::copy_file(std::filesystem::path(temp_path), out_path,
-            std::filesystem::copy_options::overwrite_existing, copy_ec);
-        removeIfExists(temp_path);
-        if (copy_ec) return false;
-    }
-#else
     if (ec) {
         removeIfExists(temp_path);
         return false;
     }
-#endif
 
     return !cache_index.empty();
+}
+
+bool writeArtifactBufferToCache(const std::string& cache_path,
+                               const std::vector<core::Artifact>& buffer,
+                               const FormatMeta& meta,
+                               core::ArtifactIndex& out_index)
+{
+    out_index = {};
+
+    if (cache_path.empty() || buffer.empty()) return false;
+
+    std::error_code ec;
+    const std::filesystem::path out_path(cache_path);
+    const auto parent = out_path.parent_path();
+    if (!parent.empty())
+        std::filesystem::create_directories(parent, ec);
+    if (ec) return false;
+
+    const std::string temp_path = tempPathFor(cache_path);
+    removeIfExists(temp_path);
+
+    FILE* file = nullptr;
+#ifdef _WIN32
+    fopen_s(&file, temp_path.c_str(), "wb");
+#else
+    file = std::fopen(temp_path.c_str(), "wb");
+#endif
+    if (!file) return false;
+
+    auto fail = [&]() -> bool {
+        std::fclose(file);
+        removeIfExists(temp_path);
+        return false;
+    };
+
+    CacheFileHeader file_header{};
+    std::memcpy(file_header.magic, kFileMagic.data(), kFileMagic.size());
+    file_header.version = kCacheVersion;
+    setFileHeaderMetadata(file_header, meta);
+    if (!writePod(file, file_header)) return fail();
+
+    for (const auto& artifact : buffer) {
+        const uint32_t psize = payloadSize(artifact);
+        if (psize == 0) continue; // unsupported type (Multibeam, Raster) — skip silently
+
+        uint64_t offset = 0;
+        if (!tellFile(file, offset)) return fail();
+
+        CacheRecordHeader record{};
+        std::memcpy(record.magic, kRecordMagic.data(), kRecordMagic.size());
+        record.type         = static_cast<uint8_t>(core::artifactType(artifact));
+        record.payload_size = psize;
+        record.artifact_id  = core::artifactId(artifact);
+        record.timestamp_us = core::artifactTimestamp(artifact);
+        artifactLatLon(artifact, record.lat, record.lon);
+        std::visit([&](const auto& v) {
+            using T = std::decay_t<decltype(v)>;
+            if constexpr (!std::is_same_v<T, core::RasterGrid>)
+                record.is_projected = v.nav.is_projected ? 1u : 0u;
+            if constexpr (std::is_same_v<T, core::SidescanPing>) {
+                record.ping_number  = v.ping_number;
+                record.frequency_hz = v.frequency_hz;
+            }
+        }, artifact);
+
+        if (!writePod(file, record)) return fail();
+        if (!writePayload(file, artifact)) return fail();
+
+        appendIndexEntry(out_index, record, offset, meta.coordinate_ref);
+    }
+
+    if (std::fclose(file) != 0) {
+        removeIfExists(temp_path);
+        return false;
+    }
+
+    std::filesystem::rename(std::filesystem::path(temp_path), out_path, ec);
+    if (ec) {
+        removeIfExists(temp_path);
+        return false;
+    }
+
+    return !out_index.empty();
 }
 
 } // namespace dolphin::io

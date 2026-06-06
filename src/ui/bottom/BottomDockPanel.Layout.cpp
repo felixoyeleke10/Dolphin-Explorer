@@ -1,4 +1,4 @@
-﻿// BottomDockPanel.Layout.cpp — constructor, layout build, header, badge update.
+// BottomDockPanel.Layout.cpp — constructor, layout build, header, badge update.
 #include "ui/bottom/BottomDockPanel.h"
 #include "ui/shell/Theme.h"
 
@@ -16,7 +16,7 @@ namespace dolphin::ui {
 
 static constexpr int kBadgeH = 14;  // panel tab badge pill height
 
-// ── Resize grip ───────────────────────────────────────────────────────────────
+// -- Resize grip ---------------------------------------------------------------
 
 namespace {
 
@@ -63,7 +63,7 @@ protected:
 
 } // namespace
 
-// ── Constructor ───────────────────────────────────────────────────────────────
+// -- Constructor ---------------------------------------------------------------
 
 BottomDockPanel::BottomDockPanel(DiagnosticsHub* hub, QWidget* parent)
     : QWidget(parent), m_hub(hub)

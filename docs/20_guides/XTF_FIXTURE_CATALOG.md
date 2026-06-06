@@ -322,3 +322,139 @@ writes it to a temp file, and reads it back with `XtfReader`.
 - expected failure mode: n/a
 - used by tests: test_fix008_subbottom_channel (test_xtf_reader.cpp)
 - notes: normalization: raw uint16_t = 32768 → 0.0; raw 1000 → (1000-32768)/32768 ≈ -0.9695
+
+---
+
+## Stage 02 Slice 02B — Unsupported-Format Detection (FIX-012, FIX-013)
+
+Slice 02B makes the parser report support state instead of silently dropping
+data.  Recognized-but-unsupported channels (bathymetry) and unknown/unsupported
+packet types now produce diagnostics during `buildIndex` so the UI can explain
+why an expected modality is missing.  Both fixtures are generated in-code by
+`tests/test_xtf_reader.cpp`.
+
+---
+
+## FIX-012
+
+- file: generated in test_fix012_bathymetry_channel_unsupported
+- bucket: known-bad
+- vendor/family: bathymetry-containing XTF
+- purpose: a declared bathymetry channel (TypeOfChannel=3) is reported, not silently dropped
+- expected support state: recognized but partial (bathymetry not indexed; SSS still indexed)
+- expected modalities: SSS port (indexed) + bathymetry (skipped)
+- expected coordinate behavior: geographic (NavUnits=0)
+- expected artifact/index counts: 1 entry (Sidescan); bathymetry channel produces no entry
+- expected failure mode: UnsupportedChannelType diagnostic (Warning); channel skipped
+- used by tests: test_fix012_bathymetry_channel_unsupported (test_xtf_reader.cpp)
+- notes: file header declares num_sss=1, num_bathy=1; diagnostic is emitted from the
+  channel-info declaration scan before any ping is processed
+
+---
+
+## FIX-013
+
+- file: generated in test_fix013_unknown_packet_type
+- bucket: known-bad
+- vendor/family: n/a (synthetic unknown packet)
+- purpose: an unrecognized packet HeaderType is reported and does not derail indexing
+- expected support state: recognized but partial (unknown packet skipped; pings kept)
+- expected modalities: SSS port (two pings)
+- expected coordinate behavior: geographic
+- expected artifact/index counts: 2 entries (Sidescan), one per surrounding ping
+- expected failure mode: UnsupportedPacketType diagnostic (Warning); record skipped
+- used by tests: test_fix013_unknown_packet_type (test_xtf_reader.cpp)
+- notes: junk packet HeaderType=99 sits between two valid pings; each distinct
+  unsupported packet type is reported only once per buildIndex
+
+---
+
+## Stage 02 Slice 02C — Split-Packet & Dual-Frequency Routing (FIX-014, FIX-015)
+
+Slice 02C proves the `SubChannelNumber` channel-routing paths in
+`XtfIndex.cpp` and `XtfPayload.cpp` with synthetic fixtures. These layouts were
+already implemented but previously unverified by any test. Both fixtures are
+generated in-code by `tests/test_xtf_reader.cpp`.
+
+---
+
+## FIX-014
+
+- file: generated in test_fix014_split_packet_sidescan
+- bucket: synthetic tiny
+- vendor/family: split-packet sidescan (one channel per PACKET_PING)
+- purpose: port and starboard arriving in separate ping packets are both indexed
+- expected support state: supported
+- expected modalities: SSS port + starboard
+- expected coordinate behavior: geographic (NavUnits=0), lat=48.0 lon=2.0
+- expected artifact/index counts: 2 entries (one Port, one Starboard)
+- expected failure mode: n/a
+- used by tests: test_fix014_split_packet_sidescan (test_xtf_reader.cpp)
+- notes: contrast with FIX-002 (both channels in one ping); each packet has
+  NumChansToFollow=1
+
+---
+
+## FIX-015
+
+- file: generated in test_fix015_dual_frequency_routing
+- bucket: synthetic tiny
+- vendor/family: Edgetech 4200-style dual-frequency sidescan
+- purpose: SubChannelNumber routes pings to the correct channel-info band (LF/HF)
+- expected support state: supported
+- expected modalities: SSS port + starboard, two frequency bands (100/400 kHz)
+- expected coordinate behavior: geographic
+- expected artifact/index counts: 4 entries; 2 at 100 kHz, 2 at 400 kHz
+- expected failure mode: n/a
+- used by tests: test_fix015_dual_frequency_routing (test_xtf_reader.cpp)
+- notes: 4 channel-info entries (LF port/stbd index 0/1, HF port/stbd index 2/3);
+  HF packet sets XtfPacketHeader::SubChannelNumber=1 →
+  chan-info index = ChannelNumber + SubChannelNumber * NumChansToFollow;
+  metadata.frequency_hz=400 kHz (primary), low_frequency_hz=100 kHz
+
+---
+
+## Stage 02 Slice 02D — Real-Vendor Reduced Fixtures (FIX-016, FIX-017)
+
+Slice 02D meets the stage's "≥2 real vendor/recorder families" bar.  Unlike
+FIX-001…FIX-015 (synthetic `XtfBuilder` byte streams), these are **reduced
+sub-segments of real-world vendor captures**: the original 1024-byte file header
+block plus the first 8 ping/nav packets, extracted by `scripts/xtf_reduce.ps1`.
+The reduced binaries are checked into `tests/fixtures/` and loaded from disk via
+the `XTF_FIXTURE_DIR` compile definition (see `tests/CMakeLists.txt`).  Both
+files independently exercise the symmetric coordinate-magnitude override policy.
+
+---
+
+## FIX-016
+
+- file: tests/fixtures/fix016_edgetech4200_isis_reduced.xtf (reduced real capture)
+- bucket: real vendor reduced
+- vendor/family: Edgetech 4200.E recorded via Triton Isis (NBP05-05 survey)
+- purpose: validate real dual-frequency 4-channel sidescan routing against a true vendor file
+- expected support state: supported (real-file validated)
+- expected modalities: SSS port + starboard at two bands (PORT_LOW/STBD_LOW @120 kHz, PORT_HI/STBD_HI @410 kHz)
+- expected coordinate behavior: header NavUnits=3 (Projected), but lat/lon fixes fit WGS-84 → overridden to Geographic
+- expected artifact/index counts: 32 entries (8 kept pings × 4 channels), all Sidescan, all is_projected=false
+- expected failure mode: n/a; CoordinateSystemOverridden diagnostic (Warning) emitted
+- used by tests: test_fix016_edgetech4200_isis_real (test_xtf_reader.cpp)
+- notes: SonarType=38, SonarName "Edgetech_4200.E"; metadata.frequency_hz=410 kHz (primary),
+  low_frequency_hz=120 kHz; 16-bit samples; reduced via scripts/xtf_reduce.ps1 -Pings 8
+
+---
+
+## FIX-017
+
+- file: tests/fixtures/fix017_tst500k_32bit_reduced.xtf (reduced real capture)
+- bucket: real vendor reduced
+- vendor/family: TST 2024 500 kHz recorder
+- purpose: validate the 32-bit sample path (BytesPerSample=4) against a true vendor file
+- expected support state: supported (real-file validated; promotes 32-bit from partial)
+- expected modalities: SSS port + starboard, single 500 kHz band
+- expected coordinate behavior: header NavUnits=0 (Geographic), but fixes are projected metres → overridden to Projected
+- expected artifact/index counts: 16 entries (8 kept pings × 2 channels), all Sidescan, all is_projected=true
+- expected failure mode: n/a; CoordinateSystemOverridden diagnostic (Warning) emitted
+- used by tests: test_fix017_tst500k_32bit_real (test_xtf_reader.cpp)
+- notes: chan[0]=port chan[1]=stbd, both bps=4 (32-bit); metadata.frequency_hz=500000,
+  low_frequency_hz=0; only fixture exercising the 32-bit decode path; reduced via
+  scripts/xtf_reduce.ps1 -Pings 8

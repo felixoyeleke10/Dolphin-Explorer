@@ -1,4 +1,4 @@
-﻿// SSSNavModel.cpp — field definitions and SSSNavModel table-model implementation.
+// SSSNavModel.cpp — field definitions and SSSNavModel table-model implementation.
 #include "ui/features/metadata/SSSMetadataWindow.h"
 
 #include <QDateTime>
@@ -9,38 +9,38 @@
 
 namespace dolphin::ui {
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Field definitions  (order must match rawValue() switch)
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 const SSSNavModel::FieldDef SSSNavModel::kFieldDefs[SSSNavModel::kFieldCount] = {
-    // ── Identification ────────────────────────────────────────────────────────
+    // -- Identification --------------------------------------------------------
     { "Ping #",        "",       0 },
     { "Ping ID",       "",       0 },
     { "Channel",       "",      -1 },   // formatted as "Port" / "Stbd"
-    // ── Timestamps ────────────────────────────────────────────────────────────
+    // -- Timestamps ------------------------------------------------------------
     { "Time",          "",      -1 },   // HH:MM:SS
     { "Nav Time",      "",      -1 },   // HH:MM:SS
-    // ── Resolved position ─────────────────────────────────────────────────────
+    // -- Resolved position -----------------------------------------------------
     { "Latitude",      "°",      6 },
     { "Longitude",     "°",      6 },
-    // ── Raw source positions ──────────────────────────────────────────────────
+    // -- Raw source positions --------------------------------------------------
     { "Fish Lat",      "°",      6 },
     { "Fish Lon",      "°",      6 },
     { "Vessel Lat",    "°",      6 },
     { "Vessel Lon",    "°",      6 },
-    // ── Depth / dynamics ──────────────────────────────────────────────────────
+    // -- Depth / dynamics ------------------------------------------------------
     { "Depth",         "m",      2 },
     { "Altitude",      "m",      2 },
     { "Roll",          "°",      2 },
     { "Pitch",         "°",      2 },
-    // ── Heading sources ───────────────────────────────────────────────────────
+    // -- Heading sources -------------------------------------------------------
     { "Heading",       "°",      1 },
     { "Sensor Hdg",    "°",      1 },
     { "Ship Hdg",      "°",      1 },
-    // ── Motion ────────────────────────────────────────────────────────────────
+    // -- Motion ----------------------------------------------------------------
     { "Speed",         "kn",     2 },
     { "Heave",         "m",      2 },
-    // ── Sonar geometry ────────────────────────────────────────────────────────
+    // -- Sonar geometry --------------------------------------------------------
     { "Slant Range",   "m",      1 },
     { "Sample Rate",   "Hz",     0 },
     { "Blanking",      "m",      1 },
@@ -49,15 +49,15 @@ const SSSNavModel::FieldDef SSSNavModel::kFieldDefs[SSSNavModel::kFieldCount] = 
     { "Fish dX",       "m",      2 },
     { "Fish dY",       "m",      2 },
     { "KP",            "m",      0 },
-    // ── Sonar acoustics ───────────────────────────────────────────────────────
+    // -- Sonar acoustics -------------------------------------------------------
     { "Frequency",     "Hz",     0 },
     { "Sound Vel.",    "m/s",    1 },
     { "Bandwidth",     "Hz",     0 },
-    // ── Gain / calibration ────────────────────────────────────────────────────
+    // -- Gain / calibration ----------------------------------------------------
     { "Gain",          "",       0 },
     { "Init. Gain",    "",       0 },
     { "Volt Scale",    "mV/cnt", 3 },
-    // ── Bottom / QC ───────────────────────────────────────────────────────────
+    // -- Bottom / QC -----------------------------------------------------------
     { "Samples",       "",       0 },
     { "Btm Range",     "m",      2 },
     { "Btm Conf",      "",       2 },
@@ -65,9 +65,9 @@ const SSSNavModel::FieldDef SSSNavModel::kFieldDefs[SSSNavModel::kFieldCount] = 
     { "Corrections",   "",       0 },
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  SSSNavModel
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 SSSNavModel::SSSNavModel(QObject* parent)
     : QAbstractTableModel(parent)

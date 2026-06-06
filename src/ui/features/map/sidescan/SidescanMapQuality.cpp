@@ -1,4 +1,4 @@
-﻿// SidescanMapQuality.cpp — setMapSonarQuality, prebuildTier, hasCachedTier.
+// SidescanMapQuality.cpp — setMapSonarQuality, prebuildTier, hasCachedTier.
 #include "ui/features/map/sidescan/SidescanViewController.h"
 #include "ui/features/map/sidescan/SidescanMapLoadParams.h"
 #include "ui/features/map/MapView.h"
@@ -17,7 +17,7 @@
 
 namespace dolphin::ui {
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void SidescanViewController::setMapSonarQuality(MapSonarQuality quality)
 {
@@ -54,7 +54,7 @@ void SidescanViewController::setMapSonarQuality(MapSonarQuality quality)
     m_layer_intensity_cache.clear();  // stale at the old quality tier
 
     for (const auto& id : to_reload) {
-        // ── Fast path: quality tier already pre-built ─────────────────────
+        // -- Fast path: quality tier already pre-built ---------------------
         const auto tier_map_it = m_quality_tier_cache.find(id);
         if (tier_map_it != m_quality_tier_cache.end()) {
             const auto q_it = tier_map_it->second.find(static_cast<int>(quality));
@@ -70,14 +70,14 @@ void SidescanViewController::setMapSonarQuality(MapSonarQuality quality)
                 ld.is_projected    = tier.is_projected;
                 ld.preview_reduced = tier.preview_reduced;
                 ld.nav_stats       = tier.nav_stats;
-                ld.preview_image   = colorizeIntensityCache(tier.intensity, m_palette_idx);
+                ld.preview_image   = colorizeIntensityCache(tier.intensity, m_display_params, m_palette_idx);
                 m_layer_intensity_cache[id] = tier.intensity;
                 if (m_map_view) m_map_view->setLayerMapData(id, std::move(ld));
                 m_loaded_layers.insert(id);
                 continue;
             }
         }
-        // ── Fallback: rebuild from disk ───────────────────────────────────
+        // -- Fallback: rebuild from disk -----------------------------------
         activateLayer(id, m_project);
     }
 
@@ -86,9 +86,9 @@ void SidescanViewController::setMapSonarQuality(MapSonarQuality quality)
         m_map_view->setActiveLayer(saved_active);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  prebuildTier — background-build one quality tier without displaying it
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 namespace {
 

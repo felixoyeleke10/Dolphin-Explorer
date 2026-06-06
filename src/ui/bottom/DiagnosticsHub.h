@@ -15,10 +15,10 @@ class DiagnosticsHub : public QObject {
 public:
     explicit DiagnosticsHub(QObject* parent = nullptr);
 
-    // ── Severity ───────────────────────────���────────────────────────���─────────
+    // -- Severity ---------------------------���------------------------���---------
     enum class Severity { Info, Warning, Error };
 
-    // ── Problems ──────────────────────────────────────────────────────────────
+    // -- Problems --------------------------------------------------------------
     struct Problem {
         Severity  severity   = Severity::Warning;
         QString   message;
@@ -37,7 +37,7 @@ public:
     int totalProblemCount() const { return m_problems.size(); }
     int errorCount() const;
 
-    // ── Output log ────────────────────────────────────────────────────────────
+    // -- Output log ------------------------------------------------------------
     struct OutputEntry {
         QString   msg;
         QDateTime timestamp;
@@ -46,7 +46,7 @@ public:
     void logOutput(const QString& msg);
     const QList<OutputEntry>& outputs() const { return m_output; }
 
-    // ── Jobs ──────────────────────────────────────────────────────────────────
+    // -- Jobs ------------------------------------------------------------------
     enum class JobStatus { Running, Completed, Failed, Cancelled };
 
     struct Job {

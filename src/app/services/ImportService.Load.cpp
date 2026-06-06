@@ -32,7 +32,7 @@ static std::string formatFromPath(const std::string& path, const std::string& fa
     return normaliseFormat(path.substr(dot + 1));
 }
 
-// ── Read-path-only types and helpers ─────────────────────────────────────────
+// -- Read-path-only types and helpers -----------------------------------------
 
 struct ArtifactStoreLocation {
     std::string path;
@@ -156,7 +156,7 @@ static bool openSidescanSession(const DataLayer* layer,
 
 } // namespace
 
-// ── loadSidescanWindow ────────────────────────────────────────────────────────
+// -- loadSidescanWindow --------------------------------------------------------
 
 std::vector<core::SidescanPing>
 ImportService::loadSidescanWindow(const DataLayer* layer,
@@ -192,7 +192,7 @@ ImportService::loadSidescanWindow(const DataLayer* layer,
     return result;
 }
 
-// ── loadAllSidescanPings ──────────────────────────────────────────────────────
+// -- loadAllSidescanPings ------------------------------------------------------
 
 std::vector<core::SidescanPing>
 ImportService::loadAllSidescanPings(const DataLayer* layer,
@@ -216,7 +216,7 @@ ImportService::loadAllSidescanPings(const DataLayer* layer,
     return result;
 }
 
-// ── loadAllSidescanPingsFromStore ─────────────────────────────────────────────
+// -- loadAllSidescanPingsFromStore ---------------------------------------------
 
 std::vector<core::SidescanPing>
 ImportService::loadAllSidescanPingsFromStore(
@@ -259,7 +259,7 @@ ImportService::loadAllSidescanPingsFromStore(
     return result;
 }
 
-// ── loadAllSidescanNavFromStore ───────────────────────────────────────────────
+// -- loadAllSidescanNavFromStore -----------------------------------------------
 
 std::vector<core::SidescanPing>
 ImportService::loadAllSidescanNavFromStore(
@@ -301,7 +301,7 @@ ImportService::loadAllSidescanNavFromStore(
     return result;
 }
 
-// ── loadSidescanWindowFromStore ───────────────────────────────────────────────
+// -- loadSidescanWindowFromStore -----------------------------------------------
 
 std::vector<core::SidescanPing>
 ImportService::loadSidescanWindowFromStore(
@@ -430,7 +430,7 @@ std::vector<core::SubBottomTrace> ImportService::loadAllSubBottomTraces(
     return result;
 }
 
-// ── loadMagSamples ────────────────────────────────────────────────────────────
+// -- loadMagSamples ------------------------------------------------------------
 
 std::vector<core::MagSample> ImportService::loadMagSamples(
     const std::string& store_path,
@@ -465,7 +465,7 @@ std::vector<core::MagSample> ImportService::loadMagSamples(
     return result;
 }
 
-// ── loadArtifacts (generic) ───────────────────────────────────────────────────
+// -- loadArtifacts (generic) ---------------------------------------------------
 
 std::vector<core::Artifact> ImportService::loadArtifacts(
     core::ArtifactType type,

@@ -1,4 +1,4 @@
-﻿// WaterfallAnalysisPanelImage.cpp — IMAGE PROCESSING section
+// WaterfallAnalysisPanelImage.cpp — IMAGE PROCESSING section
 
 #include "ui/features/waterfall/panels/WaterfallAnalysisPanel.h"
 #include "ui/shell/Theme.h"
@@ -50,7 +50,7 @@ void WaterfallAnalysisPanel::buildImageSection(QVBoxLayout* vl, QWidget* contain
 {
     auto* bl = makeSection(tr("Image Processing"), true, container, vl, &m_image_hdr);
 
-    // ── RANGE COMPENSATION ────────────────────────────────────────────────
+    // -- RANGE COMPENSATION ------------------------------------------------
     {
         auto* sub = new QLabel(tr("Range Compensation"), container);
         sub->setObjectName("wfSubSectionLabel");
@@ -153,7 +153,7 @@ void WaterfallAnalysisPanel::buildImageSection(QVBoxLayout* vl, QWidget* contain
         }
     });
 
-    // ── AGC ───────────────────────────────────────────────────────────────
+    // -- AGC ---------------------------------------------------------------
     bl->addWidget([] {
         auto* s = new QFrame; s->setFrameShape(QFrame::HLine);
         s->setObjectName("avHRule"); return s; }());
@@ -238,7 +238,7 @@ void WaterfallAnalysisPanel::buildImageSection(QVBoxLayout* vl, QWidget* contain
     connect(m_agc_mode_combo, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, &WaterfallAnalysisPanel::updateAgcVisibility);
 
-    // ── DESTRIPPING ───────────────────────────────────────────────────────
+    // -- DESTRIPPING -------------------------------------------------------
     bl->addWidget([] {
         auto* s = new QFrame; s->setFrameShape(QFrame::HLine);
         s->setObjectName("avHRule"); return s; }());
@@ -284,7 +284,7 @@ void WaterfallAnalysisPanel::buildImageSection(QVBoxLayout* vl, QWidget* contain
     connect(m_destripe_toggle, &WfToggleRow::toggled,
             this, &WaterfallAnalysisPanel::updateDestripeVisibility);
 
-    // ── Slant Range Correction ────────────────────────────────────────────
+    // -- Slant Range Correction --------------------------------------------
     bl->addWidget([] {
         auto* s = new QFrame; s->setFrameShape(QFrame::HLine);
         s->setObjectName("avHRule"); return s; }());
@@ -296,7 +296,7 @@ void WaterfallAnalysisPanel::buildImageSection(QVBoxLayout* vl, QWidget* contain
            "Use before beam-pattern correction or when you want across-track distance to represent seabed ground range."));
     bl->addWidget(m_src_toggle);
 
-    // ── Dirty indicator connections ───────────────────────────────────────
+    // -- Dirty indicator connections ---------------------------------------
     {
         auto refresh = [this](auto) { refreshImageDirty(); };
         auto refreshB = [this](bool) { refreshImageDirty(); };

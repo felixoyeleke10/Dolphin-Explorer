@@ -14,7 +14,7 @@ namespace dolphin::app { class DataLayer; }
 
 namespace dolphin::ui {
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  SubBottomInspectorPanel — left metadata panel in SubBottomWindow.
 //
 //  Six collapsible sections (mirroring WaterfallInspectorPanel):
@@ -26,7 +26,7 @@ namespace dolphin::ui {
 //    VIEW SETTINGS — trace width (px/trace), depth scale (px/sample)
 //
 //  Prev/Next navigation buttons are pinned below the scroll area.
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 class SubBottomInspectorPanel : public QFrame {
     Q_OBJECT
 public:
@@ -63,27 +63,27 @@ private:
     void makeRow    (QVBoxLayout* bl, const QString& key, QLabel*& val_out);
     void makeWideRow(QVBoxLayout* bl, const QString& key, QLabel*& val_out);
 
-    // ── Survey data ───────────────────────────────────────────────────────
+    // -- Survey data -------------------------------------------------------
     QLabel* m_val_traces   = nullptr;
     QLabel* m_val_samples  = nullptr;
     QLabel* m_val_duration = nullptr;
     QLabel* m_val_length   = nullptr;
-    // ── Source file ───────────────────────────────────────────────────────
+    // -- Source file -------------------------------------------------------
     QLabel* m_val_filename = nullptr;
     QLabel* m_val_fmt_size = nullptr;
-    // ── Coordinate system ─────────────────────────────────────────────────
+    // -- Coordinate system -------------------------------------------------
     QLabel* m_val_crs      = nullptr;
     QLabel* m_val_crs_kind = nullptr;
-    // ── Sonar ─────────────────────────────────────────────────────────────
+    // -- Sonar -------------------------------------------------------------
     QLabel* m_val_freq     = nullptr;
     QLabel* m_val_speed    = nullptr;
-    // ── Vessel ────────────────────────────────────────────────────────────
+    // -- Vessel ------------------------------------------------------------
     QLabel* m_val_survey   = nullptr;
     QLabel* m_val_vessel   = nullptr;
-    // ── View settings ─────────────────────────────────────────────────────
+    // -- View settings -----------------------------------------------------
     QSpinBox*       m_trace_width_spin  = nullptr;  // px per trace column [1, 20]
     QDoubleSpinBox* m_depth_scale_spin  = nullptr;  // px per sample [0.05, 5.0]
-    // ── Lines list ────────────────────────────────────────────────────────────
+    // -- Lines list ------------------------------------------------------------
     QListWidget*    m_lines_list        = nullptr;
 };
 

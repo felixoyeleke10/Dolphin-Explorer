@@ -10,6 +10,7 @@
 #include "util/Json.h"
 
 #include <algorithm>
+#include <cstdint>
 
 namespace dolphin::app {
 
@@ -19,7 +20,7 @@ using detail::normalisePath;
 using detail::normaliseFormat;
 using detail::manifestDirectory;
 
-// ── Decode helpers ────────────────────────────────────────────────────────────
+// -- Decode helpers ------------------------------------------------------------
 
 static Modality modalityFromString(const std::string& s) {
     if (s == "sidescan")     return Modality::Sidescan;
@@ -55,7 +56,7 @@ static core::SpatialRef spatialRefFromJson(const util::JsonValue& node,
     return ref;
 }
 
-// ── Path helpers ──────────────────────────────────────────────────────────────
+// -- Path helpers --------------------------------------------------------------
 
 static std::string resolveStoredPath(const std::string& path, const std::string& manifest_path)
 {
@@ -73,7 +74,7 @@ static std::string resolveStoredPath(const std::string& path, const std::string&
     return normalisePath(QDir(base_dir).absoluteFilePath(qpath)).toStdString();
 }
 
-// ── Validation helpers ────────────────────────────────────────────────────────
+// -- Validation helpers --------------------------------------------------------
 
 static bool sourceFingerprintMatchesFile(const ProjectSource& src)
 {
@@ -105,7 +106,7 @@ static const ProjectSource* findSourceById(const std::vector<ProjectSource>& sou
 
 } // namespace
 
-// ── fromJson ──────────────────────────────────────────────────────────────────
+// -- fromJson ------------------------------------------------------------------
 
 bool Project::fromJson(const std::string& json)
 {
@@ -162,8 +163,13 @@ bool Project::fromJson(const std::string& json)
         layer->index_built = jl.get("index_built").asBool();
         layer->visible     = !jl.get("visible").isNull() ? jl.get("visible").asBool() : true;
         layer->slant_range_corrected = jl.get("slant_range_corrected").asBool();
+        layer->pipeline_applied = jl.has("pipeline_applied") ? jl.get("pipeline_applied").asBool() : false;
         layer->bottom_track_kind = static_cast<BottomTrackKind>(
             jl.get("bottom_track_kind").asInt());
+        layer->qc_viewed_fraction = static_cast<float>(
+            jl.get("qc_viewed_fraction").asDouble());
+        layer->sss_palette = jl.has("sss_palette") ? jl.get("sss_palette").asInt() : -1;
+        layer->sbp_palette = jl.has("sbp_palette") ? jl.get("sbp_palette").asInt() : -1;
         layer->sonar_name  = jl.get("sonar_name").asString();
         layer->survey_name = jl.get("survey_name").asString();
         layer->vessel_name = jl.get("vessel_name").asString();
@@ -215,6 +221,11 @@ bool Project::fromJson(const std::string& json)
                         layer->survey_name = cached_meta.survey_name;
                     if (layer->vessel_name.empty() && !cached_meta.vessel_name.empty())
                         layer->vessel_name = cached_meta.vessel_name;
+                    // Detect already-processed DLPDs for projects pre-dating pipeline_applied.
+                    // correction_flags_seen accumulates both SSS and SBP correction flags,
+                    // so any non-zero value means the processing pipeline was previously run.
+                    if (!layer->pipeline_applied && cached_meta.correction_flags_seen != 0)
+                        layer->pipeline_applied = true;
                 }
             }
         }
@@ -241,17 +252,16 @@ bool Project::fromJson(const std::string& json)
 
         if (version >= 5 && (layer->index_built || !layer->artifact_index.empty())) {
             const std::string store_format = normaliseFormat(layer->artifact_store_format);
-            const auto* source = findSourceById(m_sources, layer->source_id);
             const bool missing_store = (store_format != "dlpd" && store_format != "dpcache")
                 || layer->artifact_store_path.empty()
                 || !QFileInfo(QString::fromStdString(layer->artifact_store_path)).exists();
-            const bool stale_source = !source || !sourceFingerprintMatchesFile(*source);
-            // Also reject the cached index if the .dlpd file has an outdated
-            // format version — this forces a transparent background rebuild rather
-            // than displaying incorrect data from a pre-fix cache.
+            // Reject the cached index only when the binary store is gone or has an
+            // incompatible format version.  Source-file staleness (renamed, re-acquired
+            // data, etc.) does not invalidate a perfectly readable .dlpd — the user
+            // can trigger a re-import explicitly if they want fresh data.
             const bool stale_cache = !missing_store
                 && !io::parsedCacheIsValid(layer->artifact_store_path);
-            if (missing_store || stale_source || stale_cache) {
+            if (missing_store || stale_cache) {
                 layer->artifact_index.entries.clear();
                 layer->index_built = false;
                 layer->artifact_store_path.clear();
@@ -278,7 +288,7 @@ bool Project::fromJson(const std::string& json)
 
         layer->state = layer->index_built ? LayerState::Ready : LayerState::Placeholder;
 
-        // ── Migration: split legacy Mixed-modality layers ─────────────────────
+        // -- Migration: split legacy Mixed-modality layers ---------------------
         // Older project files may carry Modality::Mixed when a source contained
         // multiple artifact families.  Apply the same module routing that new
         // imports use: the first non-empty family in kModuleArtifactTypes order
@@ -314,6 +324,12 @@ bool Project::fromJson(const std::string& json)
                     ex->start_time_utc        = layer->start_time_utc;
                     ex->end_time_utc          = layer->end_time_utc;
                     ex->frequency_hz          = layer->frequency_hz;
+                    ex->slant_range_corrected = layer->slant_range_corrected;
+                    ex->pipeline_applied      = layer->pipeline_applied;
+                    ex->bottom_track_kind     = layer->bottom_track_kind;
+                    ex->qc_viewed_fraction    = layer->qc_viewed_fraction;
+                    ex->group_id              = layer->group_id;
+                    ex->tags                  = layer->tags;
                     ex->artifact_index        = std::move(filtered);
                     extras.push_back(std::move(ex));
                 }
@@ -371,7 +387,7 @@ bool Project::fromJson(const std::string& json)
         if (c.id > max_id) max_id = c.id;
         m_contacts.push_back(std::move(c));
     }
-    m_next_contact_id = max_id + 1;
+    m_next_contact_id = (max_id < UINT64_MAX) ? max_id + 1 : 1;
 
     // Layer groups
     m_layer_groups.clear();
@@ -380,7 +396,7 @@ bool Project::fromJson(const std::string& json)
         g.id       = jg.get("id").asString();
         g.name     = jg.get("name").asString();
         g.expanded = jg.has("expanded") ? jg.get("expanded").asBool() : true;
-        if (!g.id.empty() && !g.name.empty())
+        if (!g.id.empty())
             m_layer_groups.push_back(std::move(g));
     }
 
@@ -391,7 +407,7 @@ bool Project::fromJson(const std::string& json)
         g.id       = jg.get("id").asString();
         g.name     = jg.get("name").asString();
         g.expanded = jg.has("expanded") ? jg.get("expanded").asBool() : true;
-        if (!g.id.empty() && !g.name.empty())
+        if (!g.id.empty())
             m_contact_groups.push_back(std::move(g));
     }
 

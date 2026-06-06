@@ -486,7 +486,7 @@ void NodeGraphWindow::setLayer(dolphin::app::DataLayer* layer,
     m_layer   = layer;
     m_graph   = nullptr;
 
-    // ── Layer combo (run target) ─────────────────────────────────────────────
+    // -- Layer combo (run target) ---------------------------------------------
     if (m_layer_combo) {
         QSignalBlocker blocker(m_layer_combo);
         m_layer_combo->clear();
@@ -513,10 +513,10 @@ void NodeGraphWindow::setLayer(dolphin::app::DataLayer* layer,
         }
     }
 
-    // ── Worker tabs ──────────────────────────────────────────────────────────
+    // -- Worker tabs ----------------------------------------------------------
     rebuildWorkerTabs();
 
-    // ── No project ───────────────────────────────────────────────────────────
+    // -- No project -----------------------------------------------------------
     if (!project || !m_graph) {
         m_run_btn->setEnabled(false);
         if (m_palette) {
@@ -532,7 +532,7 @@ void NodeGraphWindow::setLayer(dolphin::app::DataLayer* layer,
         return;
     }
 
-    // ── Ready ────────────────────────────────────────────────────────────────
+    // -- Ready ----------------------------------------------------------------
     m_run_btn->setEnabled(layer != nullptr);
     if (m_palette) {
         m_palette->setPlacementEnabled(true);

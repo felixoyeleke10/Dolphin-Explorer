@@ -30,7 +30,7 @@ namespace dolphin::ui {
 static constexpr int kInitW = 1200;
 static constexpr int kInitH = 740;
 
-// ── Default chart colours (one per field) ────────────────────────────────────
+// -- Default chart colours (one per field) ------------------------------------
 static const QColor kDefaultColors[SBPNavModel::kFieldCount] = {
     {0x88,0x88,0x88}, {0x68,0x88,0x68},   // #, trace id
     {0x88,0x88,0x88}, {0x88,0x88,0x98},   // time, nav time
@@ -50,9 +50,9 @@ static const QColor kDefaultColors[SBPNavModel::kFieldCount] = {
     {0xa8,0x78,0x48},                      // total depth
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  SBPMetadataWindow — construction
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 SBPMetadataWindow::SBPMetadataWindow(QWidget* parent)
     : QWidget(parent, Qt::Window)
 {
@@ -71,9 +71,9 @@ SBPMetadataWindow::SBPMetadataWindow(QWidget* parent)
     buildUi();
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Chart toggle / undock
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 void SBPMetadataWindow::onToggleChart(bool show)
 {
     if (!m_chart_pane) return;
@@ -132,9 +132,9 @@ bool SBPMetadataWindow::eventFilter(QObject* obj, QEvent* ev)
     return QWidget::eventFilter(obj, ev);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Chart type / axis selectors
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 void SBPMetadataWindow::onChartTypeChanged(int idx)
 {
     const bool is_scatter   = (idx == 1);
@@ -152,9 +152,9 @@ void SBPMetadataWindow::onChartXChanged(int)     { updateChart(); }
 void SBPMetadataWindow::onChartYChanged(int)     { updateChart(); }
 void SBPMetadataWindow::onChartBinsChanged(int)  { updateChart(); }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Chart data update
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 void SBPMetadataWindow::updatePlot()
 {
     QVector<SSSPlotSeries> series;
@@ -198,9 +198,9 @@ void SBPMetadataWindow::updateChart()
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Field visibility and per-field config
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 void SBPMetadataWindow::onFieldListItemChanged()
 {
     applyFieldVisibility();
@@ -304,9 +304,9 @@ void SBPMetadataWindow::onPrecisionChanged(int v)
     saveFieldConfig(m_selected_field);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Selection status bar
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 void SBPMetadataWindow::onSelectionChanged()
 {
     const auto indices = m_table->selectionModel()->selectedIndexes();

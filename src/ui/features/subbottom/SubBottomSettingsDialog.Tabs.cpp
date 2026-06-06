@@ -67,6 +67,23 @@ void SubBottomSettingsDialog::buildDisplayTab(QTabWidget* tabs)
            "1.0 = as-recorded amplitude.  Increase to brighten deep weak\n"
            "reflectors; very high values will saturate strong returns."));
     f1->addRow(tr("Gain:"), m_gain_spin);
+
+    m_contrast_spin = new QDoubleSpinBox(this);
+    m_contrast_spin->setRange(0.5, 3.0);
+    m_contrast_spin->setSingleStep(0.1);
+    m_contrast_spin->setDecimals(1);
+    m_contrast_spin->setToolTip(
+        tr("Power-curve exponent applied after gain.\n"
+           "1.0 = linear.  >1 stretches mid-range reflectors (more contrast in weak layers).\n"
+           "<1 compresses dynamic range (useful for very high-contrast data)."));
+    f1->addRow(tr("Contrast:"), m_contrast_spin);
+
+    m_polarity_check = new QCheckBox(tr("Invert polarity"), this);
+    m_polarity_check->setToolTip(
+        tr("Flip the polarity of all trace amplitudes before palette mapping.\n"
+           "Useful when recorded data polarity is reversed from convention."));
+    f1->addRow(tr("Polarity:"), m_polarity_check);
+
     vbox->addWidget(g1);
 
     auto* g2 = makeGroup(tr("Bottom Track Overlay"), page);

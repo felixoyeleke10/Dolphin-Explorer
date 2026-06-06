@@ -1,4 +1,4 @@
-﻿// WaterfallAnalysisPanelProcessing.cpp — PROCESSING TOOLS + NAVIGATION PROCESSING sections
+// WaterfallAnalysisPanelProcessing.cpp — PROCESSING TOOLS + NAVIGATION PROCESSING sections
 
 #include "ui/features/waterfall/panels/WaterfallAnalysisPanel.h"
 #include "ui/shell/Theme.h"
@@ -37,9 +37,9 @@ static QLabel* makeSubLabel(const QString& text, QWidget* parent, bool first = f
     return lbl;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  PROCESSING TOOLS visibility + dirty
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void WaterfallAnalysisPanel::updateProcessingVisibility()
 {
@@ -71,18 +71,18 @@ void WaterfallAnalysisPanel::refreshProcessingDirty()
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  PROCESSING TOOLS section builder
 //
 //  Applied via the main "Apply to This Line / All Lines" buttons (same path
 //  as Image Processing — these are display-time corrections on assembled rows).
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void WaterfallAnalysisPanel::buildProcessingSection(QVBoxLayout* vl, QWidget* container)
 {
     auto* bl = makeSection(tr("Processing Tools"), false, container, vl, &m_processing_hdr);
 
-    // ── ACOUSTIC ENHANCEMENT ─────────────────────────────────────────────────
+    // -- ACOUSTIC ENHANCEMENT -------------------------------------------------
     bl->addWidget(makeSubLabel(tr("Acoustic Enhancement"), container, true));
 
     // Beam Pattern Normalisation
@@ -138,7 +138,7 @@ void WaterfallAnalysisPanel::buildProcessingSection(QVBoxLayout* vl, QWidget* co
     }
     bl->addWidget(m_arc_body);
 
-    // ── ADAPTIVE CONTRAST ─────────────────────────────────────────────────────
+    // -- ADAPTIVE CONTRAST -----------------------------------------------------
     bl->addWidget(makeHRule(container));
     bl->addWidget(makeSubLabel(tr("Adaptive Contrast"), container));
 
@@ -171,7 +171,7 @@ void WaterfallAnalysisPanel::buildProcessingSection(QVBoxLayout* vl, QWidget* co
     }
     bl->addWidget(m_mle_body);
 
-    // ── Connections ───────────────────────────────────────────────────────────
+    // -- Connections -----------------------------------------------------------
     {
         auto refresh  = [this](auto)   { refreshProcessingDirty(); };
         auto refreshB = [this](bool)   { updateProcessingVisibility(); refreshProcessingDirty(); };
@@ -232,9 +232,9 @@ void WaterfallAnalysisPanel::buildProcessingSection(QVBoxLayout* vl, QWidget* co
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  NAVIGATION PROCESSING visibility + dirty
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void WaterfallAnalysisPanel::updateNavVisibility()
 {
@@ -257,7 +257,7 @@ void WaterfallAnalysisPanel::refreshNavDirty()
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  NAVIGATION PROCESSING section builder
 //
 //  These corrections modify the stored raw ping navigation data permanently
@@ -266,13 +266,13 @@ void WaterfallAnalysisPanel::refreshNavDirty()
 //
 //  NavSmoothNode: running-average smoothing of the GPS track.
 //  GeoCorrectNode: layback offset from ship GPS to towfish position.
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void WaterfallAnalysisPanel::buildNavSection(QVBoxLayout* vl, QWidget* container)
 {
     auto* bl = makeSection(tr("Navigation Processing"), false, container, vl, &m_nav_hdr);
 
-    // ── NAV SMOOTHING ─────────────────────────────────────────────────────────
+    // -- NAV SMOOTHING ---------------------------------------------------------
     bl->addWidget(makeSubLabel(tr("Nav Smoothing"), container, true));
 
     m_nav_smooth_toggle = new WfToggleRow(tr("Enable Nav Smoothing"), false, container);
@@ -298,7 +298,7 @@ void WaterfallAnalysisPanel::buildNavSection(QVBoxLayout* vl, QWidget* container
     }
     bl->addWidget(m_nav_smooth_body);
 
-    // ── LAYBACK CORRECTION ────────────────────────────────────────────────────
+    // -- LAYBACK CORRECTION ----------------------------------------------------
     bl->addWidget(makeHRule(container));
     bl->addWidget(makeSubLabel(tr("Layback Correction"), container));
 
@@ -327,7 +327,7 @@ void WaterfallAnalysisPanel::buildNavSection(QVBoxLayout* vl, QWidget* container
     }
     bl->addWidget(m_nav_layback_body);
 
-    // ── Run buttons ───────────────────────────────────────────────────────────
+    // -- Run buttons -----------------------------------------------------------
     bl->addWidget(makeHRule(container));
 
     {
@@ -366,7 +366,7 @@ void WaterfallAnalysisPanel::buildNavSection(QVBoxLayout* vl, QWidget* container
         bl->addWidget(col);
     }
 
-    // ── Connections ───────────────────────────────────────────────────────────
+    // -- Connections -----------------------------------------------------------
     {
         auto refresh  = [this](auto)   { refreshNavDirty(); };
         auto refreshB = [this](bool)   { updateNavVisibility(); refreshNavDirty(); };

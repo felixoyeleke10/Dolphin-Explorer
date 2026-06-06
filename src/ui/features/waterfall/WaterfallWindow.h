@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include "app/tasks/CancellationToken.h"
 #include "ui/features/waterfall/NavProcessingParams.h"
 #include "ui/features/waterfall/WaterfallParams.h"
@@ -7,8 +7,10 @@
 #include "ui/shared/widgets/ViewerToolbar.h"
 #include "ui/shell/ViewerWindow.h"
 #include "core/Contact.h"
+#include <QCloseEvent>
 #include <QWidget>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace dolphin::ui { class AppState; }
@@ -30,8 +32,9 @@ namespace dolphin::ui {
 class WaterfallView;
 class WaterfallInspectorPanel;
 class WaterfallAnalysisPanel;
+class WaterfallQcStrip;
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  WaterfallWindow — top-level window for sidescan waterfall display.
 //
 //  Assembles the waterfall subsystem:
@@ -42,13 +45,13 @@ class WaterfallAnalysisPanel;
 //
 //  Also owns the toolbar, bottom status bar, and async data loading.
 //  Panel-building and metadata-refresh logic have moved into the panel classes.
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 class WaterfallWindow : public QWidget, public IViewerWindow {
     Q_OBJECT
 public:
     explicit WaterfallWindow(AppState* app_state, QWidget* parent = nullptr);
-    ~WaterfallWindow() override = default;
+    ~WaterfallWindow() override;
 
     void setLayer(app::DataLayer*      layer,
                   app::ImportService*  import_service,
@@ -79,7 +82,7 @@ signals:
     void prevLineRequested(const std::string& from_layer_id);
     void nextLineRequested(const std::string& from_layer_id);
 
-    // ── State-reflection signals — received by MainWindow ─────────────────
+    // -- State-reflection signals — received by MainWindow -----------------
     // Fired on every cursor move; MainWindow mirrors range/position to its
     // own status bar so the user sees the same info without switching windows.
     void cursorUpdated(float range_m, const QString& side,
@@ -98,6 +101,11 @@ signals:
     // Fired whenever display params are applied (palette, SRC, gain, …).
     // MainWindow uses this to mark the project as having unsaved changes.
     void paramsApplied();
+
+    // Fired when the fraction of viewed pings changes by ≥ 0.5 %.
+    // Carries the layer ID and the new fraction in [0, 1].
+    // MainWindow can write this back to DataLayer::qc_viewed_fraction.
+    void qcViewedFractionChanged(const std::string& layer_id, float fraction);
 
     // Fired when the palette changes — MainWindow syncs the Properties inspector.
     void paletteChanged(int idx);
@@ -119,6 +127,10 @@ signals:
     // even when the waterfall has navigated away from m_active_layer_id.
     void setCrsRequested(const std::string& from_layer_id);
 
+    // Fired when the user clicks a file in the FILES list.
+    // MainWindow should call onLayerSelected(id) in response.
+    void layerChangeRequested(const std::string& id);
+
 public:
     // External palette sync — updates inspector combo without re-emitting, then applies.
     void setPalette(int idx);
@@ -134,6 +146,14 @@ public:
     const std::string& currentLayerId() const;
 
     void reloadCurrentLayer();
+
+    // Returns the fraction of this layer's pings that have been scrolled past.
+    float qcFraction() const { return m_qc_fraction; }
+
+    // Populate the FILES list with all sidescan layers in the project.
+    void setProjectLayers(const std::vector<std::pair<std::string, std::string>>& layers);
+    // Highlight the active file in the FILES list (does not emit layerChangeRequested).
+    void setActiveLine(const std::string& id);
 
     // Settings dialog accessors.
     WaterfallSettingsDialog::Settings wfSettings() const;
@@ -162,6 +182,9 @@ public slots:
     void applyNavToLine(const dolphin::ui::NavProcessingParams& p);
     void applyNavToAll(const dolphin::ui::NavProcessingParams& p);
 
+protected:
+    void closeEvent(QCloseEvent* ev) override;
+
 private slots:
     void onContextMenu(QPoint globalPos);
     void onPrevFix();
@@ -175,6 +198,7 @@ private slots:
     void onViewScrollChanged(int scroll_row, int total_rows, int visible_rows);
     void onScrollbarMoved(int abs_row);
     void onScrollDebounce();
+    void onRepipeDebounce();  // fires after repipe debounce settles; launches the actual pipeline
 
 private:
     enum Mode { ModeNavigate = 0, ModeFix, ModeReview, ModeAnalyze };
@@ -212,13 +236,29 @@ private:
     // files never get cut off at half their length.
     int estimatedTotalRows() const;
 
-    // ── Widgets ───────────────────────────────────────────────────────────
+    // Mark [abs_first, abs_last) as viewed; merges into m_viewed_ranges and
+    // emits qcViewedFractionChanged if the fraction changed by ≥ 0.5 %.
+    void markRowsAsViewed(int abs_first, int abs_last);
+
+    // QSettings key base for the current layer's QC data.
+    QString qcSettingsKey() const;
+
+    // Persist m_viewed_ranges to QSettings for the current layer.
+    // Called before the layer pointer is replaced (setLayer) or cleared.
+    void saveQcRanges();
+
+    // Restore m_viewed_ranges from QSettings for layer and update fraction.
+    void loadQcRanges();
+
+    // -- Widgets -----------------------------------------------------------
     WaterfallView*            m_view      = nullptr;
     WaterfallInspectorPanel*  m_inspector = nullptr;
     WaterfallAnalysisPanel*   m_analysis  = nullptr;
     QScrollBar*               m_vscroll   = nullptr;
+    WaterfallQcStrip*         m_qc_strip  = nullptr;
     ViewerToolbar*            m_toolbar   = nullptr;
-    QTimer*                   m_scroll_debounce = nullptr;
+    QTimer*                   m_scroll_debounce  = nullptr;
+    QTimer*                   m_repipe_debounce  = nullptr;  // batches rapid repipe triggers
     QToolButton*              m_btn_contact  = nullptr;  // "Add Contact" toolbar toggle
     QComboBox*                m_freq_selector = nullptr; // frequency band picker (dual-freq only)
 
@@ -228,7 +268,7 @@ private:
     QProgressBar* m_progress_bar   = nullptr;   // bottom-left activity indicator
     QTimer*       m_progress_delay  = nullptr;  // delays spinner show so fast ops don't flash it
 
-    // ── Data ─────────────────────────────────────────────────────────────
+    // -- Data -------------------------------------------------------------
     std::vector<core::Contact> m_project_contacts;  // full project contact list, kept in sync
 
     app::DataLayer*     m_layer             = nullptr;
@@ -253,6 +293,13 @@ private:
     // Loaded from QSettings on construction; settable from WaterfallSettingsDialog.
     int            m_window_size     = 4000;
     DisplayChannel m_display_channel = DisplayChannel::Both;
+    bool           m_show_amp_bar    = true;
+
+    // -- QC viewed-range tracking ------------------------------------------
+    // Sorted, non-overlapping [first, last) absolute row ranges the user has
+    // scrolled past in the current session.  Persisted to QSettings per layer.
+    std::vector<std::pair<int,int>> m_viewed_ranges;
+    float                           m_qc_fraction = 0.f;
 };
 
 } // namespace dolphin::ui

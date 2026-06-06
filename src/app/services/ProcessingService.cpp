@@ -1,5 +1,6 @@
 #include "app/services/ProcessingService.h"
 #include "app/layers/DataLayer.h"
+#include "core/Artifact.h"
 #include "io/jsf/JsfReader.h"
 #include "io/cache/ParsedCache.h"
 #include "io/xtf/XtfReader.h"
@@ -11,6 +12,7 @@
 #include <QtConcurrent/QtConcurrent>
 #include <cctype>
 #include <memory>
+#include <set>
 
 namespace {
 
@@ -26,10 +28,13 @@ struct RunRequest {
 };
 
 struct RunResult {
-    std::string layer_id;
-    std::string summary;
-    std::string error;
-    bool        failed = false;
+    std::string         layer_id;
+    std::string         summary;
+    std::string         error;
+    bool                failed                = false;
+    bool                slant_range_corrected = false;
+    std::string         processed_path;   // non-empty when cache was written successfully
+    core::ArtifactIndex processed_index;
 };
 
 struct BatchResult {
@@ -81,17 +86,54 @@ RunResult executeRequest(const RunRequest& request)
         return result;
     }
 
+    if (graph.nodes().empty()) {
+        result.failed = true;
+        result.error  = "Processing graph has no nodes";
+        return result;
+    }
+
+    // Capture metadata before the reader is consumed by runLine.
+    const io::FormatMeta meta = reader->metadata();
+
     pipeline::GraphJob job;
     job.line_id     = request.layer_id;
     job.source_path = request.source_path;
 
-    pipeline::GraphRunner::runLine(graph, request.artifact_index, *reader, job);
+    // Run the graph and capture the corrected artifact buffer.
+    auto processed = pipeline::GraphRunner::runLine(
+        graph, request.artifact_index, *reader, job);
 
     if (job.anyFailed()) {
         result.failed = true;
         result.error  = "One or more nodes failed - " + job.summary();
-    } else {
-        result.summary = job.summary();
+        return result;
+    }
+
+    result.summary = job.summary();
+
+    // Detect whether SlantRangeNode ran — check if any SSS ping in the
+    // processed buffer has the SlantRange correction flag set.
+    for (const auto& artifact : processed) {
+        if (const auto* ping = std::get_if<core::SidescanPing>(&artifact)) {
+            if (hasCorrectionFlag(ping->correction_flags, core::CorrectionFlag::SlantRange)) {
+                result.slant_range_corrected = true;
+                break;
+            }
+        }
+    }
+
+    // Overwrite the existing .dlpd cache in-place (atomic temp+rename).
+    // The original raw source (XTF/JSF) is untouched — re-indexing always
+    // produces a clean baseline from the raw file.
+    if (!processed.empty()) {
+        reader.reset(); // release the read handle before writing to the same path
+
+        core::ArtifactIndex proc_index;
+        if (io::writeArtifactBufferToCache(request.artifact_path, processed, meta, proc_index)) {
+            proc_index.source_id   = request.artifact_index.source_id; // restore after write zeroes it
+            result.processed_path  = request.artifact_path;
+            result.processed_index = std::move(proc_index);
+        }
     }
 
     return result;
@@ -131,17 +173,32 @@ void ProcessingService::runLayer(Project& project, DataLayer* layer, const std::
         : layer->node_graph.toJson();
     request.artifact_index = layer->artifact_index;
 
+    if (!m_active_paths.insert(request.artifact_path).second) {
+        emit runFailed(request.layer_id,
+                       "Another run is already writing to " + request.artifact_path);
+        return;
+    }
+
     emit runStarted(request.layer_id);
 
+    const std::string artifact_path = request.artifact_path;
     auto* watcher = new QFutureWatcher<RunResult>(this);
-    connect(watcher, &QFutureWatcher<RunResult>::finished, this, [this, watcher]() {
+    connect(watcher, &QFutureWatcher<RunResult>::finished, this,
+            [this, watcher, artifact_path]() {
         RunResult result = watcher->result();
         watcher->deleteLater();
+        m_active_paths.erase(artifact_path);
 
-        if (result.failed)
+        if (result.failed) {
             emit runFailed(result.layer_id, result.error);
-        else
+        } else {
             emit runComplete(result.layer_id, result.summary);
+            if (!result.processed_path.empty())
+                emit runPersisted(result.layer_id,
+                                  result.processed_path,
+                                  result.processed_index,
+                                  result.slant_range_corrected);
+        }
     });
     watcher->setFuture(QtConcurrent::run([request]() {
         return executeRequest(request);
@@ -153,18 +210,26 @@ void ProcessingService::runAll(Project& project)
     std::vector<RunRequest> requests;
     requests.reserve(project.layers().size());
 
+    std::set<std::string> queued_store_paths;
     for (auto& layer : project.layers()) {
         if (!layer || !layer->index_built) continue;
 
         auto* src = project.findSource(layer->source_id);
         if (!src) continue;
 
+        // Deduplicate layers that share a DLPD and skip paths with an active runLayer write.
+        const std::string store_path = layer->artifact_store_path.empty()
+            ? src->path
+            : layer->artifact_store_path;
+        if (!queued_store_paths.insert(store_path).second)
+            continue;
+        if (m_active_paths.count(store_path))
+            continue;
+
         RunRequest request;
         request.layer_id        = layer->id;
         request.source_path     = src->path;
-        request.artifact_path   = layer->artifact_store_path.empty()
-            ? src->path
-            : layer->artifact_store_path;
+        request.artifact_path   = store_path;
         request.artifact_format = layer->artifact_store_format.empty()
             ? formatFromPath(request.artifact_path)
             : normaliseFormat(layer->artifact_store_format);
@@ -193,10 +258,16 @@ void ProcessingService::runAll(Project& project)
         watcher->deleteLater();
 
         for (const auto& run : batch.runs) {
-            if (run.failed)
+            if (run.failed) {
                 emit runFailed(run.layer_id, run.error);
-            else
+            } else {
                 emit runComplete(run.layer_id, run.summary);
+                if (!run.processed_path.empty())
+                    emit runPersisted(run.layer_id,
+                                      run.processed_path,
+                                      run.processed_index,
+                                      run.slant_range_corrected);
+            }
         }
 
         emit batchComplete(batch.succeeded, batch.total);

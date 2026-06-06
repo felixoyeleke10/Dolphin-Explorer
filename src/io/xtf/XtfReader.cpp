@@ -14,7 +14,7 @@
 
 namespace dolphin::io {
 
-// ── Lifecycle ────────────────────────────────────────────────────────────────
+// -- Lifecycle ----------------------------------------------------------------
 
 XtfReader::XtfReader() = default;
 
@@ -56,7 +56,7 @@ void XtfReader::close()
     m_nav_table.reset();
 }
 
-// ── Sonar type lookup ─────────────────────────────────────────────────────────
+// -- Sonar type lookup ---------------------------------------------------------
 
 static std::string sonarNameFromType(uint16_t sonar_type)
 {

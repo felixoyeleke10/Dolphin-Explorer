@@ -67,7 +67,7 @@ JsfReader::readArtifact(const core::ArtifactIndexEntry& entry)
     num_samples = std::min(num_samples, max_samples);
     if (num_samples == 0) return std::nullopt;
 
-    // ── Sub-bottom trace ──────────────────────────────────────────────────────
+    // -- Sub-bottom trace ------------------------------------------------------
     if (entry.type == core::ArtifactType::SubBottom) {
         core::SubBottomTrace trace;
         trace.id             = entry.artifact_id;
@@ -98,7 +98,7 @@ JsfReader::readArtifact(const core::ArtifactIndexEntry& entry)
         return trace;
     }
 
-    // ── Sidescan ping ─────────────────────────────────────────────────────────
+    // -- Sidescan ping ---------------------------------------------------------
     static constexpr float kDefaultSV = 1500.f;  // JSF has no SV field; use standard assumption
 
     core::SidescanPing ping;

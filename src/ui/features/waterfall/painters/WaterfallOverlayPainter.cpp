@@ -22,19 +22,19 @@ namespace {
 // These are the canonical data-channel identity colors used on the scale bar.
 const QColor kPortChannelColor(0xc0, 0x45, 0x30);
 const QColor kStbdChannelColor(0x40, 0x60, 0xc8);
-const QColor kSeabedTrackColor(0, 220, 255, 210);
-const QColor kSeabedTrackMedium(255, 190, 0, 220);
-const QColor kSeabedTrackLow(255, 72, 72, 230);
-const QColor kSeabedTrackDim  (0, 220, 255, 100);
+const QColor kSeabedTrackColor (0, 220, 255, 210);   // cyan   — high confidence
+const QColor kSeabedTrackMedium(255, 190, 0, 220);   // amber  — medium confidence
+const QColor kSeabedTrackLow   (255, 72, 72, 230);   // red    — low confidence
+const QColor kSeabedTrackDim   (160, 100, 255, 175); // violet — tracker extrapolation / gap-fill
 // Contact diamond halo (dark, widens the visible diamond edge)
 const QColor kContactHalo     (0, 0, 0, 100);
 } // namespace
 
 namespace dolphin::ui {
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Seabed overlay — cyan polyline on both port and starboard halves
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void WaterfallOverlayPainter::paintSeabedOverlay(
     QPainter&                        p,
@@ -61,7 +61,7 @@ void WaterfallOverlayPainter::paintSeabedOverlay(
     const QPen pen_solid(kSeabedTrackColor, 1.5f, Qt::SolidLine);
     const QPen pen_mid  (kSeabedTrackMedium, 1.5f, Qt::SolidLine);
     const QPen pen_low  (kSeabedTrackLow, 1.7f, Qt::SolidLine);
-    const QPen pen_dash (kSeabedTrackDim,   1.0f, Qt::DashLine);
+    const QPen pen_dash (kSeabedTrackDim,   1.3f, Qt::DashLine);
 
     // Per-side polyline buffer that tracks its own pen type so the two sides
     // can switch pens independently without corrupting each other's draw calls.
@@ -100,8 +100,12 @@ void WaterfallOverlayPainter::paintSeabedOverlay(
 
     for (int row = scroll.scrollRow(); row < vis_end; ++row) {
         const PingRow& pr = rows[row];
-        // No valid range: skip without flushing — the polyline bridges the gap.
-        if (pr.seabed.range_m <= 0.f || pr.slant_range_m <= 0.f) continue;
+        if (!std::isfinite(pr.seabed.range_m) || pr.seabed.range_m <= 0.f
+                || !std::isfinite(pr.slant_range_m) || pr.slant_range_m <= 0.f) {
+            flush(stbd_buf);
+            flush(port_buf);
+            continue;
+        }
 
         const bool  solid  = pr.seabed.detected || pr.seabed.is_manual;
         const int   style  = !solid ? 3
@@ -115,9 +119,11 @@ void WaterfallOverlayPainter::paintSeabedOverlay(
 
         const int ns_s = static_cast<int>(pr.stbd.size());
         if (ns_s > 1) {
-            const float z  = (h_zoom > 0.f) ? h_zoom
-                           : (stbd_w > 0 ? float(stbd_w) / ns_s : 1.f);
-            const int   si = static_cast<int>(pr.seabed.range_m / max_r * (ns_s - 1));
+            const float z   = (h_zoom > 0.f) ? h_zoom
+                            : (stbd_w > 0 ? float(stbd_w) / ns_s : 1.f);
+            const float fi_s = pr.seabed.range_m / max_r * float(ns_s - 1);
+            const int   si   = static_cast<int>(
+                std::clamp(fi_s, 0.f, float(ns_s - 1)));
             const int   xs = sampleToPixelStbd(si, z, h_pan, nadir);
             if (xs >= nadir && xs < w) addPt(stbd_buf, {xs, y}, style);
             else                       flush(stbd_buf);
@@ -125,9 +131,11 @@ void WaterfallOverlayPainter::paintSeabedOverlay(
 
         const int ns_p = static_cast<int>(pr.port.size());
         if (ns_p > 1) {
-            const float z  = (h_zoom > 0.f) ? h_zoom
-                           : (port_w > 0 ? float(port_w) / ns_p : 1.f);
-            const int   si = static_cast<int>(pr.seabed.range_m / max_r * (ns_p - 1));
+            const float z   = (h_zoom > 0.f) ? h_zoom
+                            : (port_w > 0 ? float(port_w) / ns_p : 1.f);
+            const float fi_p = pr.seabed.range_m / max_r * float(ns_p - 1);
+            const int   si   = static_cast<int>(
+                std::clamp(fi_p, 0.f, float(ns_p - 1)));
             const int   xp = sampleToPixelPort(si, z, h_pan, nadir);
             if (xp >= kWfRulerW && xp < nadir) addPt(port_buf, {xp, y}, style);
             else                                flush(port_buf);
@@ -138,9 +146,9 @@ void WaterfallOverlayPainter::paintSeabedOverlay(
     p.restore();
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Contact overlay — yellow diamond marker at each picked contact position
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void WaterfallOverlayPainter::paintContactOverlay(
     QPainter&                      p,
@@ -222,17 +230,17 @@ void WaterfallOverlayPainter::paintContactOverlay(
     p.restore();
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Scale bar — two-section channel bar with range ticks
 //
 //  Layout (kWfScaleBarH = 22 px):
-//    ┌──────────────────────────────────────────────────────────────┐
-//    │  PORT ←   75    50    25  ┊  25    50    75   → STBD        │
-//    └──────────────────────────────────────────────────────────────┘
+//    +--------------------------------------------------------------+
+//    |  PORT ←   75    50    25  ┊  25    50    75   → STBD        |
+//    +--------------------------------------------------------------+
 //  The centre divider at nadir_x separates port (left) and starboard (right).
 //  Channel labels are anchored to the outer edges; range numbers increase
 //  outward from nadir, matching the convention in SonarWiz / Hypack / EdgeTech.
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void WaterfallOverlayPainter::paintScaleBar(
     QPainter&                        p,
@@ -254,17 +262,17 @@ void WaterfallOverlayPainter::paintScaleBar(
     const int sb_y  = 0;                // bar now at the top
     const int sb_h  = kWfScaleBarH;
 
-    // ── Background ────────────────────────────────────────────────────────────
+    // -- Background ------------------------------------------------------------
     p.fillRect(0,         sb_y, kWfRulerW,            sb_h, QColor(Theme::kBgElevated));
     p.fillRect(kWfRulerW, sb_y, nadir - kWfRulerW,    sb_h, QColor(Theme::kBgElevated));
     p.fillRect(nadir,     sb_y, w - nadir,             sb_h, QColor(Theme::kBgElevated));
 
-    // ── Channel colour strips — 3 px band at the very top of the bar ─────────
+    // -- Channel colour strips — 3 px band at the very top of the bar ---------
     // Port: warm red-orange   Starboard: cool blue-violet
     p.fillRect(kWfRulerW, sb_y + 1, nadir - kWfRulerW, 3, kPortChannelColor);
     p.fillRect(nadir,     sb_y + 1, w - nadir,          3, kStbdChannelColor);
 
-    // ── Nadir divider — bright vertical line between port and starboard ───────
+    // -- Nadir divider — bright vertical line between port and starboard -------
     p.setPen(QPen(QColor(Theme::kTextMuted), 1));
     p.drawLine(nadir, sb_y + 1, nadir, sb_h - 1);
 
@@ -272,7 +280,7 @@ void WaterfallOverlayPainter::paintScaleBar(
     p.setPen(QColor(Theme::kBorder));
     p.drawLine(0, sb_h - 1, w, sb_h - 1);
 
-    // ── Channel labels ────────────────────────────────────────────────────────
+    // -- Channel labels --------------------------------------------------------
     // "PORT" anchored near the ruler edge; "STBD" near the right edge.
     const int label_y = sb_y + 14;
     p.setFont(QFont("Segoe UI", 7, QFont::Medium));
@@ -282,16 +290,18 @@ void WaterfallOverlayPainter::paintScaleBar(
 
     if (rows.empty()) return;
 
-    // ── Range data ────────────────────────────────────────────────────────────
+    // -- Range data ------------------------------------------------------------
     const int rh       = lay.row_height;
     const int vis_last = qMin(scroll.scrollRow() + lay.img_h / rh,
                               static_cast<int>(rows.size()));
     float max_r = 0.f;
     for (int ri = scroll.scrollRow(); ri < vis_last; ++ri)
-        max_r = std::max(max_r, rows[ri].slant_range_m);
+        if (std::isfinite(rows[ri].slant_range_m))
+            max_r = std::max(max_r, rows[ri].slant_range_m);
     if (max_r == 0.f)
         for (const auto& row : rows)
-            if (row.slant_range_m > 0) { max_r = row.slant_range_m; break; }
+            if (row.slant_range_m > 0.f && std::isfinite(row.slant_range_m))
+                { max_r = row.slant_range_m; break; }
     if (max_r == 0.f) return;
 
     const int   port_w = nadir - kWfRulerW;
@@ -313,7 +323,7 @@ void WaterfallOverlayPainter::paintScaleBar(
     const float tick_step = vis_max_r > 500.f ? 100.f
                           : (vis_max_r > 200.f ? 50.f : 25.f);
 
-    // ── Tick marks + range numbers ────────────────────────────────────────────
+    // -- Tick marks + range numbers --------------------------------------------
     // Small tick notch at the top of the bar, number below it.
     // Skip r=0 for numbers (nadir is self-evident from the divider line).
     p.setFont(QFont("Segoe UI", 7));

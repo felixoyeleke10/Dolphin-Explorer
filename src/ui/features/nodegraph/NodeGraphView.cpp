@@ -1,4 +1,4 @@
-﻿// NodeGraphView.cpp — construction, graph ownership, and node add/delete/group actions.
+// NodeGraphView.cpp — construction, graph ownership, and node add/delete/group actions.
 // Companion files: NodeGraphViewGeometry.cpp, NodeGraphViewHitTest.cpp,
 //                  NodeGraphViewPaint.cpp, NodeGraphViewInput.cpp
 #include "ui/features/nodegraph/NodeGraphView.h"
@@ -10,9 +10,9 @@
 
 namespace dolphin::ui {
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Construction
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 NodeGraphView::NodeGraphView(QWidget* parent)
     : QWidget(parent)
@@ -52,9 +52,9 @@ void NodeGraphView::setGraph(pipeline::NodeGraph* graph)
     emit nodeSelected({});
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Add / delete
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void NodeGraphView::addNodeAt(const std::string& type_id, QPointF canvas_pos)
 {

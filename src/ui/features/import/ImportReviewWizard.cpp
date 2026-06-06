@@ -1,4 +1,4 @@
-﻿// ImportReviewWizard.cpp — constructor, drag-and-drop, file management, accept.
+// ImportReviewWizard.cpp — constructor, drag-and-drop, file management, accept.
 #include "ui/features/import/ImportReviewWizard.h"
 #include "ui/shell/Theme.h"
 #include "io/ProbeDispatch.h"
@@ -38,9 +38,9 @@ static constexpr int kMinH  = 560;
 static constexpr int kInitW = 760;
 static constexpr int kInitH = 600;
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Construction
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 ImportReviewWizard::ImportReviewWizard(app::Project*           current_project,
                                        const core::SpatialRef& suggested_crs,
@@ -60,7 +60,7 @@ ImportReviewWizard::ImportReviewWizard(app::Project*           current_project,
     root->setContentsMargins(0, 0, 0, 0);
     root->setSpacing(0);
 
-    // ── Header ────────────────────────────────────────────────────────────
+    // -- Header ------------------------------------------------------------
     {
         auto* hdr = new QFrame(this);
         hdr->setObjectName("dlgHeader");
@@ -88,7 +88,7 @@ ImportReviewWizard::ImportReviewWizard(app::Project*           current_project,
         root->addWidget(div);
     }
 
-    // ── Body ──────────────────────────────────────────────────────────────
+    // -- Body --------------------------------------------------------------
     auto* body = new QWidget(this);
     body->setObjectName("dlgBody");
     auto* bl = new QVBoxLayout(body);
@@ -101,7 +101,7 @@ ImportReviewWizard::ImportReviewWizard(app::Project*           current_project,
 
     root->addWidget(body, 1);
 
-    // ── Footer ────────────────────────────────────────────────────────────
+    // -- Footer ------------------------------------------------------------
     {
         auto* div = new QFrame(this);
         div->setFixedHeight(Theme::kSepSz);
@@ -141,9 +141,9 @@ ImportReviewWizard::ImportReviewWizard(app::Project*           current_project,
     updateImportButton();
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Drag-and-drop
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void ImportReviewWizard::dragEnterEvent(QDragEnterEvent* e)
 {
@@ -160,9 +160,9 @@ void ImportReviewWizard::dropEvent(QDropEvent* e)
     if (!paths.isEmpty()) addFiles(paths);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  File management
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void ImportReviewWizard::onAddFiles()
 {
@@ -308,9 +308,9 @@ void ImportReviewWizard::updateFileRow(int idx)
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Accept — build result and emit
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void ImportReviewWizard::onAccept()
 {

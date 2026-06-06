@@ -150,7 +150,7 @@ void applyLayerStateDecoration(QTreeWidgetItem* item, app::LayerState state)
 
 } // namespace
 
-// ── Public helpers ────────────────────────────────────────────────────────────
+// -- Public helpers ------------------------------------------------------------
 
 QTreeWidgetItem* LineListPanel::makeSectionHeader(const QString& title)
 {
@@ -166,7 +166,7 @@ QTreeWidgetItem* LineListPanel::makeEmptyPlaceholder(QTreeWidgetItem* parent,
     return item;
 }
 
-// ── Tree construction ─────────────────────────────────────────────────────────
+// -- Tree construction ---------------------------------------------------------
 
 void LineListPanel::buildTree()
 {
@@ -269,7 +269,7 @@ static app::Modality resolveModality(const app::DataLayer* layer)
     return app::Modality::Unknown;
 }
 
-// ── Layer item helper ─────────────────────────────────────────────────────────
+// -- Layer item helper ---------------------------------------------------------
 
 static void addLayerItem(QTreeWidgetItem* parent, const app::DataLayer* layer)
 {
@@ -299,7 +299,7 @@ void LineListPanel::buildLayersSection(QTreeWidgetItem* parent)
     const auto& lgrps  = m_project->layerGroups();
     const auto& layers = m_project->layers();
 
-    // ── Helpers ───────────────────────────────────────────────────────────────
+    // -- Helpers ---------------------------------------------------------------
 
     // Lazy-create the per-modality section bucket (e.g. "Sidescan Sonar").
     std::map<app::Modality, QTreeWidgetItem*> mod_buckets;
@@ -344,7 +344,7 @@ void LineListPanel::buildLayersSection(QTreeWidgetItem* parent)
         if (!any) makeEmptyPlaceholder(gi, tr("Empty group"));
     };
 
-    // ── Layer groups ──────────────────────────────────────────────────────────
+    // -- Layer groups ----------------------------------------------------------
     // Single-modality groups nest inside their modality bucket so the sensor
     // header ("Sidescan Sonar") remains visible as the parent container.
     // Mixed-modality or empty groups appear at top level.
@@ -360,7 +360,7 @@ void LineListPanel::buildLayersSection(QTreeWidgetItem* parent)
         }
     }
 
-    // ── Ungrouped layers bucketed by modality ─────────────────────────────────
+    // -- Ungrouped layers bucketed by modality ---------------------------------
     for (const auto& layer : layers) {
         if (!layer || !layer->group_id.empty()) continue;
         addLayerItem(getOrCreateBucket(resolveModality(layer.get())), layer.get());
@@ -374,7 +374,7 @@ void LineListPanel::buildLayersSection(QTreeWidgetItem* parent)
     }
 }
 
-// ── Targeted updates ──────────────────────────────────────────────────────────
+// -- Targeted updates ----------------------------------------------------------
 
 void LineListPanel::refreshContacts()
 {
@@ -482,7 +482,7 @@ void LineListPanel::refreshLayer(const std::string& id)
     refresh();
 }
 
-// ── Layer reorder sync ────────────────────────────────────────────────────────
+// -- Layer reorder sync --------------------------------------------------------
 
 void LineListPanel::syncLayerOrderFromTree()
 {

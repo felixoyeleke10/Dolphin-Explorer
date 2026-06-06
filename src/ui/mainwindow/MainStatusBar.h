@@ -9,32 +9,32 @@ class QWidget;
 
 namespace dolphin::ui {
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  MainStatusBar — modular status bar for the main window.
 //
 //  Layout (left → right):
-//    [progress] [context · layer ──────────────] [job msg]
-//    ─── permanent ────────────────────────────────────────────────────────────
+//    [progress] [context · layer --------------] [job msg]
+//    --- permanent ------------------------------------------------------------
 //    [range / ping]  [depth]  [lat / lon]  [AI icon ●]
 //
 //  Callers use the typed setters below; the raw-label accessors exist only for
 //  backward compatibility with SidescanViewController, which lives in a
 //  different CMake target and cannot take a MainStatusBar* directly.
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 class MainStatusBar : public QStatusBar {
     Q_OBJECT
 public:
     explicit MainStatusBar(QWidget* parent = nullptr);
 
-    // ── Context (project · active layer) ─────────────────────────────────
+    // -- Context (project · active layer) ---------------------------------
     void setProjectContext(const QString& project, const QString& layer = {});
     void clearContext();
 
-    // ── Transient job messages (auto-clear after timeout) ─────────────────
+    // -- Transient job messages (auto-clear after timeout) -----------------
     void showJobMessage(const QString& msg, int timeout_ms = 8000);
 
-    // ── Cursor data — set by whichever instrument view is active ──────────
+    // -- Cursor data — set by whichever instrument view is active ----------
     void setCursorRange(const QString& side_label, float metres); // sidescan
     void clearCursorRange();
     void setCursorDepth(float metres);        // altitude / subbottom depth
@@ -43,18 +43,18 @@ public:
     void clearCursorPosition();
     void clearCursorData();                   // clears all three fields
 
-    // ── Progress bar ──────────────────────────────────────────────────────
+    // -- Progress bar ------------------------------------------------------
     void setProgressIndeterminate();          // spinner / unknown duration
     void setProgress(int percent, bool visible);
     void hideProgress();
 
-    // ── AI provider indicator ─────────────────────────────────────────────
+    // -- AI provider indicator ---------------------------------------------
     enum class AiProvider { None, Primary, Integration };
     enum class AiStatus   { Offline, Ready, Active };
     void setAiProvider(AiProvider provider);
     void setAiStatus(AiStatus status);
 
-    // ── Backward-compat accessors for SidescanViewController ─────────────
+    // -- Backward-compat accessors for SidescanViewController -------------
     //    Prefer the typed setters above for all MainWindow-side code.
     QLabel*       pingLabel()  const { return m_range;    }
     QLabel*       depthLabel() const { return m_depth;    }

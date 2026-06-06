@@ -1,4 +1,4 @@
-﻿// WaterfallAnalysisPanel.cpp — constructor, public API, shared helpers
+// WaterfallAnalysisPanel.cpp — constructor, public API, shared helpers
 
 #include "ui/features/waterfall/panels/WaterfallAnalysisPanel.h"
 #include "ui/features/waterfall/components/WfToggleRow.h"
@@ -17,9 +17,9 @@
 
 namespace dolphin::ui {
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Construction
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 WaterfallAnalysisPanel::WaterfallAnalysisPanel(QWidget* parent)
     : QFrame(parent)
@@ -50,7 +50,7 @@ WaterfallAnalysisPanel::WaterfallAnalysisPanel(QWidget* parent)
     buildNavSection        (vl, container);
     vl->addStretch();
 
-    // ── APPLY buttons (pinned below scroll) ───────────────────────────────
+    // -- APPLY buttons (pinned below scroll) -------------------------------
     {
         auto* sep = new QFrame(this);
         sep->setFrameShape(QFrame::HLine);
@@ -100,9 +100,9 @@ WaterfallAnalysisPanel::WaterfallAnalysisPanel(QWidget* parent)
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Public API
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 WaterfallParams WaterfallAnalysisPanel::currentParams(int palette_index) const
 {
@@ -175,8 +175,10 @@ void WaterfallAnalysisPanel::setParams(const WaterfallParams& p)
     m_tvg_spreading ->setValue(p.tvg.spreading);
     m_tvg_absorption->setValue(p.tvg.absorption);
 
-    // ARN
-    m_arn_toggle->setChecked(p.arn.enabled);
+    // ARN — block signal to prevent the SRC advisory QMessageBox firing during
+    // programmatic restore (setLayer); the user already chose these params.
+    { QSignalBlocker sb(m_arn_toggle);
+      m_arn_toggle->setChecked(p.arn.enabled); }
     m_arn_strength ->setValue(p.arn.strength    * 100.0);
     m_arn_gain_cap ->setValue(p.arn.gain_cap_db);
 
@@ -198,10 +200,11 @@ void WaterfallAnalysisPanel::setParams(const WaterfallParams& p)
     m_destripe_subdiv->setValue(p.destripe.subdivision);
     m_destripe_cap   ->setValue(p.destripe.capping);
 
-    // SRC — if BPN is being loaded on, force SRC on silently (no dialog;
-    // the user set these params deliberately via Apply All or a saved session).
+    // SRC — block signal to prevent the BPN guard dialog firing during
+    // programmatic restore; the user already set these params deliberately.
     const bool src_needed = p.beam_pattern.enabled;
-    m_src_toggle->setChecked(p.slant_range_correction || src_needed);
+    { QSignalBlocker sb(m_src_toggle);
+      m_src_toggle->setChecked(p.slant_range_correction || src_needed); }
 
     // Beam Pattern Normalisation
     if (m_bpn_toggle)    m_bpn_toggle->setChecked(p.beam_pattern.enabled);
@@ -252,20 +255,20 @@ SeabedAutoParams WaterfallAnalysisPanel::currentSeabedAutoParams() const
     SeabedAutoParams p;
     switch (m_seabed_method_combo->currentIndex()) {
     case 1:  p.method = SeabedMethod::FirstReturn;      break;
-    case 2:  p.method = SeabedMethod::ContinuityAware;  break;
     default: p.method = SeabedMethod::Threshold;         break;
     }
-    p.blanking_pct  = static_cast<float>(m_seabed_blank->value());
-    p.threshold_pct = static_cast<float>(m_seabed_thresh->value());
-    p.min_snr       = static_cast<float>(m_seabed_snr->value());
-    p.max_delta_m   = static_cast<float>(m_seabed_outlier->value());
-    p.smoothing     = static_cast<float>(m_seabed_smooth->value());
+    p.blanking_pct    = static_cast<float>(m_seabed_blank->value());
+    p.threshold_pct   = static_cast<float>(m_seabed_thresh->value());
+    p.min_snr         = static_cast<float>(m_seabed_snr->value());
+    p.max_delta_m     = static_cast<float>(m_seabed_outlier->value());
+    p.channel_agree_m = static_cast<float>(m_seabed_ch_agree->value());
+    p.smoothing       = static_cast<float>(m_seabed_smooth->value());
     return p;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Private helpers
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void WaterfallAnalysisPanel::updateRangeCompVisibility()
 {
@@ -363,7 +366,7 @@ void WaterfallAnalysisPanel::refreshSeabedDirty()
         (m_seabed_snr     && !m_seabed_snr->isAtDefault())     ||
         (m_seabed_outlier && !m_seabed_outlier->isAtDefault()) ||
         (m_seabed_smooth  && !m_seabed_smooth->isAtDefault())  ||
-        (m_seabed_method_combo  && m_seabed_method_combo->currentIndex()  != 2);
+        (m_seabed_method_combo  && m_seabed_method_combo->currentIndex()  != 0);
     markSectionDirty(m_seabed_hdr, dirty);
 }
 

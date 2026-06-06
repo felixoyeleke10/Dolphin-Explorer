@@ -11,6 +11,7 @@
 
 #include <QLabel>
 #include "ui/features/waterfall/WaterfallView.h"
+#include "ui/features/waterfall/WaterfallQcStrip.h"
 #include "ui/features/waterfall/panels/WaterfallInspectorPanel.h"
 #include "ui/features/waterfall/panels/WaterfallAnalysisPanel.h"
 #include "ui/shell/Theme.h"
@@ -78,10 +79,15 @@ WaterfallWindow::WaterfallWindow(AppState* app_state, QWidget* parent)
 
     m_view = new WaterfallView(this);
     m_view->setOverlayParams(init_settings.overlay);
+    m_show_amp_bar = init_settings.show_amp_bar;
+    m_view->setShowAmpBar(m_show_amp_bar);
     // Apply persisted GPU acceleration preference (false = force CPU fallback).
     if (!QSettings().value(QStringLiteral("app/gpuAccel"), true).toBool())
         m_view->setGpuAccel(false);
     content->addWidget(m_view, 1);
+
+    m_qc_strip = new WaterfallQcStrip(this);
+    content->addWidget(m_qc_strip);
 
     m_vscroll = new QScrollBar(Qt::Vertical, this);
     m_vscroll->setObjectName("wf_vscroll");
@@ -107,7 +113,7 @@ WaterfallWindow::WaterfallWindow(AppState* app_state, QWidget* parent)
 
     buildBottomBar();
 
-    // ── Signal wiring ─────────────────────────────────────────────────────────
+    // -- Signal wiring ---------------------------------------------------------
 
     connect(m_inspector, &WaterfallInspectorPanel::prevLineRequested,
             this,        &WaterfallWindow::onPrevFix);
@@ -120,24 +126,29 @@ WaterfallWindow::WaterfallWindow(AppState* app_state, QWidget* parent)
     connect(m_inspector, &WaterfallInspectorPanel::horizontalScaleChanged,
             m_view, &WaterfallView::setHorizontalScale);
     connect(m_inspector, &WaterfallInspectorPanel::ampBarToggled,
-            m_view, &WaterfallView::setShowAmpBar);
+            this, [this](bool on) {
+                m_show_amp_bar = on;
+                m_view->setShowAmpBar(on);
+            });
     connect(m_inspector, &WaterfallInspectorPanel::setCrsRequested,
             this, [this] {
                 emit setCrsRequested(m_layer ? m_layer->id : std::string{});
             });
+    connect(m_inspector, &WaterfallInspectorPanel::layerChangeRequested,
+            this, &WaterfallWindow::layerChangeRequested);
 
     connect(m_analysis, &WaterfallAnalysisPanel::applyToLineRequested,
             this, [this]() {
-                pushParams();
                 m_view->redetectSeabed(m_analysis->currentSeabedAutoParams());
+                pushParams();
                 flashProgress();
                 m_status_left->setText(tr("Params applied to this line"));
                 emit paramsApplied();
             });
     connect(m_analysis, &WaterfallAnalysisPanel::applyToAllLinesRequested,
             this, [this]() {
-                pushParams();
                 m_view->redetectSeabed(m_analysis->currentSeabedAutoParams());
+                pushParams();
                 flashProgress();
                 m_status_left->setText(tr("Params applied to all lines"));
                 emit paramsApplied();
@@ -148,7 +159,9 @@ WaterfallWindow::WaterfallWindow(AppState* app_state, QWidget* parent)
                 if (!m_view) return;
                 WaterfallParams p = m_view->params();
                 p.slant_range_correction = src_on;
-                m_view->setShowSeabedLine(!src_on);
+                // Keep seabed line visible when SRC is on — it is the altitude
+                // reference SRC depends on; hiding it removes the user's only
+                // way to verify the pick quality.
                 m_view->setParams(p);
                 emit paramsApplied();
             });
@@ -284,12 +297,29 @@ WaterfallWindow::WaterfallWindow(AppState* app_state, QWidget* parent)
     connect(m_scroll_debounce, &QTimer::timeout,
             this,               &WaterfallWindow::onScrollDebounce);
 
+    m_repipe_debounce = new QTimer(this);
+    m_repipe_debounce->setSingleShot(true);
+    m_repipe_debounce->setInterval(80);
+    connect(m_repipe_debounce, &QTimer::timeout,
+            this,               &WaterfallWindow::onRepipeDebounce);
+
     pushParams();
 }
 
 void WaterfallWindow::setGpuAccel(bool enabled)
 {
     if (m_view) m_view->setGpuAccel(enabled);
+}
+
+void WaterfallWindow::setProjectLayers(
+    const std::vector<std::pair<std::string, std::string>>& layers)
+{
+    if (m_inspector) m_inspector->setProjectLayers(layers);
+}
+
+void WaterfallWindow::setActiveLine(const std::string& id)
+{
+    if (m_inspector) m_inspector->setActiveLine(id);
 }
 
 } // namespace dolphin::ui

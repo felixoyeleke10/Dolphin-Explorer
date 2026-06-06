@@ -6,7 +6,7 @@ QString qssBase()
 {
     return QString(
 
-        // ── Scrollbars (global) ───────────────────────────────────────────────
+        // -- Scrollbars (global) -----------------------------------------------
         "QScrollBar:vertical {"
         "  background: transparent; width: 8px; margin: 0;"
         "}"
@@ -26,7 +26,7 @@ QString qssBase()
         "QScrollBar::handle:horizontal:hover { background: rgba(255,255,255,0.28); }"
         "QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; }"
 
-        // ── QLineEdit (global base) ───────────────────────────────────────────
+        // -- QLineEdit (global base) -------------------------------------------
         "QLineEdit {"
         "  background: @overlayEl;"
         "  border: 1px solid @overlayHov;"
@@ -40,7 +40,7 @@ QString qssBase()
         "  background: @overlayHov;"
         "}"
 
-        // ── Tree / List views (global base) ──────────────────────────────────
+        // -- Tree / List views (global base) ----------------------------------
         "QTreeWidget, QListWidget {"
         "  background: transparent; border: none;"
         "  color: @textSecond; font-size: @fontBase; font-family: @font; outline: none;"
@@ -55,7 +55,7 @@ QString qssBase()
         "  background: rgba(@accentRgb,0.25); color: @textPrimary;"
         "}"
 
-        // ── QDoubleSpinBox / QSpinBox (global base) ──────────────────────────
+        // -- QDoubleSpinBox / QSpinBox (global base) --------------------------
         "QDoubleSpinBox, QSpinBox {"
         "  background: @overlayMut; border: 1px solid rgba(255,255,255,0.09);"
         "  border-radius: 5px; color: @textSecond; font-family: @font; font-size: @fontSm;"
@@ -81,7 +81,7 @@ QString qssBase()
         "  background: @overlayHov;"
         "}"
 
-        // ── QComboBox (global base) ───────────────────────────────────────────
+        // -- QComboBox (global base) -------------------------------------------
         // text-align:left prevents Windows from centring combo text by default.
         "QComboBox {"
         "  background: @bgCard; border: 1px solid @borderMenu; border-radius: 5px;"
@@ -100,7 +100,7 @@ QString qssBase()
         "  outline: none; padding: 2px 0; text-align: left;"
         "}"
 
-        // ── QCheckBox (global base) ──────────────────────────────────────────
+        // -- QCheckBox (global base) ------------------------------------------
         "QCheckBox {"
         "  color: @textSecond; font-family: @font; font-size: @fontBase; spacing: 6px;"
         "}"
@@ -116,7 +116,7 @@ QString qssBase()
         "QCheckBox::indicator:disabled { background: rgba(255,255,255,0.03); border-color: rgba(255,255,255,0.07); }"
         "QCheckBox:disabled { color: @textDisabled; }"
 
-        // ── QRadioButton (global base) ───────────────────────────────────────
+        // -- QRadioButton (global base) ---------------------------------------
         "QRadioButton {"
         "  color: @textSecond; font-family: @font; font-size: @fontBase; spacing: 6px;"
         "}"
@@ -129,7 +129,7 @@ QString qssBase()
         "QRadioButton::indicator:disabled { background: rgba(255,255,255,0.03); border-color: rgba(255,255,255,0.07); }"
         "QRadioButton:disabled { color: @textDisabled; }"
 
-        // ── QGroupBox ─────────────────────────────────────────────────────────
+        // -- QGroupBox ---------------------------------------------------------
         "QGroupBox {"
         "  border: 1px solid @border;"
         "  border-radius: @radius3; margin-top: 10px; padding-top: 6px;"
@@ -142,12 +142,12 @@ QString qssBase()
         "  left: 8px; padding: 0 4px; color: @textMuted;"
         "}"
 
-        // ── QSplitter ─────────────────────────────────────────────────────────
+        // -- QSplitter ---------------------------------------------------------
         "QSplitter::handle            { background: @border; }"
         "QSplitter::handle:vertical   { height: 1px; }"
         "QSplitter::handle:horizontal { width: 1px; }"
 
-        // ── QProgressBar ──────────────────────────────────────────────────────
+        // -- QProgressBar ------------------------------------------------------
         "QProgressBar { background: @border; border: none; border-radius: 2px; }"
         "QProgressBar::chunk { background: @accent; border-radius: 2px; }"
 

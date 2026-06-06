@@ -19,9 +19,9 @@
 
 namespace dolphin::ui {  
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Ruler — ping-index labels on the left depth strip
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void WaterfallOverlayPainter::paintRuler(
     QPainter&                        p,
@@ -48,9 +48,9 @@ void WaterfallOverlayPainter::paintRuler(
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Crosshair — configurable cursor lines
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void WaterfallOverlayPainter::paintCrosshair(
     QPainter&              p,
@@ -85,12 +85,12 @@ void WaterfallOverlayPainter::paintCrosshair(
     p.restore();
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Range grid — vertical lines at constant slant-range intervals
 //
 //  The scale bar already shows the range mapping at the top.  This grid draws
 //  lines across the image at auto or user-specified metre intervals.
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void WaterfallOverlayPainter::paintRangeGrid(
     QPainter&                        p,
@@ -113,20 +113,21 @@ void WaterfallOverlayPainter::paintRangeGrid(
     // Locate the first visible row with a valid slant range
     const PingRow* rep = nullptr;
     for (int i = scroll_row; i < n_rows; ++i) {
-        if (rows[i].slant_range_m > 0.f) {
+        if (rows[i].slant_range_m > 0.f && std::isfinite(rows[i].slant_range_m)) {
             rep = &rows[i]; break;
         }
     }
     if (!rep) {
         // Fall back: scan all rows
         for (const auto& r : rows) {
-            if (r.slant_range_m > 0.f) { rep = &r; break; }
+            if (r.slant_range_m > 0.f && std::isfinite(r.slant_range_m))
+                { rep = &r; break; }
         }
     }
     if (!rep) return;
 
     const float max_range_m = rep->slant_range_m;
-    if (max_range_m <= 0.f) return;
+    if (!(max_range_m > 0.f)) return;
 
     // Pixel extent of the half-swath (nadir to edge), accounting for h-zoom/pan
     const float half_w_px = static_cast<float>(lay.widget_w - kWfRulerW) / 2.0f;
@@ -188,9 +189,9 @@ void WaterfallOverlayPainter::paintRangeGrid(
     p.restore();
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 //  Empty state — centred placeholder text when no data is loaded
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 void WaterfallOverlayPainter::paintEmptyState(
     QPainter&    p,

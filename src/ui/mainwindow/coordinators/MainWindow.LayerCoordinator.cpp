@@ -10,6 +10,9 @@
 #include "ui/bottom/DiagnosticsHub.h"
 #include "ui/features/processing/ProcessingController.h"
 #include "ui/mainwindow/panels/InspectorPanel.h"
+#include "ui/mainwindow/rightpanel/RightPanelHost.h"
+#include "ui/mainwindow/rightpanel/RightPanel.SbpGain.h"
+#include "ui/mainwindow/rightpanel/RightPanel.SbpSignal.h"
 #include "ui/shared/panels/LineListPanel.h"
 #include "ui/shared/widgets/LayerPickerWidget.h"
 #include "ui/features/waterfall/WaterfallWindow.h"
@@ -71,10 +74,10 @@ void MainWindow::onLayerSelected(const std::string& layer_id)
         }
     }
 
-    if (m_map_view)
-        m_map_view->setActiveLayer(layer_id);
     if (m_viewport_host)
         m_viewport_host->setActiveLayer(layer_id);
+    else if (m_map_view)
+        m_map_view->setActiveLayer(layer_id);
 
     if (layer) {
         using M = app::Modality;
@@ -115,12 +118,17 @@ void MainWindow::onLayerSelected(const std::string& layer_id)
                     auto* svc = m_import_service;
 
                     m_pending_sbp_builds.insert(layer_id);
+                    taskBegin(QStringLiteral("sbp_profile:") + QString::fromStdString(layer_id),
+                              tr("Building sub-bottom profile map…"));
                     auto* watcher = new QFutureWatcher<LayerMapData>(this);
                     connect(watcher, &QFutureWatcher<LayerMapData>::finished, this,
                             [this, watcher, lid]() {
                                 LayerMapData result = watcher->result();
                                 watcher->deleteLater();
                                 m_pending_sbp_builds.erase(lid);
+                                taskDone(QStringLiteral("sbp_profile:") + QString::fromStdString(lid));
+
+                                if (!m_project || !m_project->findLayer(lid)) return;
 
                                 if (m_map_view) {
                                     result.track_stats.layer_visible =
@@ -166,6 +174,13 @@ void MainWindow::onLayerSelected(const std::string& layer_id)
             const auto wf_it = m_layer_wf_params.find(layer->id);
             if (wf_it != m_layer_wf_params.end())
                 m_waterfall_win->applyExternalParams(wf_it->second);
+            // Restore per-layer palette — takes priority over any palette baked
+            // into the cached params (which may have been captured before the
+            // per-layer palette was last changed).
+            if (layer->sss_palette >= 0)
+                m_waterfall_win->setPalette(layer->sss_palette);
+            else if (m_inspector)
+                m_waterfall_win->setPalette(m_inspector->currentPaletteIndex());
         } else if (!layer) {
             m_waterfall_win->clearLayer();
         }
@@ -178,6 +193,21 @@ void MainWindow::onLayerSelected(const std::string& layer_id)
                 const std::string path = src ? src->path : std::string{};
                 const uint64_t    sz   = src ? src->size_bytes : 0;
                 m_sbp_win->setLayer(layer, m_import_service, path, sz);
+                // Restore per-layer SBP palette.
+                if (layer->sbp_palette >= 0)
+                    m_sbp_win->setPalette(layer->sbp_palette);
+                const auto sbp_it = m_layer_sbp_params.find(layer->id);
+                if (sbp_it != m_layer_sbp_params.end()) {
+                    m_sbp_win->applyGainParams(sbp_it->second.gain);
+                    m_sbp_win->applySignalParams(sbp_it->second.signal);
+                    if (m_inspector) {
+                        auto* host = m_inspector->rightPanelHost();
+                        if (auto* gm = host->sbpGainModule())
+                            gm->setParams(sbp_it->second.gain);
+                        if (auto* sm = host->sbpSignalModule())
+                            sm->setParams(sbp_it->second.signal);
+                    }
+                }
             }
         } else {
             m_sbp_win->clearLayer();
@@ -221,9 +251,10 @@ void MainWindow::onRemoveLayer(const std::string& layer_id)
     m_pending_sbp_builds.erase(layer_id);
     m_layer_nav_params.erase(layer_id);
     m_layer_wf_params.erase(layer_id);
+    m_layer_sbp_params.erase(layer_id);
     if (m_sss_ctrl) m_sss_ctrl->unloadLayer(layer_id);
-    if (m_map_view) m_map_view->removeLayerData(layer_id);
     if (m_viewport_host) m_viewport_host->onLayerRemoved(layer_id);
+    else if (m_map_view) m_map_view->removeLayerData(layer_id);
     if (m_active_layer_id == layer_id) {
         m_active_layer_id.clear();
         if (m_inspector) m_inspector->showEmpty();
@@ -255,9 +286,10 @@ void MainWindow::onRemoveLayers(const std::vector<std::string>& layer_ids)
         m_pending_sbp_builds.erase(id);
         m_layer_nav_params.erase(id);
         m_layer_wf_params.erase(id);
+        m_layer_sbp_params.erase(id);
         if (m_sss_ctrl) m_sss_ctrl->unloadLayer(id);
-        if (m_map_view) m_map_view->removeLayerData(id);
         if (m_viewport_host) m_viewport_host->onLayerRemoved(id);
+        else if (m_map_view) m_map_view->removeLayerData(id);
         m_project->removeLayer(id);
     }
     if (active_removed) {

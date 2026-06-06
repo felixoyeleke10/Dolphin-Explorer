@@ -7,7 +7,7 @@
 
 namespace dolphin::ui {
 
-// ── Nav position source ───────────────────────────────────────────────────────
+// -- Nav position source -------------------------------------------------------
 
 enum class SssNavPositionSource {
     Auto,          // fish/sensor position if valid → vessel/ship position
@@ -17,7 +17,7 @@ enum class SssNavPositionSource {
     ManualOffset,  // best available position + user x/y offset
 };
 
-// ── Heading source ────────────────────────────────────────────────────────────
+// -- Heading source ------------------------------------------------------------
 
 enum class SssHeadingSource {
     Auto,                     // sensor_heading → ship_heading → smoothed COG
@@ -27,7 +27,7 @@ enum class SssHeadingSource {
     SmoothedCourseOverGround, // EMA-smoothed COG (closest to original behaviour)
 };
 
-// ── Nav smoothing ─────────────────────────────────────────────────────────────
+// -- Nav smoothing -------------------------------------------------------------
 
 enum class SssNavSmoothingMode {
     Off,            // no smoothing — use raw resolved positions as-is
@@ -36,7 +36,7 @@ enum class SssNavSmoothingMode {
     Median,         // window median (falls back to MovingAverage in this build)
 };
 
-// ── Processing parameters ─────────────────────────────────────────────────────
+// -- Processing parameters -----------------------------------------------------
 
 struct SssGeorefParams {
     // Nav position source
@@ -73,7 +73,7 @@ struct SssGeorefParams {
     bool slant_range_corrected = false;
 };
 
-// ── Per-file diagnostics ──────────────────────────────────────────────────────
+// -- Per-file diagnostics ------------------------------------------------------
 
 struct HeadingStats {
     size_t from_sensor = 0;
@@ -82,7 +82,7 @@ struct HeadingStats {
     size_t skipped     = 0;
 };
 
-// ── Resolved values ───────────────────────────────────────────────────────────
+// -- Resolved values -----------------------------------------------------------
 
 struct ResolvedPosition {
     double lat = 0.0, lon = 0.0;
@@ -114,7 +114,7 @@ struct CorrectedSssNav {
     uint32_t flags       = 0;
 };
 
-// ── Per-ping resolution functions ─────────────────────────────────────────────
+// -- Per-ping resolution functions ---------------------------------------------
 
 // Select fish / vessel / layback position for one ping.
 // heading_rad is consumed only when nav_source == VesselLayback; pass NaN
@@ -133,7 +133,7 @@ ResolvedHeading resolveSssHeading(
     double cog_rad          = std::numeric_limits<double>::quiet_NaN(),
     double smoothed_cog_rad = std::numeric_limits<double>::quiet_NaN());
 
-// ── Full corrected nav table ───────────────────────────────────────────────────
+// -- Full corrected nav table ---------------------------------------------------
 //
 // Returns one CorrectedSssNav per ping, indexed to pings[order[i]].
 // Resolves heading (with EMA/COG and backward-fill) then position (with
@@ -146,7 +146,7 @@ std::vector<CorrectedSssNav> buildCorrectedNavTable(
     const SssGeorefParams&                 params,
     HeadingStats*                          out_stats = nullptr);
 
-// ── Heading-only table (backward compatibility) ───────────────────────────────
+// -- Heading-only table (backward compatibility) -------------------------------
 //
 // Returns heading_rad per ping (NaN = unresolvable).
 // Kept for callers that do not yet use buildCorrectedNavTable.
