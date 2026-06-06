@@ -27,6 +27,7 @@
 #include "app/layers/DataLayer.h"
 
 #include <QCoreApplication>
+#include <QTemporaryDir>
 
 #include <chrono>
 #include <cstdio>
@@ -229,7 +230,7 @@ static void benchCacheSequentialRead(int n_pings)
 // Scenario C — Project JSON round-trip
 // ---------------------------------------------------------------------------
 
-static void benchProjectJsonRoundTrip(int n_layers, int n_contacts)
+static void benchProjectStorageRoundTrip(int n_layers, int n_contacts)
 {
     using namespace dolphin;
 
@@ -272,29 +273,28 @@ static void benchProjectJsonRoundTrip(int n_layers, int n_contacts)
         proj->addContact(c);
     }
 
-    // Warm toJson
-    std::string json = proj->toJson();
-    REQUIRE(!json.empty());
+    // Warm save
+    REQUIRE(proj->save());
 
-    // Benchmark: toJson
+    // Benchmark: save
     const int reps = 10;
     auto t0 = Clock::now();
     for (int i = 0; i < reps; ++i)
-        json = proj->toJson();
-    const double to_ms = elapsedMs(t0) / reps;
-    reportPerf("project_to_json", to_ms, n_layers,
+        REQUIRE(proj->save());
+    const double save_ms = elapsedMs(t0) / reps;
+    reportPerf("project_save", save_ms, n_layers,
                (std::to_string(n_layers) + "L " + std::to_string(n_contacts) + "C").c_str());
 
-    // Benchmark: fromJson
-    auto proj2 = app::Project::create("PerfBench2", manifest + "2");
-    REQUIRE(proj2 != nullptr);
+    // Benchmark: open
+    std::shared_ptr<app::Project> proj2;
     t0 = Clock::now();
     for (int i = 0; i < reps; ++i)
-        proj2->fromJson(json);
-    const double from_ms = elapsedMs(t0) / reps;
-    reportPerf("project_from_json", from_ms, n_layers,
+        proj2 = app::Project::open(manifest);
+    const double open_ms = elapsedMs(t0) / reps;
+    reportPerf("project_open", open_ms, n_layers,
                (std::to_string(n_layers) + "L " + std::to_string(n_contacts) + "C").c_str());
 
+    REQUIRE(proj2 != nullptr);
     REQUIRE(static_cast<int>(proj2->layers().size()) == n_layers);
 }
 
@@ -345,8 +345,8 @@ int main(int argc, char* argv[])
     benchCacheSequentialRead(10000);
 
     // -- Scenario C: project JSON round-trip -------------------------------
-    benchProjectJsonRoundTrip(10, 100);
-    benchProjectJsonRoundTrip(50, 500);
+    benchProjectStorageRoundTrip(10, 100);
+    benchProjectStorageRoundTrip(50, 500);
 
     // -- Scenario D: real XTF fixture indexing (small) ---------------------
 #ifdef XTF_FIXTURE_DIR

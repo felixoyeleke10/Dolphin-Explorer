@@ -1,4 +1,4 @@
-# ── CancellationToken unit tests ──────────────────────────────────────────────
+# -- CancellationToken unit tests ----------------------------------------------
 add_executable(test_cancellation_token
     test_cancellation_token.cpp
 )
@@ -25,7 +25,7 @@ set_target_properties(test_parsed_cache PROPERTIES CXX_STANDARD 20)
 
 add_test(NAME ParsedCache COMMAND test_parsed_cache)
 
-# ── Project storage model regression tests ────────────────────────────────────
+# -- Project storage model regression tests ------------------------------------
 add_executable(test_project_storage
     test_project_storage.cpp
 )
@@ -55,7 +55,7 @@ set_target_properties(test_sidescan_georef PROPERTIES
 
 add_test(NAME SidescanGeoref COMMAND test_sidescan_georef)
 
-# ── Nav-correction unit tests ─────────────────────────────────────────────────
+# -- Nav-correction unit tests -------------------------------------------------
 add_executable(test_nav_corrections
     test_nav_corrections.cpp
 )
@@ -129,7 +129,7 @@ if(WIN32)
     endif()
 endif()
 
-# ── Stage 03 performance baseline ────────────────────────────────────────────
+# -- Stage 03 performance baseline --------------------------------------------
 add_executable(test_perf_baseline
     test_perf_baseline.cpp
 )
@@ -158,7 +158,7 @@ if(WIN32)
     endif()
 endif()
 
-# ── XTF parser compatibility tests (Stage 02) ─────────────────────────────────
+# -- XTF parser compatibility tests (Stage 02) ---------------------------------
 add_executable(test_xtf_reader
     test_xtf_reader.cpp
 )
@@ -176,7 +176,7 @@ set_target_properties(test_xtf_reader PROPERTIES
 
 add_test(NAME XtfReader COMMAND test_xtf_reader)
 
-# ── SEG-Y parser tests ────────────────────────────────────────────────────────
+# -- SEG-Y parser tests --------------------------------------------------------
 add_executable(test_segy_reader
     test_segy_reader.cpp
 )
@@ -190,7 +190,7 @@ set_target_properties(test_segy_reader PROPERTIES
 
 add_test(NAME SegyReader COMMAND test_segy_reader)
 
-# ── GL initialization smoke test ──────────────────────────────────────────────
+# -- GL initialization smoke test ----------------------------------------------
 # Verifies WaterfallView and MapView3D start up without shader errors.
 # The test uses the native Qt platform on Windows (no QT_QPA_PLATFORM override)
 # so that a real OpenGL context is available.

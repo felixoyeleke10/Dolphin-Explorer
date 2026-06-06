@@ -1,4 +1,4 @@
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 #  dolphin-ui  —  UI layer, split into feature-owned sub-targets.
 #
 #  Dependency rules
@@ -12,9 +12,9 @@
 #    • has PUBLIC ${CMAKE_SOURCE_DIR}/src so all headers are reachable
 #    • uses PRIVATE for internal dolphin deps (symbols are embedded in .a)
 #    • uses PUBLIC for Qt modules (header-visible to consumers)
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
-# ── 1. Style / design system ──────────────────────────────────────────────────
+# -- 1. Style / design system --------------------------------------------------
 add_library(dolphin-ui-style STATIC
     shell/AppStyle.cpp
     shell/AppStyleBase.cpp
@@ -33,7 +33,7 @@ target_link_libraries(dolphin-ui-style PUBLIC
     Qt6::Svg
 )
 
-# ── 2. Bottom dock (terminal / diagnostics) ───────────────────────────────────
+# -- 2. Bottom dock (terminal / diagnostics) -----------------------------------
 add_library(dolphin-ui-bottom STATIC
     bottom/DiagnosticsHub.cpp
     bottom/RuntimeLogBridge.cpp
@@ -49,7 +49,7 @@ target_link_libraries(dolphin-ui-bottom
     PUBLIC  Qt6::Widgets
 )
 
-# ── 3. Shared widgets / panels / dialogs (used by 2+ features) ───────────────
+# -- 3. Shared widgets / panels / dialogs (used by 2+ features) ---------------
 add_library(dolphin-ui-shared STATIC
     shared/AppCommands.cpp
     shared/panels/ContactInspectorPage.cpp
@@ -76,7 +76,7 @@ target_link_libraries(dolphin-ui-shared
             Qt6::Svg
 )
 
-# ── 4. Geodesy feature ────────────────────────────────────────────────────────
+# -- 4. Geodesy feature --------------------------------------------------------
 add_library(dolphin-ui-geodesy STATIC
     features/geodesy/GeodesyPanel.cpp
 )
@@ -88,7 +88,7 @@ target_link_libraries(dolphin-ui-geodesy
     PUBLIC  Qt6::Widgets
 )
 
-# ── 5. Contacts feature ───────────────────────────────────────────────────────
+# -- 5. Contacts feature -------------------------------------------------------
 add_library(dolphin-ui-contacts STATIC
     features/contacts/ContactListPanel.cpp
 )
@@ -99,7 +99,7 @@ target_link_libraries(dolphin-ui-contacts
     PUBLIC  Qt6::Widgets
 )
 
-# ── 6. Data Library ───────────────────────────────────────────────────────────
+# -- 6a. Data Library ----------------------------------------------------------
 add_library(dolphin-ui-datalibrary STATIC
     features/datalibrary/DataLibraryWindow.cpp
 )
@@ -110,7 +110,7 @@ target_link_libraries(dolphin-ui-datalibrary
     PUBLIC  Qt6::Widgets
 )
 
-# ── 6. Import feature ─────────────────────────────────────────────────────────
+# -- 6b. Import feature --------------------------------------------------------
 add_library(dolphin-ui-import STATIC
     features/import/ImportController.cpp
     features/import/ImportPanel.cpp
@@ -130,7 +130,7 @@ target_link_libraries(dolphin-ui-import
             Qt6::Concurrent
 )
 
-# ── 7. Map feature (MapView + SidescanViewController) ────────────────────────
+# -- 7. Map feature (MapView + SidescanViewController) ------------------------
 add_library(dolphin-ui-map STATIC
     features/map/MapView.cpp
     features/map/paint/MapViewPaint.cpp
@@ -174,7 +174,7 @@ target_link_libraries(dolphin-ui-map
             Qt6::OpenGLWidgets
 )
 
-# ── 8. Waterfall feature ──────────────────────────────────────────────────────
+# -- 8. Waterfall feature ------------------------------------------------------
 add_library(dolphin-ui-waterfall STATIC
     features/waterfall/WaterfallView.cpp
     features/waterfall/WaterfallViewData.cpp
@@ -224,7 +224,7 @@ target_link_libraries(dolphin-ui-waterfall
             Qt6::OpenGLWidgets
 )
 
-# ── 9. Sub-bottom profiler viewer ────────────────────────────────────────────
+# -- 9. Sub-bottom profiler viewer --------------------------------------------
 add_library(dolphin-ui-subbottom STATIC
     features/subbottom/SubBottomSettingsDialog.cpp
     features/subbottom/SubBottomSettingsDialog.Tabs.cpp
@@ -248,7 +248,7 @@ target_link_libraries(dolphin-ui-subbottom
             Qt6::Concurrent
 )
 
-# ── 10. Node graph feature ────────────────────────────────────────────────────
+# -- 10. Node graph feature ----------------------------------------------------
 add_library(dolphin-ui-nodegraph STATIC
     features/nodegraph/NodePaletteView.cpp
     features/nodegraph/NodeGraphView.cpp
@@ -269,7 +269,7 @@ target_link_libraries(dolphin-ui-nodegraph
     PUBLIC  Qt6::Widgets
 )
 
-# ── 11. Processing feature ────────────────────────────────────────────────────
+# -- 11a. Processing feature ---------------------------------------------------
 #  Allowed exception: depends on dolphin-ui-map (ProcessingWindow drives
 #  SidescanViewController::prebuildTier).
 add_library(dolphin-ui-processing STATIC
@@ -284,7 +284,7 @@ target_link_libraries(dolphin-ui-processing
     PUBLIC  Qt6::Widgets
 )
 
-# ── 11. Metadata feature ──────────────────────────────────────────────────────
+# -- 11b. Metadata feature -----------------------------------------------------
 add_library(dolphin-ui-metadata STATIC
     features/metadata/MetadataExportUtils.cpp
     features/metadata/SSSMetadataWindow.cpp
@@ -308,7 +308,7 @@ target_link_libraries(dolphin-ui-metadata
     PUBLIC  Qt6::Widgets
 )
 
-# ── 12a. Spine systems — app-level singletons accessible to all feature targets ─
+# -- 12a. Spine systems — app-level singletons accessible to all feature targets -
 #  AppState (System 1), ProjectEventBus (System 7), WindowRegistry (System 8).
 #  Lives below mainwindow so feature targets can depend on it without circular refs.
 add_library(dolphin-ui-systems STATIC
@@ -323,7 +323,7 @@ target_link_libraries(dolphin-ui-systems
            Qt6::Widgets
 )
 
-# ── 12b. MainWindow — composition root ────────────────────────────────────────
+# -- 12b. MainWindow — composition root ----------------------------------------
 #  Links every feature target; owns shell layout, menus, panel placement,
 #  and high-level coordinator files.
 add_library(dolphin-ui-mainwindow STATIC
@@ -393,7 +393,7 @@ target_link_libraries(dolphin-ui-mainwindow
             Qt6::Svg
 )
 
-# ── 13. dolphin-ui — INTERFACE aggregate ─────────────────────────────────────
+# -- 13. dolphin-ui — INTERFACE aggregate -------------------------------------
 #  DolphinExplorer links only this target; the aggregate pulls in all
 #  sub-targets and their transitive Qt / dolphin deps.
 add_library(dolphin-ui INTERFACE)

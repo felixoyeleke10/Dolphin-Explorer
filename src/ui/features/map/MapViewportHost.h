@@ -1,6 +1,6 @@
 #pragma once
 #include "ui/features/map/MapTypes.h"
-#include "ui/mainwindow/AppState.h"   // for ToolMode
+#include "ui/systems/AppState.h"   // for ToolMode
 #include <QColor>
 #include <QImage>
 #include <QString>

@@ -20,9 +20,9 @@
 #include "ui/features/subbottom/SbpSignalParams.h"
 #include "app/tasks/OperationManager.h"
 #include "ui/mainwindow/AppSettingsDialog.h"
-#include "ui/mainwindow/AppState.h"
-#include "ui/mainwindow/WindowRegistry.h"
-#include "ui/mainwindow/ProjectEventBus.h"
+#include "ui/systems/AppState.h"
+#include "ui/systems/WindowRegistry.h"
+#include "ui/systems/ProjectEventBus.h"
 
 class QAction;
 class QDialog;

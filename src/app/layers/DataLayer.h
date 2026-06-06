@@ -7,9 +7,8 @@
 #include "core/SpatialRef.h"
 #include "pipeline/NodeGraph.h"
 #include "app/layers/LayerUtils.h"   // Modality enum, modalityLabel(), inferModality()
-// Qt-free display state types — safe to include from the app layer.
-#include "ui/features/waterfall/SssDisplayState.h"
-#include "ui/features/subbottom/SbpDisplayState.h"
+#include "app/display/SssDisplayState.h"
+#include "app/display/SbpDisplayState.h"
 
 namespace dolphin::app {
 
