@@ -259,6 +259,12 @@ void ImportReviewWizard::startProbe(int idx)
 
 void ImportReviewWizard::onProbeFinished(int idx)
 {
+    // Classify against the current project so the status badge shows "Already
+    // indexed" or "Rebuild needed" instead of just the CRS state.
+    if (m_entries[idx].done && m_entries[idx].result.success) {
+        m_entries[idx].classify_kind =
+            app::classifyImportAction(m_entries[idx].path, m_current_project).kind;
+    }
     updateFileRow(idx);
     updateImportButton();
     if (!m_rebuild_pending) {
@@ -299,13 +305,23 @@ void ImportReviewWizard::updateFileRow(int idx)
     e.detail_label->setText(
         QString::fromStdString(r.format_name) + "  ·  " + modalityString(r));
 
-    const bool crs_resolved = !r.needs_crs_review || !m_project_crs.empty();
-    if (!crs_resolved) {
-        e.status_label->setText(tr("Needs CRS"));
+    // Show import decision badge, overriding CRS state when the file is recognised.
+    using Kind = FileImportAction::Kind;
+    if (e.classify_kind == Kind::ReuseExisting) {
+        e.status_label->setText(tr("Already indexed"));
+        applyFileStatus(e.status_label, "ok");
+    } else if (e.classify_kind == Kind::RebuildExisting) {
+        e.status_label->setText(tr("Rebuild needed"));
         applyFileStatus(e.status_label, "caution");
     } else {
-        e.status_label->setText(r.is_projected ? tr("Projected") : tr("Geographic"));
-        applyFileStatus(e.status_label, "ok");
+        const bool crs_resolved = !r.needs_crs_review || !m_project_crs.empty();
+        if (!crs_resolved) {
+            e.status_label->setText(tr("Needs CRS"));
+            applyFileStatus(e.status_label, "caution");
+        } else {
+            e.status_label->setText(r.is_projected ? tr("Projected") : tr("Geographic"));
+            applyFileStatus(e.status_label, "ok");
+        }
     }
 }
 

@@ -81,6 +81,8 @@ private:
         io::ProbeResult  result;
         std::vector<core::ArtifactType> module_filter;  // empty = all sensors
         QFutureWatcher<io::ProbeResult>* watcher = nullptr;
+        // Set after probe completes — drives the status badge.
+        FileImportAction::Kind classify_kind = FileImportAction::Kind::ImportNew;
 
         // Row widgets in the file list
         QLabel* name_label   = nullptr;

@@ -3,14 +3,54 @@
 #include "ui/shell/Features.h"
 #include "ui/features/import/ImportReviewWizard.h"
 #include "ui/features/import/ImportSetupDialog.h"
+#include "app/import/ImportClassifier.h"
 #include "app/project/Project.h"
 
 #include <QDateTime>
 #include <QDir>
+#include <QFileInfo>
 #include <QMessageBox>
 #include <QStandardPaths>
 
 namespace dolphin::ui {
+
+// Scan the app-managed projects directory for any .dlp manifest that already
+// contains one of the given source paths.  Returns the manifest path of the
+// first match, or empty string if none found.
+static QString findManagedProjectForPaths(const QList<FileImportAction>& files)
+{
+    const QString proj_root =
+        QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation)
+        + "/projects/";
+
+    for (const QFileInfo& dir_entry :
+             QDir(proj_root).entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot)) {
+        const QString manifest = dir_entry.filePath() + "/" + dir_entry.fileName() + ".dlp";
+        if (!QFileInfo::exists(manifest)) continue;
+
+        auto proj = app::Project::open(manifest.toStdString());
+        if (!proj) continue;
+
+        for (const auto& action : files) {
+            if (proj->findSourceByPath(action.path.toStdString()))
+                return manifest;
+        }
+    }
+    return {};
+}
+
+// Re-classify all actions against the now-open project so stale ImportNew
+// entries (computed before the project was known) pick up Reuse/Rebuild.
+static void reclassify(QList<FileImportAction>& files, const app::Project* project)
+{
+    if (!project) return;
+    for (auto& action : files) {
+        const auto fresh = app::classifyImportAction(action.path, project);
+        action.kind               = fresh.kind;
+        action.existing_layer_id  = fresh.existing_layer_id;
+        action.existing_source_id = fresh.existing_source_id;
+    }
+}
 
 bool MainWindow::ensureProjectForImport(const ImportDialogResult& res)
 {
@@ -37,6 +77,21 @@ bool MainWindow::ensureProjectForImport(const ImportDialogResult& res)
         addToRecentProjects(proj_path);
         bindProjectUi();
     } else if (!m_project) {
+        // Check whether an existing managed project already holds these files.
+        const QString existing = findManagedProjectForPaths(res.files);
+        if (!existing.isEmpty()) {
+            const QString proj_name = QFileInfo(existing).dir().dirName();
+            const auto reply = QMessageBox::question(this, tr("Existing Project Found"),
+                tr("A project already contains this data:\n\n%1\n\nOpen it?")
+                    .arg(proj_name),
+                QMessageBox::Yes | QMessageBox::No);
+            if (reply == QMessageBox::Yes) {
+                loadProject(existing.toStdString());
+                return true;
+            }
+        }
+
+        // No existing managed project — create a new session project.
         const QString ts = QDateTime::currentDateTime().toString("yyyy-MM-dd_HH-mm-ss");
         const QString session_name = "Session_" + ts;
         const QString root_dir =
@@ -65,11 +120,13 @@ void MainWindow::onImportFile()
     wizard->setModuleFilter(module_filter);
 
     connect(wizard, &ImportReviewWizard::importConfirmed,
-            this, [this](const ImportDialogResult& res) {
+            this, [this](ImportDialogResult res) {
         if (!ensureProjectForImport(res)) return;
+        // Re-classify against the now-open project; if ensureProject opened an
+        // existing project the wizard's ImportNew entries become Reuse/Rebuild.
+        reclassify(res.files, m_project.get());
         if constexpr (Features::kImport)
-            if (m_import_ctrl)
-                m_import_ctrl->importBatch(res.files);
+            if (m_import_ctrl) m_import_ctrl->importBatch(res.files);
     });
 
     wizard->show();
@@ -86,11 +143,11 @@ void MainWindow::showImportDialog(const QStringList& paths,
     wizard->addFiles(paths);
 
     connect(wizard, &ImportReviewWizard::importConfirmed,
-            this, [this](const ImportDialogResult& res) {
+            this, [this](ImportDialogResult res) {
         if (!ensureProjectForImport(res)) return;
+        reclassify(res.files, m_project.get());
         if constexpr (Features::kImport)
-            if (m_import_ctrl)
-                m_import_ctrl->importBatch(res.files);
+            if (m_import_ctrl) m_import_ctrl->importBatch(res.files);
     });
 
     wizard->show();
