@@ -419,6 +419,11 @@ void ImportService::rebuildCacheIndex(const std::string& layer_id,
         return;
     }
 
+    // Cancel any previous rebuild for this layer_id before starting a new one.
+    m_rebuild_tokens.erase(layer_id);
+    CancellationToken token;
+    m_rebuild_tokens.emplace(layer_id, token);
+
     project->markLayerIndexing(layer_id);
     emit indexingStarted(layer_id);
 
@@ -426,14 +431,18 @@ void ImportService::rebuildCacheIndex(const std::string& layer_id,
         core::ArtifactIndex index;
         io::FormatMeta      meta;
         std::string         error;
+        bool                cancelled = false;
     };
 
     auto* watcher = new QFutureWatcher<Result>(this);
     connect(watcher, &QFutureWatcher<Result>::finished, this,
             [this, watcher, project, layer_id, source_id]() {
         watcher->deleteLater();
+        m_rebuild_tokens.erase(layer_id);
 
         const Result r = watcher->result();
+        if (r.cancelled) return;  // project switched mid-scan; discard silently
+
         if (!r.error.empty()) {
             emit indexingFailed(layer_id, r.error);
             return;
@@ -445,9 +454,8 @@ void ImportService::rebuildCacheIndex(const std::string& layer_id,
             return;
         }
 
-        r.index.source_id.empty()
-            ? layer->artifact_index.source_id = source_id
-            : layer->artifact_index.source_id = r.index.source_id;
+        layer->artifact_index.source_id =
+            r.index.source_id.empty() ? source_id : r.index.source_id;
         layer->artifact_index.entries = r.index.entries;
         layer->index_built = !layer->artifact_index.empty();
 
@@ -469,7 +477,7 @@ void ImportService::rebuildCacheIndex(const std::string& layer_id,
         emit cacheIndexRebuilt(layer_id);
     });
 
-    watcher->setFuture(QtConcurrent::run([cache_path]() -> Result {
+    watcher->setFuture(QtConcurrent::run([cache_path, token]() -> Result {
         Result r;
         io::ParsedCacheReader reader;
         if (!reader.open(cache_path)) {
@@ -477,11 +485,22 @@ void ImportService::rebuildCacheIndex(const std::string& layer_id,
             return r;
         }
         r.meta  = reader.metadata();
-        r.index = reader.buildIndex();
+        r.index = reader.buildIndex({}, token.flag());
+        if (token.isCancelled()) {
+            r.cancelled = true;
+            return r;
+        }
         if (r.index.empty())
             r.error = "Cache index is empty: " + cache_path;
         return r;
     }));
+}
+
+void ImportService::cancelPendingRebuild()
+{
+    for (auto& [id, tok] : m_rebuild_tokens)
+        tok.cancel();
+    m_rebuild_tokens.clear();
 }
 
 } // namespace dolphin::app

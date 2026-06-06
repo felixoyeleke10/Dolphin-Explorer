@@ -1,4 +1,4 @@
-﻿// MainWindow.Project.cpp — project CRUD: new, open, save, close, load.
+// MainWindow.Project.cpp — project CRUD: new, open, save, close, load.
 #include "ui/mainwindow/MainWindow.h"
 #include "ui/mainwindow/commands/LayerCommands.h"
 #include "ui/shell/AppInfo.h"
@@ -214,6 +214,7 @@ void MainWindow::onCloseProject()
 
     m_op_mgr->cancelAll();
     if (m_sss_ctrl) m_sss_ctrl->deactivate(true);
+    if (m_import_service) m_import_service->cancelPendingRebuild();
     m_active_layer_id.clear();
     clearNavigationHistory();
     ++m_project_load_gen;
@@ -254,6 +255,7 @@ void MainWindow::loadProject(const std::string& path)
     if (m_viewport_host) m_viewport_host->setUpdatesEnabled(false);
 
     m_op_mgr->cancelAll();
+    if (m_import_service) m_import_service->cancelPendingRebuild();
     if (m_sss_ctrl) m_sss_ctrl->deactivate(true);
     m_active_layer_id.clear();
     clearNavigationHistory();

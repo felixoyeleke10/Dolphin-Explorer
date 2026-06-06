@@ -1,6 +1,7 @@
 #pragma once
 #include "io/IFormatReader.h"
 #include "core/Artifact.h"
+#include <atomic>
 #include <cstdio>
 #include <string>
 #include <vector>
@@ -17,6 +18,12 @@ public:
     FormatMeta  metadata() override;
 
     core::ArtifactIndex buildIndex(ProgressFn progress = {}) override;
+
+    // Cancellable overload — cancel_flag is checked every 256 records.
+    // Returns an empty index (as if the file were empty) when cancelled.
+    // Accepts a raw atomic flag so io/ does not depend on app/tasks/.
+    core::ArtifactIndex buildIndex(ProgressFn progress,
+                                   const std::atomic<bool>* cancel_flag);
 
     std::optional<core::Artifact>
         readArtifact(const core::ArtifactIndexEntry& entry) override;

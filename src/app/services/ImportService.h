@@ -2,8 +2,10 @@
 #include <QObject>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 #include "app/project/Project.h"
+#include "app/tasks/CancellationToken.h"
 #include "core/Artifact.h"
 #include "core/ArtifactIndex.h"
 #include "core/MagSample.h"
@@ -56,6 +58,11 @@ public:
     // Emits cacheIndexRebuilt(layer_id) on success, indexingFailed on error.
     void rebuildCacheIndex(const std::string& layer_id,
                            std::shared_ptr<Project> project);
+
+    // Cancel all in-flight rebuildCacheIndex operations.  The background scans
+    // will stop at the next cancellation checkpoint; completion callbacks discard
+    // their results.  Called by loadProject when opening a different project.
+    void cancelPendingRebuild();
 
     // Load a visible sidescan window around the requested ping index.
     // Returns only decoded sidescan pings in scrubber order.
@@ -137,6 +144,10 @@ signals:
     // indexingComplete so callers can handle open-time reindex differently from
     // fresh imports (e.g. auto-activate the layer in the map and waterfall).
     void cacheIndexRebuilt(const std::string& layer_id);
+
+private:
+    // Cancellation tokens for in-flight rebuildCacheIndex calls, keyed by layer_id.
+    std::unordered_map<std::string, CancellationToken> m_rebuild_tokens;
 };
 
 } // namespace dolphin::app

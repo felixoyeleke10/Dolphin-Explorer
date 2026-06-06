@@ -7,6 +7,12 @@ using namespace detail_cache;
 
 core::ArtifactIndex ParsedCacheReader::buildIndex(ProgressFn progress)
 {
+    return buildIndex(std::move(progress), nullptr);
+}
+
+core::ArtifactIndex ParsedCacheReader::buildIndex(ProgressFn progress,
+                                                   const std::atomic<bool>* cancel_flag)
+{
     core::ArtifactIndex index;
     if (!m_file) return index;
 
@@ -29,6 +35,14 @@ core::ArtifactIndex ParsedCacheReader::buildIndex(ProgressFn progress)
 
         if (progress && m_fileSize > 0)
             progress(static_cast<float>(offset) / static_cast<float>(m_fileSize));
+
+        // Check for cancellation every 256 records (amortised overhead negligible).
+        if (cancel_flag && (index.entries.size() & 0xFF) == 0
+                && cancel_flag->load(std::memory_order_relaxed)) {
+            m_meta = {};
+            m_cur_pos = UINT64_MAX;
+            return {};
+        }
 
         CacheRecordHeader header{};
         if (!readPod(m_file, header)) {

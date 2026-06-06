@@ -15,6 +15,10 @@ struct CancellationToken {
     void cancel()      const { m_flag->store(true,  std::memory_order_relaxed); }
     bool isCancelled() const { return m_flag->load(std::memory_order_relaxed); }
 
+    // Raw flag pointer for passing to code in layers that cannot include this header
+    // (e.g. io/ layer passing into ParsedCacheReader::buildIndex).
+    const std::atomic<bool>* flag() const { return m_flag.get(); }
+
     // Swap in a new flag.  All existing copies still hold the old (cancelled) flag.
     void reset() { m_flag = std::make_shared<std::atomic<bool>>(false); }
 
