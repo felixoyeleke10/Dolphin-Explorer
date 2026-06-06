@@ -184,6 +184,7 @@ add_library(dolphin-ui-waterfall STATIC
     features/waterfall/processing/WaterfallProcessingAlgorithms.cpp
     features/waterfall/WaterfallViewInput.cpp
     features/waterfall/WaterfallSettingsDialog.cpp
+    features/waterfall/WaterfallQcStrip.cpp
     features/waterfall/WaterfallWindow.cpp
     features/waterfall/WaterfallWindow.Toolbar.cpp
     features/waterfall/WaterfallWindow.Status.cpp
@@ -191,6 +192,7 @@ add_library(dolphin-ui-waterfall STATIC
     features/waterfall/WaterfallWindowLoad.cpp
     features/waterfall/components/WaterfallScrollSync.cpp
     features/waterfall/processing/SeabedAutoDetector.cpp
+    features/waterfall/processing/SeabedAutoDetector.Scanners.cpp
     features/waterfall/rendering/WaterfallGLRenderer.cpp
     features/waterfall/rendering/WaterfallRenderer.cpp
     features/waterfall/rendering/WaterfallRendererRow.cpp
@@ -306,14 +308,24 @@ target_link_libraries(dolphin-ui-metadata
     PUBLIC  Qt6::Widgets
 )
 
-# ── 12. MainWindow — composition root ─────────────────────────────────────────
+# ── 12a. Spine systems — app-level singletons accessible to all feature targets ─
+#  AppState (System 1), ProjectEventBus (System 7), WindowRegistry (System 8).
+#  Lives below mainwindow so feature targets can depend on it without circular refs.
+add_library(dolphin-ui-systems STATIC
+    systems/AppState.cpp
+    systems/ProjectEventBus.cpp
+    systems/WindowRegistry.cpp
+)
+target_include_directories(dolphin-ui-systems PUBLIC ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(dolphin-ui-systems
+    PUBLIC dolphin-app
+           Qt6::Core
+           Qt6::Widgets
+)
+
+# ── 12b. MainWindow — composition root ────────────────────────────────────────
 #  Links every feature target; owns shell layout, menus, panel placement,
 #  and high-level coordinator files.
-#
-#  TODO (spine systems): AppState, WindowRegistry, and the commands/ folder
-#  are logically spine-level (Systems 1, 8, 10) — they belong in dolphin-ui-shared
-#  or a future dolphin-ui-systems target once AppState is decoupled from
-#  AppSettingsDialog. Until then they live here to avoid a circular dependency.
 add_library(dolphin-ui-mainwindow STATIC
     mainwindow/panels/InspectorPanel.cpp
     mainwindow/rightpanel/RightPanelHost.cpp
@@ -347,10 +359,9 @@ add_library(dolphin-ui-mainwindow STATIC
     mainwindow/coordinators/MainWindow.DataLibraryCoordinator.cpp
     mainwindow/MainWindow.MapContextMenu.cpp
     mainwindow/MainStatusBar.cpp
-    mainwindow/AppState.cpp
-    mainwindow/WindowRegistry.cpp
-    mainwindow/ProjectEventBus.cpp
     mainwindow/MainWindow.AppSettings.cpp
+    mainwindow/MainWindow.Processing.cpp
+    mainwindow/ProcessingDialog.cpp
     mainwindow/AppSettingsDialog.cpp
     mainwindow/AppSettingsDialog.Pages.cpp
     mainwindow/ChatPanel.cpp
@@ -362,6 +373,7 @@ add_library(dolphin-ui-mainwindow STATIC
 target_include_directories(dolphin-ui-mainwindow PUBLIC ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(dolphin-ui-mainwindow
     PRIVATE dolphin-app
+            dolphin-ui-systems
             dolphin-ui-style
             dolphin-ui-shared
             dolphin-ui-bottom
@@ -386,6 +398,7 @@ target_link_libraries(dolphin-ui-mainwindow
 #  sub-targets and their transitive Qt / dolphin deps.
 add_library(dolphin-ui INTERFACE)
 target_link_libraries(dolphin-ui INTERFACE
+    dolphin-ui-systems
     dolphin-ui-mainwindow
     dolphin-ui-style
     dolphin-ui-shared

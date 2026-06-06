@@ -1,4 +1,4 @@
-#include "ui/mainwindow/WindowRegistry.h"
+#include "ui/systems/WindowRegistry.h"
 #include <QWidget>
 #include <algorithm>
 
@@ -10,7 +10,6 @@ WindowRegistry::WindowRegistry(QObject* parent)
 
 void WindowRegistry::registerViewer(QWidget* host, IViewerWindow* impl)
 {
-    // Remove stale entries (destroyed widgets) while we're here.
     m_viewers.erase(
         std::remove_if(m_viewers.begin(), m_viewers.end(),
                        [](const Entry& e) { return e.host.isNull(); }),

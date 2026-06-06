@@ -1,4 +1,4 @@
-#include "ui/mainwindow/ProjectEventBus.h"
+#include "ui/systems/ProjectEventBus.h"
 #include "app/project/Project.h"
 
 namespace dolphin::ui {
@@ -9,8 +9,8 @@ ProjectEventBus::ProjectEventBus(QObject* parent)
 
 void ProjectEventBus::setProject(app::Project* project)
 {
-    if (m_project)
-        disconnect(m_project, nullptr, this, nullptr);
+    if (!m_project.isNull())
+        disconnect(m_project.data(), nullptr, this, nullptr);
 
     m_project = project;
 

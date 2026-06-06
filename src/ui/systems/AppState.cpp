@@ -1,4 +1,5 @@
-#include "ui/mainwindow/AppState.h"
+#include "ui/systems/AppState.h"
+#include "ui/mainwindow/AppSettingsDialog.h"
 
 namespace dolphin::ui {
 
@@ -13,9 +14,9 @@ void AppState::load()
     m_current = AppSettingsDialog::loadDefaults();
 }
 
-void AppState::apply(const AppSettingsDialog::Settings& s)
+void AppState::apply(const AppSettings& s)
 {
-    const AppSettingsDialog::Settings prev = m_current;
+    const AppSettings prev = m_current;
     m_current = s;
 
     if (s.sound_velocity  != prev.sound_velocity)  emit soundVelocityChanged(s.sound_velocity);
