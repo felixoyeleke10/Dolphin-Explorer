@@ -129,6 +129,33 @@ if(WIN32)
     endif()
 endif()
 
+# -- Stage 04 import classifier and dedup regression tests --------------------
+add_executable(test_import_classifier
+    test_import_classifier.cpp
+)
+target_include_directories(test_import_classifier PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_import_classifier PRIVATE dolphin-app dolphin-io Qt6::Core)
+set_target_properties(test_import_classifier PROPERTIES
+    CXX_STANDARD 20
+    AUTOMOC OFF
+)
+add_test(NAME ImportClassifier COMMAND test_import_classifier)
+
+if(WIN32)
+    if(_qt6_core_loc)
+        add_custom_command(TARGET test_import_classifier POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${_qt6_bin}/Qt6Core.dll"
+                "$<TARGET_FILE_DIR:test_import_classifier>/Qt6Core.dll")
+        foreach(_dll libgcc_s_seh-1.dll libstdc++-6.dll libwinpthread-1.dll)
+            add_custom_command(TARGET test_import_classifier POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "${_cxx_bin}/${_dll}"
+                    "$<TARGET_FILE_DIR:test_import_classifier>/${_dll}")
+        endforeach()
+    endif()
+endif()
+
 # -- Stage 03 performance baseline --------------------------------------------
 add_executable(test_perf_baseline
     test_perf_baseline.cpp
