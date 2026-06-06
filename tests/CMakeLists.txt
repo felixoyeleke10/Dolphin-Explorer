@@ -129,6 +129,35 @@ if(WIN32)
     endif()
 endif()
 
+# ── Stage 03 performance baseline ────────────────────────────────────────────
+add_executable(test_perf_baseline
+    test_perf_baseline.cpp
+)
+target_include_directories(test_perf_baseline PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_perf_baseline PRIVATE dolphin-app dolphin-io Qt6::Core)
+target_compile_definitions(test_perf_baseline PRIVATE
+    XTF_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
+set_target_properties(test_perf_baseline PROPERTIES
+    CXX_STANDARD 20
+    AUTOMOC OFF
+)
+add_test(NAME PerfBaseline COMMAND test_perf_baseline)
+
+if(WIN32)
+    if(_qt6_core_loc)
+        foreach(_dll libgcc_s_seh-1.dll libstdc++-6.dll libwinpthread-1.dll)
+            add_custom_command(TARGET test_perf_baseline POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "${_cxx_bin}/${_dll}"
+                    "$<TARGET_FILE_DIR:test_perf_baseline>/${_dll}")
+        endforeach()
+        add_custom_command(TARGET test_perf_baseline POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${_qt6_bin}/Qt6Core.dll"
+                "$<TARGET_FILE_DIR:test_perf_baseline>/Qt6Core.dll")
+    endif()
+endif()
+
 # ── XTF parser compatibility tests (Stage 02) ─────────────────────────────────
 add_executable(test_xtf_reader
     test_xtf_reader.cpp
