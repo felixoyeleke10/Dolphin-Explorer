@@ -6,6 +6,8 @@
 #include "app/project/Project.h"
 #include <QFileInfo>
 #include <QMetaObject>
+#include <QSet>
+#include <QString>
 
 namespace dolphin::app {
 
@@ -40,8 +42,20 @@ void ImportJobManager::importBatch(const QList<FileImportAction>& actions)
 {
     if (!m_project) return;
 
+    // Deduplicate — identical normalized paths in one batch are processed once.
+    QSet<QString> seen_paths;
+
     int new_jobs = 0;
     for (const auto& action : actions) {
+        if (!action.path.isEmpty()) {
+            const QString norm = QFileInfo(action.path).canonicalFilePath();
+            const QString key  = norm.isEmpty() ? action.path : norm;
+            if (!seen_paths.insert(key).second) {
+                m_log.record(makeEntry(ImportLogEntry::Event::Suppressed, {},
+                    QFileInfo(action.path).fileName().toStdString() + " (duplicate in batch)"));
+                continue;
+            }
+        }
         if (action.kind == FileImportAction::Kind::Skip) continue;
         if (action.kind == FileImportAction::Kind::ReuseExisting) {
             m_log.record(makeEntry(ImportLogEntry::Event::Reused,

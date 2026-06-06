@@ -1,5 +1,6 @@
 // ImportReviewWizard.cpp — constructor, drag-and-drop, file management, accept.
 #include "ui/features/import/ImportReviewWizard.h"
+#include "app/import/ImportClassifier.h"
 #include "ui/shell/Theme.h"
 #include "io/ProbeDispatch.h"
 
@@ -327,13 +328,12 @@ void ImportReviewWizard::onAccept()
         m_result.target = ImportDialogResult::ProjectTarget::Current;
     }
 
-    // Build per-file actions
+    // Build per-file actions — classifier decides Reuse/Rebuild/ImportNew.
     for (const FileEntry& e : m_entries) {
         if (!e.done || !e.result.success) continue;
 
-        FileImportAction action;
-        action.path = e.path;
-        action.kind = FileImportAction::Kind::ImportNew;
+        // Base action from the classifier (kind + existing ids already set).
+        FileImportAction action = app::classifyImportAction(e.path, m_current_project);
 
         // Source CRS: project-level selection takes priority (confirmed by the user
         // in the CRS tab), then the exact declared CRS from the probe (e.g. EPSG:4326

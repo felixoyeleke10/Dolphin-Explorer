@@ -30,6 +30,7 @@ add_library(dolphin-app STATIC
     # Import orchestration
     import/ImportLog.cpp
     import/ImportJobManager.cpp
+    import/ImportClassifier.cpp
     import/FormatRegistry.cpp
 
     # Tasks / operation management
