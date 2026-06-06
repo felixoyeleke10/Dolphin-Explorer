@@ -273,6 +273,33 @@ void MapView::fitToData()
     update();
 }
 
+void MapView::fitToExtent(double lon_min, double lon_max,
+                           double lat_min, double lat_max, bool is_projected)
+{
+    if (m_user_interacted) return;  // preserve user-positioned viewport
+    if (lon_min > lon_max || lat_min > lat_max) return;
+    if (width() <= 0 || height() <= 0) { m_needs_fit = true; return; }
+
+    m_is_projected = is_projected;
+    m_ref_lat = (lat_min + lat_max) * 0.5;
+    const double cos_ref = m_is_projected
+        ? 1.0
+        : std::max(0.001, std::cos(m_ref_lat * kDegToRad));
+
+    const double bs = baseScale();
+    const double dlon = std::max(lon_max - lon_min, 0.001);
+    const double dlat = std::max(lat_max - lat_min, 0.001);
+    const double zoom_x = (width()  * 0.70) / (dlon * cos_ref * bs);
+    const double zoom_y = (height() * 0.70) / (dlat * bs);
+    m_zoom = std::clamp(std::min(zoom_x, zoom_y), 1e-6, 1e8);
+
+    const double cx = (lon_min + lon_max) * 0.5;
+    const double cy = (lat_min + lat_max) * 0.5;
+    const double sc = bs * m_zoom;
+    m_origin = QPointF(-cx * cos_ref * sc, cy * sc);
+    update();
+}
+
 void MapView::fitToLayer(const std::string& layer_id)
 {
     const auto it = m_layer_data.find(layer_id);

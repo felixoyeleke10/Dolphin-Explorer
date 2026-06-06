@@ -62,6 +62,10 @@ public:
     void fitToData();
     void fitToDataAndReset();  // fit + clear user-interaction flag so new layers auto-fit
     void fitToLayer(const std::string& layer_id);
+    // Pre-fit to a known bounding box (e.g. from ArtifactIndex::navExtent) before
+    // layer data is available.  No-op if the user has already interacted.
+    void fitToExtent(double lon_min, double lon_max,
+                     double lat_min, double lat_max, bool is_projected);
     // Returns the layer_id of the topmost visible coverage layer under the pixel point.
     std::string hitTestLayer(QPoint px) const;
     void setSelectedContact(uint64_t id);

@@ -56,6 +56,26 @@ struct ArtifactIndex {
         return static_cast<int64_t>(std::distance(entries.begin(), it));
     }
 
+    // Bounding box of nav positions stored in the index (O(n) in-memory, no I/O).
+    // Used to pre-position the map viewport before the background ping load starts.
+    struct NavExtent {
+        double lat_min =  1e18, lat_max = -1e18;
+        double lon_min =  1e18, lon_max = -1e18;
+        bool   valid   = false;
+    };
+    NavExtent navExtent() const {
+        NavExtent e;
+        for (const auto& en : entries) {
+            if (en.lat == 0.0 && en.lon == 0.0) continue;
+            if (en.lat < e.lat_min) e.lat_min = en.lat;
+            if (en.lat > e.lat_max) e.lat_max = en.lat;
+            if (en.lon < e.lon_min) e.lon_min = en.lon;
+            if (en.lon > e.lon_max) e.lon_max = en.lon;
+            e.valid = true;
+        }
+        return e;
+    }
+
     // Return pointers to all entries of a given type (O(n) scan)
     std::vector<const ArtifactIndexEntry*> byType(ArtifactType t) const {
         std::vector<const ArtifactIndexEntry*> result;

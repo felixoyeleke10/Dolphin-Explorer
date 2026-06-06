@@ -92,8 +92,20 @@ void SidescanViewController::activateLayer(const std::string& layer_id,
     if (m_status_ping) m_status_ping->setText(tr("Loading…"));
 
     // Show nav track immediately from the already-loaded index (zero I/O).
-    if (m_map_view)
+    if (m_map_view) {
         m_map_view->setActiveLayer(layer_id);
+
+        // Pre-fit the viewport from the index nav extent so the map is centred
+        // on this layer before the background ping load completes.
+        const auto ext = idx.navExtent();
+        if (ext.valid && !m_map_view->userInteracted()) {
+            const bool proj = apply_layer_crs
+                              || (!layer_src_ref.empty()
+                                  && core::spatialRefIsProjected(layer_src_ref));
+            m_map_view->fitToExtent(ext.lon_min, ext.lon_max,
+                                    ext.lat_min, ext.lat_max, proj);
+        }
+    }
 
     // -- Set up per-layer cancellation and generation guard --------------------
     // Only cancel a previous load of the SAME layer. Other layers' background
