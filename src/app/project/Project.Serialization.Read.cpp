@@ -245,21 +245,18 @@ bool Project::fromJson(const std::string& json)
             }
         }
 
-        // If entries were not saved (omitted when a .dlpd cache exists), rebuild
-        // the index from the binary cache file.  Only reads record headers —
-        // no sample data — so this is fast even for large surveys.
+        // If entries were not saved (omitted when a .dlpd cache exists), read
+        // only the file header to recover metadata — the full artifact index scan
+        // is deferred to a background rebuildCacheIndex call after project open.
+        // This keeps fromJson O(1) per layer regardless of cache size.
         if (layer->artifact_index.entries.empty() && !layer->artifact_store_path.empty()) {
             const std::string sfmt = normaliseFormat(layer->artifact_store_format);
             if ((sfmt == "dlpd" || sfmt == "dpcache")
                 && io::parsedCacheIsValid(layer->artifact_store_path)) {
                 io::ParsedCacheReader cache_reader;
                 if (cache_reader.open(layer->artifact_store_path)) {
-                    auto rebuilt = cache_reader.buildIndex();
-                    if (!rebuilt.empty()) {
-                        rebuilt.source_id = layer->source_id;
-                        layer->artifact_index = std::move(rebuilt);
-                    }
-                    // Recover metadata fields that may be missing from old JSON manifests.
+                    // Header open only — sonar/survey/vessel names come from the
+                    // file header and are available immediately without buildIndex.
                     const io::FormatMeta cached_meta = cache_reader.metadata();
                     if (layer->sonar_name.empty() && !cached_meta.sonar_name.empty())
                         layer->sonar_name = cached_meta.sonar_name;
@@ -267,12 +264,10 @@ bool Project::fromJson(const std::string& json)
                         layer->survey_name = cached_meta.survey_name;
                     if (layer->vessel_name.empty() && !cached_meta.vessel_name.empty())
                         layer->vessel_name = cached_meta.vessel_name;
-                    // Detect already-processed DLPDs for projects pre-dating pipeline_applied.
-                    // correction_flags_seen accumulates both SSS and SBP correction flags,
-                    // so any non-zero value means the processing pipeline was previously run.
-                    if (!layer->pipeline_applied && cached_meta.correction_flags_seen != 0)
-                        layer->pipeline_applied = true;
+                    // correction_flags_seen requires a full buildIndex scan; that
+                    // backfill is done by ImportService::rebuildCacheIndex after open.
                 }
+                // Leave artifact_index empty — marked for background reindex by caller.
             }
         }
 

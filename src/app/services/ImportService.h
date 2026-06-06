@@ -50,6 +50,13 @@ public:
                              std::shared_ptr<Project> project,
                              const std::string& layer_id);
 
+    // Rebuild the artifact index directly from an existing .dlpd cache without
+    // re-parsing the raw source.  Used by loadProject to defer the per-layer
+    // buildIndex scan out of fromJson and onto a background thread.
+    // Emits cacheIndexRebuilt(layer_id) on success, indexingFailed on error.
+    void rebuildCacheIndex(const std::string& layer_id,
+                           std::shared_ptr<Project> project);
+
     // Load a visible sidescan window around the requested ping index.
     // Returns only decoded sidescan pings in scrubber order.
     std::vector<core::SidescanPing> loadSidescanWindow(const DataLayer* layer,
@@ -126,6 +133,10 @@ signals:
     void indexingProgress(const std::string& layer_id, int percent);  // 0-100
     void indexingComplete(const std::string& layer_id);
     void indexingFailed(const std::string& layer_id, const std::string& error);
+    // Emitted when rebuildCacheIndex completes successfully — distinct from
+    // indexingComplete so callers can handle open-time reindex differently from
+    // fresh imports (e.g. auto-activate the layer in the map and waterfall).
+    void cacheIndexRebuilt(const std::string& layer_id);
 };
 
 } // namespace dolphin::app

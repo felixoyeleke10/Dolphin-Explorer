@@ -203,6 +203,34 @@ MainWindow::MainWindow(QWidget* parent)
                     taskFail(QStringLiteral("import:") + QString::fromStdString(layer_id),
                              QString::fromStdString(error));
                 });
+
+        // Background cache-index rebuild completed (deferred from project open).
+        // Activate the layer in the map and — if nothing is selected yet — select it.
+        connect(m_import_service, &app::ImportService::cacheIndexRebuilt, this,
+                [this](const std::string& layer_id) {
+                    taskDone(QStringLiteral("import:") + QString::fromStdString(layer_id));
+                    if (!m_project) return;
+                    auto* layer = m_project->findLayer(layer_id);
+                    if (!layer || !layer->index_built) return;
+
+                    // Push nav track and swath preview into the map.
+                    using M = app::Modality;
+                    if (layer->modality == M::Sidescan && m_sss_ctrl)
+                        m_sss_ctrl->activateLayer(layer_id, m_project.get());
+                    else if (m_map_view)
+                        m_map_view->setActiveLayer(layer_id);
+
+                    // If no layer is selected yet (project just opened), select this one.
+                    if (m_active_layer_id.empty())
+                        onLayerSelected(layer_id);
+
+                    // Now that the index exists, check if processing should auto-run.
+                    if (layer->modality == M::Sidescan && !layer->pipeline_applied)
+                        triggerAutoProcessing();
+
+                    m_project_dirty = true;
+                    setWindowTitleFromProject();
+                });
     }
 
     if constexpr (Features::kProcessing)

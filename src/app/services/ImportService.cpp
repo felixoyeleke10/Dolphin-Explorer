@@ -398,4 +398,90 @@ std::string ImportService::reindexLayer(const std::string& path,
     return layer_id;
 }
 
+void ImportService::rebuildCacheIndex(const std::string& layer_id,
+                                      std::shared_ptr<Project> project)
+{
+    if (!project || layer_id.empty()) {
+        emit indexingFailed(layer_id, "rebuildCacheIndex: no project or layer ID");
+        return;
+    }
+    auto* layer = project->findLayer(layer_id);
+    if (!layer) {
+        emit indexingFailed(layer_id, "rebuildCacheIndex: layer not found");
+        return;
+    }
+
+    const std::string cache_path = layer->artifact_store_path;
+    const std::string source_id  = layer->source_id;
+
+    if (cache_path.empty()) {
+        emit indexingFailed(layer_id, "rebuildCacheIndex: no artifact store path");
+        return;
+    }
+
+    project->markLayerIndexing(layer_id);
+    emit indexingStarted(layer_id);
+
+    struct Result {
+        core::ArtifactIndex index;
+        io::FormatMeta      meta;
+        std::string         error;
+    };
+
+    auto* watcher = new QFutureWatcher<Result>(this);
+    connect(watcher, &QFutureWatcher<Result>::finished, this,
+            [this, watcher, project, layer_id, source_id]() {
+        watcher->deleteLater();
+
+        const Result r = watcher->result();
+        if (!r.error.empty()) {
+            emit indexingFailed(layer_id, r.error);
+            return;
+        }
+
+        auto* layer = project->findLayer(layer_id);
+        if (!layer) {
+            emit indexingFailed(layer_id, "rebuildCacheIndex: layer disappeared");
+            return;
+        }
+
+        r.index.source_id.empty()
+            ? layer->artifact_index.source_id = source_id
+            : layer->artifact_index.source_id = r.index.source_id;
+        layer->artifact_index.entries = r.index.entries;
+        layer->index_built = !layer->artifact_index.empty();
+
+        // Back-fill metadata that may be absent from old JSON manifests.
+        if (layer->sonar_name.empty() && !r.meta.sonar_name.empty())
+            layer->sonar_name = r.meta.sonar_name;
+        if (layer->survey_name.empty() && !r.meta.survey_name.empty())
+            layer->survey_name = r.meta.survey_name;
+        if (layer->vessel_name.empty() && !r.meta.vessel_name.empty())
+            layer->vessel_name = r.meta.vessel_name;
+        if (layer->modality == Modality::Unknown && !layer->artifact_index.empty())
+            layer->modality = inferModality(layer->artifact_index);
+
+        // Back-fill pipeline_applied for old projects that predate the field.
+        if (!layer->pipeline_applied && r.meta.correction_flags_seen != 0)
+            layer->pipeline_applied = true;
+
+        project->commitLayer(layer_id);
+        emit cacheIndexRebuilt(layer_id);
+    });
+
+    watcher->setFuture(QtConcurrent::run([cache_path]() -> Result {
+        Result r;
+        io::ParsedCacheReader reader;
+        if (!reader.open(cache_path)) {
+            r.error = "Cannot open cache: " + cache_path;
+            return r;
+        }
+        r.meta  = reader.metadata();
+        r.index = reader.buildIndex();
+        if (r.index.empty())
+            r.error = "Cache index is empty: " + cache_path;
+        return r;
+    }));
+}
+
 } // namespace dolphin::app

@@ -9,6 +9,7 @@
 #include "app/layers/DataLayer.h"
 
 #include <algorithm>
+#include <cctype>
 #include <QApplication>
 #include <QDesktopServices>
 #include <QDir>
@@ -317,6 +318,23 @@ void MainWindow::loadProject(const std::string& path)
         // shows the layer, and the waterfall (if already open) loads it immediately.
         if (!first_layer_id.empty())
             onLayerSelected(first_layer_id);
+
+            // Background-reindex layers that have a valid .dlpd cache but whose
+        // artifact index was not embedded in the JSON (deferred by fromJson).
+        if (m_import_service) {
+            for (const auto& layer : m_project->layers()) {
+                if (!layer || layer->index_built) continue;
+                if (layer->artifact_store_path.empty()) continue;
+                const std::string sfmt = [&] {
+                    std::string f = layer->artifact_store_format;
+                    for (auto& c : f) c = static_cast<char>(
+                        std::tolower(static_cast<unsigned char>(c)));
+                    return f;
+                }();
+                if (sfmt != "dlpd" && sfmt != "dpcache") continue;
+                m_import_service->rebuildCacheIndex(layer->id, m_project);
+            }
+        }
 
         // Auto-trigger processing for any indexed layer that has not yet been
         // run through the pipeline. Skip if all layers are already processed to
