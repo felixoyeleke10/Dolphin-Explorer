@@ -8,6 +8,7 @@
 //   SSSMetadataExport.cpp    — buildTabText, exportToCsv, keyboard, context menu
 
 #include "ui/features/metadata/SSSMetadataWindow.h"
+#include "ui/shared/UiUtils.h"
 #include "ui/shell/Theme.h"
 
 #include <QAction>
@@ -106,9 +107,7 @@ SSSMetadataWindow::SSSMetadataWindow(QWidget* parent)
 
 void SSSMetadataWindow::buildUi()
 {
-    auto* root = new QVBoxLayout(this);
-    root->setContentsMargins(0, 0, 0, 0);
-    root->setSpacing(0);
+    auto* root = makeCompactLayout<QVBoxLayout>(this);
 
     // -- Icon toolbar ----------------------------------------------------------
     {
@@ -236,18 +235,14 @@ void SSSMetadataWindow::buildUi()
 
     auto* upper = new QWidget(outer_vsplit);
     {
-        auto* ul = new QVBoxLayout(upper);
-        ul->setContentsMargins(0, 0, 0, 0);
-        ul->setSpacing(0);
+        auto* ul = makeCompactLayout<QVBoxLayout>(upper);
 
         auto* hsplit = new QSplitter(Qt::Horizontal, upper);
         hsplit->setHandleWidth(3);
 
         auto* table_pane = new QWidget(hsplit);
         {
-            auto* tl = new QVBoxLayout(table_pane);
-            tl->setContentsMargins(0, 0, 0, 0);
-            tl->setSpacing(0);
+            auto* tl = makeCompactLayout<QVBoxLayout>(table_pane);
 
             m_table = new QTableView(table_pane);
             m_table->setModel(m_proxy);
@@ -290,9 +285,7 @@ void SSSMetadataWindow::buildUi()
     m_chart_pane->setAttribute(Qt::WA_DeleteOnClose, false);
     m_chart_pane->installEventFilter(this);
     {
-        auto* cl = new QVBoxLayout(m_chart_pane);
-        cl->setContentsMargins(0, 0, 0, 0);
-        cl->setSpacing(0);
+        auto* cl = makeCompactLayout<QVBoxLayout>(m_chart_pane);
         buildChartToolbar(m_chart_pane);
         m_plot = new SSSMetadataPlotWidget(m_chart_pane);
         cl->addWidget(m_plot, 1);

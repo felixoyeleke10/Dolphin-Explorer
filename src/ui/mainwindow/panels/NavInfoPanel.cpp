@@ -1,5 +1,6 @@
 #include "ui/mainwindow/panels/NavInfoPanel.h"
 #include "ui/features/waterfall/components/WfValueRow.h"
+#include "ui/shared/UiUtils.h"
 #include "ui/shell/Theme.h"
 
 #include <QCheckBox>
@@ -16,9 +17,7 @@ NavInfoPanel::NavInfoPanel(QWidget* parent) : QWidget(parent)
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Ignored);
     setMinimumHeight(0);
 
-    auto* fl = new QVBoxLayout(this);
-    fl->setContentsMargins(0, 0, 0, 0);
-    fl->setSpacing(0);
+    auto* fl = makeCompactLayout<QVBoxLayout>(this);
 
     // -- Scrollable content ----------------------------------------------------
     auto* scroll = new QScrollArea(this);

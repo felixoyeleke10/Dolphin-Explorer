@@ -2,6 +2,7 @@
 //
 // Section builders + static helpers  → SidescanCorrectionDialog.Layout.cpp
 #include "ui/features/map/sidescan/SidescanCorrectionDialog.h"
+#include "ui/shared/UiUtils.h"
 #include "ui/shell/Theme.h"
 
 #include <QCheckBox>
@@ -37,9 +38,7 @@ SidescanCorrectionDialog::SidescanCorrectionDialog(Mode           mode,
     resize(kInitW, is_nav ? kInitNavH : kInitGeoH);
     setAttribute(Qt::WA_DeleteOnClose);
 
-    auto* root = new QVBoxLayout(this);
-    root->setContentsMargins(0, 0, 0, 0);
-    root->setSpacing(0);
+    auto* root = makeCompactLayout<QVBoxLayout>(this);
 
     // -- Header ------------------------------------------------------------
     {

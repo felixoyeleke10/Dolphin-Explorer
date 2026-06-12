@@ -1,4 +1,5 @@
 #include "ui/mainwindow/rightpanel/PanelChatWidget.h"
+#include "ui/shared/UiUtils.h"
 #include "ui/shell/Theme.h"
 
 #include <QComboBox>
@@ -62,9 +63,7 @@ PanelChatWidget::PanelChatWidget(QWidget* parent) : QWidget(parent)
 
     m_nam = new QNetworkAccessManager(this);
 
-    auto* root = new QVBoxLayout(this);
-    root->setContentsMargins(0, 0, 0, 0);
-    root->setSpacing(0);
+    auto* root = makeCompactLayout<QVBoxLayout>(this);
 
     // -- Header ----------------------------------------------------------------
     auto* hdr = new QWidget(this);
@@ -151,9 +150,7 @@ PanelChatWidget::PanelChatWidget(QWidget* parent) : QWidget(parent)
     m_input->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     m_input->installEventFilter(this);
 
-    auto* btn_row = new QHBoxLayout;
-    btn_row->setContentsMargins(0, 0, 0, 0);
-    btn_row->setSpacing(0);
+    auto* btn_row = makeCompactLayout<QHBoxLayout>();
 
     auto* hint_lbl = new QLabel(tr("Shift+⏎ new line"), input_box);
     hint_lbl->setObjectName("panelChatHint");
@@ -593,9 +590,7 @@ void PanelChatWidget::setInputEnabled(bool enabled)
 void PanelChatWidget::appendStreamingBubble()
 {
     auto* row = new QWidget;
-    auto* rl  = new QHBoxLayout(row);
-    rl->setContentsMargins(0, 0, 0, 0);
-    rl->setSpacing(0);
+    auto* rl  = makeCompactLayout<QHBoxLayout>(row);
 
     m_stream_label = new QLabel(QStringLiteral("▍"));
     m_stream_label->setWordWrap(true);
@@ -638,9 +633,7 @@ void PanelChatWidget::buildEmptyState(QVBoxLayout* into)
 
     auto* chips = new QWidget(m_empty_state);
     chips->setObjectName("panelChatChips");
-    auto* gl = new QGridLayout(chips);
-    gl->setContentsMargins(0, 0, 0, 0);
-    gl->setSpacing(Theme::kSpacing2);
+    auto* gl = makeCompactLayout<QGridLayout>(chips, Theme::kSpacing2);
 
     struct Chip { const char* label; const char* prompt; };
     static const Chip kChips[] = {
@@ -717,9 +710,7 @@ void PanelChatWidget::appendMessage(const QString& text, bool is_user)
     ++m_msg_count;
 
     auto* row = new QWidget;
-    auto* rl  = new QHBoxLayout(row);
-    rl->setContentsMargins(0, 0, 0, 0);
-    rl->setSpacing(0);
+    auto* rl  = makeCompactLayout<QHBoxLayout>(row);
 
     auto* lbl = new QLabel(text);
     lbl->setWordWrap(true);

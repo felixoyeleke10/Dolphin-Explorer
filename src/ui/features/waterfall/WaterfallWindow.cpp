@@ -6,6 +6,7 @@
 // Context menu     → WaterfallWindow.ContextMenu.cpp
 
 #include "ui/features/waterfall/WaterfallWindow.h"
+#include "ui/shared/UiUtils.h"
 #include "ui/systems/AppState.h"
 #include "ui/shared/widgets/CommandBar.h"
 
@@ -57,15 +58,11 @@ WaterfallWindow::WaterfallWindow(AppState* app_state, QWidget* parent)
     m_window_size     = init_settings.window_size;
     m_display_channel = init_settings.display_channel;
 
-    auto* root = new QVBoxLayout(this);
-    root->setContentsMargins(0, 0, 0, 0);
-    root->setSpacing(0);
+    auto* root = makeCompactLayout<QVBoxLayout>(this);
 
     buildToolbar();
 
-    auto* content = new QHBoxLayout;
-    content->setContentsMargins(0, 0, 0, 0);
-    content->setSpacing(0);
+    auto* content = makeCompactLayout<QHBoxLayout>();
 
     m_inspector = new WaterfallInspectorPanel(this);
     m_inspector->setObjectName("av_inspector");

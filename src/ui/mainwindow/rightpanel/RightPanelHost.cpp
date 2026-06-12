@@ -13,6 +13,7 @@
 #include "ui/mainwindow/panels/GainControlPanel.h"
 #include "ui/mainwindow/panels/ImagingControlPanel.h"
 #include "ui/shared/widgets/CollapsibleSection.h"
+#include "ui/shared/UiUtils.h"
 #include <QVBoxLayout>
 
 namespace dolphin::ui {
@@ -22,9 +23,7 @@ RightPanelHost::RightPanelHost(QWidget* parent)
 {
     setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Minimum);
 
-    m_layout = new QVBoxLayout(this);
-    m_layout->setContentsMargins(0, 0, 0, 0);
-    m_layout->setSpacing(0);
+    m_layout = makeCompactLayout<QVBoxLayout>(this);
 
     // QWidget modules — parented to this, re-parented into their section by addModule.
     m_info        = new InfoModule(this);

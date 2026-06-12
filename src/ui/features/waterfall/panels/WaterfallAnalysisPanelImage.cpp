@@ -1,6 +1,7 @@
 // WaterfallAnalysisPanelImage.cpp — IMAGE PROCESSING section
 
 #include "ui/features/waterfall/panels/WaterfallAnalysisPanel.h"
+#include "ui/shared/UiUtils.h"
 #include "ui/shell/Theme.h"
 #include "ui/features/waterfall/components/WfToggleRow.h"
 #include "ui/features/waterfall/components/WfValueRow.h"
@@ -70,9 +71,7 @@ void WaterfallAnalysisPanel::buildImageSection(QVBoxLayout* vl, QWidget* contain
     m_tvg_body = new QWidget(container);
     m_tvg_body->setVisible(false);
     {
-        auto* tvg_bl = new QVBoxLayout(m_tvg_body);
-        tvg_bl->setContentsMargins(0, 0, 0, 0);
-        tvg_bl->setSpacing(0);
+        auto* tvg_bl = makeCompactLayout<QVBoxLayout>(m_tvg_body);
         addValueRow(tvg_bl, tr("Spreading"),   m_tvg_spreading,
                     0, 40, 20, 1, 0, tr(" dB/dec"));
         m_tvg_spreading->setToolTip(
@@ -100,9 +99,7 @@ void WaterfallAnalysisPanel::buildImageSection(QVBoxLayout* vl, QWidget* contain
     m_arn_body = new QWidget(container);
     m_arn_body->setVisible(false);
     {
-        auto* arn_bl = new QVBoxLayout(m_arn_body);
-        arn_bl->setContentsMargins(0, 0, 0, 0);
-        arn_bl->setSpacing(0);
+        auto* arn_bl = makeCompactLayout<QVBoxLayout>(m_arn_body);
         addValueRow(arn_bl, tr("Strength"),    m_arn_strength,
                     0, 100, 80, 1, 0, tr("%"));
         m_arn_strength->setToolTip(
@@ -176,9 +173,7 @@ void WaterfallAnalysisPanel::buildImageSection(QVBoxLayout* vl, QWidget* contain
     m_agc_body = new QWidget(container);
     m_agc_body->setVisible(false);
     {
-        auto* agc_bl = new QVBoxLayout(m_agc_body);
-        agc_bl->setContentsMargins(0, 0, 0, 0);
-        agc_bl->setSpacing(0);
+        auto* agc_bl = makeCompactLayout<QVBoxLayout>(m_agc_body);
 
         m_agc_mode_combo = addComboRow(agc_bl, tr("Mode"), m_agc_body);
         m_agc_mode_combo->addItem(tr("Global"));
@@ -197,9 +192,7 @@ void WaterfallAnalysisPanel::buildImageSection(QVBoxLayout* vl, QWidget* contain
         m_agc_along_track_row = new QWidget(m_agc_body);
         m_agc_along_track_row->setVisible(false);
         {
-            auto* atl = new QVBoxLayout(m_agc_along_track_row);
-            atl->setContentsMargins(0, 0, 0, 0);
-            atl->setSpacing(0);
+            auto* atl = makeCompactLayout<QVBoxLayout>(m_agc_along_track_row);
             addValueRow(atl, tr("Along-Track Window"),
                         m_agc_along_track, 10, 500, 50, 5, 0, tr(" pings"));
             m_agc_along_track->setToolTip(
@@ -260,9 +253,7 @@ void WaterfallAnalysisPanel::buildImageSection(QVBoxLayout* vl, QWidget* contain
     m_destripe_body = new QWidget(container);
     m_destripe_body->setVisible(false);
     {
-        auto* ds_bl = new QVBoxLayout(m_destripe_body);
-        ds_bl->setContentsMargins(0, 0, 0, 0);
-        ds_bl->setSpacing(0);
+        auto* ds_bl = makeCompactLayout<QVBoxLayout>(m_destripe_body);
         addValueRow(ds_bl, tr("Window"),
                     m_destripe_window, 10, 500, 50, 5, 0, tr(" pings"));
         m_destripe_window->setToolTip(

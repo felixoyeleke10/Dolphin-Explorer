@@ -1,5 +1,6 @@
 // BottomDockPanel.Layout.cpp — constructor, layout build, header, badge update.
 #include "ui/bottom/BottomDockPanel.h"
+#include "ui/shared/UiUtils.h"
 #include "ui/shell/Theme.h"
 
 #include <QHBoxLayout>
@@ -87,9 +88,7 @@ BottomDockPanel::BottomDockPanel(DiagnosticsHub* hub, QWidget* parent)
 
 void BottomDockPanel::buildLayout()
 {
-    auto* vbox = new QVBoxLayout(this);
-    vbox->setContentsMargins(0, 0, 0, 0);
-    vbox->setSpacing(0);
+    auto* vbox = makeCompactLayout<QVBoxLayout>(this);
 
     m_handle = new HeightResizeHandle([this](int delta) {
         if (m_collapsed) return;

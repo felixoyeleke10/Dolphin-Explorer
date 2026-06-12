@@ -1,5 +1,6 @@
 // MainWindow.Geodesy.cpp — onGeodeticSettings standalone window.
 #include "ui/mainwindow/MainWindow.h"
+#include "ui/shared/UiUtils.h"
 #include "ui/features/geodesy/GeodesyPanel.h"
 #include "ui/features/map/MapView.h"
 #include "ui/mainwindow/panels/InspectorPanel.h"
@@ -27,9 +28,7 @@ void MainWindow::onGeodeticSettings()
         m_geodesy_win->setMinimumSize(kGeodesyMinW, kGeodesyMinH);
         m_geodesy_win->setModal(false);
 
-        auto* vl = new QVBoxLayout(m_geodesy_win);
-        vl->setContentsMargins(0, 0, 0, 0);
-        vl->setSpacing(0);
+        auto* vl = makeCompactLayout<QVBoxLayout>(m_geodesy_win);
 
         m_geodesy_panel = new GeodesyPanel(m_geodesy_win);
         vl->addWidget(m_geodesy_panel);

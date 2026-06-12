@@ -1,6 +1,7 @@
 // CommandPaletteDialog.cpp — dialog shell, painting, filter logic, event handling.
 //   Delegate + constants → CommandPaletteDelegate.h / CommandPaletteDelegate.cpp
 #include "ui/shared/dialogs/CommandPaletteDialog.h"
+#include "ui/shared/UiUtils.h"
 #include "ui/shared/dialogs/CommandPaletteDelegate.h"
 #include "ui/shell/Theme.h"
 
@@ -42,9 +43,7 @@ CommandPaletteDialog::CommandPaletteDialog(QWidget* parent)
     // -- Card container --------------------------------------------------------
     auto* card = new QWidget(this);
     card->setObjectName("cpCard");
-    auto* cl = new QVBoxLayout(card);
-    cl->setContentsMargins(0, 0, 0, 0);
-    cl->setSpacing(0);
+    auto* cl = makeCompactLayout<QVBoxLayout>(card);
     root->addWidget(card);
 
     // -- Search row ------------------------------------------------------------

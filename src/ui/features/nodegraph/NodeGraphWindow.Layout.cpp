@@ -1,5 +1,6 @@
 ﻿// NodeGraphWindow.Layout.cpp — constructor, top bar, worker tabs, palette, placement arm.
 #include "ui/features/nodegraph/NodeGraphWindow.h"
+#include "ui/shared/UiUtils.h"
 #include "ui/shell/Theme.h"
 #include "ui/features/nodegraph/NodePaletteView.h"
 #include "ui/features/nodegraph/NodeGraphView.h"
@@ -35,9 +36,7 @@ NodeGraphWindow::NodeGraphWindow(QWidget* parent)
     resize(kInitW, kInitH);
     setObjectName("nodeGraphWindow");
 
-    auto* root = new QVBoxLayout(this);
-    root->setContentsMargins(0, 0, 0, 0);
-    root->setSpacing(0);
+    auto* root = makeCompactLayout<QVBoxLayout>(this);
 
     root->addWidget(buildTopBar(this));
 
@@ -54,9 +53,7 @@ NodeGraphWindow::NodeGraphWindow(QWidget* parent)
     root->addWidget(tab_div);
 
     auto* body = new QWidget(this);
-    auto* body_layout = new QHBoxLayout(body);
-    body_layout->setContentsMargins(0, 0, 0, 0);
-    body_layout->setSpacing(0);
+    auto* body_layout = makeCompactLayout<QHBoxLayout>(body);
     root->addWidget(body, 1);
 
     auto* palette_w = new QWidget(body);
@@ -226,9 +223,7 @@ void NodeGraphWindow::rebuildWorkerTabs()
 
 void NodeGraphWindow::buildPalette(QWidget* parent)
 {
-    auto* layout = new QVBoxLayout(parent);
-    layout->setContentsMargins(0, 0, 0, 0);
-    layout->setSpacing(0);
+    auto* layout = makeCompactLayout<QVBoxLayout>(parent);
 
     auto* search = new QLineEdit(parent);
     search->setPlaceholderText(tr("Search nodes..."));

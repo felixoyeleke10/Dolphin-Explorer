@@ -1,6 +1,7 @@
 // SubBottomDisplayPanel.cpp — right display/processing panel for SubBottomWindow.
 
 #include "ui/features/subbottom/panels/SubBottomDisplayPanel.h"
+#include "ui/shared/UiUtils.h"
 #include "ui/shell/Theme.h"
 
 #include <QCheckBox>
@@ -38,9 +39,7 @@ QVBoxLayout* SubBottomDisplayPanel::makeSection(const QString& title,
 
     auto* body = new QWidget(parent);
     body->setObjectName("avCollapseBody");
-    auto* bl = new QVBoxLayout(body);
-    bl->setContentsMargins(0, 0, 0, 0);
-    bl->setSpacing(0);
+    auto* bl = makeCompactLayout<QVBoxLayout>(body);
     body->setVisible(expanded);
 
     auto syncLabel = [hdr, title](bool checked) {
@@ -59,9 +58,7 @@ QVBoxLayout* SubBottomDisplayPanel::makeSection(const QString& title,
 SubBottomDisplayPanel::SubBottomDisplayPanel(QWidget* parent)
     : QFrame(parent)
 {
-    auto* fl = new QVBoxLayout(this);
-    fl->setContentsMargins(0, 0, 0, 0);
-    fl->setSpacing(0);
+    auto* fl = makeCompactLayout<QVBoxLayout>(this);
 
     auto* scroll = new QScrollArea(this);
     scroll->setObjectName("av_panel_scroll");
@@ -72,9 +69,7 @@ SubBottomDisplayPanel::SubBottomDisplayPanel(QWidget* parent)
     fl->addWidget(scroll, 1);
 
     auto* container = new QWidget;
-    auto* vl        = new QVBoxLayout(container);
-    vl->setContentsMargins(0, 0, 0, 0);
-    vl->setSpacing(0);
+    auto* vl        = makeCompactLayout<QVBoxLayout>(container);
     scroll->setWidget(container);
 
     // -- DISPLAY -------------------------------------------------------------

@@ -1,4 +1,5 @@
 #include "ui/mainwindow/ChatPanel.h"
+#include "ui/shared/UiUtils.h"
 #include "ui/shell/Theme.h"
 
 #include <QEvent>
@@ -27,9 +28,7 @@ ConversationPanel::ConversationPanel(QWidget* parent) : QFrame(parent)
     setObjectName("convPanel");
     setFixedSize(kPanelW, kPanelH);
 
-    auto* root = new QVBoxLayout(this);
-    root->setContentsMargins(0, 0, 0, 0);
-    root->setSpacing(0);
+    auto* root = makeCompactLayout<QVBoxLayout>(this);
 
     // -- Header (drag handle) --------------------------------------------------
     m_header = new QWidget(this);
@@ -190,9 +189,7 @@ void ConversationPanel::onSend()
 void ConversationPanel::appendMessage(const QString& text, bool is_user)
 {
     auto* row = new QWidget;
-    auto* rl  = new QHBoxLayout(row);
-    rl->setContentsMargins(0, 0, 0, 0);
-    rl->setSpacing(0);
+    auto* rl  = makeCompactLayout<QHBoxLayout>(row);
 
     auto* lbl = new QLabel(text);
     lbl->setWordWrap(true);

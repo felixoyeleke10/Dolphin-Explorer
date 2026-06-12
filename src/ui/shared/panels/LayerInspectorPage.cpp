@@ -1,4 +1,5 @@
 #include "ui/shared/panels/LayerInspectorPage.h"
+#include "ui/shared/UiUtils.h"
 #include "ui/shell/Theme.h"
 #include "ui/shared/widgets/CollapsibleSection.h"
 #include "app/layers/LayerUtils.h"
@@ -77,9 +78,7 @@ void LayerInspectorPage::makeRow(QVBoxLayout* vl, const QString& key, QLabel*& v
 
 void LayerInspectorPage::build()
 {
-    auto* fl = new QVBoxLayout(this);
-    fl->setContentsMargins(0, 0, 0, 0);
-    fl->setSpacing(0);
+    auto* fl = makeCompactLayout<QVBoxLayout>(this);
 
     // -- INFO ---------------------------------------------------------------
     {

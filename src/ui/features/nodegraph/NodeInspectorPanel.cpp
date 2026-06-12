@@ -1,5 +1,6 @@
 // NodeInspectorPanel.cpp — auto-generated parameter editor.
 #include "ui/features/nodegraph/NodeInspectorPanel.h"
+#include "ui/shared/UiUtils.h"
 #include "ui/shell/Theme.h"
 #include "pipeline/NodeGraph.h"
 
@@ -26,9 +27,8 @@ NodeInspectorPanel::NodeInspectorPanel(QWidget* parent)
 
     m_content = new QWidget(this);
     m_content->setObjectName("nodeInspectorContent");
-    auto* root = new QVBoxLayout(m_content);
+    auto* root = makeCompactLayout<QVBoxLayout>(m_content);
     root->addStretch();
-    root->setContentsMargins(0, 0, 0, 0);
     setWidget(m_content);
 
     clearNode();
@@ -73,9 +73,7 @@ void NodeInspectorPanel::rebuild()
         delete old;
     }
 
-    auto* root = new QVBoxLayout(m_content);
-    root->setContentsMargins(0, 0, 0, 0);
-    root->setSpacing(0);
+    auto* root = makeCompactLayout<QVBoxLayout>(m_content);
 
     if (!m_graph || m_node_id.empty()) {
         auto* wrap = new QWidget(m_content);

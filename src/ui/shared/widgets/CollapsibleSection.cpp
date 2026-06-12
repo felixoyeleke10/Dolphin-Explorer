@@ -1,4 +1,6 @@
 #include "ui/shared/widgets/CollapsibleSection.h"
+#include "ui/shared/UiUtils.h"
+#include "ui/shell/Anim.h"
 #include "ui/shell/Theme.h"
 
 #include <QEasingCurve>
@@ -46,16 +48,14 @@ namespace dolphin::ui {
 
 static constexpr int kArrowW   = 14;   // expand/collapse arrow indicator width
 static constexpr int kIconSz   = 14;   // section header icon size (px)
-static constexpr int kAnimMs   = 180;  // expand/collapse animation duration
+// kAnimMs removed — use Anim::kSection
 
 CollapsibleSection::CollapsibleSection(const QString& title, QWidget* parent)
     : QWidget(parent)
 {
     setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Minimum);
 
-    m_layout = new QVBoxLayout(this);
-    m_layout->setContentsMargins(0, 0, 0, 0);
-    m_layout->setSpacing(0);
+    m_layout = makeCompactLayout<QVBoxLayout>(this);
 
     // -- Clickable header bar --------------------------------------------------
     m_header = new QWidget(this);
@@ -84,8 +84,8 @@ CollapsibleSection::CollapsibleSection(const QString& title, QWidget* parent)
 
     // -- Smooth expand/collapse animation on this widget's maximumHeight -------
     m_anim = new QPropertyAnimation(this, "maximumHeight", this);
-    m_anim->setEasingCurve(QEasingCurve::InOutCubic);
-    m_anim->setDuration(kAnimMs);
+    m_anim->setEasingCurve(Anim::kEaseInOut);
+    m_anim->setDuration(Anim::kSection);
 
     connect(m_anim, &QPropertyAnimation::finished, this, [this]() {
         if (m_expanded) {

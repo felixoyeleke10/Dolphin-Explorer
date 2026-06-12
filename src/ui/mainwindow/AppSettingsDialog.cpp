@@ -1,7 +1,10 @@
 // AppSettingsDialog.cpp — constructor, controls fill/read, apply, load defaults.
 #include "ui/mainwindow/AppSettingsDialog.h"
+#include "ui/shared/UiUtils.h"
+#include "ui/shared/widgets/AnimatedToolButton.h"
 #include "ui/shell/Theme.h"
 
+#include <QButtonGroup>
 #include <QCheckBox>
 #include <algorithm>
 #include <cstddef>
@@ -11,7 +14,6 @@
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QLineEdit>
-#include <QListWidget>
 #include <QPushButton>
 #include <QSettings>
 #include <QSpinBox>
@@ -21,9 +23,9 @@
 
 namespace dolphin::ui {
 
-static constexpr int kSettingsSidebarW = 168;
-static constexpr int kMinW             = 700;
-static constexpr int kMinH             = 520;
+static constexpr int kSettingsSidebarW = 176;
+static constexpr int kMinW             = 740;
+static constexpr int kMinH             = 540;
 
 // -----------------------------------------------------------------------------
 //  Constructor
@@ -36,28 +38,34 @@ AppSettingsDialog::AppSettingsDialog(const Settings& current, QWidget* parent)
     setMinimumSize(kMinW, kMinH);
     setModal(true);
 
-    auto* root = new QVBoxLayout(this);
-    root->setContentsMargins(0, 0, 0, 0);
-    root->setSpacing(0);
-
+    auto* root    = makeCompactLayout<QVBoxLayout>(this);
     auto* content = new QWidget(this);
-    auto* hl = new QHBoxLayout(content);
-    hl->setContentsMargins(0, 0, 0, 0);
-    hl->setSpacing(0);
+    auto* hl      = makeCompactLayout<QHBoxLayout>(content);
 
     auto* sidebar = new QWidget(content);
     sidebar->setObjectName("settingsSidebar");
     sidebar->setFixedWidth(kSettingsSidebarW);
     auto* sbl = new QVBoxLayout(sidebar);
-    sbl->setContentsMargins(0, Theme::kSpacing4, 0, Theme::kSpacing4);
-    sbl->setSpacing(0);
+    sbl->setContentsMargins(6, 8, 6, 8);
+    sbl->setSpacing(2);
 
-    m_nav = new QListWidget(sidebar);
-    m_nav->setObjectName("settingsNav");
-    for (const auto* label : { "General", "Appearance", "Performance",
-                                "Data", "Export", "Map", "About" })
-        m_nav->addItem(tr(label));
-    sbl->addWidget(m_nav);
+    m_nav_group = new QButtonGroup(sidebar);
+    m_nav_group->setExclusive(true);
+    static const char* kPageLabels[] = {
+        "General", "Appearance", "Performance", "Data", "Export", "Map", "About"
+    };
+    for (int i = 0; i < 7; ++i) {
+        auto* btn = new AnimatedToolButton(sidebar);
+        btn->setText(tr(kPageLabels[i]));
+        btn->setToolButtonStyle(Qt::ToolButtonTextOnly);
+        btn->setCheckable(true);
+        btn->setObjectName("settingsNavBtn");
+        btn->setFixedHeight(36);
+        btn->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+        m_nav_group->addButton(btn, i);
+        sbl->addWidget(btn);
+    }
+    sbl->addStretch();
     hl->addWidget(sidebar);
 
     m_stack = new QStackedWidget(content);
@@ -70,9 +78,9 @@ AppSettingsDialog::AppSettingsDialog(const Settings& current, QWidget* parent)
     m_stack->addWidget(buildAboutPage());
     hl->addWidget(m_stack, 1);
 
-    connect(m_nav, &QListWidget::currentRowChanged,
+    connect(m_nav_group, &QButtonGroup::idClicked,
             m_stack, &QStackedWidget::setCurrentIndex);
-    m_nav->setCurrentRow(0);
+    m_nav_group->button(0)->setChecked(true);
 
     root->addWidget(content, 1);
 

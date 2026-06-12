@@ -4,12 +4,12 @@
 //   MainWindow.MainArea.cpp       — buildMainArea, buildPropertiesPanel
 //   MainWindow.ToolBar.cpp        — buildActivityBar, buildRightToolBar, setupToolBar
 #include "ui/mainwindow/MainWindow.h"
+#include "ui/shared/UiUtils.h"
 #include "ui/mainwindow/MainStatusBar.h"
 #include "ui/bottom/BottomDockPanel.h"
 #include "ui/mainwindow/panels/InspectorPanel.h"
 #include "ui/shared/panels/LineListPanel.h"
 #include "ui/features/map/MapView.h"
-#include "ui/features/map/MapView3D.h"
 #include "ui/features/map/MapViewportHost.h"
 #include "app/project/Project.h"
 
@@ -23,8 +23,6 @@
 #include <QVBoxLayout>
 #include <QWidget>
 
-#include <cmath>
-
 namespace dolphin::ui {
 
 static constexpr int kEdgeStripW    = 14;  // collapse/expand strip width
@@ -36,9 +34,7 @@ void MainWindow::setupCentralWidget()
     root->setObjectName("shellRoot");
     setCentralWidget(root);
 
-    auto* root_layout = new QHBoxLayout(root);
-    root_layout->setContentsMargins(0, 0, 0, 0);
-    root_layout->setSpacing(0);
+    auto* root_layout = makeCompactLayout<QHBoxLayout>(root);
 
     buildContextPanel(root);
 
@@ -46,8 +42,7 @@ void MainWindow::setupCentralWidget()
     m_left_edge_strip = new QWidget(root);
     m_left_edge_strip->setObjectName("leftEdgeStrip");
     m_left_edge_strip->setFixedWidth(kEdgeStripW);
-    auto* left_strip_l = new QVBoxLayout(m_left_edge_strip);
-    left_strip_l->setContentsMargins(0, 0, 0, 0);
+    auto* left_strip_l = makeCompactLayout<QVBoxLayout>(m_left_edge_strip);
     m_context_collapse_btn = new QToolButton(m_left_edge_strip);
     m_context_collapse_btn->setText("‹");  // ‹ — collapse left
     m_context_collapse_btn->setObjectName("panelEdgeBtnLeft");
@@ -69,8 +64,7 @@ void MainWindow::setupCentralWidget()
     m_right_edge_strip = new QWidget(root);
     m_right_edge_strip->setObjectName("rightEdgeStrip");
     m_right_edge_strip->setFixedWidth(kEdgeStripW);
-    auto* right_strip_l = new QVBoxLayout(m_right_edge_strip);
-    right_strip_l->setContentsMargins(0, 0, 0, 0);
+    auto* right_strip_l = makeCompactLayout<QVBoxLayout>(m_right_edge_strip);
     m_props_collapse_btn = new QToolButton(m_right_edge_strip);
     m_props_collapse_btn->setText("›");  // › — collapse right
     m_props_collapse_btn->setObjectName("panelEdgeBtnRight");
@@ -92,20 +86,10 @@ void MainWindow::setupCentralWidget()
             this, &MainWindow::onNewProject);
     connect(m_line_list, &LineListPanel::importFilesRequested,
             this, &MainWindow::onImportFile);
-    connect(m_line_list, &LineListPanel::recentProjectRequested,
-            this, [this](const QString& path) {
-                QTimer::singleShot(0, this, [this, path]() { loadProject(path.toStdString()); });
-            });
 
     // Import hint button on the empty map canvas
     connect(m_viewport_host, &MapViewportHost::importFilesRequested,
             this, &MainWindow::onImportFile);
-
-    // Keep the toolbar 3D button in sync with the viewport's internal overlay toggle.
-    connect(m_viewport_host, &MapViewportHost::modeChanged,
-            this, [this](bool is_3d) {
-                if (m_3d_btn) { QSignalBlocker sb(m_3d_btn); m_3d_btn->setChecked(is_3d); }
-            });
 
     connect(m_line_list, &LineListPanel::layerSelected,
             this, &MainWindow::onLayerSelected);

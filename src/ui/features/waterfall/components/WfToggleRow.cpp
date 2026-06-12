@@ -1,6 +1,7 @@
 // WfToggleRow.cpp — animated toggle switch row
 
 #include "ui/features/waterfall/components/WfToggleRow.h"
+#include "ui/shell/Anim.h"
 #include "ui/shell/Theme.h"
 
 #include <QEnterEvent>
@@ -20,8 +21,8 @@ static constexpr int    kThumbD    = 16;   // thumb diameter
 static constexpr int    kThumbInset = 2;   // gap between thumb and track edge
 
 // -- Colors --------------------------------------------------------------------
-static const QColor kLabelCol   ( QLatin1String(Theme::kTextSubtle) );  // #8e8e93
-static const QColor kAccent     ( QLatin1String(Theme::kAccent) );       // #0a84ff
+static const QColor kLabelCol   { QLatin1String(Theme::kTextSubtle) };  // #8e8e93
+static const QColor kAccent     { QLatin1String(Theme::kAccent) };       // #0a84ff
 static const QColor kTrackOff   { 255, 255, 255,  38 };  // white 15% — rendering constant
 static const QColor kThumbShadow{   0,   0,   0,  40 };  // black 16% — rendering constant
 static constexpr int kTrackHoverBoost = 18;  // alpha increment when hovered-off
@@ -40,8 +41,8 @@ WfToggleRow::WfToggleRow(const QString& label, bool checked, QWidget* parent)
     setToolTip(tr("Click to turn this option on or off."));
 
     m_animation = new QPropertyAnimation(this, "animPos", this);
-    m_animation->setDuration(140);
-    m_animation->setEasingCurve(QEasingCurve::InOutQuad);
+    m_animation->setDuration(Anim::kFast);
+    m_animation->setEasingCurve(Anim::kEaseToggle);
 }
 
 void WfToggleRow::setChecked(bool v)

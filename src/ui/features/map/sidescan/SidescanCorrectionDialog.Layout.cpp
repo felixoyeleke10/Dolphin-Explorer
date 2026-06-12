@@ -1,5 +1,6 @@
 // SidescanCorrectionDialog.Layout.cpp — section builders and static layout helpers.
 #include "ui/features/map/sidescan/SidescanCorrectionDialog.h"
+#include "ui/shared/UiUtils.h"
 #include "ui/shell/Theme.h"
 
 #include <QCheckBox>
@@ -34,9 +35,7 @@ static void addRow(QVBoxLayout* vl, QWidget* parent,
                    int label_width = 160)
 {
     auto* row = new QWidget(parent);
-    auto* rl  = new QHBoxLayout(row);
-    rl->setContentsMargins(0, 0, 0, 0);
-    rl->setSpacing(Theme::kSpacing4);
+    auto* rl  = makeCompactLayout<QHBoxLayout>(row, Theme::kSpacing4);
     auto* cap = new QLabel(label, row);
     cap->setFixedWidth(label_width);
     rl->addWidget(cap);

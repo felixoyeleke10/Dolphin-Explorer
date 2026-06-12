@@ -59,6 +59,7 @@ add_library(dolphin-ui-shared STATIC
     shared/panels/LineListPanel.ContextMenu.cpp
     shared/widgets/AnimatedToolButton.cpp
     shared/widgets/CollapsibleSection.cpp
+    shared/widgets/EmptyStateWidget.cpp
     shared/widgets/CommandBar.cpp
     shared/widgets/ViewerToolbar.cpp
     shared/widgets/LayerPickerWidget.cpp
@@ -118,6 +119,9 @@ add_library(dolphin-ui-import STATIC
     features/import/ImportReviewWizard.cpp
     features/import/ImportReviewWizard.Layout.cpp
     features/import/ImportReviewWizard.Tabs.cpp
+    features/import/ImportReviewWizard.Summary.cpp
+    features/import/ImportReviewWizard.Nav.cpp
+    features/import/ImportReviewWizard.CRS.cpp
     features/import/ImportReviewWizard.SensorTabs.cpp
     features/import/ImportSetupDialog.cpp
 )
@@ -364,6 +368,7 @@ add_library(dolphin-ui-mainwindow STATIC
     mainwindow/ProcessingDialog.cpp
     mainwindow/AppSettingsDialog.cpp
     mainwindow/AppSettingsDialog.Pages.cpp
+    mainwindow/NewProjectDialog.cpp
     mainwindow/ChatPanel.cpp
     mainwindow/panels/NavInfoPanel.cpp
     mainwindow/panels/HeadingInfoPanel.cpp

@@ -2,6 +2,7 @@
 // Per-command execution via cmd.exe /C (Windows) or /bin/sh -c (Unix).
 // Tracks cwd across cd commands; supports history, colored output, process kill.
 #include "ui/bottom/TerminalWidget.h"
+#include "ui/shared/UiUtils.h"
 #include "ui/shell/Theme.h"
 
 #include <QDir>
@@ -62,9 +63,7 @@ void TerminalWidget::buildLayout()
 {
     setObjectName("terminalWidget");
 
-    auto* vbox = new QVBoxLayout(this);
-    vbox->setContentsMargins(0, 0, 0, 0);
-    vbox->setSpacing(0);
+    auto* vbox = makeCompactLayout<QVBoxLayout>(this);
 
     // Header: cwd label + kill + clear
     auto* header = new QWidget(this);

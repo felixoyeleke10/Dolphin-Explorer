@@ -3,6 +3,7 @@
 // Context menu and reorder logic lives in LineListPanel.ContextMenu.cpp.
 #include "ui/shared/panels/LineListPanel.h"
 #include "ui/shared/panels/LineListPanel_p.h"
+#include "ui/shared/widgets/EmptyStateWidget.h"
 #include "app/layers/DataLayer.h"
 #include "ui/shell/Theme.h"
 #include <QAbstractItemModel>
@@ -95,21 +96,12 @@ LineListPanel::LineListPanel(QWidget* parent, ContentMode mode)
     layout->addWidget(m_tree, 1);
 
     // -- Empty state (shown when no project is open) ---------------------------
-    m_empty_state = new QWidget(this);
-    auto* el = new QVBoxLayout(m_empty_state);
-    el->setContentsMargins(0, Theme::kSpacing3, 0, 0);
-    el->setSpacing(Theme::kSpacing2);
-
-    auto* new_btn = new QPushButton(tr("New Project…"), m_empty_state);
-    new_btn->setObjectName("emptyStateActionBtn");
-    connect(new_btn, &QPushButton::clicked, this, &LineListPanel::newProjectRequested);
-    el->addWidget(new_btn);
-
-    auto* import_btn = new QPushButton(tr("Import Files…"), m_empty_state);
-    import_btn->setObjectName("emptyStateActionBtn");
-    connect(import_btn, &QPushButton::clicked, this, &LineListPanel::importFilesRequested);
-    el->addWidget(import_btn);
-    el->addStretch(1);
+    auto* es = new EmptyStateWidget(this);
+    m_empty_state = es;
+    connect(es->addAction(tr("New Project…")),  &QPushButton::clicked,
+            this, &LineListPanel::newProjectRequested);
+    connect(es->addAction(tr("Import Files…")), &QPushButton::clicked,
+            this, &LineListPanel::importFilesRequested);
 
     layout->addWidget(m_empty_state);
     // Initial state: no project open — show empty state, hide tree.

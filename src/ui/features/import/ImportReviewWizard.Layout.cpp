@@ -1,6 +1,7 @@
 // ImportReviewWizard.Layout.cpp — section builders: file list, tabs, project form.
 #include "ui/features/import/ImportReviewWizard.h"
 #include "app/project/Project.h"
+#include "ui/shared/UiUtils.h"
 #include "ui/shell/Theme.h"
 
 #include <QDateTime>
@@ -52,9 +53,7 @@ void ImportReviewWizard::buildFileSection(QVBoxLayout* root)
     m_file_scroll->setMinimumHeight(60);
 
     m_file_content = new QWidget;
-    m_file_layout  = new QVBoxLayout(m_file_content);
-    m_file_layout->setContentsMargins(0, 0, 0, 0);
-    m_file_layout->setSpacing(2);
+    m_file_layout  = makeCompactLayout<QVBoxLayout>(m_file_content, 2);
 
     m_drop_hint = new QLabel(
         tr("Drop files here or click 'Add Files...'"), m_file_content);
@@ -136,22 +135,18 @@ void ImportReviewWizard::buildProjectSection(QVBoxLayout* root)
         m_radio_current->setText(tr("Add to current project"));
     m_radio_current->setEnabled(m_current_project != nullptr);
 
-    auto* row1 = new QHBoxLayout;
-    row1->setContentsMargins(0, 0, 0, 0);
+    auto* row1 = makeCompactLayout<QHBoxLayout>();
     row1->addWidget(m_radio_current);
     row1->addStretch();
     vl->addLayout(row1);
 
     // "Create new project" radio + inline form
     m_radio_new = new QRadioButton(tr("Create new project"), sect);
-    auto* row2  = new QHBoxLayout;
-    row2->setContentsMargins(0, 0, 0, 0);
+    auto* row2  = makeCompactLayout<QHBoxLayout>();
     row2->addWidget(m_radio_new);
 
     m_new_proj_form = new QFrame(sect);
-    auto* fl = new QHBoxLayout(m_new_proj_form);
-    fl->setContentsMargins(0, 0, 0, 0);
-    fl->setSpacing(Theme::kSpacing2);
+    auto* fl = makeCompactLayout<QHBoxLayout>(m_new_proj_form, Theme::kSpacing2);
 
     m_name_edit = new QLineEdit(m_new_proj_form);
     m_name_edit->setFixedHeight(Theme::kFormBtnH);

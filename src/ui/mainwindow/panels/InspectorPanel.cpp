@@ -2,6 +2,7 @@
 #include "ui/mainwindow/panels/InspectorPanel.h"
 #include "ui/mainwindow/rightpanel/RightPanelHost.h"
 #include "ui/shared/panels/ContactInspectorPage.h"
+#include "ui/shared/UiUtils.h"
 #include <QLabel>
 #include <QStackedWidget>
 #include <QVBoxLayout>
@@ -11,9 +12,7 @@ namespace dolphin::ui {
 InspectorPanel::InspectorPanel(QWidget* parent)
     : QWidget(parent)
 {
-    auto* layout = new QVBoxLayout(this);
-    layout->setContentsMargins(0, 0, 0, 0);
-    layout->setSpacing(0);
+    auto* layout = makeCompactLayout<QVBoxLayout>(this);
 
     m_stack = new QStackedWidget(this);
     layout->addWidget(m_stack);

@@ -158,7 +158,7 @@ QFrame* MainWindow::buildRightToolBar(QWidget* parent)
                                                              "Stays active; switch tools to stop placing."),            &MainWindow::onAddContact);
     layout->addWidget(makeDivider());
 
-    // Destructive actions hidden behind ···
+    // More actions — 3D toggle plus destructive ops hidden behind ···
     {
         auto* btn = new AnimatedToolButton(bar);
         btn->setIcon(QIcon(":/icons/more.svg"));
@@ -168,6 +168,13 @@ QFrame* MainWindow::buildRightToolBar(QWidget* parent)
         btn->setPopupMode(QToolButton::InstantPopup);
 
         auto* menu = new QMenu(btn);
+        auto* act_3d = menu->addAction(
+            QIcon(":/icons/layers.svg"),
+            tr("Toggle 3D View"),
+            this, &MainWindow::onToggle3D);
+        act_3d->setToolTip(
+            tr("Switch to OpenGL terrain/sonar-drape view. Run again to return to 2D plan view."));
+        menu->addSeparator();
         auto* act_reset = menu->addAction(
             QIcon(":/icons/reset_raw.svg"),
             tr("Reset to Raw Navigation"),
@@ -187,16 +194,17 @@ QFrame* MainWindow::buildRightToolBar(QWidget* parent)
 
     layout->addStretch();
 
-    // 3D view toggle — pinned at the bottom, not part of the tool group.
+    // Settings — pinned at the bottom, not part of the tool group.
     layout->addWidget(makeDivider());
-    m_3d_btn = new AnimatedToolButton(bar);
-    m_3d_btn->setIcon(QIcon(":/icons/layers.svg"));
-    m_3d_btn->setIconSize(QSize(Theme::kIconSideBar, Theme::kIconSideBar));
-    m_3d_btn->setToolTip(tr("3D View — switch to OpenGL terrain/sonar-drape view.\nClick again to return to 2D plan view."));
-    m_3d_btn->setCheckable(true);
-    m_3d_btn->setFixedSize(Theme::kToolBarW, Theme::kSideButtonH);
-    connect(m_3d_btn, &QToolButton::clicked, this, &MainWindow::onToggle3D);
-    layout->addWidget(m_3d_btn);
+    m_settings_btn = new AnimatedToolButton(bar);
+    m_settings_btn->setIcon(QIcon(":/icons/settings2.svg"));
+    m_settings_btn->setIconSize(QSize(Theme::kIconSideBar, Theme::kIconSideBar));
+    m_settings_btn->setToolTip(tr("Settings"));
+    m_settings_btn->setCheckable(true);
+    m_settings_btn->setAutoExclusive(false);
+    m_settings_btn->setFixedSize(Theme::kToolBarW, Theme::kSideButtonH);
+    connect(m_settings_btn, &QToolButton::clicked, this, [this]() { togglePanel(PanelSettings); });
+    layout->addWidget(m_settings_btn);
 
     return bar;
 }

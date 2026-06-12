@@ -3,6 +3,7 @@
 #include "render/sonar/SSSPalette.h"
 #include "ui/features/waterfall/components/WfValueRow.h"
 #include "ui/shared/dialogs/SettingsDialog.h"
+#include "ui/shared/UiUtils.h"
 #include "ui/shell/Theme.h"
 
 #include <QComboBox>
@@ -25,9 +26,7 @@ static constexpr int kToggleBtnW = 40;  // On/Off toggle button fixed width
 WaterfallInspectorPanel::WaterfallInspectorPanel(QWidget* parent)
     : QFrame(parent)
 {
-    auto* fl = new QVBoxLayout(this);
-    fl->setContentsMargins(0, 0, 0, 0);
-    fl->setSpacing(0);
+    auto* fl = makeCompactLayout<QVBoxLayout>(this);
 
     // -- Scrollable content area -------------------------------------------
     auto* scroll = new QScrollArea(this);
@@ -39,9 +38,7 @@ WaterfallInspectorPanel::WaterfallInspectorPanel(QWidget* parent)
     fl->addWidget(scroll, 1);
 
     auto* container = new QWidget;
-    auto* vl        = new QVBoxLayout(container);
-    vl->setContentsMargins(0, 0, 0, 0);
-    vl->setSpacing(0);
+    auto* vl        = makeCompactLayout<QVBoxLayout>(container);
     scroll->setWidget(container);
 
     // -- FILES (expanded) --------------------------------------------------
@@ -266,9 +263,7 @@ QVBoxLayout* WaterfallInspectorPanel::makeSection(const QString& title,
 
     auto* body = new QWidget(parent);
     body->setObjectName("avCollapseBody");
-    auto* bl = new QVBoxLayout(body);
-    bl->setContentsMargins(0, 0, 0, 0);
-    bl->setSpacing(0);
+    auto* bl = makeCompactLayout<QVBoxLayout>(body);
     body->setVisible(expanded);
 
     auto syncLabel = [hdr, title](bool checked) {

@@ -2,6 +2,7 @@
 
 #include "ui/features/geodesy/GeodesyPanel.h"
 #include "ui/shared/dialogs/CrsPickerDialog.h"
+#include "ui/shared/UiUtils.h"
 #include "ui/shell/Theme.h"
 #include "app/layers/DataLayer.h"
 #include "app/project/Project.h"
@@ -28,9 +29,7 @@ static constexpr int kDotW = 14;  // CRS status dot indicator width
 GeodesyPanel::GeodesyPanel(QWidget* parent)
     : QWidget(parent)
 {
-    auto* root = new QVBoxLayout(this);
-    root->setContentsMargins(0, 0, 0, 0);
-    root->setSpacing(0);
+    auto* root = makeCompactLayout<QVBoxLayout>(this);
 
     // Wrap everything in a scroll area so it works on small screens.
     auto* scroll = new QScrollArea(this);
@@ -74,9 +73,7 @@ void GeodesyPanel::buildCrsSection(QVBoxLayout* root)
     vl->addWidget(m_crs_value);
 
     auto* btn_row = new QWidget(card);
-    auto* btn_hl  = new QHBoxLayout(btn_row);
-    btn_hl->setContentsMargins(0, 0, 0, 0);
-    btn_hl->setSpacing(Theme::kSpacing2);
+    auto* btn_hl  = makeCompactLayout<QHBoxLayout>(btn_row, Theme::kSpacing2);
 
     m_browse_btn = new QPushButton(tr("Browse…"), card);
     m_browse_btn->setObjectName("dlgBtnSecondary");
@@ -136,9 +133,7 @@ void GeodesyPanel::buildLayersSection(QVBoxLayout* root)
 
     // Dynamic rows injected by refreshLayerList() go into m_layers_vl.
     auto* rows_w = new QWidget(m_layers_card);
-    m_layers_vl  = new QVBoxLayout(rows_w);
-    m_layers_vl->setContentsMargins(0, 0, 0, 0);
-    m_layers_vl->setSpacing(2);
+    m_layers_vl  = makeCompactLayout<QVBoxLayout>(rows_w, 2);
     vl->addWidget(rows_w);
 
     root->addWidget(m_layers_card);

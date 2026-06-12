@@ -2,6 +2,7 @@
 //   setupStatusBar()  — MainStatusBar construction
 //   setupTitleBar()   — MenuBarFilter, CommandBar (centred search), window buttons
 #include "ui/mainwindow/MainWindow.h"
+#include "ui/shared/UiUtils.h"
 #include "ui/mainwindow/MainStatusBar.h"
 #include "ui/mainwindow/MenuBarFilter.h"
 #include "ui/mainwindow/ChatPanel.h"   // ConversationPanel — file kept as ChatPanel.h
@@ -34,9 +35,7 @@ void MainWindow::setupTitleBar()
     // -- Left flank: back / forward navigation arrows --------------------------
     {
         auto* nav = new QWidget(menuBar());
-        auto* l   = new QHBoxLayout(nav);
-        l->setContentsMargins(0, 0, 0, 0);
-        l->setSpacing(1);
+        auto* l   = makeCompactLayout<QHBoxLayout>(nav, 1);
 
         auto mkNav = [&](const QString& glyph, const QString& tip) {
             auto* b = new QPushButton(glyph, nav);
@@ -125,9 +124,7 @@ void MainWindow::setupTitleBar()
 
     auto* corner = new QWidget(this);
     corner->setObjectName("titleBarCorner");
-    auto* cl     = new QHBoxLayout(corner);
-    cl->setContentsMargins(0, 0, 0, 0);
-    cl->setSpacing(0);
+    auto* cl     = makeCompactLayout<QHBoxLayout>(corner);
 
     // -- Layout toggle buttons -------------------------------------------------
     auto makeLayoutBtn = [&](const char* icon_path, const QString& tip,

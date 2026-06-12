@@ -5,12 +5,12 @@
 #include <QDialog>
 #include <QString>
 
+class QButtonGroup;
 class QCheckBox;
 class QComboBox;
 class QDoubleSpinBox;
 class QLabel;
 class QLineEdit;
-class QListWidget;
 class QSpinBox;
 class QStackedWidget;
 
@@ -104,8 +104,8 @@ private:
 
     void fillControls(const Settings& s);
 
-    QListWidget*    m_nav   = nullptr;
-    QStackedWidget* m_stack = nullptr;
+    QButtonGroup*   m_nav_group = nullptr;
+    QStackedWidget* m_stack     = nullptr;
 
     // -- General -----------------------------------------------------------
     QComboBox* m_units_combo        = nullptr;

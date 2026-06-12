@@ -1,6 +1,7 @@
 // WaterfallAnalysisPanelProcessing.cpp — PROCESSING TOOLS + NAVIGATION PROCESSING sections
 
 #include "ui/features/waterfall/panels/WaterfallAnalysisPanel.h"
+#include "ui/shared/UiUtils.h"
 #include "ui/shell/Theme.h"
 #include "ui/features/waterfall/components/WfToggleRow.h"
 #include "ui/features/waterfall/components/WfValueRow.h"
@@ -97,9 +98,7 @@ void WaterfallAnalysisPanel::buildProcessingSection(QVBoxLayout* vl, QWidget* co
     m_bpn_body = new QWidget(container);
     m_bpn_body->setVisible(false);
     {
-        auto* bpn_bl = new QVBoxLayout(m_bpn_body);
-        bpn_bl->setContentsMargins(0, 0, 0, 0);
-        bpn_bl->setSpacing(0);
+        auto* bpn_bl = makeCompactLayout<QVBoxLayout>(m_bpn_body);
         addValueRow(bpn_bl, tr("Strength"),      m_bpn_strength, 0.0, 1.0, 1.0,  0.05, 2);
         m_bpn_strength->setToolTip(
             tr("Amount of beam-pattern correction applied.\n"
@@ -124,9 +123,7 @@ void WaterfallAnalysisPanel::buildProcessingSection(QVBoxLayout* vl, QWidget* co
     m_arc_body = new QWidget(container);
     m_arc_body->setVisible(false);
     {
-        auto* arc_bl = new QVBoxLayout(m_arc_body);
-        arc_bl->setContentsMargins(0, 0, 0, 0);
-        arc_bl->setSpacing(0);
+        auto* arc_bl = makeCompactLayout<QVBoxLayout>(m_arc_body);
         addValueRow(arc_bl, tr("Exponent"), m_arc_exponent, 0.5, 4.0, 1.5, 0.1, 1);
         m_arc_exponent->setToolTip(
             tr("Controls how strongly grazing-angle compensation increases at low angles.\n"
@@ -153,9 +150,7 @@ void WaterfallAnalysisPanel::buildProcessingSection(QVBoxLayout* vl, QWidget* co
     m_mle_body = new QWidget(container);
     m_mle_body->setVisible(false);
     {
-        auto* mle_bl = new QVBoxLayout(m_mle_body);
-        mle_bl->setContentsMargins(0, 0, 0, 0);
-        mle_bl->setSpacing(0);
+        auto* mle_bl = makeCompactLayout<QVBoxLayout>(m_mle_body);
         addValueRow(mle_bl, tr("Tile Pings"),  m_mle_tile_pings,  16, 256, 64,  8,  0, tr(" pings"));
         m_mle_tile_pings->setToolTip(
             tr("Along-track tile height for adaptive contrast.\n"
@@ -288,9 +283,7 @@ void WaterfallAnalysisPanel::buildNavSection(QVBoxLayout* vl, QWidget* container
     m_nav_smooth_body = new QWidget(container);
     m_nav_smooth_body->setVisible(false);
     {
-        auto* sb = new QVBoxLayout(m_nav_smooth_body);
-        sb->setContentsMargins(0, 0, 0, 0);
-        sb->setSpacing(0);
+        auto* sb = makeCompactLayout<QVBoxLayout>(m_nav_smooth_body);
         addValueRow(sb, tr("Window"), m_nav_smooth_window, 1, 200, 5, 1, 0, tr(" pings"));
         m_nav_smooth_window->setToolTip(
             tr("Number of pings used in the navigation smoothing window.\n"
@@ -317,9 +310,7 @@ void WaterfallAnalysisPanel::buildNavSection(QVBoxLayout* vl, QWidget* container
     m_nav_layback_body = new QWidget(container);
     m_nav_layback_body->setVisible(false);
     {
-        auto* lb = new QVBoxLayout(m_nav_layback_body);
-        lb->setContentsMargins(0, 0, 0, 0);
-        lb->setSpacing(0);
+        auto* lb = makeCompactLayout<QVBoxLayout>(m_nav_layback_body);
         addValueRow(lb, tr("Layback"), m_nav_layback_m, 0.0, 500.0, 0.0, 1.0, 1, tr(" m"));
         m_nav_layback_m->setToolTip(
             tr("Horizontal distance from vessel GPS antenna back to the towfish.\n"

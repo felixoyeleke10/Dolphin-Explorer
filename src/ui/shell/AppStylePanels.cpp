@@ -24,6 +24,10 @@ QString qssPanels()
         "}"
         "QPushButton#emptyStateActionBtn:pressed { background: rgba(@accentRgb,0.30); }"
 
+        "QLabel#emptyStateIcon  { color: rgba(@accentRgb,0.55); font-size: 28px; padding-bottom: 4px; }"
+        "QLabel#emptyStateTitle { color: @textPrimary;  font-family: @font; font-size: @fontMd;  font-weight: 600; }"
+        "QLabel#emptyStateSub   { color: @textMuted;    font-family: @font; font-size: @fontBase; padding: 0 8px; }"
+
         "QFrame#emptyStateSep { background: @border; max-height: 1px; border: none; }"
 
         "QLabel#emptyStateRecentHdr {"

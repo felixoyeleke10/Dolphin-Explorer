@@ -106,7 +106,8 @@ private:
     QToolButton*    m_btn             = nullptr;   // 2D / 3D toggle
     QToolButton*    m_terrain_btn     = nullptr;   // Load Terrain (3D mode only)
     QLabel*         m_terrain_label   = nullptr;   // "Loading…" feedback
-    QPushButton*    m_import_hint_btn = nullptr;   // empty-state CTA
+    QWidget*        m_empty_state     = nullptr;   // transparent overlay: layout-centered empty-state CTA
+    QPushButton*    m_import_hint_btn = nullptr;   // button inside m_empty_state
     bool            m_is_3d           = false;
 
     // Cached display settings — applyLiveSettings always runs before ensureView3D(),

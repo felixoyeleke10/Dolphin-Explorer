@@ -1,6 +1,7 @@
 // SBPMetadataWindow.Layout.cpp — UI construction: toolbar, field panel, chart toolbar.
 #include "ui/features/metadata/SBPMetadataWindow.h"
 #include "ui/features/metadata/SSSMetadataWindow.h"
+#include "ui/shared/UiUtils.h"
 #include "ui/shell/Theme.h"
 
 #include <QAction>
@@ -31,9 +32,7 @@ static constexpr int kBinsSpinW  = 52;  // histogram bins spinbox width
 // -----------------------------------------------------------------------------
 void SBPMetadataWindow::buildUi()
 {
-    auto* root = new QVBoxLayout(this);
-    root->setContentsMargins(0, 0, 0, 0);
-    root->setSpacing(0);
+    auto* root = makeCompactLayout<QVBoxLayout>(this);
 
     // -- Icon toolbar ----------------------------------------------------------
     {
@@ -155,9 +154,7 @@ void SBPMetadataWindow::buildUi()
 
     auto* upper = new QWidget(m_outer_vsplit);
     {
-        auto* ul = new QVBoxLayout(upper);
-        ul->setContentsMargins(0, 0, 0, 0);
-        ul->setSpacing(0);
+        auto* ul = makeCompactLayout<QVBoxLayout>(upper);
 
         // -- Horizontal splitter: [field panel | table] ------------------------
         auto* hsplit = new QSplitter(Qt::Horizontal, upper);
@@ -172,9 +169,7 @@ void SBPMetadataWindow::buildUi()
         // Table pane (right)
         auto* table_pane = new QWidget(hsplit);
         {
-            auto* tl = new QVBoxLayout(table_pane);
-            tl->setContentsMargins(0, 0, 0, 0);
-            tl->setSpacing(0);
+            auto* tl = makeCompactLayout<QVBoxLayout>(table_pane);
 
             m_table = new QTableView(table_pane);
             m_table->setModel(m_proxy);
@@ -212,9 +207,7 @@ void SBPMetadataWindow::buildUi()
     m_chart_pane->setAttribute(Qt::WA_DeleteOnClose, false);
     m_chart_pane->installEventFilter(this);
     {
-        auto* cl = new QVBoxLayout(m_chart_pane);
-        cl->setContentsMargins(0, 0, 0, 0);
-        cl->setSpacing(0);
+        auto* cl = makeCompactLayout<QVBoxLayout>(m_chart_pane);
         buildChartToolbar(m_chart_pane);
         m_plot = new SSSMetadataPlotWidget(m_chart_pane);
         cl->addWidget(m_plot, 1);
@@ -282,8 +275,7 @@ void SBPMetadataWindow::buildFieldPanel(QWidget* parent)
     fl->addRow(m_cfg_plot_cb);
 
     auto* cw = new QWidget(m_cfg_panel);
-    auto* crl = new QHBoxLayout(cw);
-    crl->setContentsMargins(0, 0, 0, 0); crl->setSpacing(Theme::kSpacing1);
+    auto* crl = makeCompactLayout<QHBoxLayout>(cw, Theme::kSpacing1);
     m_cfg_color_btn = new QToolButton(cw);
     m_cfg_color_btn->setFixedSize(Theme::kSmallBtnSz, Theme::kSmallBtnSz);
     crl->addWidget(m_cfg_color_btn);

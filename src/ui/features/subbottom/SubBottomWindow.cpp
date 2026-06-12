@@ -5,6 +5,7 @@
 // Data loading   → SubBottomWindow.Load.cpp
 
 #include "ui/features/subbottom/SubBottomWindow.h"
+#include "ui/shared/UiUtils.h"
 #include "ui/systems/AppState.h"
 #include "ui/features/subbottom/SubBottomView.h"
 #include "ui/features/subbottom/panels/SubBottomInspectorPanel.h"
@@ -50,16 +51,12 @@ SubBottomWindow::SubBottomWindow(AppState* app_state, QWidget* parent)
         else                resize(kInitW, kInitH);
     }
 
-    auto* root = new QVBoxLayout(this);
-    root->setContentsMargins(0, 0, 0, 0);
-    root->setSpacing(0);
+    auto* root = makeCompactLayout<QVBoxLayout>(this);
 
     buildToolbar();
 
     // -- Content: inspector | view+scroll | display panel ------------------
-    auto* content = new QHBoxLayout;
-    content->setContentsMargins(0, 0, 0, 0);
-    content->setSpacing(0);
+    auto* content = makeCompactLayout<QHBoxLayout>();
 
     // Left — inspector panel
     m_inspector = new SubBottomInspectorPanel(this);
@@ -73,9 +70,7 @@ SubBottomWindow::SubBottomWindow(AppState* app_state, QWidget* parent)
     content->addWidget(div_l);
 
     // Centre — view + horizontal scrollbar stacked vertically
-    auto* centre = new QVBoxLayout;
-    centre->setContentsMargins(0, 0, 0, 0);
-    centre->setSpacing(0);
+    auto* centre = makeCompactLayout<QVBoxLayout>();
 
     m_view = new SubBottomView(this);
     centre->addWidget(m_view, 1);

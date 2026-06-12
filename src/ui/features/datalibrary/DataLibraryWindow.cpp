@@ -1,5 +1,6 @@
 #include "ui/features/datalibrary/DataLibraryWindow.h"
 #include "ui/shared/CoordFormat.h"
+#include "ui/shared/UiUtils.h"
 #include "app/project/Project.h"
 #include "app/layers/DataLayer.h"
 #include "app/layers/LayerUtils.h"
@@ -491,8 +492,7 @@ QWidget* DataLibraryWindow::buildFormatsPanel()
 void DataLibraryWindow::buildLayersPage()
 {
     auto* page = new QWidget(m_stack);
-    auto* lay  = new QVBoxLayout(page);
-    lay->setContentsMargins(0, 0, 0, 0);
+    auto* lay  = makeCompactLayout<QVBoxLayout>(page);
 
     // Columns: Name | Format | State | Source File | Pings | Duration |
     //          Start UTC | SOL | EOL | Contacts | Bottom Track | Size
@@ -530,8 +530,7 @@ void DataLibraryWindow::buildLayersPage()
 void DataLibraryWindow::buildContactsPage()
 {
     auto* page = new QWidget(m_stack);
-    auto* lay  = new QVBoxLayout(page);
-    lay->setContentsMargins(0, 0, 0, 0);
+    auto* lay  = makeCompactLayout<QVBoxLayout>(page);
 
     m_contacts_table = new QTableWidget(page);
     m_contacts_table->setObjectName("databaseTable");
@@ -563,8 +562,7 @@ void DataLibraryWindow::buildContactsPage()
 void DataLibraryWindow::buildIssuesPage()
 {
     auto* page = new QWidget(m_stack);
-    auto* lay  = new QVBoxLayout(page);
-    lay->setContentsMargins(0, 0, 0, 0);
+    auto* lay  = makeCompactLayout<QVBoxLayout>(page);
 
     m_issues_table = new QTableWidget(page);
     m_issues_table->setObjectName("databaseTable");

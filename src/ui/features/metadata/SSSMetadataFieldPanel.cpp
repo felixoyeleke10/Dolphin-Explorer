@@ -68,8 +68,7 @@ void SSSMetadataWindow::buildFieldPanel(QWidget* parent)
     fl->addRow(m_cfg_plot_cb);
 
     auto* cw = new QWidget(m_cfg_panel);
-    auto* crl = new QHBoxLayout(cw);
-    crl->setContentsMargins(0, 0, 0, 0); crl->setSpacing(Theme::kSpacing1);
+    auto* crl = makeCompactLayout<QHBoxLayout>(cw, Theme::kSpacing1);
     m_cfg_color_btn = new QToolButton(cw);
     m_cfg_color_btn->setFixedSize(Theme::kSmallBtnSz, Theme::kSmallBtnSz);
     crl->addWidget(m_cfg_color_btn);

@@ -1,5 +1,6 @@
 #include "ui/shared/widgets/LayerPickerWidget.h"
 #include "ui/shared/panels/LineListPanel.h"
+#include "ui/shell/Anim.h"
 #include "ui/shell/Theme.h"
 
 #include <QBitmap>
@@ -177,8 +178,8 @@ void LayerPickerWidget::toggle()
     // widget actually grows and shrinks on screen.
     if (!m_size_anim) {
         m_size_anim = new QPropertyAnimation(this, "size", this);
-        m_size_anim->setDuration(160);
-        m_size_anim->setEasingCurve(QEasingCurve::OutCubic);
+        m_size_anim->setDuration(Anim::kIn);
+        m_size_anim->setEasingCurve(Anim::kEaseOut);
     }
 
     m_size_anim->stop();
@@ -249,8 +250,8 @@ void LayerPickerWidget::reposition(const QSize& /*parent_size*/, int left_x)
 
     if (!m_pos_anim) {
         m_pos_anim = new QPropertyAnimation(this, "pos", this);
-        m_pos_anim->setDuration(160);
-        m_pos_anim->setEasingCurve(QEasingCurve::OutCubic);
+        m_pos_anim->setDuration(Anim::kIn);
+        m_pos_anim->setEasingCurve(Anim::kEaseOut);
     }
     m_pos_anim->stop();
     m_pos_anim->setStartValue(pos());

@@ -9,6 +9,8 @@ class QLineEdit;
 class QTreeWidget;
 class QTreeWidgetItem;
 
+namespace dolphin::ui { class EmptyStateWidget; }
+
 namespace dolphin::ui {
 
 // -----------------------------------------------------------------------------
@@ -86,7 +88,6 @@ signals:
     // Empty-state call-to-action buttons
     void newProjectRequested  ();
     void importFilesRequested ();
-    void recentProjectRequested(const QString& path);
 
     // Organisation events — forwarded to MainWindow for activity log
     // kind matches MainWindow::ActivityKind int values (7=TagChange, 8=GroupChange)
@@ -118,7 +119,7 @@ private:
     app::Project* m_project    = nullptr;
     QLineEdit*    m_search     = nullptr;
     QTreeWidget*  m_tree       = nullptr;
-    QWidget*      m_empty_state = nullptr;   // shown when no project is open
+    EmptyStateWidget* m_empty_state = nullptr;   // shown when no project is open
     bool          m_rebuilding = false;
     std::string   m_active_layer_id;
 

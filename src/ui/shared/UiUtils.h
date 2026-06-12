@@ -6,7 +6,31 @@
 #include <QLayoutItem>
 #include <QString>
 
+class QWidget;
+
 namespace dolphin::ui {
+
+// ---------------------------------------------------------------------------
+// makeCompactLayout<L>(parent, spacing)
+//
+// Creates a layout with zero margins — the standard for all internal container
+// widgets in this codebase.  Eliminates the setContentsMargins(0,0,0,0) /
+// setSpacing(0) boilerplate that otherwise appears ~100 times.
+//
+// Usage:
+//   auto* vl = makeCompactLayout<QVBoxLayout>(container);
+//   auto* hl = makeCompactLayout<QHBoxLayout>(container, Theme::kSpacing2);
+//   auto* fl = makeCompactLayout<QFormLayout>();   // parent set later
+// ---------------------------------------------------------------------------
+template <typename L>
+inline L* makeCompactLayout(QWidget* parent = nullptr, int spacing = 0)
+{
+    L* l = parent ? new L(parent) : new L;
+    l->setContentsMargins(0, 0, 0, 0);
+    l->setSpacing(spacing);
+    return l;
+}
+
 
 // Returns a stylesheet for a QPushButton colour-picker swatch (settable background
 // with hover border). Both border colours come from Theme tokens so the swatch

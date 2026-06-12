@@ -2,6 +2,7 @@
 #include "ui/features/map/MapViewportHost.h"
 #include "ui/features/map/MapView.h"
 #include "ui/features/map/MapView3D.h"
+#include "ui/shared/UiUtils.h"
 #include "ui/shell/Theme.h"
 
 #include <QColor>
@@ -35,9 +36,7 @@ static QColor colorForLayer(const std::string& id)
 MapViewportHost::MapViewportHost(QWidget* parent)
     : QWidget(parent)
 {
-    auto* layout = new QVBoxLayout(this);
-    layout->setContentsMargins(0, 0, 0, 0);
-    layout->setSpacing(0);
+    auto* layout = makeCompactLayout<QVBoxLayout>(this);
 
     m_stack = new QStackedWidget(this);
 
@@ -70,15 +69,23 @@ MapViewportHost::MapViewportHost(QWidget* parent)
     m_terrain_label->setObjectName("map3DTerrainLabel");
     m_terrain_label->hide();
 
-    // Import hint button — centered overlay, visible when no data is loaded.
-    m_import_hint_btn = new QPushButton(tr("Import Files…"), this);
+    // Empty-state overlay — transparent QWidget covering the full viewport.
+    // A QVBoxLayout centers the import button automatically; no manual move() needed.
+    m_empty_state      = new QWidget(this);
+    auto* empty_layout = makeCompactLayout<QVBoxLayout>(m_empty_state);
+    empty_layout->addStretch(58);   // push button to ~58 % from top, below the painted hint text
+
+    m_import_hint_btn = new QPushButton(tr("Import Files…"), m_empty_state);
     m_import_hint_btn->setObjectName("mapImportHintBtn");
-    m_import_hint_btn->setVisible(true);
     connect(m_import_hint_btn, &QPushButton::clicked,
             this, &MapViewportHost::importFilesRequested);
-    // Hide once any 2D layer data loads; restored by setShowImportHint(true) on project change.
+
+    empty_layout->addWidget(m_import_hint_btn, 0, Qt::AlignHCenter);
+    empty_layout->addStretch(42);
+
+    // Hide overlay once any 2D layer loads; restored by setShowImportHint on project change.
     connect(m_view2d, &MapView::layerDataUpdated, this, [this](const std::string&) {
-        if (m_import_hint_btn) m_import_hint_btn->hide();
+        if (m_empty_state) m_empty_state->hide();
     });
 
     // Aggregate cursor-moved from whichever view is active.
@@ -393,14 +400,16 @@ void MapViewportHost::clearScene()
 void MapViewportHost::resizeEvent(QResizeEvent* e)
 {
     QWidget::resizeEvent(e);
+    if (m_empty_state) m_empty_state->setGeometry(rect());
     positionOverlay();
 }
 
 void MapViewportHost::setShowImportHint(bool show)
 {
-    if (!m_import_hint_btn) return;
-    m_import_hint_btn->setVisible(show);
-    if (show) positionOverlay();
+    if (!m_empty_state) return;
+    m_empty_state->setGeometry(rect());
+    m_empty_state->setVisible(show);
+    if (show) m_empty_state->raise();
 }
 
 void MapViewportHost::setToolMode(ToolMode mode)
@@ -436,14 +445,6 @@ void MapViewportHost::positionOverlay()
         m_terrain_label->raise();
     }
 
-    // Import hint button — horizontally centred, just below the empty-state hint text
-    if (m_import_hint_btn && m_import_hint_btn->isVisible()) {
-        m_import_hint_btn->adjustSize();
-        m_import_hint_btn->move(
-            (width()  - m_import_hint_btn->width())  / 2,
-            height() / 2 + 52);
-        m_import_hint_btn->raise();
-    }
 }
 
 } // namespace dolphin::ui

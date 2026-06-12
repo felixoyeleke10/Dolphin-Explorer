@@ -1,5 +1,6 @@
 // AppSettingsDialog.Pages.cpp — page builders and layout helpers.
 #include "ui/mainwindow/AppSettingsDialog.h"
+#include "ui/shared/UiUtils.h"
 #include "ui/shell/Theme.h"
 
 #include <cstddef>
@@ -45,7 +46,7 @@ void addSection(QVBoxLayout* vl, const QString& title, QWidget* parent)
     if (vl->count() > 0)
         vl->addSpacing(20);
 
-    auto* lbl = new QLabel(title, parent);
+    auto* lbl = new QLabel(title.toUpper(), parent);
     lbl->setObjectName("settingsSectionTitle");
     vl->addWidget(lbl);
 
@@ -334,9 +335,7 @@ QWidget* AppSettingsDialog::buildExportPage()
     auto* ofl = makeForm();
 
     auto* dir_row = new QWidget(page);
-    auto* dhl = new QHBoxLayout(dir_row);
-    dhl->setContentsMargins(0, 0, 0, 0);
-    dhl->setSpacing(Theme::kSpacing2);
+    auto* dhl = makeCompactLayout<QHBoxLayout>(dir_row, Theme::kSpacing2);
 
     m_export_dir_edit = new QLineEdit(dir_row);
     m_export_dir_edit->setPlaceholderText(tr("Same folder as source file"));

@@ -12,6 +12,11 @@ set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOMOC_COMPILER_PREDEFINES OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+# MSVC does not expose M_PI from <cmath> without this define.
+if(MSVC)
+    add_compile_definitions(_USE_MATH_DEFINES)
+endif()
+
 find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets OpenGL OpenGLWidgets Concurrent Svg Network)
 qt_standard_project_setup()
 

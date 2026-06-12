@@ -3,6 +3,7 @@
 // buildPropertiesPanel builds the right-side panel as a scroll area hosting
 // InspectorPanel, which internally manages all right-panel modules via RightPanelHost.
 #include "ui/mainwindow/MainWindow.h"
+#include "ui/shared/UiUtils.h"
 #include "ui/shell/Theme.h"
 #include "ui/bottom/BottomDockPanel.h"
 #include "ui/features/import/ImportProgressDialog.h"
@@ -140,9 +141,7 @@ QWidget* MainWindow::buildMainArea(QWidget* parent)
 {
     auto* area = new QWidget(parent);
     area->setObjectName("mainArea");
-    auto* layout = new QVBoxLayout(area);
-    layout->setContentsMargins(0, 0, 0, 0);
-    layout->setSpacing(0);
+    auto* layout = makeCompactLayout<QVBoxLayout>(area);
 
     m_viewport_host = new MapViewportHost(area);
     m_map_view = m_viewport_host->view2D();
@@ -163,9 +162,7 @@ void MainWindow::buildPropertiesPanel(QWidget* parent)
     m_props_panel->setObjectName("propertiesPanel");
     m_props_panel->setFixedWidth(m_props_width);
 
-    auto* outer = new QHBoxLayout(m_props_panel);
-    outer->setContentsMargins(0, 0, 0, 0);
-    outer->setSpacing(0);
+    auto* outer = makeCompactLayout<QHBoxLayout>(m_props_panel);
 
     // Left drag-to-resize handle.
     auto* resize_handle = new PanelResizeHandle(
@@ -177,17 +174,13 @@ void MainWindow::buildPropertiesPanel(QWidget* parent)
 
     auto* content = new QWidget(m_props_panel);
     content->setObjectName("propsContent");
-    auto* content_l = new QVBoxLayout(content);
-    content_l->setContentsMargins(0, 0, 0, 0);
-    content_l->setSpacing(0);
+    auto* content_l = makeCompactLayout<QVBoxLayout>(content);
 
     // -- Tab bar — Tools | Chats | History --------------------------------
     auto* hdr = new QFrame(content);
     hdr->setObjectName("propsTabs");
     hdr->setFixedHeight(Theme::kPanelHdrH);
-    auto* hdr_l = new QHBoxLayout(hdr);
-    hdr_l->setContentsMargins(0, 0, 0, 0);
-    hdr_l->setSpacing(0);
+    auto* hdr_l = makeCompactLayout<QHBoxLayout>(hdr);
 
     auto* tab_group = new QButtonGroup(hdr);
     tab_group->setExclusive(true);
@@ -236,9 +229,7 @@ void MainWindow::buildPropertiesPanel(QWidget* parent)
 
     auto* scroll_body = new QWidget();
     scroll_body->setObjectName("propsScrollBody");
-    auto* scroll_l = new QVBoxLayout(scroll_body);
-    scroll_l->setContentsMargins(0, 0, 0, 0);
-    scroll_l->setSpacing(0);
+    auto* scroll_l = makeCompactLayout<QVBoxLayout>(scroll_body);
 
     m_inspector = new InspectorPanel(scroll_body);
     m_inspector->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Minimum);

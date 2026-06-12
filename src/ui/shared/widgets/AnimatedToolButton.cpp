@@ -1,4 +1,5 @@
 #include "ui/shared/widgets/AnimatedToolButton.h"
+#include "ui/shell/Anim.h"
 #include "ui/shell/Theme.h"
 
 #include <QCursor>
@@ -17,10 +18,10 @@ AnimatedToolButton::AnimatedToolButton(QWidget* parent)
     setAttribute(Qt::WA_Hover);
 
     m_icon_anim = new QPropertyAnimation(this, "iconSize", this);
-    m_icon_anim->setEasingCurve(QEasingCurve::OutCubic);
+    m_icon_anim->setEasingCurve(Anim::kEaseOut);
 
     m_glow_anim = new QPropertyAnimation(this, "glowAlpha", this);
-    m_glow_anim->setEasingCurve(QEasingCurve::OutCubic);
+    m_glow_anim->setEasingCurve(Anim::kEaseOut);
 }
 
 // -- Property setter -----------------------------------------------------------
@@ -37,16 +38,16 @@ void AnimatedToolButton::enterEvent(QEnterEvent* e)
 {
     QToolButton::enterEvent(e);
     if (!m_base_size.isValid()) m_base_size = iconSize();
-    animateIconTo(QSize(m_base_size.width() + 4, m_base_size.height() + 4), 160);
-    animateGlowTo(1.0, 160);
+    animateIconTo(QSize(m_base_size.width() + 4, m_base_size.height() + 4), Anim::kIn);
+    animateGlowTo(1.0, Anim::kIn);
 }
 
 void AnimatedToolButton::leaveEvent(QEvent* e)
 {
     QToolButton::leaveEvent(e);
     if (!m_base_size.isValid()) return;
-    animateIconTo(m_base_size, 220);
-    animateGlowTo(0.0, 220);
+    animateIconTo(m_base_size, Anim::kOut);
+    animateGlowTo(0.0, Anim::kOut);
 }
 
 void AnimatedToolButton::mousePressEvent(QMouseEvent* e)
