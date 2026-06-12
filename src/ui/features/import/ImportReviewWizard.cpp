@@ -168,9 +168,7 @@ void ImportReviewWizard::dropEvent(QDropEvent* e)
 
 void ImportReviewWizard::onAddFiles()
 {
-    const QString filter =
-        tr("Survey Files (*.xtf *.jsf *.segy *.sgy *.all *.kmall *.7k *.dlpd *.dpcache)"
-           ";;All Files (*)");
+    const QString filter = QString::fromLatin1(io::kSupportedFileFilter);
     const QStringList paths = QFileDialog::getOpenFileNames(
         this, tr("Add Survey Files"), QDir::homePath(), filter);
     if (!paths.isEmpty())

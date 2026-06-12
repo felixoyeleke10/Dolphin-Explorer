@@ -37,7 +37,7 @@ static constexpr SensorEntry kSensors[4] = {
       "XTF · DLPD" },
     { QT_TR_NOOP("Multibeam Bathymetry"),
       QT_TR_NOOP("3D seabed depth point cloud"),
-      "ALL · KMALL · 7K · DLPD" },
+      "DLPD" },
 };
 
 } // namespace
