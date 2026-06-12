@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Build System
 
-**Primary (MinGW + Ninja):**
+**Primary (MSVC + Ninja, output in `build_mingw/`):**
 ```bat
-# First-time configure (run once):
+# First-time configure (run once — initializes VS environment via vcvars64):
 build_mingw.bat
 
 # Incremental build (after configure):
@@ -16,14 +16,17 @@ cd build_mingw && cmake --build . --parallel
 build_quick.bat
 ```
 
-**MSVC alternative:**
+Note: the directory is named `build_mingw/` for legacy reasons; the compiler is
+MSVC (`cl.exe`) invoked via vcvars64, not MinGW. Do not use MinGW/GCC toolchains.
+
+**MSVC/MSBuild alternative:**
 ```bat
 build.bat   # configures and builds into build\Debug\
 ```
 
 **Run the app:**
 ```bat
-launch.bat   # copies MinGW runtime DLLs and launches DolphinExplorer.exe
+launch.bat   # copies Qt runtime DLLs and launches DolphinExplorer.exe
 ```
 
 **CMake build subdirectory order:** `util → core → io → geo → pipeline → render → app → ui`
@@ -103,4 +106,4 @@ Key locked decisions to respect:
 
 - Clangd uses the `build_mingw/` compilation database (`.clangd` at root).
 - Export compile commands is enabled by default in CMake (`CMAKE_EXPORT_COMPILE_COMMANDS`).
-- MOC predefs are disabled for MinGW 13 compatibility — this is intentional.
+- MOC predefs are disabled for MSVC compatibility — this is intentional.

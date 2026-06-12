@@ -1,0 +1,17 @@
+# Normalize line endings: store LF in repo, check out LF on all platforms.
+* text=auto eol=lf
+
+# Explicitly mark binary types so git never touches their bytes.
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.ico   binary
+*.bmp   binary
+*.dll   binary
+*.exe   binary
+*.pdb   binary
+*.lib   binary
+*.a     binary
+*.o     binary
+*.obj   binary
+*.glsl  text eol=lf
