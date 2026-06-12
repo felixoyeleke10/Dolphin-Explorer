@@ -83,7 +83,7 @@ private:
     QLabel*       m_job       = nullptr;
     QTimer*       m_job_timer = nullptr;
 
-    // Right-side permanent widgets — QGIS-style [field label][value box] pairs
+    // Right-side permanent widgets — [field label][value box] pairs
     QLabel*  m_range      = nullptr;   // cursor range or subbottom depth (sidescan)
     QLabel*  m_depth      = nullptr;   // map-hover depth / altitude reading
 

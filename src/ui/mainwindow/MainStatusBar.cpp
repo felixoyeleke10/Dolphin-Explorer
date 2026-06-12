@@ -65,7 +65,7 @@ MainStatusBar::MainStatusBar(QWidget* parent)
     m_depth = new QLabel(this);
     m_depth->setObjectName("statusChrome");
 
-    // -- QGIS-style field label + value box pairs ------------------------------
+    // -- Field label + value box pairs -----------------------------------------
     auto makeFieldLabel = [this](const char* text) {
         auto* lbl = new QLabel(tr(text), this);
         lbl->setObjectName("statusFieldLabel");
@@ -169,7 +169,7 @@ MainStatusBar::MainStatusBar(QWidget* parent)
     addWidget(m_context, 1);
     addWidget(m_job);
 
-    // QGIS-style indicator pairs
+    // Indicator pairs
     addPermanentWidget(m_lbl_coord);
     addPermanentWidget(m_pos);
     addPermanentWidget(m_lbl_scale);
