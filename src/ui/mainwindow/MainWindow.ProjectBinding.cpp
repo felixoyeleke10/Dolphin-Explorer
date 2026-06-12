@@ -1,5 +1,6 @@
 // MainWindow.ProjectBinding.cpp — bindProjectUi and window title sync.
 #include "ui/mainwindow/MainWindow.h"
+#include "ui/mainwindow/MainStatusBar.h"
 #include "ui/systems/ProjectEventBus.h"
 #include "ui/shell/Features.h"
 #include "ui/features/datalibrary/DataLibraryWindow.h"
@@ -48,6 +49,18 @@ void MainWindow::bindProjectUi()
 
     if (m_map_view)
         m_map_view->setProject(raw);
+
+    if (m_status_bar) {
+        if (raw) {
+            const auto& sr = raw->displaySpatialRef();
+            const QString crs = sr.id.empty()
+                ? QStringLiteral("WGS 84")
+                : QString::fromStdString(sr.id);
+            m_status_bar->setViewCrs(crs);
+        } else {
+            m_status_bar->setViewCrs({});
+        }
+    }
 
     if (m_viewport_host && !raw)
         m_viewport_host->clearScene();

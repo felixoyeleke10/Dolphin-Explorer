@@ -210,12 +210,19 @@ void MainWindow::setupCentralWidget()
     connect(m_viewport_host, &MapViewportHost::cursorMoved,
             this, [this](double lon, double lat) {
         if (std::isnan(lon)) {
-            m_status_bar->clearCursorPosition();
+            // Cursor left the viewport — freeze coordinate at last known position,
+            // only clear the instrument-specific depth reading.
             m_status_bar->clearCursorDepth();
             return;
         }
         m_status_bar->setCursorPosition(lat, lon, m_map_view->isProjected());
     });
+
+    connect(m_viewport_host, &MapViewportHost::viewportChanged,
+            this, [this](double mpp, double rot) {
+        m_status_bar->setViewportInfo(mpp, rot);
+    });
+
 
     connect(m_viewport_host, &MapViewportHost::gpuInfo,
             this, [this](const QString& renderer, const QString& version, int max_tex) {

@@ -247,6 +247,22 @@ MainWindow::MainWindow(QWidget* parent)
     setupMenuBar();
     setupStatusBar();
 
+    // Scale spin box → map zoom: both m_status_bar and m_map_view exist after this point.
+    connect(m_status_bar, &MainStatusBar::scaleChangeRequested,
+            this, [this](double mpp) {
+        if (m_map_view) m_map_view->setZoomFromMpp(mpp);
+    });
+
+    // Rotation spin box → map bearing.
+    connect(m_status_bar, &MainStatusBar::rotationChangeRequested,
+            this, [this](double deg) {
+        if (m_map_view) m_map_view->setRotationDeg(deg);
+    });
+
+    // CRS badge → open Geodetic Settings dialog.
+    connect(m_status_bar, &MainStatusBar::crsClicked,
+            this, &MainWindow::onGeodeticSettings);
+
     // -- Project event bus — one-time wiring, survives project replace -----
     // Static components (always exist after setupCentralWidget) connect here.
     // Lazy components (waterfall, sbp, node graph) are null-guarded so these

@@ -2,7 +2,9 @@
 #include <QStatusBar>
 #include <QString>
 
+class QDoubleSpinBox;
 class QLabel;
+class QPushButton;
 class QProgressBar;
 class QTimer;
 class QWidget;
@@ -48,6 +50,12 @@ public:
     void setProgress(int percent, bool visible);
     void hideProgress();
 
+    // -- Map viewport indicators ------------------------------------------
+    // Called on every zoom / fit change.  metres_per_pixel and rotation_deg
+    // drive the scale, zoom-level, and bearing labels.
+    void setViewportInfo(double metres_per_pixel, double rotation_deg);
+    void setViewCrs(const QString& crs_name);   // set from project CRS on open/change
+
     // -- AI provider indicator ---------------------------------------------
     enum class AiProvider { None, Primary, Integration };
     enum class AiStatus   { Offline, Ready, Active };
@@ -61,6 +69,11 @@ public:
     QLabel*       posLabel()   const { return m_pos;      }
     QProgressBar* progressBar() const { return m_progress; }
 
+signals:
+    void scaleChangeRequested(double mpp);      // user changed scale spin box
+    void rotationChangeRequested(double deg);   // user changed rotation spin box
+    void crsClicked();                          // user clicked the CRS badge
+
 private:
     void rebuildAiSection();
 
@@ -70,13 +83,25 @@ private:
     QLabel*       m_job       = nullptr;
     QTimer*       m_job_timer = nullptr;
 
-    // Right-side permanent widgets
-    QLabel*  m_range     = nullptr;   // cursor range or subbottom depth
-    QLabel*  m_depth     = nullptr;   // map-hover depth / altitude reading
-    QLabel*  m_pos       = nullptr;   // lat / lon
-    QWidget* m_ai_widget = nullptr;   // composite: icon + status dot
-    QLabel*  m_ai_icon   = nullptr;
-    QLabel*  m_ai_dot    = nullptr;
+    // Right-side permanent widgets — QGIS-style [field label][value box] pairs
+    QLabel*  m_range      = nullptr;   // cursor range or subbottom depth (sidescan)
+    QLabel*  m_depth      = nullptr;   // map-hover depth / altitude reading
+
+    QLabel*  m_lbl_coord  = nullptr;   // "Coordinate"
+    QLabel*  m_pos        = nullptr;   // lat/lon display (QLabel for SidescanViewController compat)
+
+    QLabel*         m_lbl_scale  = nullptr;   // "Scale"
+    QDoubleSpinBox* m_spin_scale = nullptr;   // interactive: "1:50000"
+
+    QLabel*         m_lbl_rot   = nullptr;    // "Rotation"
+    QDoubleSpinBox* m_spin_rot  = nullptr;    // interactive: "0.0 °"
+
+    QLabel*       m_lbl_crs  = nullptr;   // "⊙" globe glyph
+    QPushButton*  m_vp_crs   = nullptr;   // clickable CRS badge → opens geodesy dialog
+
+    QWidget* m_ai_widget  = nullptr;   // composite: icon + status dot
+    QLabel*  m_ai_icon    = nullptr;
+    QLabel*  m_ai_dot     = nullptr;
 
     AiProvider m_ai_provider = AiProvider::None;
     AiStatus   m_ai_status   = AiStatus::Offline;

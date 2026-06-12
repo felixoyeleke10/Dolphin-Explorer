@@ -88,9 +88,11 @@ MapViewportHost::MapViewportHost(QWidget* parent)
         if (m_empty_state) m_empty_state->hide();
     });
 
-    // Aggregate cursor-moved from whichever view is active.
+    // Aggregate cursor-moved and viewport-changed from whichever view is active.
     connect(m_view2d, &MapView::cursorMoved,
             this, &MapViewportHost::cursorMoved);
+    connect(m_view2d, &MapView::viewportChanged,
+            this, &MapViewportHost::viewportChanged);
 
     // Forward layer data to the 3D view only if it already exists.
     // The 3D view is created lazily on first setMode3D(true); at that point
@@ -417,6 +419,21 @@ void MapViewportHost::setToolMode(ToolMode mode)
     m_tool_mode = mode;
     if (m_view3d)
         m_view3d->setToolMode(static_cast<int>(mode));
+}
+
+void MapViewportHost::setViewportScale(double mpp)
+{
+    if (m_view2d) m_view2d->setZoomFromMpp(mpp);
+}
+
+void MapViewportHost::setRotationDeg(double deg)
+{
+    if (m_view2d) m_view2d->setRotationDeg(deg);
+}
+
+void MapViewportHost::panByPixels(int dx, int dy)
+{
+    if (m_view2d) m_view2d->panByPixels(dx, dy);
 }
 
 void MapViewportHost::positionOverlay()

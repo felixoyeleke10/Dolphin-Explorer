@@ -22,6 +22,13 @@ void MapView::paintEvent(QPaintEvent*)
 
     p.fillRect(rect(), m_map_bg_color);
 
+    // Rotate canvas around viewport centre when bearing is non-zero.
+    if (m_rotation_deg != 0.0) {
+        p.translate(width() / 2.0, height() / 2.0);
+        p.rotate(m_rotation_deg);
+        p.translate(-width() / 2.0, -height() / 2.0);
+    }
+
     if (m_layer_data.empty() && m_nav_track.empty()) {
         if (m_show_grid) paintGraticule(p);
         paintEmptyState(p);

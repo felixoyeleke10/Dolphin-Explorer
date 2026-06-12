@@ -1,7 +1,6 @@
 // AppSettingsDialog.cpp — constructor, controls fill/read, apply, load defaults.
 #include "ui/mainwindow/AppSettingsDialog.h"
 #include "ui/shared/UiUtils.h"
-#include "ui/shared/widgets/AnimatedToolButton.h"
 #include "ui/shell/Theme.h"
 
 #include <QButtonGroup>
@@ -13,17 +12,19 @@
 #include <QDoubleSpinBox>
 #include <QFrame>
 #include <QHBoxLayout>
+#include <QIcon>
 #include <QLineEdit>
 #include <QPushButton>
 #include <QSettings>
 #include <QSpinBox>
 #include <QStackedWidget>
+#include <QToolButton>
 #include <QVBoxLayout>
 #include <QWidget>
 
 namespace dolphin::ui {
 
-static constexpr int kSettingsSidebarW = 176;
+static constexpr int kSettingsSidebarW = 196;
 static constexpr int kMinW             = 740;
 static constexpr int kMinH             = 540;
 
@@ -54,10 +55,21 @@ AppSettingsDialog::AppSettingsDialog(const Settings& current, QWidget* parent)
     static const char* kPageLabels[] = {
         "General", "Appearance", "Performance", "Data", "Export", "Map", "About"
     };
+    static const char* kPageIcons[] = {
+        ":/icons/settings.svg",
+        ":/icons/panel_display.svg",
+        ":/icons/analyze.svg",
+        ":/icons/database.svg",
+        ":/icons/export.svg",
+        ":/icons/geodesy.svg",
+        ":/icons/panel_info.svg",
+    };
     for (int i = 0; i < 7; ++i) {
-        auto* btn = new AnimatedToolButton(sidebar);
+        auto* btn = new QToolButton(sidebar);
         btn->setText(tr(kPageLabels[i]));
-        btn->setToolButtonStyle(Qt::ToolButtonTextOnly);
+        btn->setIcon(QIcon(QString::fromLatin1(kPageIcons[i])));
+        btn->setIconSize(QSize(15, 15));
+        btn->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
         btn->setCheckable(true);
         btn->setObjectName("settingsNavBtn");
         btn->setFixedHeight(36);

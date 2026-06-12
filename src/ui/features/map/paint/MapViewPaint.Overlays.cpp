@@ -29,10 +29,6 @@ const QColor kMeasureBoxBorder (255, 220,  50,  70);
 const QColor kMeasureBoxText   (210, 210, 210, 220);
 const QColor kMeasureDivider   (255, 220,  50,  55);
 const QColor kMeasureTotal     (255, 220,  50, 235);
-// Scale bar
-const QColor kScaleBarShadow   (  0,   0,   0, 100);
-const QColor kScaleBarLabelShad(  0,   0,   0, 150);
-
 } // namespace
 
 namespace dolphin::ui {
@@ -186,52 +182,6 @@ void MapView::paintScaleAndBadges(QPainter& p) const
         p.setPen(QColor(200, 200, 200, 210));
         const int nw = QFontMetrics(nf).horizontalAdvance("N");
         p.drawText(kCX - nw / 2, kCY - kR - 1, "N");
-    }
-
-    // -- Scale bar -------------------------------------------------------------
-    {
-        const double sc = baseScale() * m_zoom;
-        // Geographic: pixPerMetre = sc/111320 — cos(lat) cancels between
-        // geoToPixel numerator (cos*sc) and metres-per-degree denominator (111320*cos).
-        const double metresPerUnit = m_is_projected ? 1.0 : 111320.0;
-        const double pixPerMetre   = sc / metresPerUnit;
-
-        static constexpr double kTargets[] = {
-            1, 2, 5, 10, 20, 50, 100, 200, 500,
-            1e3, 2e3, 5e3, 10e3, 20e3, 50e3, 100e3
-        };
-        double barMetres = kTargets[0];
-        for (double t : kTargets)
-            if (t * pixPerMetre <= 150.0) barMetres = t;
-
-        const double barPx = barMetres * pixPerMetre;
-        if (barPx >= 3.0) {
-            const QString label = barMetres >= 1000.0
-                ? QString("%1 km").arg(barMetres / 1000.0, 0, 'g', 3)
-                : QString("%1 m").arg(barMetres, 0, 'g', 3);
-
-            const int margin = 12;
-            const int barY   = height() - margin - 6;
-            const int textY  = height() - margin - 10;
-            const int barX0  = margin;
-            const int barX1  = barX0 + static_cast<int>(barPx);
-
-            p.setPen(QPen(kScaleBarShadow, 3.0));
-            p.drawLine(barX0, barY + 1, barX1, barY + 1);
-            p.setPen(QPen(Qt::white, 1.5));
-            p.drawLine(barX0, barY, barX1, barY);
-            p.drawLine(barX0, barY - 3, barX0, barY + 3);
-            p.drawLine(barX1, barY - 3, barX1, barY + 3);
-
-            QFont sf("Segoe UI", 8);
-            p.setFont(sf);
-            p.setPen(kScaleBarLabelShad);
-            p.drawText(barX0 - 1, textY + 1, barX1 - barX0 + 2, 14,
-                       Qt::AlignHCenter | Qt::AlignTop, label);
-            p.setPen(Qt::white);
-            p.drawText(barX0, textY, barX1 - barX0 + 2, 14,
-                       Qt::AlignHCenter | Qt::AlignTop, label);
-        }
     }
 
     // -- Status badges (top-right) ---------------------------------------------

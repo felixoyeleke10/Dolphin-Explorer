@@ -13,37 +13,33 @@ EmptyStateWidget::EmptyStateWidget(QWidget* parent)
     : QWidget(parent)
 {
     auto* root = makeCompactLayout<QVBoxLayout>(this);
-    root->addStretch(1);
 
     m_icon_lbl = new QLabel(this);
     m_icon_lbl->setObjectName("emptyStateIcon");
-    m_icon_lbl->setAlignment(Qt::AlignHCenter);
+    m_icon_lbl->setAlignment(Qt::AlignLeft);
     m_icon_lbl->hide();
     root->addWidget(m_icon_lbl);
 
     m_title_lbl = new QLabel(this);
     m_title_lbl->setObjectName("emptyStateTitle");
-    m_title_lbl->setAlignment(Qt::AlignHCenter);
+    m_title_lbl->setAlignment(Qt::AlignLeft);
     m_title_lbl->hide();
     root->addWidget(m_title_lbl);
 
     m_sub_lbl = new QLabel(this);
     m_sub_lbl->setObjectName("emptyStateSub");
-    m_sub_lbl->setAlignment(Qt::AlignHCenter);
+    m_sub_lbl->setAlignment(Qt::AlignLeft);
     m_sub_lbl->setWordWrap(true);
     m_sub_lbl->hide();
     root->addWidget(m_sub_lbl);
 
-    // Spacing between labels and buttons.
-    root->addSpacing(Theme::kSpacing3);
-
-    // Button area — actions are appended here.
+    // Button area — full-width action rows, flush to the top.
     auto* btn_holder = new QWidget(this);
     m_btn_area = makeCompactLayout<QVBoxLayout>(btn_holder);
     m_btn_area->setSpacing(Theme::kSpacing1);
-    root->addWidget(btn_holder, 0, Qt::AlignHCenter);
+    root->addWidget(btn_holder);  // no AlignHCenter — expands to full width
 
-    root->addStretch(1);
+    root->addStretch(1);  // push content to the top
 }
 
 void EmptyStateWidget::setIcon(const QString& glyph)

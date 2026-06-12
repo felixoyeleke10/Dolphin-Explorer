@@ -114,6 +114,12 @@ double MapView::baseScale() const
     return m_is_projected ? kPixPerM : kPixPerDeg;
 }
 
+double MapView::viewportMetresPerPixel() const
+{
+    const double sc = baseScale() * m_zoom;
+    return (m_is_projected ? 1.0 : 111320.0) / sc;
+}
+
 void MapView::setSelectedContact(uint64_t id)
 {
     if (m_selected_contact_id == id) return;
@@ -271,6 +277,7 @@ void MapView::fitToData()
     m_origin = QPointF(-cx * cos_ref * sc, cy * sc);
 
     update();
+    emit viewportChanged(viewportMetresPerPixel(), m_rotation_deg);
 }
 
 void MapView::fitToExtent(double lon_min, double lon_max,
@@ -298,6 +305,7 @@ void MapView::fitToExtent(double lon_min, double lon_max,
     const double sc = bs * m_zoom;
     m_origin = QPointF(-cx * cos_ref * sc, cy * sc);
     update();
+    emit viewportChanged(viewportMetresPerPixel(), m_rotation_deg);
 }
 
 void MapView::fitToLayer(const std::string& layer_id)
@@ -333,6 +341,36 @@ void MapView::fitToLayer(const std::string& layer_id)
     m_user_interacted = true;
 
     update();
+    emit viewportChanged(viewportMetresPerPixel(), m_rotation_deg);
+}
+
+// -- Programmatic viewport control --------------------------------------------
+
+void MapView::setZoomFromMpp(double mpp)
+{
+    if (mpp <= 0.0 || std::isnan(mpp)) return;
+    const double metresPerUnit = m_is_projected ? 1.0 : 111320.0;
+    const double newZoom = std::clamp(metresPerUnit / (baseScale() * mpp), 1e-6, 1e8);
+    m_zoom = newZoom;
+    m_user_interacted = true;
+    update();
+    emit viewportChanged(viewportMetresPerPixel(), m_rotation_deg);
+}
+
+void MapView::panByPixels(int dx, int dy)
+{
+    m_origin += QPointF(dx, dy);
+    m_user_interacted = true;
+    update();
+    emit viewportChanged(viewportMetresPerPixel(), m_rotation_deg);
+}
+
+void MapView::setRotationDeg(double deg)
+{
+    m_rotation_deg = std::fmod(deg, 360.0);
+    if (m_rotation_deg < 0.0) m_rotation_deg += 360.0;
+    update();
+    emit viewportChanged(viewportMetresPerPixel(), m_rotation_deg);
 }
 
 // -- Coordinate helpers --------------------------------------------------------

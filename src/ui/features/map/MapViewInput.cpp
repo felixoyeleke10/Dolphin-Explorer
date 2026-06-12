@@ -64,6 +64,7 @@ void MapView::zoomAtPoint(QPointF pos, double factor)
     m_zoom    = newZoom;
     m_user_interacted = true;
     update();
+    emit viewportChanged(viewportMetresPerPixel(), m_rotation_deg);
 }
 
 // -----------------------------------------------------------------------------

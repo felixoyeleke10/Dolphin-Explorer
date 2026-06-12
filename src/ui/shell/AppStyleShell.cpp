@@ -255,6 +255,55 @@ QString qssShell()
         "  padding: 0 10px 0 0;"
         "}"
 
+        // Status bar: field name labels + bordered value boxes
+        "QLabel#statusFieldLabel {"
+        "  color: @textMuted; font-family: @font; font-size: @fontSm;"
+        "  padding: 0 3px 0 10px;"
+        "}"
+        "QLabel#statusValueBox {"
+        "  background: @bgCard; border: 1px solid @border; border-radius: 3px;"
+        "  color: @textSecond; font-family: @font; font-size: @fontSm;"
+        "  padding: 1px 7px;"
+        "}"
+        // Clickable CRS badge — same chrome as statusValueBox but interactive
+        "QPushButton#statusCrsBtn {"
+        "  background: @bgCard; border: 1px solid @border; border-radius: 3px;"
+        "  color: @textSecond; font-family: @font; font-size: @fontSm;"
+        "  padding: 1px 7px; text-align: center;"
+        "}"
+        "QPushButton#statusCrsBtn:hover  { background: rgba(@accentRgb,0.15); border-color: rgba(@accentRgb,0.45); color: @textPrimary; }"
+        "QPushButton#statusCrsBtn:pressed { background: rgba(@accentRgb,0.25); }"
+        "QPushButton#statusCrsBtn:disabled { color: @textMuted; }"
+
+        // Status bar: interactive spin boxes (scale, rotation).
+        // Text and arrow colors are set via QPalette in code; QSS only handles layout/chrome.
+        "QDoubleSpinBox#statusSpinBox {"
+        "  background: @bgCard;"
+        "  border: 1px solid rgba(255,255,255,0.12);"  // visible on dark status bar
+        "  border-radius: 3px;"
+        "  font-family: @font; font-size: @fontSm;"
+        "  padding: 1px 2px 1px 6px; min-width: 70px;"
+        "}"
+        "QDoubleSpinBox#statusSpinBox::up-button {"
+        "  subcontrol-origin: border; subcontrol-position: top right;"
+        "  width: 14px; border-left: 1px solid rgba(255,255,255,0.10);"
+        "  border-top-right-radius: 3px;"
+        "  background: rgba(255,255,255,0.05);"
+        "}"
+        "QDoubleSpinBox#statusSpinBox::down-button {"
+        "  subcontrol-origin: border; subcontrol-position: bottom right;"
+        "  width: 14px; border-left: 1px solid rgba(255,255,255,0.10);"
+        "  border-bottom-right-radius: 3px;"
+        "  background: rgba(255,255,255,0.05);"
+        "}"
+        "QDoubleSpinBox#statusSpinBox::up-button:hover,"
+        "QDoubleSpinBox#statusSpinBox::down-button:hover {"
+        "  background: rgba(@accentRgb,0.28);"
+        "}"
+        "QDoubleSpinBox#statusSpinBox::up-arrow   { image: url(:/icons/spin_up.svg);   width: 7px; height: 5px; }"
+        "QDoubleSpinBox#statusSpinBox::down-arrow { image: url(:/icons/spin_down.svg); width: 7px; height: 5px; }"
+
+
         // AI provider icon — color driven by [aiProvider] dynamic property.
         // Property values are role names ("primary", "integration"), not brand names.
         "QLabel#aiIcon { font-family: @font; font-size: @fontSm; }"

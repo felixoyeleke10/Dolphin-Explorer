@@ -78,7 +78,16 @@ public:
 
     bool   isProjected()    const { return m_is_projected; }
     bool   userInteracted() const { return m_user_interacted; }
+
+    // Current scale in metres per pixel — depends on zoom and CRS type.
+    // Used by the status bar to show scale / zoom indicators.
+    double viewportMetresPerPixel() const;
     bool   isLayerVisible (const std::string& id) const;
+
+    // Programmatic viewport control — driven by status-bar spin boxes.
+    void setZoomFromMpp  (double mpp);          // zoom to target metres-per-pixel
+    void panByPixels     (int dx, int dy);      // nudge pan offset by screen pixels
+    void setRotationDeg  (double deg);          // rotate canvas (0 = north-up)
     QRectF layerPaintRect (const std::string& id) const;
 
     // Read back stored layer map data (used by MapViewportHost to forward to 3D view).
@@ -87,6 +96,9 @@ public:
 
 signals:
     void cursorMoved(double lon, double lat);
+    // Emitted whenever the map zoom changes (pan/fit/wheel).
+    // metres_per_pixel: ground metres per screen pixel; rotation_deg: bearing (0 = north-up).
+    void viewportChanged(double metres_per_pixel, double rotation_deg);
     void contextMenuRequested(QPoint globalPos);
     // Emitted on single left-click hit (no Ctrl, ModePan only).
     void layerClicked(const std::string& layer_id);
@@ -150,6 +162,7 @@ private:
     bool         m_dragging        = false;
     bool         m_drag_moved      = false;   // true once drag exceeds 4 px
     double       m_zoom            = 1.0;
+    double       m_rotation_deg    = 0.0;   // canvas rotation in degrees (0 = north-up)
     double       m_ref_lat         = 0.0;  // reference latitude for Mercator cos(lat) scaling
     bool         m_is_projected    = false;
     bool         m_needs_fit       = false;

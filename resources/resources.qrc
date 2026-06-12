@@ -48,6 +48,8 @@
     <file>icons/sidebar_right.svg</file>
     <file>icons/panel_bottom.svg</file>
     <file>icons/panel_chevron.svg</file>
+    <file>icons/spin_up.svg</file>
+    <file>icons/spin_down.svg</file>
     <file>icons/panel_close.svg</file>
     <file>icons/layout_customize.svg</file>
     <file>icons/chat.svg</file>

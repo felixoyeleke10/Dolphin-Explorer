@@ -78,12 +78,19 @@ public slots:
     // place contact).  The 2D view handles its own InputMode via MapView directly.
     void setToolMode(ToolMode mode);
 
+    // Programmatic viewport control — driven by status-bar spin boxes.
+    void setViewportScale(double mpp);
+    void setRotationDeg  (double deg);
+    void panByPixels     (int dx, int dy);
+
 signals:
     void modeChanged(bool is_3d);
     void gpuInfo(const QString& renderer, const QString& version, int maxTextureSize);
     void glInitError(const QString& message);
     // Cursor geo coordinates from whichever view is active.  Both NaN = left viewport.
     void cursorMoved(double lon, double lat);
+    // Relayed from the active 2D view: ground metres per screen pixel + bearing.
+    void viewportChanged(double metres_per_pixel, double rotation_deg);
     // Relayed from MapView3D — mirrors the equivalent signals on MapView.
     void layerClicked  (const std::string& layer_id);
     void layersSelected(const std::vector<std::string>& layer_ids);

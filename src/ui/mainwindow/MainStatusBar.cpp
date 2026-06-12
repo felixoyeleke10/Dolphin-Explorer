@@ -3,15 +3,32 @@
 #include "ui/shared/CoordFormat.h"
 #include "ui/shell/Theme.h"
 
+#include <QDoubleSpinBox>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QLineEdit>
+#include <QPalette>
 #include <QProgressBar>
+#include <QPushButton>
 #include <QStyle>
 #include <QStyleFactory>
 #include <QTimer>
 #include <QWidget>
+#include <cmath>
 
 namespace dolphin::ui {
+
+// Local spin box subclass: logarithmic step so ▲ zooms IN (smaller ratio = larger scale).
+class ScaleSpinBox : public QDoubleSpinBox {
+public:
+    explicit ScaleSpinBox(QWidget* parent = nullptr) : QDoubleSpinBox(parent) {}
+    void stepBy(int steps) override {
+        // Each arrow click changes scale by a factor of 2 (halves/doubles ratio).
+        // Negate steps so ▲ decreases the ratio (zoom in = more detail).
+        const double factor = std::pow(2.0, -steps);
+        setValue(std::clamp(value() * factor, minimum(), maximum()));
+    }
+};
 
 static constexpr int kAiDotSz = 7;  // AI status indicator dot size
 
@@ -41,15 +58,93 @@ MainStatusBar::MainStatusBar(QWidget* parent)
     m_job_timer->setInterval(8000);
     connect(m_job_timer, &QTimer::timeout, this, [this]() { m_job->clear(); });
 
-    // -- Permanent cursor data -------------------------------------------------
+    // -- Sidescan / sonar cursor data (shown only when instrument is active) ----
     m_range = new QLabel(this);
     m_range->setObjectName("statusChrome");
 
     m_depth = new QLabel(this);
     m_depth->setObjectName("statusChrome");
 
+    // -- QGIS-style field label + value box pairs ------------------------------
+    auto makeFieldLabel = [this](const char* text) {
+        auto* lbl = new QLabel(tr(text), this);
+        lbl->setObjectName("statusFieldLabel");
+        return lbl;
+    };
+
+    // Coordinate: plain QLabel — backward-compat with SidescanViewController.
+    m_lbl_coord = makeFieldLabel("Coordinate");
     m_pos = new QLabel(this);
-    m_pos->setObjectName("statusData");
+    m_pos->setObjectName("statusValueBox");
+    m_pos->setText(QStringLiteral("--"));
+    m_pos->setMinimumWidth(148);
+
+    // Scale: QDoubleSpinBox — "1:50000" format, controls map zoom.
+    static constexpr double kPhysicalMpp = 0.0254 / 96.0;
+
+    m_lbl_scale  = makeFieldLabel("Scale");
+    m_spin_scale = new ScaleSpinBox(this);
+    m_spin_scale->setObjectName("statusSpinBox");
+    m_spin_scale->setPrefix(QStringLiteral("1:"));
+    m_spin_scale->setDecimals(0);
+    m_spin_scale->setRange(1.0, 1e8);
+    m_spin_scale->setSingleStep(5000.0);
+    m_spin_scale->setMinimumWidth(108);
+    m_spin_scale->setToolTip(tr("Map scale — use arrows to zoom"));
+    // Disable text input without disabling the arrows (setReadOnly would kill stepBy too).
+    if (auto* le = m_spin_scale->findChild<QLineEdit*>())
+        le->setReadOnly(true);
+    connect(m_spin_scale, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+            this, [this](double ratio) {
+        static constexpr double kPhy = 0.0254 / 96.0;
+        emit scaleChangeRequested(ratio * kPhy);
+    });
+    Q_UNUSED(kPhysicalMpp);
+
+    // Rotation: QDoubleSpinBox — degrees, display-only for 2D (no map rotation yet).
+    m_lbl_rot  = makeFieldLabel("Rotation");
+    m_spin_rot = new QDoubleSpinBox(this);
+    m_spin_rot->setObjectName("statusSpinBox");
+    m_spin_rot->setSuffix(QStringLiteral(" \xc2\xb0"));  // " °"
+    m_spin_rot->setDecimals(1);
+    m_spin_rot->setRange(0.0, 360.0);
+    m_spin_rot->setSingleStep(0.5);
+    m_spin_rot->setWrapping(true);
+    m_spin_rot->setMinimumWidth(72);
+    m_spin_rot->setToolTip(tr("Map rotation — use arrows or type to rotate"));
+    if (auto* le = m_spin_rot->findChild<QLineEdit*>())
+        le->setReadOnly(true);  // arrows active; block direct text entry
+    connect(m_spin_rot, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+            this, [this](double deg) {
+        emit rotationChangeRequested(deg);
+    });
+
+    // Force visible text + arrow colors in dark theme via palette override.
+    // QSS `color:` alone doesn't reliably propagate to the internal QLineEdit on Windows.
+    auto applySpinPalette = [](QDoubleSpinBox* spin) {
+        QPalette pal = spin->palette();
+        const QColor text(0xf2, 0xf2, 0xf7);   // @textPrimary
+        const QColor bg  (0x2c, 0x2c, 0x2e);   // @bgCard
+        pal.setColor(QPalette::Base,                      bg);
+        pal.setColor(QPalette::Button,                    bg);
+        pal.setColor(QPalette::Text,                      text);
+        pal.setColor(QPalette::ButtonText,                text);
+        pal.setColor(QPalette::Disabled, QPalette::Text,       text);
+        pal.setColor(QPalette::Disabled, QPalette::ButtonText, text);
+        spin->setPalette(pal);
+    };
+    applySpinPalette(m_spin_scale);
+    applySpinPalette(m_spin_rot);
+
+    // CRS: clickable badge — opens the Geodetic Settings dialog on click.
+    m_lbl_crs = makeFieldLabel("\xe2\x8a\x99"); // ⊙ globe glyph
+    m_vp_crs  = new QPushButton(QStringLiteral("--"), this);
+    m_vp_crs->setObjectName("statusCrsBtn");
+    m_vp_crs->setFlat(true);
+    m_vp_crs->setMinimumWidth(80);
+    m_vp_crs->setCursor(Qt::PointingHandCursor);
+    m_vp_crs->setToolTip(tr("Click to open Geodetic Settings"));
+    connect(m_vp_crs, &QPushButton::clicked, this, &MainStatusBar::crsClicked);
 
     // -- AI provider indicator -------------------------------------------------
     m_ai_widget = new QWidget(this);
@@ -74,9 +169,16 @@ MainStatusBar::MainStatusBar(QWidget* parent)
     addWidget(m_context, 1);
     addWidget(m_job);
 
-    addPermanentWidget(m_range);
-    addPermanentWidget(m_depth);
+    // QGIS-style indicator pairs
+    addPermanentWidget(m_lbl_coord);
     addPermanentWidget(m_pos);
+    addPermanentWidget(m_lbl_scale);
+    addPermanentWidget(m_spin_scale);
+    addPermanentWidget(m_lbl_rot);
+    addPermanentWidget(m_spin_rot);
+    addPermanentWidget(m_lbl_crs);
+    addPermanentWidget(m_vp_crs);
+
     addPermanentWidget(m_ai_widget);
 }
 
@@ -133,14 +235,14 @@ void MainStatusBar::setCursorPosition(double lat_or_y, double lon_or_x, bool is_
 
 void MainStatusBar::clearCursorPosition()
 {
-    m_pos->clear();
+    m_pos->setText(QStringLiteral("--"));
 }
 
 void MainStatusBar::clearCursorData()
 {
     m_range->clear();
     m_depth->clear();
-    m_pos->clear();
+    m_pos->setText(QStringLiteral("--"));
 }
 
 // -- Progress ------------------------------------------------------------------
@@ -162,6 +264,30 @@ void MainStatusBar::hideProgress()
 {
     m_progress->setRange(0, 100);
     m_progress->setVisible(false);
+}
+
+// -- Viewport info -------------------------------------------------------------
+
+void MainStatusBar::setViewportInfo(double mpp, double rot_deg)
+{
+    static constexpr double kPhysicalMpp = 0.0254 / 96.0;
+
+    // Block signals so updating the display doesn't trigger a scaleChangeRequested loop.
+    m_spin_scale->blockSignals(true);
+    if (mpp > 0.0 && !std::isnan(mpp))
+        m_spin_scale->setValue(std::round(mpp / kPhysicalMpp));
+    m_spin_scale->blockSignals(false);
+
+    m_spin_rot->blockSignals(true);
+    m_spin_rot->setValue(rot_deg);
+    m_spin_rot->blockSignals(false);
+}
+
+void MainStatusBar::setViewCrs(const QString& crs_name)
+{
+    const QString label = crs_name.isEmpty() ? QStringLiteral("--") : crs_name;
+    m_vp_crs->setText(label);
+    m_vp_crs->setEnabled(!crs_name.isEmpty());  // grey out until a project sets a CRS
 }
 
 // -- AI indicator --------------------------------------------------------------
