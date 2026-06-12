@@ -64,6 +64,11 @@ public:
     // their results.  Called by loadProject when opening a different project.
     void cancelPendingRebuild();
 
+    // True while a rebuildCacheIndex background scan is running for layer_id.
+    // Use this to distinguish cache rebuilds from fresh imports in signal handlers.
+    bool isRebuildingLayer(const std::string& layer_id) const
+        { return m_rebuild_tokens.count(layer_id) > 0; }
+
     // Load a visible sidescan window around the requested ping index.
     // Returns only decoded sidescan pings in scrubber order.
     std::vector<core::SidescanPing> loadSidescanWindow(const DataLayer* layer,

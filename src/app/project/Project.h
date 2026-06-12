@@ -44,8 +44,9 @@ public:
 
     // Sources
     ProjectSource* addSource(const std::string& path, const std::string& format);
-    ProjectSource* findSource(const std::string& id);
-    ProjectSource* findSourceByPath(const std::string& path);
+    ProjectSource*       findSource(const std::string& id);
+    ProjectSource*       findSourceByPath(const std::string& path);
+    const ProjectSource* findSourceByPath(const std::string& path) const;
 
     // Layers
     DataLayer*     addLayer(const std::string& source_id, const std::string& label);

@@ -21,7 +21,6 @@ public:
     explicit ProcessingDialog(QWidget* parent = nullptr);
 
     void taskBegin(const QString& id, const QString& label);
-    void taskStep (const QString& id, const QString& label);
     void taskDone (const QString& id);
     void taskFail (const QString& id, const QString& error = {});
 

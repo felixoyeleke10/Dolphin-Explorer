@@ -50,11 +50,12 @@ void ImportJobManager::importBatch(const QList<FileImportAction>& actions)
         if (!action.path.isEmpty()) {
             const QString norm = QFileInfo(action.path).canonicalFilePath();
             const QString key  = norm.isEmpty() ? action.path : norm;
-            if (!seen_paths.insert(key).second) {
+            if (seen_paths.contains(key)) {
                 m_log.record(makeEntry(ImportLogEntry::Event::Suppressed, {},
                     QFileInfo(action.path).fileName().toStdString() + " (duplicate in batch)"));
                 continue;
             }
+            seen_paths.insert(key);
         }
         if (action.kind == FileImportAction::Kind::Skip) continue;
         if (action.kind == FileImportAction::Kind::ReuseExisting) {

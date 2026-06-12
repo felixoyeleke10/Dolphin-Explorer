@@ -105,6 +105,7 @@ core::ArtifactIndex ParsedCacheReader::buildIndex(ProgressFn progress,
     m_meta.sidescan_ping_count   = static_cast<uint32_t>(index.byType(core::ArtifactType::Sidescan).size());
     m_meta.subbottom_trace_count = static_cast<uint32_t>(index.byType(core::ArtifactType::SubBottom).size());
     m_meta.mag_sample_count      = static_cast<uint32_t>(index.byType(core::ArtifactType::Magnetometer).size());
+    m_meta.multibeam_ping_count  = static_cast<uint32_t>(index.byType(core::ArtifactType::Multibeam).size());
     m_meta.start_time     = first_ts;
     m_meta.end_time       = last_ts;
 

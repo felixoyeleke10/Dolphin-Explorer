@@ -40,4 +40,13 @@ ProjectSource* Project::findSourceByPath(const std::string& path)
     return nullptr;
 }
 
+const ProjectSource* Project::findSourceByPath(const std::string& path) const
+{
+    const QString wanted = detail::normalisePath(path);
+    for (const auto& s : m_sources) {
+        if (detail::normalisePath(s.path) == wanted) return &s;
+    }
+    return nullptr;
+}
+
 } // namespace dolphin::app

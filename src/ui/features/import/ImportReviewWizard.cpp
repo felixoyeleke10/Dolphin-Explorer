@@ -1,5 +1,6 @@
 // ImportReviewWizard.cpp — constructor, drag-and-drop, file management, accept.
 #include "ui/features/import/ImportReviewWizard.h"
+#include "ui/shared/UiUtils.h"
 #include "app/import/ImportClassifier.h"
 #include "ui/shell/Theme.h"
 #include "io/ProbeDispatch.h"
@@ -57,9 +58,7 @@ ImportReviewWizard::ImportReviewWizard(app::Project*           current_project,
     resize(kInitW, kInitH);
     setAcceptDrops(true);
 
-    auto* root = new QVBoxLayout(this);
-    root->setContentsMargins(0, 0, 0, 0);
-    root->setSpacing(0);
+    auto* root = makeCompactLayout<QVBoxLayout>(this);
 
     // -- Header ------------------------------------------------------------
     {
@@ -68,11 +67,13 @@ ImportReviewWizard::ImportReviewWizard(app::Project*           current_project,
         auto* hl = new QHBoxLayout(hdr);
         hl->setContentsMargins(Theme::kSpacing7, Theme::kSpacing4, Theme::kSpacing7, 10);
 
-        auto* title = new QLabel(tr("Import Survey Files"), hdr);
-        title->setObjectName("dlgTitle");
-        auto* sub = new QLabel(
+        m_hdr_title = new QLabel(tr("Import Survey Files"), hdr);
+        m_hdr_title->setObjectName("dlgTitle");
+        m_hdr_subtitle = new QLabel(
             tr("Add files below, review CRS and modality, then click Import."), hdr);
-        sub->setObjectName("dlgSubtitle");
+        m_hdr_subtitle->setObjectName("dlgSubtitle");
+        auto* title = m_hdr_title;
+        auto* sub   = m_hdr_subtitle;
 
         auto* vl = new QVBoxLayout;
         vl->setSpacing(2);
@@ -179,6 +180,48 @@ void ImportReviewWizard::onAddFiles()
 void ImportReviewWizard::setModuleFilter(std::vector<core::ArtifactType> filter)
 {
     m_module_filter = std::move(filter);
+    updateSensorHeader();
+}
+
+bool ImportReviewWizard::fileMatchesSensorFilter(const io::ProbeResult& r) const
+{
+    if (m_module_filter.empty()) return true;  // drag-drop path — accept all types
+    for (const auto type : m_module_filter) {
+        switch (type) {
+            case core::ArtifactType::Sidescan:     if (r.has_sidescan)     return true; break;
+            case core::ArtifactType::SubBottom:    if (r.has_subbottom)    return true; break;
+            case core::ArtifactType::Magnetometer: if (r.has_magnetometer) return true; break;
+            case core::ArtifactType::Multibeam:    if (r.has_multibeam)    return true; break;
+            default: break;
+        }
+    }
+    return false;
+}
+
+void ImportReviewWizard::updateSensorHeader()
+{
+    if (!m_hdr_title || !m_hdr_subtitle) return;
+    if (m_module_filter.empty()) {
+        m_hdr_title->setText(tr("Import Survey Files"));
+        m_hdr_subtitle->setText(
+            tr("Add files below, review CRS and modality, then click Import."));
+        return;
+    }
+
+    QString sensor;
+    switch (m_module_filter[0]) {
+        case core::ArtifactType::Sidescan:     sensor = tr("Sidescan Sonar");      break;
+        case core::ArtifactType::SubBottom:    sensor = tr("Sub-Bottom Profiler"); break;
+        case core::ArtifactType::Magnetometer: sensor = tr("Magnetometer");        break;
+        case core::ArtifactType::Multibeam:    sensor = tr("Multibeam Bathymetry"); break;
+        default:                               sensor = tr("Survey Files");         break;
+    }
+
+    m_hdr_title->setText(tr("Import %1").arg(sensor));
+    m_hdr_subtitle->setText(
+        tr("Only %1 files will be accepted. Review settings, then click Import.")
+            .arg(sensor));
+    setWindowTitle(tr("Import %1").arg(sensor));
 }
 
 void ImportReviewWizard::addFiles(const QStringList& paths,
@@ -259,11 +302,13 @@ void ImportReviewWizard::startProbe(int idx)
 
 void ImportReviewWizard::onProbeFinished(int idx)
 {
-    // Classify against the current project so the status badge shows "Already
-    // indexed" or "Rebuild needed" instead of just the CRS state.
-    if (m_entries[idx].done && m_entries[idx].result.success) {
-        m_entries[idx].classify_kind =
-            app::classifyImportAction(m_entries[idx].path, m_current_project).kind;
+    FileEntry& e = m_entries[idx];
+
+    if (e.done && e.result.success) {
+        // Classify against the current project (Reuse / Rebuild / ImportNew).
+        e.classify_kind = app::classifyImportAction(e.path, m_current_project).kind;
+        // Check whether the file's modality matches the wizard's sensor filter.
+        e.modality_mismatch = !fileMatchesSensorFilter(e.result);
     }
     updateFileRow(idx);
     updateImportButton();
@@ -303,7 +348,14 @@ void ImportReviewWizard::updateFileRow(int idx)
 
     // Detail: "SEG-Y · Sub-Bottom"
     e.detail_label->setText(
-        QString::fromStdString(r.format_name) + "  ·  " + modalityString(r));
+        QString::fromStdString(r.format_name) + "  \xC2\xB7  " + modalityString(r));
+
+    // Reject files whose modality doesn't match the selected sensor type.
+    if (e.modality_mismatch) {
+        e.status_label->setText(tr("Wrong sensor type"));
+        applyFileStatus(e.status_label, "error");
+        return;
+    }
 
     // Show import decision badge, overriding CRS state when the file is recognised.
     using Kind = FileImportAction::Kind;

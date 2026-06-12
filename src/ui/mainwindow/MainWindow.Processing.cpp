@@ -20,12 +20,6 @@ void MainWindow::taskBegin(const QString& id, const QString& label)
         m_processing_dlg->show();
 }
 
-void MainWindow::taskStep(const QString& id, const QString& label)
-{
-    if (m_processing_dlg)
-        m_processing_dlg->taskStep(id, label);
-}
-
 void MainWindow::taskDone(const QString& id)
 {
     if (m_processing_dlg)

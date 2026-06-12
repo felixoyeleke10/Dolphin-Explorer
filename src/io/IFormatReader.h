@@ -18,10 +18,11 @@ struct FormatMeta {
     std::string survey_name;
     double      start_time     = 0.0;   // Unix epoch seconds
     double      end_time       = 0.0;
-    uint32_t    artifact_count       = 0;  // all artifact types combined
-    uint32_t    sidescan_ping_count  = 0;  // SidescanPing records only
-    uint32_t    subbottom_trace_count = 0; // SubBottomTrace records only
-    uint32_t    mag_sample_count     = 0;  // MagSample records only
+    uint32_t    artifact_count        = 0;  // all artifact types combined
+    uint32_t    sidescan_ping_count   = 0;  // SidescanPing records only
+    uint32_t    subbottom_trace_count = 0;  // SubBottomTrace records only
+    uint32_t    mag_sample_count      = 0;  // MagSample records only
+    uint32_t    multibeam_ping_count  = 0;  // MultibeamPing records only
     float       frequency_hz     = 0.0f;  // primary (or only) frequency
     float       low_frequency_hz = 0.0f;  // second frequency for dual-freq systems; 0 = single
     core::SpatialRef coordinate_ref;

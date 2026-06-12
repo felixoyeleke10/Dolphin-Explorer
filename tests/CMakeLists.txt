@@ -117,14 +117,15 @@ if(WIN32)
                 COMMAND ${CMAKE_COMMAND} -E copy_if_different
                     "${_qt6_bin}/Qt6Core.dll"
                     "$<TARGET_FILE_DIR:${_tgt}>/Qt6Core.dll")
-            # MinGW runtime from the compiler toolchain (must match what the exe was
-            # compiled against — NOT the Qt-bundled copies which differ in ABI).
-            foreach(_dll libgcc_s_seh-1.dll libstdc++-6.dll libwinpthread-1.dll)
-                add_custom_command(TARGET ${_tgt} POST_BUILD
-                    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                        "${_cxx_bin}/${_dll}"
-                        "$<TARGET_FILE_DIR:${_tgt}>/${_dll}")
-            endforeach()
+            # MinGW runtime — only needed when compiled with MinGW, not MSVC.
+            if(MINGW)
+                foreach(_dll libgcc_s_seh-1.dll libstdc++-6.dll libwinpthread-1.dll)
+                    add_custom_command(TARGET ${_tgt} POST_BUILD
+                        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                            "${_cxx_bin}/${_dll}"
+                            "$<TARGET_FILE_DIR:${_tgt}>/${_dll}")
+                endforeach()
+            endif()
         endforeach()
     endif()
 endif()
@@ -147,12 +148,14 @@ if(WIN32)
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 "${_qt6_bin}/Qt6Core.dll"
                 "$<TARGET_FILE_DIR:test_import_classifier>/Qt6Core.dll")
-        foreach(_dll libgcc_s_seh-1.dll libstdc++-6.dll libwinpthread-1.dll)
-            add_custom_command(TARGET test_import_classifier POST_BUILD
-                COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                    "${_cxx_bin}/${_dll}"
-                    "$<TARGET_FILE_DIR:test_import_classifier>/${_dll}")
-        endforeach()
+        if(MINGW)
+            foreach(_dll libgcc_s_seh-1.dll libstdc++-6.dll libwinpthread-1.dll)
+                add_custom_command(TARGET test_import_classifier POST_BUILD
+                    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                        "${_cxx_bin}/${_dll}"
+                        "$<TARGET_FILE_DIR:test_import_classifier>/${_dll}")
+            endforeach()
+        endif()
     endif()
 endif()
 
@@ -172,12 +175,14 @@ add_test(NAME PerfBaseline COMMAND test_perf_baseline)
 
 if(WIN32)
     if(_qt6_core_loc)
-        foreach(_dll libgcc_s_seh-1.dll libstdc++-6.dll libwinpthread-1.dll)
-            add_custom_command(TARGET test_perf_baseline POST_BUILD
-                COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                    "${_cxx_bin}/${_dll}"
-                    "$<TARGET_FILE_DIR:test_perf_baseline>/${_dll}")
-        endforeach()
+        if(MINGW)
+            foreach(_dll libgcc_s_seh-1.dll libstdc++-6.dll libwinpthread-1.dll)
+                add_custom_command(TARGET test_perf_baseline POST_BUILD
+                    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                        "${_cxx_bin}/${_dll}"
+                        "$<TARGET_FILE_DIR:test_perf_baseline>/${_dll}")
+            endforeach()
+        endif()
         add_custom_command(TARGET test_perf_baseline POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 "${_qt6_bin}/Qt6Core.dll"
@@ -245,11 +250,13 @@ if(WIN32)
                         "$<TARGET_FILE:test_gl_smoke>"
                 COMMENT "Deploying Qt DLLs for test_gl_smoke")
         endif()
-        foreach(_dll libgcc_s_seh-1.dll libstdc++-6.dll libwinpthread-1.dll)
-            add_custom_command(TARGET test_gl_smoke POST_BUILD
-                COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                    "${_cxx_bin}/${_dll}"
-                    "$<TARGET_FILE_DIR:test_gl_smoke>/${_dll}")
-        endforeach()
+        if(MINGW)
+            foreach(_dll libgcc_s_seh-1.dll libstdc++-6.dll libwinpthread-1.dll)
+                add_custom_command(TARGET test_gl_smoke POST_BUILD
+                    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                        "${_cxx_bin}/${_dll}"
+                        "$<TARGET_FILE_DIR:test_gl_smoke>/${_dll}")
+            endforeach()
+        endif()
     endif()
 endif()

@@ -178,20 +178,6 @@ QWidget* NodeGraphWindow::buildWorkerTabBar(QWidget* parent)
     auto* wrap = new QWidget(parent);
     wrap->setObjectName("workerTabBar");
     wrap->setFixedHeight(32);
-    wrap->setStyleSheet(
-        "QWidget#workerTabBar { background: #161618; }"
-        "QTabBar { background: transparent; }"
-        "QTabBar::tab {"
-        "  background: transparent;"
-        "  color: #636366;"
-        "  padding: 0 16px;"
-        "  height: 31px;"
-        "  border: none;"
-        "  font-size: 11px;"
-        "  font-weight: 500;"
-        "}"
-        "QTabBar::tab:selected { color: #f2f2f7; border-bottom: 2px solid #0a84ff; }"
-        "QTabBar::tab:hover:!selected { color: #8e8e93; }");
 
     auto* layout = new QHBoxLayout(wrap);
     layout->setContentsMargins(8, 0, 8, 0);

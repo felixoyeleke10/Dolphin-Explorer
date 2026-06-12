@@ -1,5 +1,6 @@
 // MainWindow.Project.cpp — project CRUD: new, open, save, close, load.
 #include "ui/mainwindow/MainWindow.h"
+#include "ui/mainwindow/NewProjectDialog.h"
 #include "ui/mainwindow/commands/LayerCommands.h"
 #include "ui/shell/AppInfo.h"
 #include "ui/features/map/sidescan/SidescanViewController.h"
@@ -84,20 +85,23 @@ void MainWindow::onNewProject()
         }
     }
 
-    const QString path = QFileDialog::getSaveFileName(
-        this, tr("New Project"), QDir::homePath(),
-        tr("Dolphin Project (*.dlp)"));
-    if (path.isEmpty()) return;
+    NewProjectDialog dlg(this);
+    if (dlg.exec() != QDialog::Accepted) return;
+
+    const QString manifest = dlg.manifestPath();
+    if (manifest.isEmpty()) return;
 
     if (m_sss_ctrl) m_sss_ctrl->deactivate(true);
     m_active_layer_id.clear();
     clearNavigationHistory();
 
     m_project = app::Project::create(
-        QFileInfo(path).baseName().toStdString(), path.toStdString());
-    addToRecentProjects(path);
+        dlg.projectName().toStdString(), manifest.toStdString());
+    if (!dlg.crs().empty())
+        m_project->setCrs(dlg.crs().id);
+    addToRecentProjects(manifest);
     bindProjectUi();
-    appendJobMessage("Project created.");
+    appendJobMessage("Project created: " + dlg.projectName());
 }
 
 void MainWindow::onOpenProject()
@@ -339,19 +343,6 @@ void MainWindow::loadProject(const std::string& path)
             }
         }
 
-        // Auto-trigger processing for any indexed layer that has not yet been
-        // run through the pipeline. Skip if all layers are already processed to
-        // avoid re-applying corrections on data that was already corrected.
-        bool any_needs_processing = false;
-        for (const auto& layer : m_project->layers()) {
-            if (layer && layer->index_built && !layer->pipeline_applied
-                    && layer->modality == M::Sidescan) {
-                any_needs_processing = true;
-                break;
-            }
-        }
-        if (any_needs_processing)
-            triggerAutoProcessing();
     });
 }
 

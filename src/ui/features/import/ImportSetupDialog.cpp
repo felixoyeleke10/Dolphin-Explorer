@@ -1,14 +1,18 @@
 // ImportSetupDialog.cpp — sensor-type selection screen (step 1 of import flow).
-// Text-based rows: no custom-painted icons, no tile frames.
+// Radio buttons enforce one sensor type per import session, preventing mixed batches.
 #include "ui/features/import/ImportSetupDialog.h"
+#include "ui/shared/UiUtils.h"
 #include "ui/shell/Theme.h"
 #include "app/layers/LayerUtils.h"
 
-#include <QCheckBox>
+#include <QButtonGroup>
+#include <QEvent>
 #include <QFrame>
 #include <QHBoxLayout>
+#include <QStyle>
 #include <QLabel>
 #include <QPushButton>
+#include <QRadioButton>
 #include <QVBoxLayout>
 
 namespace dolphin::ui {
@@ -17,19 +21,28 @@ namespace {
 
 struct SensorEntry {
     const char* name;
-    const char* formats;  // shown right-aligned in muted text
+    const char* description;  // one-line hint shown below the name
+    const char* formats;
 };
 
 static constexpr SensorEntry kSensors[4] = {
-    { QT_TR_NOOP("Sidescan Sonar"),       "XTF · JSF · DLPD" },
-    { QT_TR_NOOP("Sub-Bottom Profiler"),  "SEG-Y"             },
-    { QT_TR_NOOP("Magnetometer"),         "XTF"               },
-    { QT_TR_NOOP("Multibeam Bathymetry"), "ALL · KMALL · 7K"  },
+    { QT_TR_NOOP("Sidescan Sonar"),
+      QT_TR_NOOP("Acoustic images of the seabed"),
+      "XTF · JSF · DLPD" },
+    { QT_TR_NOOP("Sub-Bottom Profiler"),
+      QT_TR_NOOP("Sediment layer profiles"),
+      "SEG-Y · DLPD" },
+    { QT_TR_NOOP("Magnetometer"),
+      QT_TR_NOOP("Magnetic anomaly survey data"),
+      "XTF · DLPD" },
+    { QT_TR_NOOP("Multibeam Bathymetry"),
+      QT_TR_NOOP("3D seabed depth point cloud"),
+      "ALL · KMALL · 7K · DLPD" },
 };
 
 } // namespace
 
-static constexpr int kMinW = 420;
+static constexpr int kMinW = 440;
 
 ImportSetupDialog::ImportSetupDialog(QWidget* parent)
     : QDialog(parent, Qt::Dialog)
@@ -38,11 +51,9 @@ ImportSetupDialog::ImportSetupDialog(QWidget* parent)
     setModal(true);
     setMinimumWidth(kMinW);
 
-    auto* root = new QVBoxLayout(this);
-    root->setContentsMargins(0, 0, 0, 0);
-    root->setSpacing(0);
+    auto* root = makeCompactLayout<QVBoxLayout>(this);
 
-    // -- Header ------------------------------------------------------------
+    // -- Header ----------------------------------------------------------------
     {
         auto* hdr = new QFrame(this);
         hdr->setObjectName("dlgHeader");
@@ -52,7 +63,7 @@ ImportSetupDialog::ImportSetupDialog(QWidget* parent)
         auto* title = new QLabel(tr("What are you importing?"), hdr);
         title->setObjectName("dlgTitle");
         auto* sub = new QLabel(
-            tr("Select the sensor type(s). The file browser and options will adapt."), hdr);
+            tr("Choose the sensor type. Each import session handles one type."), hdr);
         sub->setObjectName("dlgSubtitle");
 
         auto* vl = new QVBoxLayout;
@@ -70,49 +81,70 @@ ImportSetupDialog::ImportSetupDialog(QWidget* parent)
         root->addWidget(div);
     }
 
-    // -- Body --------------------------------------------------------------
+    // -- Body ------------------------------------------------------------------
     {
         auto* body = new QWidget(this);
         body->setObjectName("dlgBody");
         auto* bl = new QVBoxLayout(body);
         bl->setContentsMargins(Theme::kSpacing6, Theme::kSpacing4, Theme::kSpacing6, Theme::kSpacing3);
-        bl->setSpacing(10);
+        bl->setSpacing(Theme::kSpacing2);
 
-        auto* sect = new QFrame(body);
-        sect->setObjectName("dlgSection");
-        auto* vl = new QVBoxLayout(sect);
-        vl->setContentsMargins(Theme::kSpacing4, 10, Theme::kSpacing4, 10);
-        vl->setSpacing(Theme::kSpacing1);
-
-        auto* sect_lbl = new QLabel(tr("Sensor Types"), sect);
-        sect_lbl->setObjectName("dlgSectionLabel");
-        vl->addWidget(sect_lbl);
+        // QButtonGroup enforces mutual exclusivity across cards (radio buttons
+        // parented to different QFrames are not auto-exclusive by default).
+        auto* btn_group = new QButtonGroup(this);
+        btn_group->setExclusive(true);
 
         for (int i = 0; i < kModuleCount; ++i) {
-            auto* row = new QWidget(sect);
-            auto* hl  = new QHBoxLayout(row);
-            hl->setContentsMargins(0, 2, 0, 2);
+            auto* card = new QFrame(body);
+            card->setObjectName("importActionBtn");
+            card->setCursor(Qt::PointingHandCursor);
+
+            auto* hl = new QHBoxLayout(card);
+            hl->setContentsMargins(Theme::kSpacing4, Theme::kSpacing3,
+                                   Theme::kSpacing4, Theme::kSpacing3);
             hl->setSpacing(Theme::kSpacing3);
 
-            auto* cb = new QCheckBox(tr(kSensors[i].name), row);
-            cb->setObjectName("dlgCheckBox");
-            cb->setChecked(true);
+            auto* rb = new QRadioButton(card);
+            rb->setChecked(i == 0);  // Sidescan selected by default
+            btn_group->addButton(rb, i);
+            m_radios[i] = rb;
 
-            auto* fmt = new QLabel(QString::fromLatin1(kSensors[i].formats), row);
-            fmt->setObjectName("dlgLabelMeta");
+            auto* text_col = makeCompactLayout<QVBoxLayout>(nullptr, 1);
 
-            hl->addWidget(cb, 1);
-            hl->addWidget(fmt);
-            m_checkboxes[i] = cb;
-            vl->addWidget(row);
+            auto* name_lbl = new QLabel(tr(kSensors[i].name), card);
+            name_lbl->setObjectName("dlgRadioLabel");
+
+            auto* desc_lbl = new QLabel(tr(kSensors[i].description), card);
+            desc_lbl->setObjectName("dlgLabelMeta");
+
+            text_col->addWidget(name_lbl);
+            text_col->addWidget(desc_lbl);
+
+            auto* fmt_lbl = new QLabel(QString::fromUtf8(kSensors[i].formats), card);
+            fmt_lbl->setObjectName("dlgLabelMono");
+            fmt_lbl->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+
+            hl->addWidget(rb);
+            hl->addLayout(text_col, 1);
+            hl->addWidget(fmt_lbl);
+
+            // Clicking anywhere on the card selects the radio
+            connect(rb, &QRadioButton::toggled, card, [card](bool checked) {
+                card->setProperty("selected", checked);
+                card->style()->unpolish(card);
+                card->style()->polish(card);
+            });
+            // Forward card click to the radio button
+            card->installEventFilter(this);
+
+            bl->addWidget(card);
         }
 
-        bl->addWidget(sect);
         bl->addStretch();
         root->addWidget(body, 1);
     }
 
-    // -- Footer ------------------------------------------------------------
+    // -- Footer ----------------------------------------------------------------
     {
         auto* div = new QFrame(this);
         div->setFixedHeight(Theme::kSepSz);
@@ -144,20 +176,37 @@ ImportSetupDialog::ImportSetupDialog(QWidget* parent)
         connect(cancel_btn, &QPushButton::clicked, this, &QDialog::reject);
         connect(next_btn,   &QPushButton::clicked, this, &QDialog::accept);
     }
+
+    // Trigger initial card highlight for the default-selected radio
+    if (m_radios[0]) {
+        auto* card = qobject_cast<QFrame*>(m_radios[0]->parentWidget());
+        if (card) {
+            card->setProperty("selected", true);
+            card->style()->unpolish(card);
+            card->style()->polish(card);
+        }
+    }
+}
+
+bool ImportSetupDialog::eventFilter(QObject* obj, QEvent* ev)
+{
+    if (ev->type() == QEvent::MouseButtonRelease) {
+        for (int i = 0; i < kModuleCount; ++i) {
+            if (m_radios[i] && m_radios[i]->parentWidget() == obj) {
+                m_radios[i]->setChecked(true);
+                return true;
+            }
+        }
+    }
+    return QDialog::eventFilter(obj, ev);
 }
 
 std::vector<core::ArtifactType> ImportSetupDialog::moduleFilter() const
 {
-    bool all = true;
     for (int i = 0; i < kModuleCount; ++i)
-        if (!m_checkboxes[i]->isChecked()) { all = false; break; }
-    if (all) return {};
-
-    std::vector<core::ArtifactType> f;
-    for (int i = 0; i < kModuleCount; ++i)
-        if (m_checkboxes[i]->isChecked())
-            f.push_back(app::kModuleArtifactTypes[i]);
-    return f;
+        if (m_radios[i] && m_radios[i]->isChecked())
+            return { app::kModuleArtifactTypes[i] };
+    return {};
 }
 
 } // namespace dolphin::ui

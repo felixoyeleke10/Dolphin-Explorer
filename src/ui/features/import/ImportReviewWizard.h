@@ -76,8 +76,9 @@ private:
     struct FileEntry {
         QString          path;
         QString          file_name;
-        bool             probing = false;
-        bool             done    = false;
+        bool             probing           = false;
+        bool             done              = false;
+        bool             modality_mismatch = false; // probe result doesn't match wizard sensor filter
         io::ProbeResult  result;
         std::vector<core::ArtifactType> module_filter;  // empty = all sensors
         QFutureWatcher<io::ProbeResult>* watcher = nullptr;
@@ -93,6 +94,8 @@ private:
     void startProbe(int idx);
     void onProbeFinished(int idx);
     void updateFileRow(int idx);
+    bool fileMatchesSensorFilter(const io::ProbeResult& r) const;
+    void updateSensorHeader();
     void rebuildSummaryTab();
     void rebuildNavTab();
     void rebuildCrsTab();
@@ -149,6 +152,10 @@ private:
     QLineEdit*     m_name_edit       = nullptr;
     QLabel*        m_folder_label    = nullptr;
     QString        m_browse_folder;
+
+    // -- Header labels (updated by updateSensorHeader when filter is set) -----
+    QLabel*      m_hdr_title    = nullptr;
+    QLabel*      m_hdr_subtitle = nullptr;
 
     // -- Footer ----------------------------------------------------------------
     QLabel*      m_status_label    = nullptr;

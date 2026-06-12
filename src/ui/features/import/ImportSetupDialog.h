@@ -3,23 +3,26 @@
 #include <QDialog>
 #include <vector>
 
-class QCheckBox;
+class QRadioButton;
 
 namespace dolphin::ui {
 
-// Step-1 dialog of the import flow: the user selects which sensor types
+// Step-1 dialog of the import flow: the user selects which sensor type
 // they are importing before the file picker opens.
-// Text-based toggle rows — no icons.
+// Sensor types are mutually exclusive — one per import session.
 class ImportSetupDialog : public QDialog {
 public:
     explicit ImportSetupDialog(QWidget* parent = nullptr);
 
-    // Empty vector = all types selected (no restriction passed to ImportDialog).
+    // Returns a single-element filter for the selected sensor type.
     std::vector<core::ArtifactType> moduleFilter() const;
+
+protected:
+    bool eventFilter(QObject* obj, QEvent* ev) override;
 
 private:
     static constexpr int kModuleCount = 4;
-    QCheckBox* m_checkboxes[kModuleCount] = {};
+    QRadioButton* m_radios[kModuleCount] = {};
 };
 
 } // namespace dolphin::ui

@@ -53,7 +53,6 @@ namespace dolphin::ui {
 struct ImportDialogResult;
 
 class BottomDockPanel;
-class ContactListPanel;
 class ExecutionController;
 class ExecutionProgressDialog;
 class GeodesyPanel;
@@ -118,7 +117,6 @@ private slots:
     void onRunAllLayers();
     void onRunSelectedLayer();
     void onOpenProcessingWindow();
-    void triggerAutoProcessing();  // opens ProcessingWindow + runAll(); impl in MainWindow.cpp
 
     // Tool stubs
     void onToolCursor();
@@ -276,7 +274,6 @@ private:
 
     // Processing dialog — shared across all long-running operations.
     void taskBegin(const QString& id, const QString& label);
-    void taskStep (const QString& id, const QString& label);
     void taskDone (const QString& id);
     void taskFail (const QString& id, const QString& error = {});
     void onCancelProcessing();
@@ -328,7 +325,7 @@ private:
     QToolButton* m_zoom_btn            = nullptr;
     QToolButton* m_measure_btn         = nullptr;
     QToolButton* m_contact_btn         = nullptr;
-    QToolButton* m_3d_btn              = nullptr;
+    QToolButton* m_settings_btn        = nullptr;
     QToolButton* m_btn_sbp_open        = nullptr;
     std::vector<QAction*> m_export_actions;
 
@@ -429,9 +426,6 @@ private:
 
     // Recent Projects submenu (owned by the File menu)
     QMenu*            m_recent_menu      = nullptr;
-
-    // Legacy contacts panel; no longer built in the main shell.
-    ContactListPanel* m_contact_list   = nullptr;
 
     // Viewport widgets
     MapViewportHost*   m_viewport_host   = nullptr;   // owns 2D + 3D views

@@ -1,4 +1,5 @@
 #include "ui/features/import/ImportProgressDialog.h"
+#include "ui/shared/UiUtils.h"
 #include "ui/shell/Theme.h"
 
 #include <QDateTime>
@@ -16,8 +17,8 @@
 
 namespace dolphin::ui {
 
-static constexpr int kDialogW  = 560;  // fixed dialog width
-static constexpr int kBadgeSz  = 42;   // format-type badge square size
+static constexpr int kDialogW  = 520;  // fixed dialog width
+static constexpr int kBadgeSz  = 32;   // format-type badge square size
 
 namespace {
 
@@ -43,26 +44,24 @@ ExecutionProgressDialog::ExecutionProgressDialog(QWidget* parent)
 
 
     // -- Root layout -----------------------------------------------------------
-    auto* root = new QVBoxLayout(this);
-    root->setContentsMargins(0, 0, 0, 0);
-    root->setSpacing(0);
+    auto* root = makeCompactLayout<QVBoxLayout>(this);
 
     // -- Header ----------------------------------------------------------------
     auto* header = new QWidget(this);
     header->setObjectName("epdHeader");
     auto* hdr_lay = new QVBoxLayout(header);
-    hdr_lay->setContentsMargins(Theme::kSpacing6, 18, Theme::kSpacing6, Theme::kSpacing5);
+    hdr_lay->setContentsMargins(Theme::kSpacing5, 12, Theme::kSpacing5, Theme::kSpacing3);
     hdr_lay->setSpacing(Theme::kSpacing1);
 
     m_title_lbl = new QLabel(tr("Background Tasks"), header);
     m_title_lbl->setObjectName("titleLabel");
     hdr_lay->addWidget(m_title_lbl);
 
-    m_sub_lbl = new QLabel(tr("Starting\u2026"), header);
+    m_sub_lbl = new QLabel(tr("Starting…"), header);
     m_sub_lbl->setObjectName("subtitleLabel");
     hdr_lay->addWidget(m_sub_lbl);
 
-    hdr_lay->addSpacing(8);
+    hdr_lay->addSpacing(4);
 
     m_overall_bar = new QProgressBar(header);
     m_overall_bar->setObjectName("overallBar");
@@ -78,14 +77,14 @@ ExecutionProgressDialog::ExecutionProgressDialog(QWidget* parent)
     m_scroll->setWidgetResizable(true);
     m_scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     m_scroll->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
-    m_scroll->setMinimumHeight(100);
-    m_scroll->setMaximumHeight(400);
+    m_scroll->setMinimumHeight(60);
+    m_scroll->setMaximumHeight(260);
 
     m_list_body = new QWidget();
     m_list_body->setObjectName("epdListBody");
     m_list_lay = new QVBoxLayout(m_list_body);
-    m_list_lay->setContentsMargins(14, Theme::kSpacing4, 14, Theme::kSpacing4);
-    m_list_lay->setSpacing(Theme::kSpacing3);
+    m_list_lay->setContentsMargins(Theme::kSpacing3, Theme::kSpacing3, Theme::kSpacing3, Theme::kSpacing3);
+    m_list_lay->setSpacing(Theme::kSpacing2);
     m_list_lay->addStretch(1);
 
     m_scroll->setWidget(m_list_body);
@@ -95,7 +94,7 @@ ExecutionProgressDialog::ExecutionProgressDialog(QWidget* parent)
     auto* footer = new QWidget(this);
     footer->setObjectName("epdFooter");
     auto* foot_lay = new QHBoxLayout(footer);
-    foot_lay->setContentsMargins(Theme::kSpacing5, 10, Theme::kSpacing5, 10);
+    foot_lay->setContentsMargins(Theme::kSpacing4, 8, Theme::kSpacing4, 8);
     foot_lay->setSpacing(Theme::kSpacing3);
 
     m_elapsed_lbl = new QLabel(tr("Elapsed: 0:00"), footer);
@@ -193,9 +192,6 @@ void ExecutionProgressDialog::updateJob(const std::string& layer_id, int percent
     if (!r) return;
     if (r->bar)
         r->bar->setValue(percent);
-    if (r->status_lbl)
-        r->status_lbl->setText(
-            QString("Parsing sonar data\u2026  %1%").arg(percent));
     updateOverallProgress();
 }
 
@@ -216,13 +212,13 @@ void ExecutionProgressDialog::finishJob(const std::string& layer_id,
     parts << (artifact_count >= 1000
         ? QString("%1k artifacts").arg(artifact_count / 1000.0, 0, 'f', 1)
         : QString("%1 artifacts").arg(artifact_count));
-    if (!coord_sys.isEmpty() && coord_sys != "\u2014")
+    if (!coord_sys.isEmpty() && coord_sys != "—")
         parts << coord_sys;
     if (freq_khz > 0.f)
         parts << QString("%1 kHz").arg(static_cast<int>(freq_khz));
 
     if (r->result_lbl) {
-        r->result_lbl->setText("\u2714  " + parts.join("  \u00b7  "));
+        r->result_lbl->setText("✔  " + parts.join("  ·  "));
         r->result_lbl->setProperty("state", "done");
         r->result_lbl->style()->unpolish(r->result_lbl);
         r->result_lbl->style()->polish(r->result_lbl);
@@ -278,8 +274,8 @@ void ExecutionProgressDialog::failJob(const std::string& layer_id,
 
     if (r->result_lbl) {
         const QString msg = error.length() > 60
-            ? error.left(57) + "\u2026" : error;
-        r->result_lbl->setText("\u2715  " + msg);
+            ? error.left(57) + "…" : error;
+        r->result_lbl->setText("✕  " + msg);
         r->result_lbl->setProperty("state", "failed");
         r->result_lbl->style()->unpolish(r->result_lbl);
         r->result_lbl->style()->polish(r->result_lbl);
@@ -333,61 +329,46 @@ QFrame* ExecutionProgressDialog::buildCard(FileRow& row, QWidget* parent)
     auto* card = new QFrame(parent);
     card->setObjectName("fileCard");
 
-    auto* h = new QHBoxLayout(card);
-    h->setContentsMargins(Theme::kSpacing4, Theme::kSpacing4, Theme::kSpacing4, Theme::kSpacing4);
-    h->setSpacing(Theme::kSpacing4);
+    auto* v = new QVBoxLayout(card);
+    v->setContentsMargins(Theme::kSpacing4, Theme::kSpacing2, Theme::kSpacing4, Theme::kSpacing2);
+    v->setSpacing(Theme::kSpacing1);
 
-    // Format badge
-    row.badge = new QLabel(row.format.left(3), card);
+    // Single row: format badge · filename · size · result
+    auto* top = new QWidget(card);
+    auto* h = makeCompactLayout<QHBoxLayout>(top, Theme::kSpacing2);
+
+    row.badge = new QLabel(row.format.left(3), top);
     row.badge->setObjectName("formatBadge");
     row.badge->setAlignment(Qt::AlignCenter);
     row.badge->setFixedSize(kBadgeSz, kBadgeSz);
+    h->addWidget(row.badge);
 
-    // Right content column
-    auto* right = new QWidget(card);
-    auto* v = new QVBoxLayout(right);
-    v->setContentsMargins(0, 0, 0, 0);
-    v->setSpacing(Theme::kSpacing1);
-
-    // Top row: filename + file size
-    auto* name_row = new QWidget(right);
-    auto* name_h = new QHBoxLayout(name_row);
-    name_h->setContentsMargins(0, 0, 0, 0);
-    name_h->setSpacing(Theme::kSpacing3);
-
-    row.name_lbl = new QLabel(row.display_name, name_row);
+    row.name_lbl = new QLabel(row.display_name, top);
     row.name_lbl->setObjectName("fileName");
-    name_h->addWidget(row.name_lbl, 1);
+    h->addWidget(row.name_lbl, 1);
 
     if (row.size_mb > 0.f) {
-        row.meta_lbl = new QLabel(sizeMbStr(row.size_mb), name_row);
+        row.meta_lbl = new QLabel(sizeMbStr(row.size_mb), top);
         row.meta_lbl->setObjectName("fileMeta");
-        name_h->addWidget(row.meta_lbl);
+        h->addWidget(row.meta_lbl);
     }
 
-    v->addWidget(name_row);
+    row.result_lbl = new QLabel("", top);
+    row.result_lbl->setObjectName("fileResult");
+    row.result_lbl->hide();
+    h->addWidget(row.result_lbl);
 
-    // Status text (hidden once done/failed)
-    row.status_lbl = new QLabel("Preparing\u2026", right);
-    row.status_lbl->setObjectName("fileStatus");
-    v->addWidget(row.status_lbl);
+    v->addWidget(top);
 
-    // Per-file progress bar (hidden once done/failed)
-    row.bar = new QProgressBar(right);
+    // Thin progress bar — hides when done/failed, result_lbl appears instead
+    row.bar = new QProgressBar(card);
     row.bar->setObjectName("fileBar");
     row.bar->setRange(0, 100);
     row.bar->setValue(0);
     row.bar->setTextVisible(false);
     v->addWidget(row.bar);
 
-    // Result line (artifacts / error — shown once done/failed)
-    row.result_lbl = new QLabel("", right);
-    row.result_lbl->setObjectName("fileResult");
-    row.result_lbl->hide();
-    v->addWidget(row.result_lbl);
-
-    h->addWidget(row.badge);
-    h->addWidget(right, 1);
+    row.status_lbl = nullptr;  // not used in compact layout
 
     return card;
 }
@@ -414,7 +395,7 @@ void ExecutionProgressDialog::updateHeader()
     const int total = std::max(m_queue_total, static_cast<int>(m_rows.size()));
 
     if (total <= 0) {
-        m_sub_lbl->setText(tr("Starting\u2026"));
+        m_sub_lbl->setText(tr("Starting…"));
     } else if (m_all_done) {
         m_title_lbl->setText(tr("All Done"));
         m_sub_lbl->setText(total == 1
@@ -422,7 +403,7 @@ void ExecutionProgressDialog::updateHeader()
             : tr("%1 tasks completed").arg(total));
     } else {
         m_sub_lbl->setText(total == 1
-            ? tr("Running 1 task\u2026")
+            ? tr("Running 1 task…")
             : tr("Task %1 of %2").arg(done + 1).arg(total));
     }
 }

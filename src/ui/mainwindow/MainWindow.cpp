@@ -20,7 +20,6 @@
 #include "ui/features/map/MapView.h"
 #include "app/services/ImportService.h"
 #include "app/services/ProcessingService.h"
-#include "ui/features/contacts/ContactListPanel.h"
 #include "ui/shared/panels/LineListPanel.h"
 #include "ui/mainwindow/AppSettingsDialog.h"
 #include "ui/shell/AppInfo.h"
@@ -28,7 +27,6 @@
 #include <QProgressBar>
 #include <QSettings>
 #include <QUndoStack>
-#include <set>
 
 namespace dolphin::ui {
 
@@ -158,8 +156,11 @@ MainWindow::MainWindow(QWidget* parent)
 
         // Route ImportService indexing lifecycle → DiagnosticsHub structured jobs
         // so the bottom-panel Jobs tab tracks every file import automatically.
+        // Cache-index rebuilds (project open) share the same signals but must not
+        // show the import popup — isRebuildingLayer() distinguishes them.
         connect(m_import_service, &app::ImportService::indexingStarted, this,
                 [this](const std::string& layer_id) {
+                    if (m_import_service->isRebuildingLayer(layer_id)) return;
                     QString label = tr("Importing…");
                     if (m_project) {
                         if (const auto* layer = m_project->findLayer(layer_id))
@@ -199,6 +200,15 @@ MainWindow::MainWindow(QWidget* parent)
                         m_diag_hub->failJob(it->second,
                             QString::fromStdString(error));
                         m_import_job_ids.erase(it);
+                    } else {
+                        // No import job registered — this was a cache rebuild failure.
+                        // Report through diagnostics without a modal popup.
+                        m_diag_hub->postProblem(
+                            tr("Could not load cached data for layer %1: %2")
+                                .arg(QString::fromStdString(layer_id),
+                                     QString::fromStdString(error)),
+                            DiagnosticsHub::Severity::Warning, "cache-rebuild");
+                        return;
                     }
                     taskFail(QStringLiteral("import:") + QString::fromStdString(layer_id),
                              QString::fromStdString(error));
@@ -208,7 +218,6 @@ MainWindow::MainWindow(QWidget* parent)
         // Activate the layer in the map and — if nothing is selected yet — select it.
         connect(m_import_service, &app::ImportService::cacheIndexRebuilt, this,
                 [this](const std::string& layer_id) {
-                    taskDone(QStringLiteral("import:") + QString::fromStdString(layer_id));
                     if (!m_project) return;
                     auto* layer = m_project->findLayer(layer_id);
                     if (!layer || !layer->index_built) return;
@@ -223,10 +232,6 @@ MainWindow::MainWindow(QWidget* parent)
                     // If no layer is selected yet (project just opened), select this one.
                     if (m_active_layer_id.empty())
                         onLayerSelected(layer_id);
-
-                    // Now that the index exists, check if processing should auto-run.
-                    if (layer->modality == M::Sidescan && !layer->pipeline_applied)
-                        triggerAutoProcessing();
 
                     m_project_dirty = true;
                     setWindowTitleFromProject();
@@ -546,23 +551,5 @@ MainWindow::MainWindow(QWidget* parent)
     appendJobMessage("Workstation ready.");
 }
 
-void MainWindow::triggerAutoProcessing()
-{
-    if (!m_proc_ctrl || !m_project) return;
-    onOpenProcessingWindow();
-    std::set<std::string> queued_store_paths;
-    for (const auto& layer : m_project->layers()) {
-        if (!layer || !layer->index_built || layer->pipeline_applied) continue;
-        if (layer->modality != app::Modality::Sidescan) continue;
-        // Dual-freq and Mixed-split layers share the same DLPD. Only submit one
-        // runLayer per unique store path to prevent concurrent writes to the same file.
-        if (!layer->artifact_store_path.empty()
-                && !queued_store_paths.insert(layer->artifact_store_path).second)
-            continue;
-        const auto* src = m_project->findSource(layer->source_id);
-        if (!src) continue;
-        m_proc_ctrl->runLayer(layer.get(), src->path);
-    }
-}
 
 } // namespace dolphin::ui

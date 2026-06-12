@@ -1,19 +1,24 @@
 // MainWindow.ContextPanels.cpp — buildContextPanel, makeContextPlaceholder,
 //   refreshSidebarSections.
 #include "ui/mainwindow/MainWindow.h"
+#include "ui/shared/UiUtils.h"
 #include "ui/shell/AppInfo.h"
 #include "ui/shell/Theme.h"
 #include "ui/shared/panels/LineListPanel.h"
 #include "ui/shared/widgets/CollapsibleSection.h"
 
+#include <QDesktopServices>
 #include <QFileInfo>
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QListWidget>
+#include <QMenu>
+#include <QPoint>
 #include <QSettings>
 #include <QTimer>
 #include <QStackedWidget>
+#include <QUrl>
 #include <QVBoxLayout>
 #include <QWidget>
 
@@ -26,9 +31,7 @@ void MainWindow::buildContextPanel(QWidget* parent)
     m_context_stack->setFixedWidth(Theme::kContextPanelW);
 
     auto* page   = new QWidget(m_context_stack);
-    auto* layout = new QVBoxLayout(page);
-    layout->setContentsMargins(0, 0, 0, 0);
-    layout->setSpacing(0);
+    auto* layout = makeCompactLayout<QVBoxLayout>(page);
 
     // -- Panel header ----------------------------------------------------------
     auto* hdr   = new QFrame(page);
@@ -58,6 +61,8 @@ void MainWindow::buildContextPanel(QWidget* parent)
     m_sidebar_recent_list->setObjectName("emptyStateRecentList");
     m_sidebar_recent_list->setFrameShape(QFrame::NoFrame);
     m_sidebar_recent_list->setMaximumHeight(8 * 24);
+    m_sidebar_recent_list->setContextMenuPolicy(Qt::CustomContextMenu);
+
     connect(m_sidebar_recent_list, &QListWidget::itemClicked,
             this, [this](QListWidgetItem* item) {
                 // Defer so the mouse-release event fully unwinds before loadProject
@@ -68,6 +73,45 @@ void MainWindow::buildContextPanel(QWidget* parent)
                 QTimer::singleShot(0, this, [this, path]() {
                     loadProject(path.toStdString());
                 });
+            });
+
+    connect(m_sidebar_recent_list, &QListWidget::customContextMenuRequested,
+            this, [this](const QPoint& pos) {
+                QListWidgetItem* item = m_sidebar_recent_list->itemAt(pos);
+                const QString path = item ? item->data(Qt::UserRole).toString() : QString{};
+
+                QMenu menu(m_sidebar_recent_list);
+
+                if (item) {
+                    menu.addAction(tr("Open"), this, [this, path]() {
+                        QTimer::singleShot(0, this, [this, path]() {
+                            loadProject(path.toStdString());
+                        });
+                    });
+                    menu.addAction(tr("Open Project Folder"), this, [path]() {
+                        QDesktopServices::openUrl(
+                            QUrl::fromLocalFile(QFileInfo(path).absolutePath()));
+                    });
+                    menu.addSeparator();
+                    menu.addAction(tr("Remove from Recent"), this, [this, path]() {
+                        QSettings s(AppInfo::kOrgName, AppInfo::kSettingsApp);
+                        QStringList list = s.value(QStringLiteral("recentProjects")).toStringList();
+                        list.removeAll(path);
+                        s.setValue(QStringLiteral("recentProjects"), list);
+                        refreshSidebarSections(list);
+                        rebuildRecentMenu();
+                    });
+                    menu.addSeparator();
+                }
+
+                menu.addAction(tr("Clear All Recent"), this, [this]() {
+                    QSettings s(AppInfo::kOrgName, AppInfo::kSettingsApp);
+                    s.remove(QStringLiteral("recentProjects"));
+                    refreshSidebarSections({});
+                    rebuildRecentMenu();
+                });
+
+                menu.exec(m_sidebar_recent_list->viewport()->mapToGlobal(pos));
             });
     recent_sec->setContent(m_sidebar_recent_list);
     layout->addWidget(recent_sec);
@@ -103,9 +147,7 @@ void MainWindow::refreshSidebarSections(const QStringList& paths)
 QWidget* MainWindow::makeContextPlaceholder(const QString& title, const QString& body)
 {
     auto* page = new QWidget(m_context_stack);
-    auto* layout = new QVBoxLayout(page);
-    layout->setContentsMargins(0, 0, 0, 0);
-    layout->setSpacing(0);
+    auto* layout = makeCompactLayout<QVBoxLayout>(page);
 
     auto* hdr = new QFrame(page);
     hdr->setObjectName("panelHdr");

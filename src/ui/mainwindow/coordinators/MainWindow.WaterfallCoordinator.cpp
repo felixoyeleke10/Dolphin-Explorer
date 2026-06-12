@@ -13,7 +13,6 @@
 #include "ui/shared/dialogs/CrsPickerDialog.h"
 #include "ui/features/metadata/SSSMetadataWindow.h"
 #include "ui/features/waterfall/WaterfallSettingsDialog.h"
-#include "ui/features/contacts/ContactListPanel.h"
 #include "ui/mainwindow/panels/InspectorPanel.h"
 #include "ui/mainwindow/rightpanel/RightPanelHost.h"
 #include "ui/features/subbottom/SubBottomWindow.h"
@@ -337,9 +336,6 @@ void MainWindow::onWaterfallContactCreated(float range_m, double lat, double lon
     m_undo_stack->push(new AddContactCommand(
         m_project.get(), c,
         [this]() { m_project_dirty = true; setWindowTitleFromProject(); }));
-
-    if constexpr (Features::kContacts)
-        if (m_contact_list) m_contact_list->refresh();
 
     appendJobMessage(
         QString("Contact %1 placed \u2014 %2 (%3 m)")

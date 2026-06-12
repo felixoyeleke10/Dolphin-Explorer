@@ -6,7 +6,6 @@
 #include "ui/features/import/ImportController.h"
 #include "ui/features/processing/ProcessingController.h"
 #include "ui/features/map/sidescan/SidescanViewController.h"
-#include "ui/features/contacts/ContactListPanel.h"
 #include "ui/features/geodesy/GeodesyPanel.h"
 #include "ui/shared/panels/LineListPanel.h"
 #include "ui/mainwindow/panels/InspectorPanel.h"
@@ -70,10 +69,6 @@ void MainWindow::bindProjectUi()
     if constexpr (Features::kProcessing)
         if (m_proc_ctrl)
             m_proc_ctrl->setProject(m_project);
-
-    if constexpr (Features::kContacts)
-        if (m_contact_list)
-            m_contact_list->setProject(raw);
 
     if constexpr (Features::kDataLibrary)
         if (m_data_library_win)

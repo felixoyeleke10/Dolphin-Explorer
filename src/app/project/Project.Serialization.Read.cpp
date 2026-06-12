@@ -314,6 +314,11 @@ bool Project::fromJson(const std::string& json)
             layer->artifact_index.source_id = layer->source_id;
         if (!layer->artifact_index.empty())
             layer->index_built = true;
+        // Entries are empty when a DLPD cache exists (deferred load path).
+        // Ensure index_built is false so loadProject triggers rebuildCacheIndex —
+        // JSON may have persisted index_built=true from the previous session.
+        if (layer->artifact_index.empty() && !layer->artifact_store_path.empty())
+            layer->index_built = false;
         if (layer->modality == Modality::Unknown && !layer->artifact_index.empty())
             layer->modality = inferModality(layer->artifact_index);
 
