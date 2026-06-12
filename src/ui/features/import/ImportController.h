@@ -46,7 +46,7 @@ signals:
     void importFailed(const QString& layer_id, const QString& error);
     void statusMessage(const QString& message);
     void progressChanged(int percent, bool visible);
-    void batchCompleted();
+    void batchCompleted(app::ImportJobManager::BatchSummary summary);
 
 private:
     void onJobStarted(const std::string& layer_id, const QString& filename,

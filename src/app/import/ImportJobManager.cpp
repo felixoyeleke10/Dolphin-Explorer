@@ -1,6 +1,4 @@
-// ImportJobManager.cpp — serial import queue and dispatch.
-// Queue/dispatch logic moved from ui::ExecutionController so it lives in the
-// app layer, independent of any dialog or widget.
+// ImportJobManager.cpp — concurrent import queue, up to kMaxConcurrent (2) jobs.
 #include "app/import/ImportJobManager.h"
 #include "app/services/ImportService.h"
 #include "app/project/Project.h"
@@ -33,7 +31,7 @@ ImportJobManager::~ImportJobManager()
 
 void ImportJobManager::setProject(std::shared_ptr<Project> project)
 {
-    if (m_busy || !m_queue.empty())
+    if (busy())
         cancelQueue(tr("Import cancelled — project changed."));
     m_project = std::move(project);
 }
@@ -44,8 +42,8 @@ void ImportJobManager::importBatch(const QList<FileImportAction>& actions)
 
     // Deduplicate — identical normalized paths in one batch are processed once.
     QSet<QString> seen_paths;
-
     int new_jobs = 0;
+
     for (const auto& action : actions) {
         if (!action.path.isEmpty()) {
             const QString norm = QFileInfo(action.path).canonicalFilePath();
@@ -65,6 +63,7 @@ void ImportJobManager::importBatch(const QList<FileImportAction>& actions)
             emit statusMessage(
                 tr("Using existing data for %1").arg(QFileInfo(action.path).fileName()));
             emit jobCompleted(action.existing_layer_id);
+            ++m_summary.reused;
             continue;
         }
         QueuedJob job;
@@ -80,12 +79,15 @@ void ImportJobManager::importBatch(const QList<FileImportAction>& actions)
     }
 
     if (new_jobs > 0) {
-        if (!m_busy) dispatchNext();
-    } else if (!m_busy) {
+        dispatchNext();  // fills up to kMaxConcurrent slots
+    } else if (m_active_count == 0) {
+        // All actions were reuse/skip and nothing is running — batch is done.
         m_log.record(makeEntry(ImportLogEntry::Event::BatchDone));
+        BatchSummary summary = m_summary;
+        m_summary = {};
         const uint32_t tok = m_epoch;
-        QMetaObject::invokeMethod(this, [this, tok] {
-            if (tok == m_epoch) emit batchCompleted();
+        QMetaObject::invokeMethod(this, [this, tok, s = summary] {
+            if (tok == m_epoch) emit batchCompleted(s);
         }, Qt::QueuedConnection);
     }
 }
@@ -98,12 +100,12 @@ void ImportJobManager::reindexLayer(const std::string& source_path,
     job.path              = QString::fromStdString(source_path);
     job.existing_layer_id = layer_id;
     m_queue.push_back(std::move(job));
-    if (!m_busy) dispatchNext();
+    dispatchNext();
 }
 
 ImportLogEntry ImportJobManager::makeEntry(ImportLogEntry::Event event,
-                                          const std::string& layer_id,
-                                          const std::string& detail) const
+                                           const std::string& layer_id,
+                                           const std::string& detail) const
 {
     ImportLogEntry e;
     e.event            = event;
@@ -124,71 +126,95 @@ void ImportJobManager::cancelQueue(const QString& reason)
     m_queue.clear();
     emit statusMessage(reason);
 
-    // If the active job's primary completion has already run (m_active_layer_id
-    // cleared, m_awaiting_start false) but the deferred dispatchNext() lambda
-    // hasn't fired yet, that lambda is now stale and will be a no-op. Nothing
-    // else will reset m_busy or emit batchCompleted, so do it here.
-    if (!m_active_layer_id.empty() || m_awaiting_start)
-        return;  // still in-flight; let the task settle naturally
-    if (m_busy) {
-        m_busy = false;
-        const uint32_t tok = m_epoch;
-        QMetaObject::invokeMethod(this, [this, tok] {
-            if (tok == m_epoch) emit batchCompleted();
-        }, Qt::QueuedConnection);
-    }
+    // If jobs are still in-flight, let them settle naturally.  Each
+    // completion/failure handler decrements m_active_count; when it reaches 0
+    // with an empty queue, dispatchNext() will emit batchCompleted.
+    if (m_active_count > 0 || m_awaiting_start_count > 0) return;
+
+    BatchSummary summary = m_summary;
+    m_summary = {};
+    const uint32_t tok = m_epoch;
+    QMetaObject::invokeMethod(this, [this, tok, s = summary] {
+        if (tok == m_epoch) emit batchCompleted(s);
+    }, Qt::QueuedConnection);
 }
 
 void ImportJobManager::dispatchNext()
 {
-    if (m_queue.empty()) {
-        m_busy             = false;
-        m_awaiting_start   = false;
-        m_active_layer_id.clear();
+    while (m_active_count < kMaxConcurrent && !m_queue.empty()) {
+        QueuedJob job = m_queue.front();
+        m_queue.pop_front();
+
+        // Verify the source file still exists before a rebuild dispatch.
+        if (job.kind == FileImportAction::Kind::RebuildExisting
+            && !job.path.isEmpty()
+            && !QFileInfo::exists(job.path)) {
+            const std::string fname = QFileInfo(job.path).fileName().toStdString();
+            m_log.record(makeEntry(ImportLogEntry::Event::Failed,
+                                   job.existing_layer_id,
+                                   fname + ": source not found"));
+            emit statusMessage(
+                tr("Source not found: %1").arg(QFileInfo(job.path).fileName()));
+            emit jobFailed(job.existing_layer_id,
+                           tr("Source file not found: %1").arg(job.path));
+            ++m_summary.failed;
+            continue;  // don't hold a concurrency slot; try next job
+        }
+
+        ++m_active_count;
+        ++m_awaiting_start_count;
+        m_active_job_epoch = m_epoch;
+
+        if (job.kind == FileImportAction::Kind::RebuildExisting
+            && !job.existing_layer_id.empty()) {
+            // Layer ID is known at dispatch time — pre-insert so onIndexingComplete
+            // can distinguish RebuildExisting from ImportNew in the summary.
+            m_active_jobs[job.existing_layer_id] = {FileImportAction::Kind::RebuildExisting, false};
+            m_log.record(makeEntry(ImportLogEntry::Event::Dispatched,
+                                   job.existing_layer_id,
+                                   QFileInfo(job.path).fileName().toStdString()));
+            emit statusMessage(
+                tr("Rebuilding %1…").arg(QFileInfo(job.path).fileName()));
+            m_service->reindexLayer(job.path.toStdString(), m_project,
+                                    job.existing_layer_id);
+        } else {
+            // ImportNew: layer ID is not known until onIndexingStarted fires.
+            const QString ext = QFileInfo(job.path).suffix().toLower();
+            m_log.record(makeEntry(ImportLogEntry::Event::Dispatched, {},
+                                   QFileInfo(job.path).fileName().toStdString()));
+            emit statusMessage(
+                tr("Importing %1 as %2").arg(QFileInfo(job.path).fileName(),
+                                             ext.toUpper()));
+            using BC = FileImportAction::BandChoice;
+            const bool want_hf = (job.band_choice != BC::LFOnly);
+            const bool want_lf = (job.band_choice != BC::HFOnly);
+            m_service->importFile(job.path.toStdString(), ext.toStdString(),
+                                  m_project, job.source_crs,
+                                  want_hf, want_lf, job.module_filter);
+        }
+    }
+
+    // Queue drained and no jobs running — batch is complete.
+    if (m_active_count == 0 && m_queue.empty()) {
         m_log.record(makeEntry(ImportLogEntry::Event::BatchDone));
-        emit batchCompleted();
-        return;
+        BatchSummary summary = m_summary;
+        m_summary = {};
+        emit batchCompleted(summary);
     }
-
-    m_busy             = true;
-    m_awaiting_start   = true;
-    m_active_job_epoch = m_epoch;  // snapshot: signals from this job are fresh
-    const QueuedJob job = m_queue.front();
-    m_queue.pop_front();
-
-    if (job.kind == FileImportAction::Kind::RebuildExisting
-        && !job.existing_layer_id.empty()) {
-        m_log.record(makeEntry(ImportLogEntry::Event::Dispatched,
-                               job.existing_layer_id,
-                               QFileInfo(job.path).fileName().toStdString()));
-        emit statusMessage(
-            tr("Rebuilding %1…").arg(QFileInfo(job.path).fileName()));
-        m_service->reindexLayer(job.path.toStdString(), m_project,
-                                job.existing_layer_id);
-        return;
-    }
-
-    const QString ext = QFileInfo(job.path).suffix().toLower();
-    m_log.record(makeEntry(ImportLogEntry::Event::Dispatched,
-                           {},
-                           QFileInfo(job.path).fileName().toStdString()));
-    emit statusMessage(
-        tr("Importing %1 as %2").arg(QFileInfo(job.path).fileName(),
-                                     ext.toUpper()));
-
-    using BC = FileImportAction::BandChoice;
-    const bool want_hf = (job.band_choice != BC::LFOnly);
-    const bool want_lf = (job.band_choice != BC::HFOnly);
-    m_service->importFile(job.path.toStdString(), ext.toStdString(),
-                          m_project, job.source_crs,
-                          want_hf, want_lf, job.module_filter);
 }
 
 void ImportJobManager::onIndexingStarted(const std::string& layer_id)
 {
-    // Always update internal state so queue advancement works even after cancel.
-    m_awaiting_start  = false;
-    m_active_layer_id = layer_id;
+    // Always update internal state so queue advancement is consistent after cancel.
+    if (m_awaiting_start_count > 0) --m_awaiting_start_count;
+
+    auto it = m_active_jobs.find(layer_id);
+    if (it == m_active_jobs.end()) {
+        // ImportNew: layer ID wasn't known at dispatch — add it now.
+        m_active_jobs[layer_id] = {FileImportAction::Kind::ImportNew, true};
+    } else {
+        it->second.started = true;
+    }
 
     if (m_active_job_epoch != m_epoch) {
         m_log.record(makeEntry(ImportLogEntry::Event::Suppressed, layer_id, "started"));
@@ -196,8 +222,8 @@ void ImportJobManager::onIndexingStarted(const std::string& layer_id)
     }
 
     QString filename;
-    QString format   = QStringLiteral("XTF");
-    float   size_mb  = 0.f;
+    QString format  = QStringLiteral("XTF");
+    float   size_mb = 0.f;
 
     if (m_project) {
         if (const auto* layer = m_project->findLayer(layer_id)) {
@@ -231,7 +257,9 @@ void ImportJobManager::onIndexingProgress(const std::string& layer_id, int perce
 
 void ImportJobManager::onIndexingComplete(const std::string& layer_id)
 {
-    if (m_active_job_epoch == m_epoch) {
+    const bool live = (m_active_job_epoch == m_epoch);
+
+    if (live) {
         m_log.record(makeEntry(ImportLogEntry::Event::Completed, layer_id));
         if (m_project) {
             if (const auto* layer = m_project->findLayer(layer_id)) {
@@ -246,10 +274,18 @@ void ImportJobManager::onIndexingComplete(const std::string& layer_id)
         m_log.record(makeEntry(ImportLogEntry::Event::Suppressed, layer_id, "completed"));
     }
 
-    if (layer_id == m_active_layer_id) {
-        m_active_layer_id.clear();
-        // Defer so completeImport()'s remaining LF/extra emissions fully unwind
-        // before the next queued job starts dispatching.
+    // Unconditional state update — keeps counts correct even after a cancel.
+    auto it = m_active_jobs.find(layer_id);
+    if (it != m_active_jobs.end()) {
+        if (live) {
+            if (it->second.kind == FileImportAction::Kind::RebuildExisting)
+                ++m_summary.rebuilt;
+            else
+                ++m_summary.imported;
+        }
+        m_active_jobs.erase(it);
+        --m_active_count;
+        // Defer so the service's remaining per-job emissions fully unwind first.
         const uint32_t tok = m_epoch;
         QMetaObject::invokeMethod(this, [this, tok] {
             if (tok == m_epoch) dispatchNext();
@@ -260,7 +296,9 @@ void ImportJobManager::onIndexingComplete(const std::string& layer_id)
 void ImportJobManager::onIndexingFailed(const std::string& layer_id,
                                         const std::string& error)
 {
-    if (m_active_job_epoch == m_epoch) {
+    const bool live = (m_active_job_epoch == m_epoch);
+
+    if (live) {
         m_log.record(makeEntry(ImportLogEntry::Event::Failed, layer_id, error));
         qWarning().noquote() << m_log.dump();
         emit jobFailed(layer_id, QString::fromStdString(error));
@@ -269,16 +307,26 @@ void ImportJobManager::onIndexingFailed(const std::string& layer_id,
                                "failed:" + error));
     }
 
-    // Advance queue if this is the active job:
-    // m_awaiting_start covers synchronous failures before indexingStarted fires.
-    if (m_awaiting_start || layer_id == m_active_layer_id) {
-        m_awaiting_start  = false;
-        m_active_layer_id.clear();
-        const uint32_t tok = m_epoch;
-        QMetaObject::invokeMethod(this, [this, tok] {
-            if (tok == m_epoch) dispatchNext();
-        }, Qt::QueuedConnection);
+    // Update tracking.  m_awaiting_start_count must be decremented if
+    // indexingStarted never fired for this job (either because it's an ImportNew
+    // that failed synchronously, or a RebuildExisting that failed before started).
+    auto it = m_active_jobs.find(layer_id);
+    if (it == m_active_jobs.end()) {
+        // ImportNew sync fail — not yet in m_active_jobs.
+        if (m_awaiting_start_count > 0) --m_awaiting_start_count;
+    } else {
+        if (!it->second.started && m_awaiting_start_count > 0)
+            --m_awaiting_start_count;  // RebuildExisting sync fail — started never fired
+        m_active_jobs.erase(it);
     }
+
+    if (live) ++m_summary.failed;
+    --m_active_count;
+
+    const uint32_t tok = m_epoch;
+    QMetaObject::invokeMethod(this, [this, tok] {
+        if (tok == m_epoch) dispatchNext();
+    }, Qt::QueuedConnection);
 }
 
 } // namespace dolphin::app

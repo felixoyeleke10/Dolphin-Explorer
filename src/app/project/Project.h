@@ -18,7 +18,7 @@ struct ProjectSource {
     std::string format;   // "xtf", "kmall"
     std::string path;
     core::SpatialRef source_spatial_ref;
-    std::string sha256;
+    std::string sha256;         // D-02: reserved — not yet computed; always empty
     uint64_t    size_bytes = 0;
     int64_t     modified_utc_ms = 0;
 };

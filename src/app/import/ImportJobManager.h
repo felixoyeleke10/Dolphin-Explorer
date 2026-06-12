@@ -5,6 +5,7 @@
 #include <QObject>
 #include <QString>
 #include <deque>
+#include <map>
 #include <memory>
 #include <string>
 
@@ -13,11 +14,21 @@ class ImportService;
 class Project;
 
 // Owns the import job queue and dispatch loop.
-// One job runs at a time; jobs are dispatched serially to prevent concurrent I/O.
-// UI consumers should connect to the signals below and drive their own widgets.
+// Up to kMaxConcurrent jobs run in parallel; each is driven by ImportService
+// signals.  UI consumers connect to the signals below and drive their own widgets.
 class ImportJobManager : public QObject {
     Q_OBJECT
 public:
+    // Per-batch outcome counts emitted with batchCompleted.
+    struct BatchSummary {
+        int imported = 0;   // ImportNew jobs that finished successfully
+        int rebuilt  = 0;   // RebuildExisting jobs that finished successfully
+        int reused   = 0;   // ReuseExisting — forwarded without re-parsing
+        int failed   = 0;   // jobs that failed or whose source was not found
+    };
+
+    static constexpr int kMaxConcurrent = 2;   // D-14: max heavy import jobs
+
     explicit ImportJobManager(ImportService* service, QObject* parent = nullptr);
     ~ImportJobManager() override;
 
@@ -25,8 +36,8 @@ public:
     void importBatch(const QList<FileImportAction>& actions);
     void reindexLayer(const std::string& source_path, const std::string& layer_id);
 
-    int pendingCount() const { return static_cast<int>(m_queue.size()); }
-    bool busy() const { return m_busy; }
+    int  pendingCount() const { return static_cast<int>(m_queue.size()); }
+    bool busy()         const { return m_active_count > 0 || !m_queue.empty(); }
 
     const ImportLog& importLog() const { return m_log; }
 
@@ -37,7 +48,7 @@ signals:
     void jobCompleted(std::string layer_id);
     void jobFailed(std::string layer_id, QString error);
     // Fired once when all queued jobs finish (including reuse/skip-only batches).
-    void batchCompleted();
+    void batchCompleted(BatchSummary summary);
     void statusMessage(QString message);
 
 private slots:
@@ -59,8 +70,8 @@ private:
 
     void dispatchNext();
     // Clears the pending queue and invalidates deferred dispatch lambdas.
-    // Does NOT abort the in-flight task — it will still settle and emit
-    // batchCompleted when its completion/failure slot runs.
+    // Does NOT abort in-flight tasks — they will still settle and collectively
+    // emit batchCompleted once all active jobs finish.
     void cancelQueue(const QString& reason);
 
     // Builds a log entry pre-filled with the current epoch/queue snapshot.
@@ -71,25 +82,32 @@ private:
     ImportService*           m_service;
     std::shared_ptr<Project> m_project;
     std::deque<QueuedJob>    m_queue;
-    bool                     m_busy = false;
-    // True from dispatchNext() until onIndexingStarted() fires — covers the
-    // window where importFile() can fail synchronously before indexingStarted.
-    bool                     m_awaiting_start  = false;
-    // Primary layer ID of the currently dispatched job. Set by onIndexingStarted,
-    // cleared when that layer completes or fails. Only this layer's completion
-    // advances the queue — multi-layer jobs (LF split, mixed-modality extras)
-    // emit jobCompleted but do not trigger dispatchNext().
-    std::string              m_active_layer_id;
+
+    // Concurrency tracking — replaces the old m_busy/m_awaiting_start/m_active_layer_id
+    // scalar fields.  All are manipulated on the main thread only.
+    int                      m_active_count         = 0;  // jobs dispatched but not yet done
+    int                      m_awaiting_start_count = 0;  // dispatched but indexingStarted not yet received
+    struct ActiveJob {
+        FileImportAction::Kind kind    = FileImportAction::Kind::ImportNew;
+        bool                   started = false;  // true once indexingStarted has fired
+    };
+    // Maps layer_id → ActiveJob for all in-flight jobs.
+    // RebuildExisting entries are inserted at dispatch (layer_id is known then);
+    // ImportNew entries are inserted in onIndexingStarted (layer_id only known then).
+    std::map<std::string, ActiveJob> m_active_jobs;
+
     // Monotonically incremented by cancelQueue() only.
     // Captured by value in every deferred lambda — stale post-cancel lambdas
     // see a mismatch and become no-ops.
     uint32_t                 m_epoch           = 0;
     // Snapshot of m_epoch taken in dispatchNext() when a job is dispatched.
-    // All four service-event handlers compare against m_epoch: if they differ,
-    // a cancel happened after this job started → suppress UI-facing signals
-    // (jobStarted / jobProgress / jobCompleted / jobFailed) while still
-    // performing internal state transitions so queue advancement works.
+    // Service-event handlers compare against m_epoch: if they differ,
+    // a cancel happened after this job started → suppress UI signals while
+    // still performing internal state transitions so queue advancement works.
     uint32_t                 m_active_job_epoch = 0;
+
+    // Accumulated per-batch outcome counts — reset when batchCompleted fires.
+    BatchSummary             m_summary;
 
     ImportLog                m_log;
 };

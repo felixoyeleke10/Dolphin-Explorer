@@ -36,7 +36,9 @@ ExecutionController::ExecutionController(app::ImportJobManager*   job_manager,
     connect(m_manager, &app::ImportJobManager::jobFailed,
             this, &ExecutionController::onJobFailed);
     connect(m_manager, &app::ImportJobManager::batchCompleted,
-            this, &ExecutionController::batchCompleted);
+            this, [this](app::ImportJobManager::BatchSummary s) {
+                emit batchCompleted(s);
+            });
     connect(m_manager, &app::ImportJobManager::statusMessage,
             this, &ExecutionController::statusMessage);
 }

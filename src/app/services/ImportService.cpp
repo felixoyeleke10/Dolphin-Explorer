@@ -6,6 +6,7 @@
 // live in ImportService.Tasks.cpp.
 
 #include "app/services/ImportService.Private.h"
+#include "app/import/FormatRegistry.h"
 #include "app/import/PreflightChecker.h"
 #include "io/jsf/JsfReader.h"
 #include "io/cache/ParsedCache.h"
@@ -172,21 +173,6 @@ void removeArtifactStoreFileIfUnused(const Project& project,
 // -- File-local helpers (used only by importFile / reindexLayer) ---------------
 namespace {
 
-bool isSupportedFormat(const std::string& format)
-{
-    const std::string fmt = import_detail::normaliseFormat(format);
-    return fmt == "xtf"  || fmt == "jsf"
-        || fmt == "segy" || fmt == "sgy"
-        || fmt == "dlpd" || fmt == "dpcache";
-}
-
-std::string formatFromPath(const std::string& path, const std::string& fallback = "xtf")
-{
-    auto dot = path.rfind('.');
-    if (dot == std::string::npos) return fallback;
-    return import_detail::normaliseFormat(path.substr(dot + 1));
-}
-
 std::string cachePathForSource(const Project& project, const std::string& source_id)
 {
     namespace fs = std::filesystem;
@@ -345,12 +331,11 @@ std::string ImportService::reindexLayer(const std::string& path,
     }
 
     const std::string cache_path = cachePathForSource(*project, layer->source_id);
-    const std::string fmt = formatFromPath(path);
+    const std::string fmt = FormatRegistry::instance().sniffFromPath(path);
 
-    if (!isSupportedFormat(fmt)) {
+    if (const auto pre = checkImportPreflight(path, fmt); !pre) {
         import_detail::releaseSourceJob(layer->source_id);
-        emit indexingFailed(layer_id,
-            "." + fmt + " is not yet supported. Supported formats: XTF, JSF, SEG-Y.");
+        emit indexingFailed(layer_id, pre.error);
         return {};
     }
 
