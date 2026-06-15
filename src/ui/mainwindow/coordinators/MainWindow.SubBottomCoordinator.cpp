@@ -180,10 +180,9 @@ void MainWindow::onSubBottomOpen()
                         if (!layer) return;
                         layer->sbp_display_state.display = p;
                         layer->sbp_display_state.display_customized = true;
-                        if (layer->sbp_palette != p.palette_index) {
+                        if (layer->sbp_palette != p.palette_index)
                             layer->sbp_palette = p.palette_index;
-                            
-                        }
+                        markProjectDirty();
                     });
 
             if (auto* gain_mod = host->sbpGainModule()) {

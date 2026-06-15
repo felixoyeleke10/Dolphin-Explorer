@@ -3,8 +3,6 @@
 #include "ui/mainwindow/ProcessingDialog.h"
 #include "app/tasks/OperationManager.h"
 
-#include <Qt>
-
 namespace dolphin::ui {
 
 TaskProgressController::TaskProgressController(QWidget*               dialog_parent,

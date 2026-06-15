@@ -73,7 +73,7 @@ void MainWindow::onWaterfallOpen()
                     auto* layer = currentProject()->findLayer(activeLayerId());
                     if (layer && layer->sss_palette != idx) {
                         layer->sss_palette = idx;
-                        
+                        markProjectDirty();
                     }
                 });
         connect(m_waterfall_win, &WaterfallWindow::qcViewedFractionChanged,
@@ -135,7 +135,11 @@ void MainWindow::onWaterfallOpen()
                 const std::string wf_id = m_waterfall_win->currentLayerId();
                 if (!wf_id.empty()) {
                     auto* layer = currentProject()->findLayer(wf_id);
-                    if (layer) { layer->sss_display_state.params = p; layer->sss_display_state.customized = true; }
+                    if (layer) {
+                        layer->sss_display_state.params = p;
+                        layer->sss_display_state.customized = true;
+                        markProjectDirty();
+                    }
                     if (layer && layer->slant_range_corrected != p.slant_range_correction) {
                         layer->slant_range_corrected = p.slant_range_correction;
                         if (m_sss_ctrl) m_sss_ctrl->reloadLayer(wf_id);
@@ -510,8 +514,10 @@ void MainWindow::onChannelChanged(DisplayChannel ch)
 
     // Persist into the active layer's display state so it is restored on layer switch.
     if (currentProject() && !activeLayerId().empty()) {
-        if (auto* layer = currentProject()->findLayer(activeLayerId()))
+        if (auto* layer = currentProject()->findLayer(activeLayerId())) {
             layer->sss_display_state.params.display_channel = ch;
+            markProjectDirty();
+        }
     }
 }
 

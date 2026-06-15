@@ -92,12 +92,12 @@ QList<CommandPaletteItem> MainWindow::buildCommandItems()
     addCmd(CommandId::RunAllLayers,     has_project, [this] { onRunAllLayers(); });
 
     // -- Export ----------------------------------------------------------------
-    addCmd(CommandId::ExportCsv,     has_project, [this] { onExportCsv(); });
-    addCmd(CommandId::ExportGeotiff, has_project, [this] { onExportGeotiff(); });
-    addCmd(CommandId::ExportKmz,     has_project, [this] { onExportKmz(); });
-    addCmd(CommandId::ExportNav,     has_project, [this] { onExportNav(); });
-    addCmd(CommandId::ExportPdf,     has_project, [this] { onExportPdf(); });
-    addCmd(CommandId::ExportScreenshot, true,     [this] { onExportScreenshot(); });
+    addCmd(CommandId::ExportCsv,        has_project, [this] { onExportCsv(); });
+    addCmd(CommandId::ExportGeotiff,    false,       [this] { onExportGeotiff(); });
+    addCmd(CommandId::ExportKmz,        false,       [this] { onExportKmz(); });
+    addCmd(CommandId::ExportNav,        false,       [this] { onExportNav(); });
+    addCmd(CommandId::ExportPdf,        false,       [this] { onExportPdf(); });
+    addCmd(CommandId::ExportScreenshot, true,        [this] { onExportScreenshot(); });
 
     // -- Settings / Help -------------------------------------------------------
     addCmd(CommandId::AppSettings, true, [this] { onAppSettings(); });
