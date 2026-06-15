@@ -354,6 +354,7 @@ add_library(dolphin-ui-mainwindow STATIC
     mainwindow/MainWindow.ToolBar.cpp
     mainwindow/MainWindow.Menus.cpp
     mainwindow/MainWindow.Geodesy.cpp
+    mainwindow/ProjectSessionController.cpp
     mainwindow/MainWindow.Project.cpp
     mainwindow/MainWindow.Events.cpp
     mainwindow/MainWindow.ProjectBinding.cpp

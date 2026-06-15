@@ -150,9 +150,9 @@ void MainWindow::setupCentralWidget()
 
     connect(m_line_list, &LineListPanel::sourceSelected,
             this, [this](const std::string& src_id) {
-        if (m_project) {
-            auto* src = m_project->findSource(src_id);
-            const auto layers = m_project->findLayersBySource(src_id);
+        if (currentProject()) {
+            auto* src = currentProject()->findSource(src_id);
+            const auto layers = currentProject()->findLayersBySource(src_id);
             if (!layers.empty())
                 onLayerSelected(layers.front()->id);
             if (src) appendJobMessage(

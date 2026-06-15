@@ -9,7 +9,7 @@ void MainWindow::onDataLibraryOpen()
 {
     if (!m_data_library_win) {
         m_data_library_win = new DataLibraryWindow(nullptr);
-        m_data_library_win->setProject(m_project.get());
+        m_data_library_win->setProject(currentProject());
 
         connect(m_data_library_win, &DataLibraryWindow::layerActivated,
                 this, &MainWindow::onLayerSelected);

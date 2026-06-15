@@ -9,7 +9,7 @@ void MainWindow::onOpenProcessingWindow()
 {
     if (!m_processing_win) {
         m_processing_win = new ProcessingWindow(this);
-        m_processing_win->setProject(m_project, m_processing_service);
+        m_processing_win->setProject(currentProjectPtr(), m_processing_service);
     }
 
     m_processing_win->show();

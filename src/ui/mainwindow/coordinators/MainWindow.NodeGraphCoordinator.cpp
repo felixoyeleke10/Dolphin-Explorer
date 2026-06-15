@@ -16,7 +16,7 @@ void MainWindow::onNodeGraph()
 {
     if constexpr (!Features::kNodeGraph) return;
 
-    if (!m_project) {
+    if (!currentProject()) {
         const QString ts = QDateTime::currentDateTime().toString("yyyy-MM-dd_HH-mm-ss");
         const QString session_name = "Session_" + ts;
         const QString root_dir =
@@ -25,10 +25,10 @@ void MainWindow::onNodeGraph()
         QDir().mkpath(root_dir);
         const QString proj_path = root_dir + "/" + session_name + ".dlp";
 
-        m_project = app::Project::create(
-            session_name.toStdString(), proj_path.toStdString());
-        if (m_project)
-            m_project->setTempProject(true);
+        m_session_ctrl->adoptNewProject(app::Project::create(
+            session_name.toStdString(), proj_path.toStdString()));
+        if (currentProject())
+            currentProject()->setTempProject(true);
         bindProjectUi();
         appendJobMessage(tr("Created a temporary project for the node graph."));
     }
@@ -37,8 +37,7 @@ void MainWindow::onNodeGraph()
         m_node_graph_win = new NodeGraphWindow(this);
 
         connect(m_node_graph_win, &NodeGraphWindow::graphModified, this, [this]() {
-            m_project_dirty = true;
-            setWindowTitleFromProject();
+            
         });
 
         connect(m_node_graph_win, &NodeGraphWindow::runRequested,
@@ -52,11 +51,11 @@ void MainWindow::onNodeGraph()
     }
 
     // Bind to the currently-active layer (may be null — that's fine)
-    if (m_project && !m_active_layer_id.empty()) {
-        auto* layer = m_project->findLayer(m_active_layer_id);
-        m_node_graph_win->setLayer(layer, m_project.get());
+    if (currentProject() && !m_active_layer_id.empty()) {
+        auto* layer = currentProject()->findLayer(m_active_layer_id);
+        m_node_graph_win->setLayer(layer, currentProject());
     } else {
-        m_node_graph_win->setLayer(nullptr, m_project.get());
+        m_node_graph_win->setLayer(nullptr, currentProject());
     }
 
     m_node_graph_win->show();

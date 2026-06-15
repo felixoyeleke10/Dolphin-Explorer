@@ -36,7 +36,7 @@ void MainWindow::onGeodeticSettings()
         // -- Signal wiring -------------------------------------------------
         connect(m_geodesy_panel, &GeodesyPanel::crsChanged,
                 this, [this](const core::SpatialRef& crs) {
-                    m_pending_crs = crs;
+                    m_session_ctrl->setPendingCrs(crs);
                     if (crs.empty())
                         appendJobMessage(tr("Source CRS reset to Auto-detect"));
                     else
@@ -48,10 +48,10 @@ void MainWindow::onGeodeticSettings()
 
         connect(m_geodesy_panel, &GeodesyPanel::applyRequested,
                 this, [this](const core::SpatialRef& crs, bool force) {
-                    if (!m_project || crs.empty()) return;
+                    if (!currentProject() || crs.empty()) return;
                     int n_applied = 0;
-                    app::ProjectTransaction tx(m_project.get());
-                    for (const auto& layer : m_project->layers()) {
+                    app::ProjectTransaction tx(currentProject());
+                    for (const auto& layer : currentProject()->layers()) {
                         if (!layer) continue;
                         if (!core::spatialRefIsProjected(layer->source_spatial_ref)) continue;
                         if (layer->source_spatial_ref.exact && !force) continue;
@@ -59,9 +59,9 @@ void MainWindow::onGeodeticSettings()
                         layer->source_spatial_ref.exact = true;
                         ++n_applied;
                     }
-                    for (const auto& layer : m_project->layers()) {
+                    for (const auto& layer : currentProject()->layers()) {
                         if (!layer) continue;
-                        auto* src = m_project->findSource(layer->source_id);
+                        auto* src = currentProject()->findSource(layer->source_id);
                         if (!src) continue;
                         if (!core::spatialRefIsProjected(src->source_spatial_ref)) continue;
                         if (src->source_spatial_ref.exact && !force) continue;
@@ -69,16 +69,16 @@ void MainWindow::onGeodeticSettings()
                         src->source_spatial_ref.exact = true;
                     }
                     tx.commit();
-                    m_geodesy_panel->refresh(m_project.get(), m_pending_crs);
+                    m_geodesy_panel->refresh(currentProject(), m_session_ctrl->pendingCrs());
                     if (!m_active_layer_id.empty()) {
-                        const auto* al = m_project->findLayer(m_active_layer_id);
+                        const auto* al = currentProject()->findLayer(m_active_layer_id);
                         // Non-SSS active layer: rebuild the nav track with the new CRS.
                         // SSS tiles are reloaded by the CrsChanged broadcast below.
                         if (m_map_view && al && al->modality != app::Modality::Sidescan)
                             m_map_view->setActiveLayer(m_active_layer_id);
                     }
                     if (m_inspector && !m_active_layer_id.empty()) {
-                        if (auto* layer = m_project->findLayer(m_active_layer_id))
+                        if (auto* layer = currentProject()->findLayer(m_active_layer_id))
                             m_inspector->showLayer(layer);
                     }
                     m_window_registry->broadcast(
@@ -90,7 +90,7 @@ void MainWindow::onGeodeticSettings()
                 });
     }
 
-    m_geodesy_panel->refresh(m_project.get(), m_pending_crs);
+    m_geodesy_panel->refresh(currentProject(), m_session_ctrl->pendingCrs());
     m_geodesy_win->show();
     m_geodesy_win->raise();
     m_geodesy_win->activateWindow();

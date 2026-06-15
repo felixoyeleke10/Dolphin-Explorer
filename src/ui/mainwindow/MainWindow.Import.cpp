@@ -1,5 +1,6 @@
 // MainWindow.Import.cpp — onImportFile, showImportDialog.
 #include "ui/mainwindow/MainWindow.h"
+#include "ui/shell/AppInfo.h"
 #include "ui/shell/Features.h"
 #include "ui/features/import/ImportReviewWizard.h"
 #include "ui/features/import/ImportSetupDialog.h"
@@ -57,7 +58,7 @@ bool MainWindow::ensureProjectForImport(const ImportDialogResult& res)
     if (!res.accepted || res.files.isEmpty()) return false;
 
     if (!res.source_crs.empty())
-        m_pending_crs = res.source_crs;
+        m_session_ctrl->setPendingCrs(res.source_crs);
 
     if (res.target == ImportDialogResult::ProjectTarget::New) {
         const QString folder = res.new_project_folder;
@@ -67,16 +68,30 @@ bool MainWindow::ensureProjectForImport(const ImportDialogResult& res)
             return false;
         }
         const QString proj_path = folder + "/" + res.new_project_name + ".dlp";
-        m_project = app::Project::create(
+        auto new_proj = app::Project::create(
             res.new_project_name.toStdString(), proj_path.toStdString());
-        if (!m_project) {
+        if (!new_proj) {
             QMessageBox::warning(this, tr("Import"),
                 tr("Failed to create project."));
             return false;
         }
-        addToRecentProjects(proj_path);
+        m_session_ctrl->adoptNewProject(std::move(new_proj));
+        // Re-use PSC's addToRecentProjects via the public recentProjectsChanged signal
+        // by calling openProjectPath with the manifest — but here we just wire the
+        // recent entry manually since the project is already in PSC.
+        // NOTE: call rebuildRecentMenu() after so the sidebar reflects the new entry.
+        {
+            QSettings s(AppInfo::kOrgName, AppInfo::kSettingsApp);
+            QStringList list = s.value("recentProjects").toStringList();
+            list.removeAll(proj_path);
+            list.prepend(proj_path);
+            if (list.size() > 8) list.resize(8);
+            s.setValue("recentProjects", list);
+            refreshSidebarSections(list);
+            rebuildRecentMenu();
+        }
         bindProjectUi();
-    } else if (!m_project) {
+    } else if (!currentProject()) {
         // Check whether an existing managed project already holds these files.
         const QString existing = findManagedProjectForPaths(res.files);
         if (!existing.isEmpty()) {
@@ -86,7 +101,7 @@ bool MainWindow::ensureProjectForImport(const ImportDialogResult& res)
                     .arg(proj_name),
                 QMessageBox::Yes | QMessageBox::No);
             if (reply == QMessageBox::Yes) {
-                loadProject(existing.toStdString());
+                m_session_ctrl->openProjectPath(existing.toStdString());
                 return true;
             }
         }
@@ -99,9 +114,10 @@ bool MainWindow::ensureProjectForImport(const ImportDialogResult& res)
             + "/projects/" + session_name;
         QDir().mkpath(root_dir);
         const QString proj_path = root_dir + "/" + session_name + ".dlp";
-        m_project = app::Project::create(
+        auto sess_proj = app::Project::create(
             session_name.toStdString(), proj_path.toStdString());
-        m_project->setTempProject(true);
+        if (sess_proj) sess_proj->setTempProject(true);
+        m_session_ctrl->adoptNewProject(std::move(sess_proj));
         bindProjectUi();
     }
     return true;
@@ -115,7 +131,7 @@ void MainWindow::onImportFile()
     const auto module_filter = setup.moduleFilter();
 
     // Step 2 — review wizard (seeded with last-used CRS + sensor filter).
-    auto* wizard = new ImportReviewWizard(m_project.get(), m_pending_crs, this);
+    auto* wizard = new ImportReviewWizard(currentProject(), m_session_ctrl->pendingCrs(), this);
     wizard->setAttribute(Qt::WA_DeleteOnClose);
     wizard->setModuleFilter(module_filter);
 
@@ -124,7 +140,7 @@ void MainWindow::onImportFile()
         if (!ensureProjectForImport(res)) return;
         // Re-classify against the now-open project; if ensureProject opened an
         // existing project the wizard's ImportNew entries become Reuse/Rebuild.
-        reclassify(res.files, m_project.get());
+        reclassify(res.files, currentProject());
         if constexpr (Features::kImport)
             if (m_import_ctrl) m_import_ctrl->importBatch(res.files);
     });
@@ -138,14 +154,14 @@ void MainWindow::showImportDialog(const QStringList& paths,
     // Legacy entry point (drag-drop from OS shell).
     if (paths.isEmpty()) return;
 
-    auto* wizard = new ImportReviewWizard(m_project.get(), m_pending_crs, this);
+    auto* wizard = new ImportReviewWizard(currentProject(), m_session_ctrl->pendingCrs(), this);
     wizard->setAttribute(Qt::WA_DeleteOnClose);
     wizard->addFiles(paths);
 
     connect(wizard, &ImportReviewWizard::importConfirmed,
             this, [this](ImportDialogResult res) {
         if (!ensureProjectForImport(res)) return;
-        reclassify(res.files, m_project.get());
+        reclassify(res.files, currentProject());
         if constexpr (Features::kImport)
             if (m_import_ctrl) m_import_ctrl->importBatch(res.files);
     });

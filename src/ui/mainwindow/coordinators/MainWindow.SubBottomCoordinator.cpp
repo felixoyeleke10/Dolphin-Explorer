@@ -25,12 +25,12 @@ void MainWindow::onSubBottomOpen()
 {
     // Guard: require at least one sub-bottom layer in the project so the
     // viewer never opens into a permanently-empty/invalid state.
-    if (!m_project) {
+    if (!currentProject()) {
         appendJobMessage(tr("Open a project first."));
         return;
     }
-    const bool has_sbp = std::any_of(m_project->layers().begin(),
-                                     m_project->layers().end(),
+    const bool has_sbp = std::any_of(currentProject()->layers().begin(),
+                                     currentProject()->layers().end(),
                                      [](const auto& l) {
                                          return l
                                              && l->modality == app::Modality::SubBottom
@@ -61,7 +61,7 @@ void MainWindow::onSubBottomOpen()
                     }
                     auto* win = qobject_cast<SBPMetadataWindow*>(m_sbp_metadata_win);
                     if (win)
-                        win->setProject(m_project.get(), m_import_service,
+                        win->setProject(currentProject(), m_import_service,
                                         m_active_layer_id);
                     m_sbp_metadata_win->show();
                     m_sbp_metadata_win->raise();
@@ -88,12 +88,11 @@ void MainWindow::onSubBottomOpen()
                                 if (m_inspector)
                                     m_inspector->rightPanelHost()->setSbpParams(m_sbp_win->displayParams());
                                 // Persist per-layer SBP palette from settings dialog.
-                                if (!m_project || m_active_layer_id.empty()) return;
-                                auto* layer = m_project->findLayer(m_active_layer_id);
+                                if (!currentProject() || m_active_layer_id.empty()) return;
+                                auto* layer = currentProject()->findLayer(m_active_layer_id);
                                 if (layer && layer->sbp_palette != p.palette_index) {
                                     layer->sbp_palette = p.palette_index;
-                                    m_project_dirty = true;
-                                    setWindowTitleFromProject();
+                                    
                                 }
                             });
                     dlg->show();
@@ -101,8 +100,8 @@ void MainWindow::onSubBottomOpen()
 
         connect(m_sbp_win, &SubBottomWindow::prevLineRequested,
                 this, [this](const std::string& from_id) {
-                    if (!m_project) return;
-                    const auto& layers = m_project->layers();
+                    if (!currentProject()) return;
+                    const auto& layers = currentProject()->layers();
                     const std::string& ref = from_id.empty() ? m_active_layer_id : from_id;
                     int cur = -1;
                     for (int i = 0; i < static_cast<int>(layers.size()); ++i)
@@ -118,8 +117,8 @@ void MainWindow::onSubBottomOpen()
 
         connect(m_sbp_win, &SubBottomWindow::nextLineRequested,
                 this, [this](const std::string& from_id) {
-                    if (!m_project) return;
-                    const auto& layers = m_project->layers();
+                    if (!currentProject()) return;
+                    const auto& layers = currentProject()->layers();
                     const std::string& ref = from_id.empty() ? m_active_layer_id : from_id;
                     int cur = -1;
                     for (int i = 0; i < static_cast<int>(layers.size()); ++i)
@@ -176,15 +175,14 @@ void MainWindow::onSubBottomOpen()
                     this, [this](SubBottomDisplayParams p) {
                         if (m_sbp_win) m_sbp_win->applyDisplayParams(p);
                         // Persist per-layer SBP display params so they survive project reload.
-                        if (!m_project || m_active_layer_id.empty()) return;
-                        auto* layer = m_project->findLayer(m_active_layer_id);
+                        if (!currentProject() || m_active_layer_id.empty()) return;
+                        auto* layer = currentProject()->findLayer(m_active_layer_id);
                         if (!layer) return;
                         layer->sbp_display_state.display = p;
                         layer->sbp_display_state.display_customized = true;
                         if (layer->sbp_palette != p.palette_index) {
                             layer->sbp_palette = p.palette_index;
-                            m_project_dirty = true;
-                            setWindowTitleFromProject();
+                            
                         }
                     });
 
@@ -192,78 +190,78 @@ void MainWindow::onSubBottomOpen()
                 connect(gain_mod, &SbpGainModule::applyToLineRequested,
                         this, [this](SbpGainParams p) {
                             const std::string lid = m_sbp_win ? m_sbp_win->currentLayerId() : std::string{};
-                            if (lid.empty() || !m_project || !m_corr_op) return;
-                            auto* layer = m_project->findLayer(lid);
+                            if (lid.empty() || !currentProject() || !m_corr_op) return;
+                            auto* layer = currentProject()->findLayer(lid);
                             if (!layer) return;
                             layer->sbp_display_state.gain = p;
                             layer->sbp_display_state.gain_customized = true;
-                            const auto* src = m_project->findSource(layer->source_id);
+                            const auto* src = currentProject()->findSource(layer->source_id);
                             m_corr_op->applySBP(layer, src ? src->path : std::string{},
                                                 p, layer->sbp_display_state.signal);
                         });
                 connect(gain_mod, &SbpGainModule::applyToAllRequested,
                         this, [this](SbpGainParams p) {
-                            if (!m_project || !m_corr_op) return;
-                            const SbpSignalParams sig = (m_sbp_win && m_project)
+                            if (!currentProject() || !m_corr_op) return;
+                            const SbpSignalParams sig = (m_sbp_win && currentProject())
                                 ? [&]() -> SbpSignalParams {
-                                    auto* l = m_project->findLayer(m_sbp_win->currentLayerId());
+                                    auto* l = currentProject()->findLayer(m_sbp_win->currentLayerId());
                                     return l ? l->sbp_display_state.signal : SbpSignalParams{};
                                   }()
                                 : SbpSignalParams{};
-                            for (const auto& l : m_project->layers())
+                            for (const auto& l : currentProject()->layers())
                                 if (l && l->modality == app::Modality::SubBottom) {
                                     l->sbp_display_state.gain = p;
                                     l->sbp_display_state.gain_customized = true;
                                 }
-                            m_corr_op->applyAllSBP(*m_project, p, sig);
+                            m_corr_op->applyAllSBP(*currentProject(), p, sig);
                         });
             }
             if (auto* sig_mod = host->sbpSignalModule()) {
                 connect(sig_mod, &SbpSignalModule::applyToLineRequested,
                         this, [this](SbpSignalParams p) {
                             const std::string lid = m_sbp_win ? m_sbp_win->currentLayerId() : std::string{};
-                            if (lid.empty() || !m_project || !m_corr_op) return;
-                            auto* layer = m_project->findLayer(lid);
+                            if (lid.empty() || !currentProject() || !m_corr_op) return;
+                            auto* layer = currentProject()->findLayer(lid);
                             if (!layer) return;
                             layer->sbp_display_state.signal = p;
                             layer->sbp_display_state.signal_customized = true;
-                            const auto* src = m_project->findSource(layer->source_id);
+                            const auto* src = currentProject()->findSource(layer->source_id);
                             m_corr_op->applySBP(layer, src ? src->path : std::string{},
                                                 layer->sbp_display_state.gain, p);
                         });
                 connect(sig_mod, &SbpSignalModule::applyToAllRequested,
                         this, [this](SbpSignalParams p) {
-                            if (!m_project || !m_corr_op) return;
-                            const SbpGainParams gain = (m_sbp_win && m_project)
+                            if (!currentProject() || !m_corr_op) return;
+                            const SbpGainParams gain = (m_sbp_win && currentProject())
                                 ? [&]() -> SbpGainParams {
-                                    auto* l = m_project->findLayer(m_sbp_win->currentLayerId());
+                                    auto* l = currentProject()->findLayer(m_sbp_win->currentLayerId());
                                     return l ? l->sbp_display_state.gain : SbpGainParams{};
                                   }()
                                 : SbpGainParams{};
-                            for (const auto& l : m_project->layers())
+                            for (const auto& l : currentProject()->layers())
                                 if (l && l->modality == app::Modality::SubBottom) {
                                     l->sbp_display_state.signal = p;
                                     l->sbp_display_state.signal_customized = true;
                                 }
-                            m_corr_op->applyAllSBP(*m_project, gain, p);
+                            m_corr_op->applyAllSBP(*currentProject(), gain, p);
                         });
             }
         }
     }
 
     // Populate the LINES list with every SBP layer in the current project.
-    if (m_project) {
+    if (currentProject()) {
         std::vector<std::pair<std::string, std::string>> sbp_layers;
-        for (const auto& l : m_project->layers())
+        for (const auto& l : currentProject()->layers())
             if (l && l->modality == app::Modality::SubBottom)
                 sbp_layers.emplace_back(l->id, l->label);
         m_sbp_win->setProjectLayers(sbp_layers);
     }
 
-    if (m_project && !m_active_layer_id.empty()) {
-        auto* layer = m_project->findLayer(m_active_layer_id);
+    if (currentProject() && !m_active_layer_id.empty()) {
+        auto* layer = currentProject()->findLayer(m_active_layer_id);
         if (layer && layer->modality == app::Modality::SubBottom) {
-            const auto* src = m_project->findSource(layer->source_id);
+            const auto* src = currentProject()->findSource(layer->source_id);
             m_sbp_win->setLayer(layer, m_import_service,
                                 src ? src->path : std::string{},
                                 src ? src->size_bytes : 0);

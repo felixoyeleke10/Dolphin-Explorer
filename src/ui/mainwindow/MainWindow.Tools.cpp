@@ -43,9 +43,9 @@ QString exportStartDir()
 
 void MainWindow::onExportCsv()
 {
-    if (!m_project) { appendJobMessage(tr("Open a project before exporting.")); return; }
+    if (!currentProject()) { appendJobMessage(tr("Open a project before exporting.")); return; }
 
-    const auto& contacts = m_project->contacts();
+    const auto& contacts = currentProject()->contacts();
     if (contacts.empty()) {
         appendJobMessage(tr("No contacts to export."));
         return;
@@ -113,7 +113,7 @@ void MainWindow::onExportCsv()
 
 void MainWindow::onExportGeotiff()
 {
-    if (!m_project) { appendJobMessage(tr("Open a project before exporting.")); return; }
+    if (!currentProject()) { appendJobMessage(tr("Open a project before exporting.")); return; }
     const QString path = QFileDialog::getSaveFileName(
         this, tr("Export as GeoTIFF"), exportStartDir(),
         tr("GeoTIFF files (*.tif *.tiff);;All files (*)"));
@@ -123,7 +123,7 @@ void MainWindow::onExportGeotiff()
 
 void MainWindow::onExportKmz()
 {
-    if (!m_project) { appendJobMessage(tr("Open a project before exporting.")); return; }
+    if (!currentProject()) { appendJobMessage(tr("Open a project before exporting.")); return; }
     const QString path = QFileDialog::getSaveFileName(
         this, tr("Export as KMZ"), exportStartDir(),
         tr("KMZ files (*.kmz);;All files (*)"));
@@ -133,7 +133,7 @@ void MainWindow::onExportKmz()
 
 void MainWindow::onExportNav()
 {
-    if (!m_project) { appendJobMessage(tr("Open a project before exporting.")); return; }
+    if (!currentProject()) { appendJobMessage(tr("Open a project before exporting.")); return; }
     const QString path = QFileDialog::getSaveFileName(
         this, tr("Export Navigation"), exportStartDir(),
         tr("CSV files (*.csv);;NMEA files (*.nmea *.txt);;All files (*)"));
@@ -143,7 +143,7 @@ void MainWindow::onExportNav()
 
 void MainWindow::onExportPdf()
 {
-    if (!m_project) { appendJobMessage(tr("Open a project before exporting.")); return; }
+    if (!currentProject()) { appendJobMessage(tr("Open a project before exporting.")); return; }
     const QString path = QFileDialog::getSaveFileName(
         this, tr("Export Survey Report"), exportStartDir(),
         tr("PDF files (*.pdf);;All files (*)"));
@@ -153,8 +153,8 @@ void MainWindow::onExportPdf()
 
 void MainWindow::onExportScreenshot()
 {
-    const QString base = m_project
-        ? QString::fromStdString(m_project->name())
+    const QString base = currentProject()
+        ? QString::fromStdString(currentProject()->name())
         : QStringLiteral("DolphinExplorer");
     const QString stamp = QDateTime::currentDateTime().toString("yyyyMMdd_HHmmss");
     const QString suggested = QDir(exportStartDir())
@@ -260,11 +260,11 @@ void MainWindow::onToolMeasure()
 
 void MainWindow::onBottomTrack()
 {
-    if (!m_project || m_active_layer_id.empty()) {
+    if (!currentProject() || m_active_layer_id.empty()) {
         appendJobMessage(tr("Select a sub-bottom layer first."));
         return;
     }
-    const auto* layer = m_project->findLayer(m_active_layer_id);
+    const auto* layer = currentProject()->findLayer(m_active_layer_id);
     if (!layer || layer->modality != app::Modality::SubBottom) {
         appendJobMessage(tr("Sub-bottom Viewer requires a sub-bottom profiler layer."));
         return;
@@ -277,7 +277,7 @@ void MainWindow::onBottomTrack()
 
 void MainWindow::onAddContact()
 {
-    if (!m_project) {
+    if (!currentProject()) {
         appendJobMessage(tr("Open a project before placing contacts."));
         return;
     }
@@ -310,16 +310,16 @@ void MainWindow::onMeasurementUpdated(double metres)
 
 void MainWindow::onContactPickedOnMap(double lon, double lat)
 {
-    if (!m_project) return;
+    if (!currentProject()) return;
     core::Contact c;
     c.lat = lat;
     c.lon = lon;
-    c.spatial_ref = m_project->displaySpatialRef();
-    const int n = static_cast<int>(m_project->contacts().size()) + 1;
+    c.spatial_ref = currentProject()->displaySpatialRef();
+    const int n = static_cast<int>(currentProject()->contacts().size()) + 1;
     c.label = "C" + QString::number(n).rightJustified(3, '0').toStdString();
     m_undo_stack->push(new AddContactCommand(
-        m_project.get(), c,
-        [this]() { m_project_dirty = true; setWindowTitleFromProject(); }));
+        currentProject(), c,
+        [this]() {  }));
     appendJobMessage(tr("Contact %1 placed at %2, %3")
         .arg(QString::fromStdString(c.label))
         .arg(lat, 0, 'f', 6)
@@ -330,9 +330,9 @@ void MainWindow::onContactPickedOnMap(double lon, double lat)
 
 void MainWindow::onRenumberContacts()
 {
-    const QString layer_name = (!m_active_layer_id.empty() && m_project)
+    const QString layer_name = (!m_active_layer_id.empty() && currentProject())
         ? [&]() -> QString {
-              auto* l = m_project->findLayer(m_active_layer_id);
+              auto* l = currentProject()->findLayer(m_active_layer_id);
               return l ? QString::fromStdString(l->label) : tr("No layer selected");
           }()
         : tr("No layer selected");
@@ -368,9 +368,9 @@ void MainWindow::onRenumberContacts()
 
 void MainWindow::onLineProps()
 {
-    const QString layer_name = (!m_active_layer_id.empty() && m_project)
+    const QString layer_name = (!m_active_layer_id.empty() && currentProject())
         ? [&]() -> QString {
-              auto* l = m_project->findLayer(m_active_layer_id);
+              auto* l = currentProject()->findLayer(m_active_layer_id);
               return l ? QString::fromStdString(l->label) : tr("No layer selected");
           }()
         : tr("No layer selected");
@@ -417,17 +417,17 @@ void MainWindow::onResetRaw()
 
 void MainWindow::onClearContacts()
 {
-    if (!m_project) return;
-    const auto& contacts = m_project->contacts();
+    if (!currentProject()) return;
+    const auto& contacts = currentProject()->contacts();
     if (contacts.empty()) return;
     if (QMessageBox::question(this, tr("Clear Contacts"),
             tr("Remove all contacts from this project?"),
             QMessageBox::Yes | QMessageBox::No) != QMessageBox::Yes)
         return;
     m_undo_stack->push(new ClearContactsCommand(
-        m_project.get(),
+        currentProject(),
         std::vector<core::Contact>(contacts.begin(), contacts.end()),
-        [this]() { m_project_dirty = true; setWindowTitleFromProject(); }));
+        [this]() {  }));
 }
 
 void MainWindow::onAbout()

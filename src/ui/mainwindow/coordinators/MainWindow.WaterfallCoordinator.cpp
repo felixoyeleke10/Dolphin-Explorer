@@ -69,12 +69,11 @@ void MainWindow::onWaterfallOpen()
                 this, [this](int idx) {
                     onPaletteChanged(idx);
                     // Persist per-layer SSS palette so it survives project close/reopen.
-                    if (!m_project || m_active_layer_id.empty()) return;
-                    auto* layer = m_project->findLayer(m_active_layer_id);
+                    if (!currentProject() || m_active_layer_id.empty()) return;
+                    auto* layer = currentProject()->findLayer(m_active_layer_id);
                     if (layer && layer->sss_palette != idx) {
                         layer->sss_palette = idx;
-                        m_project_dirty = true;
-                        setWindowTitleFromProject();
+                        
                     }
                 });
         connect(m_waterfall_win, &WaterfallWindow::qcViewedFractionChanged,
@@ -82,10 +81,8 @@ void MainWindow::onWaterfallOpen()
                     // WaterfallScrollSync already writes to layer->qc_viewed_fraction
                     // before emitting this signal — just mark the project dirty so
                     // the updated fraction is included in the next save.
-                    if (m_project && !m_project_dirty) {
-                        m_project_dirty = true;
-                        setWindowTitleFromProject();
-                    }
+                    if (currentProject() && !isProjectDirty())
+                        markProjectDirty();
                 });
         connect(m_waterfall_win, &WaterfallWindow::dataStateChanged,
                 this, [this](ViewerDataState s) {
@@ -131,18 +128,18 @@ void MainWindow::onWaterfallOpen()
             m_imaging_panel->setParams(p);
             if (m_sss_ctrl) m_sss_ctrl->setDisplayParams(p);
 
-            if (m_project) {
+            if (currentProject()) {
                 // Use the layer the waterfall is actually showing, which may
                 // differ from m_active_layer_id when the user has navigated
                 // Prev/Next inside the waterfall window.
                 const std::string wf_id = m_waterfall_win->currentLayerId();
                 if (!wf_id.empty()) {
-                    auto* layer = m_project->findLayer(wf_id);
+                    auto* layer = currentProject()->findLayer(wf_id);
                     if (layer) { layer->sss_display_state.params = p; layer->sss_display_state.customized = true; }
                     if (layer && layer->slant_range_corrected != p.slant_range_correction) {
                         layer->slant_range_corrected = p.slant_range_correction;
                         if (m_sss_ctrl) m_sss_ctrl->reloadLayer(wf_id);
-                        app::ProjectTransaction tx(m_project.get());
+                        app::ProjectTransaction tx(currentProject());
                         tx.commit();
                     }
                 }
@@ -151,10 +148,10 @@ void MainWindow::onWaterfallOpen()
 
         // "Apply to all" — propagate full params + SRC to every layer.
         connect(m_waterfall_win, &WaterfallWindow::applyToAllRequested, this, [this]() {
-            if (!m_project || !m_waterfall_win) return;
+            if (!currentProject() || !m_waterfall_win) return;
             const WaterfallParams p = m_waterfall_win->currentParams();
-            app::ProjectTransaction tx(m_project.get());
-            for (const auto& l : m_project->layers()) {
+            app::ProjectTransaction tx(currentProject());
+            for (const auto& l : currentProject()->layers()) {
                 if (!l) continue;
                 l->slant_range_corrected = p.slant_range_correction;
                 l->sss_display_state.params = p;
@@ -163,7 +160,7 @@ void MainWindow::onWaterfallOpen()
             if (m_sss_ctrl) m_sss_ctrl->reloadCurrentLayer();
             tx.commit();
             // Bake amplitude corrections into every layer's .dlpd.
-            if (m_corr_op) m_corr_op->applyAllSSS(*m_project, toCorrectionParams(p));
+            if (m_corr_op) m_corr_op->applyAllSSS(*currentProject(), toCorrectionParams(p));
         });
 
         // -- Bake-to-dlpd wiring -----------------------------------------------
@@ -173,12 +170,12 @@ void MainWindow::onWaterfallOpen()
         // corrected data — not just the current session's display preview.
         if (m_corr_op) {
             auto bakeCurrentLine = [this](const WaterfallParams& p) {
-                if (!m_project || !m_waterfall_win) return;
+                if (!currentProject() || !m_waterfall_win) return;
                 const std::string wf_id = m_waterfall_win->currentLayerId();
                 if (wf_id.empty()) return;
-                auto* layer = m_project->findLayer(wf_id);
+                auto* layer = currentProject()->findLayer(wf_id);
                 if (!layer) return;
-                const auto* src = m_project->findSource(layer->source_id);
+                const auto* src = currentProject()->findSource(layer->source_id);
                 m_corr_op->applySSS(layer, src ? src->path : std::string{},
                                     toCorrectionParams(p));
             };
@@ -193,23 +190,23 @@ void MainWindow::onWaterfallOpen()
     }
 
     // Populate the FILES list with every sidescan layer in the current project.
-    if (m_project) {
+    if (currentProject()) {
         std::vector<std::pair<std::string, std::string>> sss_layers;
-        for (const auto& l : m_project->layers())
+        for (const auto& l : currentProject()->layers())
             if (l && l->modality == app::Modality::Sidescan)
                 sss_layers.emplace_back(l->id, l->label);
         m_waterfall_win->setProjectLayers(sss_layers);
     }
 
-    if (m_project && !m_active_layer_id.empty()) {
-        auto* layer = m_project->findLayer(m_active_layer_id);
+    if (currentProject() && !m_active_layer_id.empty()) {
+        auto* layer = currentProject()->findLayer(m_active_layer_id);
         if (layer && layer->modality == app::Modality::Sidescan) {
-            const auto* src    = m_project->findSource(layer->source_id);
+            const auto* src    = currentProject()->findSource(layer->source_id);
             const std::string path = src ? src->path : std::string{};
             const uint64_t    sz   = src ? src->size_bytes : 0;
             m_waterfall_win->setLayer(layer, m_import_service, path, sz);
             applyStoredNavParams(m_active_layer_id);
-            m_waterfall_win->setProjectContacts(m_project->contacts());
+            m_waterfall_win->setProjectContacts(currentProject()->contacts());
 
             // Restore per-layer display params if the user has previously adjusted them.
             if (layer->sss_display_state.customized)
@@ -230,7 +227,7 @@ void MainWindow::onWaterfallOpen()
     // Sync palette: use the per-layer saved palette if available, otherwise fall
     // back to the Properties inspector (which shows the app-wide default).
     {
-        auto* layer = m_project ? m_project->findLayer(m_active_layer_id) : nullptr;
+        auto* layer = currentProject() ? currentProject()->findLayer(m_active_layer_id) : nullptr;
         if (layer && layer->sss_palette >= 0)
             m_waterfall_win->setPalette(layer->sss_palette);
         else if (m_inspector)
@@ -244,8 +241,8 @@ void MainWindow::onWaterfallOpen()
 
 void MainWindow::onWaterfallPrevLine(const std::string& from_layer_id)
 {
-    if (!m_project) return;
-    const auto& layers = m_project->layers();
+    if (!currentProject()) return;
+    const auto& layers = currentProject()->layers();
     if (layers.empty()) return;
 
     const std::string& ref_id = from_layer_id.empty() ? m_active_layer_id : from_layer_id;
@@ -266,8 +263,8 @@ void MainWindow::onWaterfallPrevLine(const std::string& from_layer_id)
 
 void MainWindow::onWaterfallNextLine(const std::string& from_layer_id)
 {
-    if (!m_project) return;
-    const auto& layers = m_project->layers();
+    if (!currentProject()) return;
+    const auto& layers = currentProject()->layers();
     if (layers.empty()) return;
 
     const std::string& ref_id = from_layer_id.empty() ? m_active_layer_id : from_layer_id;
@@ -311,9 +308,9 @@ void MainWindow::onWaterfallContactCreated(float range_m, double lat, double lon
                                            uint64_t abs_row,
                                            int channel_idx)
 {
-    if (!m_project) return;
+    if (!currentProject()) return;
 
-    const int n = static_cast<int>(m_project->contacts().size()) + 1;
+    const int n = static_cast<int>(currentProject()->contacts().size()) + 1;
     core::Contact c;
     c.label          = QString("C%1").arg(n, 3, 10, QChar('0')).toStdString();
     c.lat            = lat;
@@ -328,8 +325,8 @@ void MainWindow::onWaterfallContactCreated(float range_m, double lat, double lon
     c.sample_idx     = static_cast<uint32_t>(channel_idx);
 
     m_undo_stack->push(new AddContactCommand(
-        m_project.get(), c,
-        [this]() { m_project_dirty = true; setWindowTitleFromProject(); }));
+        currentProject(), c,
+        [this]() {  }));
 
     appendJobMessage(
         QString("Contact %1 placed \u2014 %2 (%3 m)")
@@ -340,8 +337,8 @@ void MainWindow::onWaterfallContactCreated(float range_m, double lat, double lon
 
 void MainWindow::onWaterfallParamsApplied()
 {
-    if (!m_active_layer_id.empty() && m_project) {
-        if (const auto* layer = m_project->findLayer(m_active_layer_id)) {
+    if (!m_active_layer_id.empty() && currentProject()) {
+        if (const auto* layer = currentProject()->findLayer(m_active_layer_id)) {
             recordActivity(ActivityKind::DisplayParams,
                 tr("Display params applied to %1")
                     .arg(QString::fromStdString(layer->label)));
@@ -355,8 +352,8 @@ void MainWindow::onContactSelected(uint64_t contact_id)
 {
     if (m_map_view) m_map_view->setSelectedContact(contact_id);
 
-    if (!m_project || !m_inspector) return;
-    for (const auto& c : m_project->contacts())
+    if (!currentProject() || !m_inspector) return;
+    for (const auto& c : currentProject()->contacts())
         if (c.id == contact_id) { m_inspector->showContact(&c); return; }
 }
 
@@ -377,7 +374,7 @@ void MainWindow::onWaterfallMetadata()
 
     auto* win = qobject_cast<SSSMetadataWindow*>(m_metadata_win);
     if (win)
-        win->setProject(m_project.get(), m_import_service, m_active_layer_id);
+        win->setProject(currentProject(), m_import_service, m_active_layer_id);
 
     m_metadata_win->show();
     m_metadata_win->raise();
@@ -400,12 +397,12 @@ void MainWindow::onWaterfallSettings()
 
 void MainWindow::onWaterfallSetCrs(const std::string& from_layer_id)
 {
-    if (!m_project) return;
+    if (!currentProject()) return;
 
     // Use the layer the waterfall is actually showing, which may differ from
     // m_active_layer_id when the user has used Prev/Next inside the waterfall.
     const std::string ref_id = from_layer_id.empty() ? m_active_layer_id : from_layer_id;
-    auto* layer = m_project->findLayer(ref_id);
+    auto* layer = currentProject()->findLayer(ref_id);
     if (!layer) return;
 
     // Open picker pre-seeded with the current (possibly unconfirmed) CRS
@@ -422,19 +419,19 @@ void MainWindow::onWaterfallSetCrs(const std::string& from_layer_id)
     // the project.  The project display CRS (map target) is left unchanged; the
     // normalisation step reprojects source coordinates into it on reload.
     auto apply_crs = [this, ref_id](const core::SpatialRef& ref) {
-        if (!m_project) return;
+        if (!currentProject()) return;
         {
-            app::ProjectTransaction tx(m_project.get());
-            for (const auto& l : m_project->layers())
+            app::ProjectTransaction tx(currentProject());
+            for (const auto& l : currentProject()->layers())
                 if (l) l->source_spatial_ref = ref;
-            for (const auto& l : m_project->layers()) {
+            for (const auto& l : currentProject()->layers()) {
                 if (!l) continue;
-                if (auto* src = m_project->findSource(l->source_id))
+                if (auto* src = currentProject()->findSource(l->source_id))
                     src->source_spatial_ref = ref;
             }
             tx.commit();
         }
-        auto* lyr = m_project->findLayer(ref_id);
+        auto* lyr = currentProject()->findLayer(ref_id);
         if (!ref_id.empty() && ref_id != m_active_layer_id) {
             m_active_layer_id = ref_id;
             m_app_state->setSelection({ref_id, lyr ? lyr->modality : app::Modality::Unknown});
@@ -442,7 +439,7 @@ void MainWindow::onWaterfallSetCrs(const std::string& from_layer_id)
         }
         if (m_sss_ctrl) m_sss_ctrl->reloadCurrentLayer();
         if (m_waterfall_win && lyr) {
-            const auto* src = m_project->findSource(lyr->source_id);
+            const auto* src = currentProject()->findSource(lyr->source_id);
             m_waterfall_win->setLayer(lyr, m_import_service,
                                       src ? src->path : std::string{},
                                       src ? src->size_bytes : 0);
@@ -460,7 +457,7 @@ void MainWindow::onWaterfallSetCrs(const std::string& from_layer_id)
     m_undo_stack->push(new SetSourceCrsCommand(old_ref, new_ref, apply_crs));
 
     const std::string display = geo::epsgDisplayName(new_ref);
-    const int n = static_cast<int>(m_project->layers().size());
+    const int n = static_cast<int>(currentProject()->layers().size());
     appendJobMessage(tr("Source CRS set to %1 — applied to %2 layer(s)")
         .arg(QString::fromStdString(display)).arg(n));
     recordActivity(ActivityKind::CrsChange,
@@ -469,12 +466,12 @@ void MainWindow::onWaterfallSetCrs(const std::string& from_layer_id)
 
 void MainWindow::onWaterfallNavProcessAllLines(NavProcessingParams params)
 {
-    if (!m_project) return;
+    if (!currentProject()) return;
 
     auto old_state = m_layer_nav_params;
     auto new_state = old_state;
     int n = 0;
-    for (const auto& layer : m_project->layers()) {
+    for (const auto& layer : currentProject()->layers()) {
         if (!layer || layer->modality != app::Modality::Sidescan) continue;
         new_state[layer->id] = params;
         ++n;
@@ -483,8 +480,7 @@ void MainWindow::onWaterfallNavProcessAllLines(NavProcessingParams params)
 
     auto apply = [this](const std::unordered_map<std::string, NavProcessingParams>& map) {
         m_layer_nav_params = map;
-        m_project_dirty = true;
-        setWindowTitleFromProject();
+        
     };
     m_undo_stack->push(new SetNavParamsAllCommand(
         std::move(old_state), std::move(new_state), std::move(apply)));
@@ -513,8 +509,8 @@ void MainWindow::onChannelChanged(DisplayChannel ch)
         m_waterfall_win->setDisplayChannel(ch);
 
     // Persist into the active layer's display state so it is restored on layer switch.
-    if (m_project && !m_active_layer_id.empty()) {
-        if (auto* layer = m_project->findLayer(m_active_layer_id))
+    if (currentProject() && !m_active_layer_id.empty()) {
+        if (auto* layer = currentProject()->findLayer(m_active_layer_id))
             layer->sss_display_state.params.display_channel = ch;
     }
 }

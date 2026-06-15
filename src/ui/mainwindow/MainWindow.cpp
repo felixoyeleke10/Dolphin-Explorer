@@ -1,5 +1,6 @@
 // MainWindow.cpp — constructor + service wiring only
 #include "ui/mainwindow/MainWindow.h"
+#include "ui/mainwindow/ProjectSessionController.h"
 #include "ui/systems/ProjectEventBus.h"
 #include "ui/mainwindow/MainStatusBar.h"
 #include "ui/bottom/BottomDockPanel.h"
@@ -57,9 +58,9 @@ MainWindow::MainWindow(QWidget* parent)
     // the new value on its next setLayer() call.
     auto reloadWaterfall = [this]() {
         if (!m_waterfall_win || !m_waterfall_win->isVisible()) return;
-        if (!m_project || m_active_layer_id.empty()) return;
-        if (auto* layer = m_project->findLayer(m_active_layer_id)) {
-            const auto* src = m_project->findSource(layer->source_id);
+        if (!currentProject() || m_active_layer_id.empty()) return;
+        if (auto* layer = currentProject()->findLayer(m_active_layer_id)) {
+            const auto* src = currentProject()->findSource(layer->source_id);
             m_waterfall_win->setLayer(layer, m_import_service,
                 src ? src->path : std::string{},
                 src ? src->size_bytes : 0);
@@ -81,6 +82,9 @@ MainWindow::MainWindow(QWidget* parent)
 
     // Hub must exist before setupCentralWidget (which builds BottomDockPanel).
     m_diag_hub = new DiagnosticsHub(this);
+
+    // PSC must be created after m_undo_stack, m_diag_hub, m_op_mgr, m_import_service.
+    // It is wired to MainWindow signals below, after services are ready.
     {
         auto* runtime_logs = RuntimeLogBridge::instance();
         connect(runtime_logs, &RuntimeLogBridge::messageLogged,
@@ -153,6 +157,7 @@ MainWindow::MainWindow(QWidget* parent)
                 }
             });
 
+    // PSC is constructed after import_service is available (see below).
     if constexpr (Features::kImport) {
         m_import_service = new app::ImportService(this);
 
@@ -164,8 +169,8 @@ MainWindow::MainWindow(QWidget* parent)
                 [this](const std::string& layer_id) {
                     if (m_import_service->isRebuildingLayer(layer_id)) return;
                     QString label = tr("Importing…");
-                    if (m_project) {
-                        if (const auto* layer = m_project->findLayer(layer_id))
+                    if (currentProject()) {
+                        if (const auto* layer = currentProject()->findLayer(layer_id))
                             label = tr("Importing %1")
                                 .arg(QString::fromStdString(layer->label));
                     }
@@ -188,8 +193,8 @@ MainWindow::MainWindow(QWidget* parent)
                         m_import_job_ids.erase(it);
                     }
                     taskDone(QStringLiteral("import:") + QString::fromStdString(layer_id));
-                    if (m_project) {
-                        if (const auto* layer = m_project->findLayer(layer_id))
+                    if (currentProject()) {
+                        if (const auto* layer = currentProject()->findLayer(layer_id))
                             recordActivity(ActivityKind::Import,
                                 tr("Imported: %1")
                                     .arg(QString::fromStdString(layer->label)));
@@ -220,6 +225,69 @@ MainWindow::MainWindow(QWidget* parent)
 
     if constexpr (Features::kProcessing)
         m_processing_service = new app::ProcessingService(this);
+
+    // --- ProjectSessionController ------------------------------------------
+    // Owns: m_project, m_project_dirty, m_pending_crs, and all CRUD slots.
+    // All MainWindow aspect files access project state via currentProject() /
+    // currentProjectPtr() / isProjectDirty() / markProjectDirty() helpers.
+    m_session_ctrl = new ProjectSessionController(
+        m_undo_stack, m_diag_hub, m_op_mgr, m_import_service, this, this);
+
+    // openProject() for cache-only files encodes the path in a "job message"
+    // prefixed with __import_cache__: so MainWindow can intercept it.
+    connect(m_session_ctrl, &ProjectSessionController::jobMessage,
+            this, [this](const QString& msg) {
+        if (msg.startsWith("__import_cache__:"))
+            showImportDialog({msg.mid(17)});
+        else
+            appendJobMessage(msg);
+    });
+    connect(m_session_ctrl, &ProjectSessionController::windowTitleChanged,
+            this, &MainWindow::setWindowTitle);
+    connect(m_session_ctrl, &ProjectSessionController::recentProjectsChanged,
+            this, [this](const QStringList& paths) {
+        refreshSidebarSections(paths);
+        rebuildRecentMenu();
+    });
+    connect(m_session_ctrl, &ProjectSessionController::projectAboutToChange,
+            this, [this]() {
+        if (m_viewport_host) m_viewport_host->setUpdatesEnabled(false);
+        if (m_sss_ctrl) m_sss_ctrl->deactivate(true);
+        if (m_import_service) m_import_service->cancelPendingRebuild();
+        m_active_layer_id.clear();
+        clearNavigationHistory();
+    });
+    connect(m_session_ctrl, &ProjectSessionController::projectChanged,
+            this, [this](std::shared_ptr<app::Project>) {
+        bindProjectUi();
+        // For close/failed-open: re-enable viewport immediately.
+        // For successful open: firstLayerReady() re-enables after next tick.
+        if (!m_session_ctrl->project())
+            if (m_viewport_host) m_viewport_host->setUpdatesEnabled(true);
+    });
+    connect(m_session_ctrl, &ProjectSessionController::firstLayerReady,
+            this, [this](const std::string& first_layer_id) {
+        if (m_viewport_host) m_viewport_host->setUpdatesEnabled(true);
+        const auto proj = m_session_ctrl->project();
+        if (!proj) return;
+
+        using M = app::Modality;
+        for (const auto& layer : proj->layers()) {
+            if (!layer || !layer->index_built || layer->artifact_index.empty()) continue;
+            if (layer->modality == M::Sidescan) {
+                if (m_sss_ctrl)
+                    m_sss_ctrl->activateLayer(layer->id, proj.get());
+            } else if (m_map_view) {
+                m_map_view->setActiveLayer(layer->id);
+                m_map_view->setNavTrackVisible(layer->id, true);
+            }
+        }
+        if (m_viewport_host) m_viewport_host->setActiveLayer({});
+
+        if (!first_layer_id.empty())
+            onLayerSelected(first_layer_id);
+    });
+    // -----------------------------------------------------------------------
 
     setupCentralWidget();
     RuntimeLogBridge::instance()->replayPending();
@@ -303,12 +371,9 @@ MainWindow::MainWindow(QWidget* parent)
                     if (m_node_graph_win) m_node_graph_win->refreshLayerList();
                 });
     }
-    // Project dirty flag.
+    // Project dirty flag — route via PSC so title stays in sync.
     connect(m_event_bus, &ProjectEventBus::projectModified,
-            this, [this]() {
-                m_project_dirty = true;
-                setWindowTitleFromProject();
-            });
+            this, [this]() { markProjectDirty(); });
     // Route layerDataChanged through WindowRegistry so every registered viewer
     // (waterfall, SBP, SSS map) reloads the affected layer automatically.
     connect(m_event_bus, &ProjectEventBus::layerDataChanged,
@@ -348,14 +413,14 @@ MainWindow::MainWindow(QWidget* parent)
             this, [this](const std::string& layer_id,
                          const std::string& /*new_path*/,
                          const core::ArtifactIndex& /*new_index*/) {
-                const auto* layer = m_project ? m_project->findLayer(layer_id) : nullptr;
+                const auto* layer = currentProject() ? currentProject()->findLayer(layer_id) : nullptr;
                 if (layer)
                     appendJobMessage(tr("Corrections baked into %1")
                         .arg(QString::fromStdString(layer->label)));
             });
     connect(m_corr_op, &CorrectionBatchOperator::correctionSkipped,
             this, [this](const std::string& layer_id) {
-                const auto* layer = m_project ? m_project->findLayer(layer_id) : nullptr;
+                const auto* layer = currentProject() ? currentProject()->findLayer(layer_id) : nullptr;
                 if (layer)
                     appendJobMessage(tr("Corrections already baked — skipped %1")
                         .arg(QString::fromStdString(layer->label)));
@@ -394,7 +459,7 @@ MainWindow::MainWindow(QWidget* parent)
                     // Only Sidescan layers trigger a background map-build task.
                     // For all other modalities onLayerSelected returns synchronously
                     // and loadingFinished never fires, so don't call onMapLoadPending.
-                    const auto* layer = m_project ? m_project->findLayer(layer_id) : nullptr;
+                    const auto* layer = currentProject() ? currentProject()->findLayer(layer_id) : nullptr;
                     const bool  needs_map_build = layer
                         && layer->modality == app::Modality::Sidescan;
                     if (needs_map_build)
@@ -420,8 +485,8 @@ MainWindow::MainWindow(QWidget* parent)
                 });
         connect(m_import_ctrl, &ExecutionController::cacheLayerReady,
                 this, [this](const std::string& layer_id) {
-                    if (!m_project) return;
-                    auto* layer = m_project->findLayer(layer_id);
+                    if (!currentProject()) return;
+                    auto* layer = currentProject()->findLayer(layer_id);
                     if (!layer || !layer->index_built) return;
 
                     const bool needs_map_build =
@@ -434,15 +499,14 @@ MainWindow::MainWindow(QWidget* parent)
                         onLayerSelected(layer_id);
                     } else {
                         if (layer->modality == M::Sidescan && m_sss_ctrl)
-                            m_sss_ctrl->activateLayer(layer_id, m_project.get());
+                            m_sss_ctrl->activateLayer(layer_id, currentProject());
                         else if (m_map_view) {
                             m_map_view->setActiveLayer(layer_id);
                             m_map_view->setNavTrackVisible(layer_id, true);
                         }
                     }
 
-                    m_project_dirty = true;
-                    setWindowTitleFromProject();
+                    markProjectDirty();
                 });
         connect(m_import_ctrl, &ExecutionController::statusMessage,
                 this, &MainWindow::appendJobMessage);
@@ -527,5 +591,28 @@ MainWindow::MainWindow(QWidget* parent)
     appendJobMessage("Workstation ready.");
 }
 
+// -- Project session helpers (shorthand for aspect files) -------------------
+
+app::Project* MainWindow::currentProject() const noexcept
+{
+    if (!m_session_ctrl) return nullptr;
+    const auto& p = m_session_ctrl->project();
+    return p ? p.get() : nullptr;
+}
+
+std::shared_ptr<app::Project> MainWindow::currentProjectPtr() const noexcept
+{
+    return m_session_ctrl ? m_session_ctrl->project() : nullptr;
+}
+
+bool MainWindow::isProjectDirty() const noexcept
+{
+    return m_session_ctrl && m_session_ctrl->isDirty();
+}
+
+void MainWindow::markProjectDirty()
+{
+    if (m_session_ctrl) m_session_ctrl->markDirty();
+}
 
 } // namespace dolphin::ui

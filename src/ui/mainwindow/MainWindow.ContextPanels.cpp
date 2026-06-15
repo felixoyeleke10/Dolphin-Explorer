@@ -71,7 +71,7 @@ void MainWindow::buildContextPanel(QWidget* parent)
                 // can cause the main window to blink or lose focus.
                 const QString path = item->data(Qt::UserRole).toString();
                 QTimer::singleShot(0, this, [this, path]() {
-                    loadProject(path.toStdString());
+                    m_session_ctrl->openProjectPath(path.toStdString());
                 });
             });
 
@@ -85,7 +85,7 @@ void MainWindow::buildContextPanel(QWidget* parent)
                 if (item) {
                     menu.addAction(tr("Open"), this, [this, path]() {
                         QTimer::singleShot(0, this, [this, path]() {
-                            loadProject(path.toStdString());
+                            m_session_ctrl->openProjectPath(path.toStdString());
                         });
                     });
                     menu.addAction(tr("Open Project Folder"), this, [path]() {

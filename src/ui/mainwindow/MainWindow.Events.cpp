@@ -62,21 +62,22 @@ static void purgeStaleTempProjects()
 
 void MainWindow::closeEvent(QCloseEvent* event)
 {
-    if (m_project && m_project_dirty) {
+    auto* proj = currentProject();
+    if (proj && isProjectDirty()) {
         const auto reply = QMessageBox::question(
             this, tr("Close"),
-            m_project->isTempProject()
+            proj->isTempProject()
                 ? tr("You have unsaved changes. Save before closing?")
                 : tr("Save changes to \"%1\" before closing?")
-                      .arg(QString::fromStdString(m_project->name())),
+                      .arg(QString::fromStdString(proj->name())),
             QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel);
         if (reply == QMessageBox::Cancel) { event->ignore(); return; }
         if (reply == QMessageBox::Save) {
             onSaveProject();
-            if (m_project_dirty) { event->ignore(); return; }  // save failed or was cancelled
+            if (isProjectDirty()) { event->ignore(); return; }  // save failed or was cancelled
         }
-    } else if (m_project && !m_project->isTempProject()) {
-        m_project->save();
+    } else if (proj && !proj->isTempProject()) {
+        proj->save();
     }
 
     QSettings settings(AppInfo::kOrgName, AppInfo::kSettingsApp);

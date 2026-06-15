@@ -129,12 +129,12 @@ void MainWindow::updateContextInfo()
 {
     if (!m_status_bar) return;
 
-    if (!m_project) { m_status_bar->clearContext(); return; }
+    if (!currentProject()) { m_status_bar->clearContext(); return; }
 
-    const QString project = QString::fromStdString(m_project->name());
+    const QString project = QString::fromStdString(currentProject()->name());
     QString layer;
     if (!m_active_layer_id.empty()) {
-        if (auto* l = m_project->findLayer(m_active_layer_id))
+        if (auto* l = currentProject()->findLayer(m_active_layer_id))
             layer = QString::fromStdString(l->label);
     }
     m_status_bar->setProjectContext(project, layer);
@@ -253,7 +253,7 @@ void MainWindow::recordActivity(ActivityKind kind, const QString& description)
 
 void MainWindow::onLayerVisibilityChanged(const std::string& layer_id, bool visible)
 {
-    if (!m_project) {
+    if (!currentProject()) {
         if (m_viewport_host) m_viewport_host->setLayerVisible(layer_id, visible);
         else if (m_map_view) m_map_view->setLayerVisible(layer_id, visible);
         return;
@@ -261,26 +261,25 @@ void MainWindow::onLayerVisibilityChanged(const std::string& layer_id, bool visi
 
     // Determine previous state from the layer so undo knows what to restore.
     bool old_visible = visible;
-    if (const auto* layer = m_project->findLayer(layer_id))
+    if (const auto* layer = currentProject()->findLayer(layer_id))
         old_visible = layer->visible;
 
     auto apply = [this](const std::string& lid, bool v) {
-        if (auto* layer = m_project ? m_project->findLayer(lid) : nullptr)
+        if (auto* layer = currentProject() ? currentProject()->findLayer(lid) : nullptr)
             layer->visible = v;
         if (m_viewport_host) m_viewport_host->setLayerVisible(lid, v);
         else if (m_map_view) m_map_view->setLayerVisible(lid, v);
         if (m_line_list)     m_line_list->setLayerVisibility(lid, v);
         if (m_layer_picker)  m_layer_picker->setLayerVisibility(lid, v);
         // visible is serialized; direct mutation bypasses Project::modified() signal.
-        m_project_dirty = true;
-        setWindowTitleFromProject();
+        markProjectDirty();
     };
 
     m_undo_stack->push(new SetLayerVisibleCommand(
         layer_id, old_visible, visible, std::move(apply)));
 
-    if (m_project) {
-        if (const auto* layer = m_project->findLayer(layer_id)) {
+    if (currentProject()) {
+        if (const auto* layer = currentProject()->findLayer(layer_id)) {
             recordActivity(ActivityKind::Visibility,
                 tr("%1 %2").arg(QString::fromStdString(layer->label),
                                visible ? tr("shown") : tr("hidden")));
@@ -290,7 +289,7 @@ void MainWindow::onLayerVisibilityChanged(const std::string& layer_id, bool visi
 
 void MainWindow::updateActionStates()
 {
-    const bool has_project = m_project != nullptr;
+    const bool has_project = currentProject() != nullptr;
     const bool has_layer   = has_project && !m_active_layer_id.empty();
 
     if (m_act_save)      m_act_save->setEnabled(has_project);

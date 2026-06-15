@@ -26,8 +26,8 @@ void MainWindow::onMapContextMenu(QPoint globalPos)
         ? m_map_view->hitTestLayer(local_pos)
         : std::string{};
     const std::string layer_id = !clicked_id.empty() ? clicked_id : m_active_layer_id;
-    app::DataLayer* layer = (m_project && !layer_id.empty())
-        ? m_project->findLayer(layer_id)
+    app::DataLayer* layer = (currentProject() && !layer_id.empty())
+        ? currentProject()->findLayer(layer_id)
         : nullptr;
     const bool has_layer  = layer != nullptr;
     const bool is_sidescan = layer && layer->modality == app::Modality::Sidescan;
@@ -47,8 +47,8 @@ void MainWindow::onMapContextMenu(QPoint globalPos)
     QAction* open_viewer = menu.addAction(
         is_sbp ? tr("Open sub-bottom viewer") : tr("Open waterfall"),
         this, [this] {
-            if (!m_project || m_active_layer_id.empty()) return;
-            const auto* active = m_project->findLayer(m_active_layer_id);
+            if (!currentProject() || m_active_layer_id.empty()) return;
+            const auto* active = currentProject()->findLayer(m_active_layer_id);
             if (active && active->modality == app::Modality::SubBottom)
                 onSubBottomOpen();
             else
@@ -86,10 +86,10 @@ void MainWindow::onMapContextMenu(QPoint globalPos)
     menu.addSeparator();
 
     auto reorderLayer = [this](const std::string& id, int mode) {
-        if (!m_project || id.empty()) return;
+        if (!currentProject() || id.empty()) return;
         std::vector<std::string> ids;
-        ids.reserve(m_project->layers().size());
-        for (const auto& l : m_project->layers())
+        ids.reserve(currentProject()->layers().size());
+        for (const auto& l : currentProject()->layers())
             if (l) ids.push_back(l->id);
 
         auto it = std::find(ids.begin(), ids.end(), id);
@@ -109,7 +109,7 @@ void MainWindow::onMapContextMenu(QPoint globalPos)
             return;
         }
 
-        m_project->reorderLayers(ids);
+        currentProject()->reorderLayers(ids);
     };
 
     QAction* bring_front = addLayerAction(tr("Bring to front"), [reorderLayer](const std::string& id) {
@@ -136,7 +136,7 @@ void MainWindow::onMapContextMenu(QPoint globalPos)
 
     QMenu* import_menu = menu.addMenu(tr("Import"));
     import_menu->addAction(tr("Import survey files..."), this, &MainWindow::onImportFile)
-        ->setEnabled(m_project != nullptr);
+        ->setEnabled(currentProject() != nullptr);
 
     // Export not yet implemented — disabled per D-05.
     menu.addMenu(tr("Export"))->setEnabled(false);
@@ -147,7 +147,7 @@ void MainWindow::onMapContextMenu(QPoint globalPos)
 
     QAction* navigation_settings = menu.addAction(tr("Navigation settings"), this,
         &MainWindow::onGeodeticSettings);
-    navigation_settings->setEnabled(m_project != nullptr);
+    navigation_settings->setEnabled(currentProject() != nullptr);
 
     menu.addSeparator();
 

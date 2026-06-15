@@ -46,10 +46,10 @@ QList<CommandPaletteItem> MainWindow::buildCommandItems()
         items.append(toPaletteItem(id, enabled, std::move(fn)));
     };
 
-    const bool has_project = m_project != nullptr;
+    const bool has_project = currentProject() != nullptr;
     const bool has_layer   = has_project && !m_active_layer_id.empty();
     const bool has_sbp     = has_layer && [this]() -> bool {
-        const auto* l = m_project->findLayer(m_active_layer_id);
+        const auto* l = currentProject()->findLayer(m_active_layer_id);
         return l && l->modality == app::Modality::SubBottom;
     }();
 
@@ -118,15 +118,15 @@ QList<CommandPaletteItem> MainWindow::buildCommandItems()
         };
 
         // Active layer floats to the top of the Line group on every open.
-        for (const auto& layer : m_project->layers())
+        for (const auto& layer : currentProject()->layers())
             if (layer->id == m_active_layer_id) { items.append(makeLine(*layer)); break; }
-        for (const auto& layer : m_project->layers())
+        for (const auto& layer : currentProject()->layers())
             if (layer->id != m_active_layer_id)  items.append(makeLine(*layer));
     }
 
     if constexpr (Features::kContacts) {
         if (has_project) {
-            for (const auto& c : m_project->contacts()) {
+            for (const auto& c : currentProject()->contacts()) {
                 const uint64_t cid = c.id;
                 CommandPaletteItem it;
                 it.category   = tr("Contact");

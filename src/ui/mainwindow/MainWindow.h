@@ -20,6 +20,7 @@
 #include "ui/features/subbottom/SbpSignalParams.h"
 #include "app/tasks/OperationManager.h"
 #include "ui/mainwindow/AppSettingsDialog.h"
+#include "ui/mainwindow/ProjectSessionController.h"
 #include "ui/systems/AppState.h"
 #include "ui/systems/WindowRegistry.h"
 #include "ui/systems/ProjectEventBus.h"
@@ -96,13 +97,13 @@ protected:
                      qintptr* result) override;
 
 private slots:
-    // Project
-    void onNewProject();
-    void onOpenProject();
-    void onSaveProject();
-    void onSaveProjectAs();
-    void onOpenProjectFolder();
-    void onCloseProject();
+    // Project — thin delegates to m_session_ctrl
+    void onNewProject()        { m_session_ctrl->newProject(); }
+    void onOpenProject()       { m_session_ctrl->openProject(); }
+    void onSaveProject()       { m_session_ctrl->saveProject(); }
+    void onSaveProjectAs()     { m_session_ctrl->saveProjectAs(); }
+    void onOpenProjectFolder() { m_session_ctrl->openProjectFolder(); }
+    void onCloseProject()      { m_session_ctrl->closeProject(); }
     void onImportFile();
     void onGeodeticSettings();
 
@@ -245,15 +246,12 @@ private:
     void     buildPropertiesPanel(QWidget* parent);
     QFrame*  buildRightToolBar(QWidget* parent);
 
-    void loadProject(const std::string& path);
-    void addToRecentProjects(const QString& path);
     void rebuildRecentMenu();
     void bindProjectUi();
     void showImportDialog(const QStringList& paths,
                           const std::vector<core::ArtifactType>& module_filter = {});
     bool ensureProjectForImport(const ImportDialogResult& res);
     QList<CommandPaletteItem> buildCommandItems();
-    void setWindowTitleFromProject();
     void applyWorkspaceState(int panel_id, bool props_open, bool toolbar_visible);
     void setPropertiesOpen(bool open);
     void setRightToolBarVisible(bool visible);
@@ -284,12 +282,17 @@ private:
     DiagnosticsHub*   m_diag_hub     = nullptr;
     BottomDockPanel*  m_bottom_panel = nullptr;
 
-    std::shared_ptr<app::Project> m_project;
-    std::string                   m_active_layer_id;
-    bool                          m_project_dirty    = false;
-    uint64_t                      m_project_load_gen = 0;   // incremented on every load/close; guards deferred timer
-    bool                          m_save_in_progress = false; // suppresses autosave while a save dialog is open
-    core::SpatialRef              m_pending_crs;   // set before any project is open; pre-fills ImportDialog  // unsaved changes indicator
+    // Project session state is owned by PSC; use these helpers throughout aspect files.
+    ProjectSessionController* m_session_ctrl = nullptr;
+    // Returns the raw project pointer — null when no project is open.
+    app::Project* currentProject() const noexcept;
+    // Returns the shared_ptr — use when callers need ownership (setProject calls).
+    std::shared_ptr<app::Project> currentProjectPtr() const noexcept;
+    bool isProjectDirty()  const noexcept;
+    // Mark dirty + emit windowTitleChanged via PSC.
+    void markProjectDirty();
+
+    std::string m_active_layer_id;
 
     app::OperationManager*  m_op_mgr = nullptr;  // central job runner + cancel registry
     app::ImportService*     m_import_service     = nullptr;

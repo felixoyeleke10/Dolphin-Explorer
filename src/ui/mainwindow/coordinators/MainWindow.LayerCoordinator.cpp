@@ -44,13 +44,13 @@ namespace dolphin::ui {
 
 void MainWindow::onLayerSelected(const std::string& layer_id)
 {
-    if (!m_project) return;
+    if (!currentProject()) return;
     if (!m_replaying_navigation)
         recordNavigationSelection(layer_id);
 
     m_active_layer_id = layer_id;
 
-    auto* layer = m_project->findLayer(layer_id);
+    auto* layer = currentProject()->findLayer(layer_id);
 
     // Publish the new selection so any subscriber (panels, future tools) can
     // react without coupling directly to MainWindow.
@@ -85,7 +85,7 @@ void MainWindow::onLayerSelected(const std::string& layer_id)
 
         // Sidescan: full background swath build via the SSS controller.
         if (m_sss_ctrl && mod == M::Sidescan)
-            m_sss_ctrl->activateLayer(layer_id, m_project.get());
+            m_sss_ctrl->activateLayer(layer_id, currentProject());
 
         // MAG / MBE: rebuildNavTrack (called by setActiveLayer) builds the track.
         else if (m_map_view && (mod == M::Magnetometer || mod == M::Multibeam))
@@ -102,17 +102,17 @@ void MainWindow::onLayerSelected(const std::string& layer_id)
                         && !m_pending_sbp_builds.count(layer_id)) {
                     core::SpatialRef source_crs = layer->source_spatial_ref;
                     if (source_crs.empty()) {
-                        if (const auto* src = m_project->findSource(layer->source_id))
+                        if (const auto* src = currentProject()->findSource(layer->source_id))
                             source_crs = src->source_spatial_ref;
                     }
-                    const core::SpatialRef display_crs = m_project->displaySpatialRef();
+                    const core::SpatialRef display_crs = currentProject()->displaySpatialRef();
 
                     // Capture fields by value — DataLayer must not be accessed on bg thread.
                     const std::string store_path   = layer->artifact_store_path;
                     const std::string store_format = layer->artifact_store_format;
                     const core::ArtifactIndex index_copy = layer->artifact_index;
                     std::string source_path;
-                    if (const auto* src = m_project->findSource(layer->source_id))
+                    if (const auto* src = currentProject()->findSource(layer->source_id))
                         source_path = src->path;
                     const std::string lid = layer_id;
                     auto* svc = m_import_service;
@@ -128,7 +128,7 @@ void MainWindow::onLayerSelected(const std::string& layer_id)
                                 m_pending_sbp_builds.erase(lid);
                                 taskDone(QStringLiteral("sbp_profile:") + QString::fromStdString(lid));
 
-                                if (!m_project || !m_project->findLayer(lid)) return;
+                                if (!currentProject() || !currentProject()->findLayer(lid)) return;
 
                                 if (m_map_view) {
                                     result.track_stats.layer_visible =
@@ -166,7 +166,7 @@ void MainWindow::onLayerSelected(const std::string& layer_id)
 
     if (m_waterfall_win && m_waterfall_win->isVisible()) {
         if (layer && m_waterfall_win->currentLayerId() != layer->id) {
-            const auto* src = m_project->findSource(layer->source_id);
+            const auto* src = currentProject()->findSource(layer->source_id);
             const std::string path = src ? src->path : std::string{};
             const uint64_t    sz   = src ? src->size_bytes : 0;
             m_waterfall_win->setLayer(layer, m_import_service, path, sz);
@@ -191,7 +191,7 @@ void MainWindow::onLayerSelected(const std::string& layer_id)
     if (m_sbp_win && m_sbp_win->isVisible()) {
         if (layer && layer->modality == app::Modality::SubBottom) {
             if (m_sbp_win->currentLayerId() != layer->id) {
-                const auto* src = m_project->findSource(layer->source_id);
+                const auto* src = currentProject()->findSource(layer->source_id);
                 const std::string path = src ? src->path : std::string{};
                 const uint64_t    sz   = src ? src->size_bytes : 0;
                 m_sbp_win->setLayer(layer, m_import_service, path, sz);
@@ -221,7 +221,7 @@ void MainWindow::onLayerSelected(const std::string& layer_id)
 
     if constexpr (Features::kNodeGraph) {
         if (m_node_graph_win && m_node_graph_win->isVisible())
-            m_node_graph_win->setLayer(layer, m_project.get());
+            m_node_graph_win->setLayer(layer, currentProject());
     }
 
     if (m_line_list) m_line_list->setActiveLayer(layer_id);
@@ -243,8 +243,8 @@ void MainWindow::updateControlsForModality(const app::DataLayer* layer)
 
 void MainWindow::onRemoveLayer(const std::string& layer_id)
 {
-    if (!m_project) return;
-    const auto* layer = m_project->findLayer(layer_id);
+    if (!currentProject()) return;
+    const auto* layer = currentProject()->findLayer(layer_id);
     if (!layer) return;
 
     const QString name = QString::fromStdString(layer->label);
@@ -265,7 +265,7 @@ void MainWindow::onRemoveLayer(const std::string& layer_id)
         updateActionStates();
         updateContextInfo();
     }
-    m_project->removeLayer(layer_id);
+    currentProject()->removeLayer(layer_id);
     pruneNavigationHistory();
     refreshInspectorModalities();
     recordActivity(ActivityKind::GroupChange, tr("Removed: %1").arg(name));
@@ -273,7 +273,7 @@ void MainWindow::onRemoveLayer(const std::string& layer_id)
 
 void MainWindow::onRemoveLayers(const std::vector<std::string>& layer_ids)
 {
-    if (!m_project || layer_ids.empty()) return;
+    if (!currentProject() || layer_ids.empty()) return;
 
     const int n = static_cast<int>(layer_ids.size());
     if (QMessageBox::question(this, tr("Remove Layers"),
@@ -291,7 +291,7 @@ void MainWindow::onRemoveLayers(const std::vector<std::string>& layer_ids)
         if (m_sss_ctrl) m_sss_ctrl->unloadLayer(id);
         if (m_viewport_host) m_viewport_host->onLayerRemoved(id);
         else if (m_map_view) m_map_view->removeLayerData(id);
-        m_project->removeLayer(id);
+        currentProject()->removeLayer(id);
     }
     if (active_removed) {
         m_active_layer_id.clear();
@@ -308,7 +308,7 @@ void MainWindow::onRemoveLayers(const std::vector<std::string>& layer_ids)
 
 void MainWindow::onNavigateBack()
 {
-    if (!m_project || m_navigation_index <= 0) {
+    if (!currentProject() || m_navigation_index <= 0) {
         updateNavigationButtons();
         return;
     }
@@ -323,7 +323,7 @@ void MainWindow::onNavigateBack()
 
 void MainWindow::onNavigateForward()
 {
-    if (!m_project
+    if (!currentProject()
             || m_navigation_index < 0
             || m_navigation_index + 1 >= static_cast<int>(m_navigation_history.size())) {
         updateNavigationButtons();
@@ -350,14 +350,14 @@ void MainWindow::clearNavigationHistory()
 
 void MainWindow::pruneNavigationHistory()
 {
-    if (!m_project) {
+    if (!currentProject()) {
         clearNavigationHistory();
         return;
     }
 
     // Build a set of live IDs first so the inner lookup is O(1) not O(layers).
     std::unordered_set<std::string> live;
-    for (const auto& l : m_project->layers())
+    for (const auto& l : currentProject()->layers())
         live.insert(l->id);
 
     std::vector<std::string> kept;
@@ -384,7 +384,7 @@ static constexpr int kNavHistoryLimit = 100;
 
 void MainWindow::recordNavigationSelection(const std::string& layer_id)
 {
-    if (!m_project || layer_id.empty() || !m_project->findLayer(layer_id))
+    if (!currentProject() || layer_id.empty() || !currentProject()->findLayer(layer_id))
         return;
 
     if (m_navigation_index >= 0
@@ -416,18 +416,18 @@ void MainWindow::recordNavigationSelection(const std::string& layer_id)
 void MainWindow::updateNavigationButtons()
 {
     if (m_btn_nav_back)
-        m_btn_nav_back->setEnabled(m_project && m_navigation_index > 0);
+        m_btn_nav_back->setEnabled(currentProject() && m_navigation_index > 0);
     if (m_btn_nav_forward)
         m_btn_nav_forward->setEnabled(
-            m_project
+            currentProject()
             && m_navigation_index >= 0
             && m_navigation_index + 1 < static_cast<int>(m_navigation_history.size()));
 }
 
 void MainWindow::onRenameLayer(const std::string& layer_id)
 {
-    if (!m_project) return;
-    auto* layer = m_project->findLayer(layer_id);
+    if (!currentProject()) return;
+    auto* layer = currentProject()->findLayer(layer_id);
     if (!layer) return;
 
     bool ok = false;
@@ -438,20 +438,19 @@ void MainWindow::onRenameLayer(const std::string& layer_id)
     if (!ok || name.trimmed().isEmpty() || name.trimmed() == current) return;
 
     auto refresh = [this](const std::string& lid) {
-        if (auto* l = m_project ? m_project->findLayer(lid) : nullptr) {
+        if (auto* l = currentProject() ? currentProject()->findLayer(lid) : nullptr) {
             if (m_line_list)    m_line_list->updateLayerLabel(lid, l->label);
             if (m_layer_picker) m_layer_picker->updateLayerLabel(lid, l->label);
             if (m_inspector && m_active_layer_id == lid) m_inspector->showLayer(l);
         }
-        m_project_dirty = true;
-        setWindowTitleFromProject();
+        
         updateContextInfo();
     };
 
     const QString old_name = current;
     const QString new_name = name.trimmed();
     m_undo_stack->push(new RenameLayerCommand(
-        m_project.get(),
+        currentProject(),
         layer_id,
         layer->label,
         new_name.toStdString(),
@@ -463,11 +462,11 @@ void MainWindow::onRenameLayer(const std::string& layer_id)
 void MainWindow::onRunLayers(const std::vector<std::string>& layer_ids)
 {
     if constexpr (Features::kProcessing) {
-        if (!m_project || !m_proc_ctrl) return;
+        if (!currentProject() || !m_proc_ctrl) return;
         for (const auto& id : layer_ids) {
-            auto* layer = m_project->findLayer(id);
+            auto* layer = currentProject()->findLayer(id);
             if (!layer) continue;
-            const auto* src = m_project->findSource(layer->source_id);
+            const auto* src = currentProject()->findSource(layer->source_id);
             m_proc_ctrl->runLayer(layer, src ? src->path : std::string{});
         }
         if (!layer_ids.empty())
@@ -494,10 +493,10 @@ void MainWindow::onRunAllLayers()
 void MainWindow::onRunSelectedLayer()
 {
     if constexpr (Features::kProcessing) {
-        if (!m_project || m_active_layer_id.empty() || !m_proc_ctrl) return;
-        auto* layer = m_project->findLayer(m_active_layer_id);
+        if (!currentProject() || m_active_layer_id.empty() || !m_proc_ctrl) return;
+        auto* layer = currentProject()->findLayer(m_active_layer_id);
         if (!layer) return;
-        auto* src = m_project->findSource(layer->source_id);
+        auto* src = currentProject()->findSource(layer->source_id);
         m_proc_ctrl->runLayer(layer, src ? src->path : std::string{});
         recordActivity(ActivityKind::Processing,
             tr("Processing: %1").arg(QString::fromStdString(layer->label)));
@@ -506,9 +505,9 @@ void MainWindow::onRunSelectedLayer()
 
 void MainWindow::refreshInspectorModalities()
 {
-    if (!m_inspector || !m_project) return;
+    if (!m_inspector || !currentProject()) return;
     QSet<app::Modality> mods;
-    for (const auto& l : m_project->layers())
+    for (const auto& l : currentProject()->layers())
         mods.insert(l->modality);
     m_inspector->setAvailableModalities(mods);
 }

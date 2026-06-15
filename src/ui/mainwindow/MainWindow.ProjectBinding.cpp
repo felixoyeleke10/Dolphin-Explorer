@@ -1,4 +1,5 @@
-// MainWindow.ProjectBinding.cpp — bindProjectUi and window title sync.
+// MainWindow.ProjectBinding.cpp — bindProjectUi: notifies all subsystems when
+// the live project changes. Called from PSC's projectChanged signal handler.
 #include "ui/mainwindow/MainWindow.h"
 #include "ui/mainwindow/MainStatusBar.h"
 #include "ui/systems/ProjectEventBus.h"
@@ -28,25 +29,24 @@ namespace dolphin::ui {
 
 void MainWindow::bindProjectUi()
 {
-    m_project_dirty = false;
     m_pending_sbp_builds.clear();
     m_layer_nav_params.clear();
     if (m_undo_stack) m_undo_stack->clear();
     updateActionStates();
-    setWindowTitleFromProject();
+    // Window title is maintained by PSC; no setWindowTitle call needed here.
 
     // Notify all registered viewers that the project was replaced so they
     // clear any layer data from the previous project.
     m_window_registry->broadcast(ViewerRefreshReason::ProjectReplaced);
 
+    app::Project* raw = currentProject();
+
     if (m_act_open_folder) {
-        const bool has_folder = m_project
-            && !m_project->isTempProject()
-            && !m_project->manifestPath().empty();
+        const bool has_folder = raw
+            && !raw->isTempProject()
+            && !raw->manifestPath().empty();
         m_act_open_folder->setEnabled(has_folder);
     }
-
-    app::Project* raw = m_project.get();
 
     if (m_map_view)
         m_map_view->setProject(raw);
@@ -76,13 +76,15 @@ void MainWindow::bindProjectUi()
         m_inspector->showEmpty();
     refreshInspectorModalities();
 
+    const auto proj_ptr = currentProjectPtr();
+
     if constexpr (Features::kImport)
         if (m_import_ctrl)
-            m_import_ctrl->setProject(m_project);
+            m_import_ctrl->setProject(proj_ptr);
 
     if constexpr (Features::kProcessing)
         if (m_proc_ctrl)
-            m_proc_ctrl->setProject(m_project);
+            m_proc_ctrl->setProject(proj_ptr);
 
     if constexpr (Features::kDataLibrary)
         if (m_data_library_win)
@@ -93,9 +95,9 @@ void MainWindow::bindProjectUi()
 
     if (m_bottom_panel) {
         QString term_dir;
-        if (m_project && !m_project->manifestPath().empty()) {
+        if (raw && !raw->manifestPath().empty()) {
             term_dir = QFileInfo(
-                QString::fromStdString(m_project->manifestPath()))
+                QString::fromStdString(raw->manifestPath()))
                 .absolutePath();
         }
         if (!term_dir.isEmpty())
@@ -103,10 +105,10 @@ void MainWindow::bindProjectUi()
     }
 
     if (m_geodesy_panel)
-        m_geodesy_panel->refresh(raw, m_pending_crs);
+        m_geodesy_panel->refresh(raw, m_session_ctrl->pendingCrs());
 
     if (m_processing_win)
-        m_processing_win->setProject(m_project, m_processing_service);
+        m_processing_win->setProject(proj_ptr, m_processing_service);
 
     if constexpr (Features::kNodeGraph) {
         if (m_node_graph_win) {
@@ -119,24 +121,12 @@ void MainWindow::bindProjectUi()
 
     // Wire the event bus to the new project. All component subscriptions were
     // established once in the constructor; no per-project reconnection needed.
-    m_event_bus->setProject(m_project.get());
+    m_event_bus->setProject(raw);
 
     if (m_op_coord)
-        m_op_coord->setProject(m_project);
+        m_op_coord->setProject(proj_ptr);
 
     updateContextInfo();
-}
-
-void MainWindow::setWindowTitleFromProject()
-{
-    if (!m_project) { setWindowTitle(tr("Dolphin Explorer")); return; }
-
-    QString title;
-    if (m_project_dirty) title += QStringLiteral("• ");
-    title += QString::fromStdString(m_project->name());
-    if (m_project->isTempProject()) title += tr(" (unsaved)");
-    title += " — Dolphin Explorer";
-    setWindowTitle(title);
 }
 
 } // namespace dolphin::ui

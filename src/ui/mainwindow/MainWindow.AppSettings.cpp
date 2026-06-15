@@ -64,10 +64,12 @@ void MainWindow::applyLiveSettings(const AppSettingsDialog::Settings& s)
     if (m_waterfall_win) m_waterfall_win->setGpuAccel(s.gpu_accel);
 
     // Autosave timer — create on first call, restart or stop on subsequent calls.
+    // The timeout routes to PSC which owns the project and dirty state.
     if (!m_autosave_timer) {
         m_autosave_timer = new QTimer(this);
         m_autosave_timer->setSingleShot(false);
-        connect(m_autosave_timer, &QTimer::timeout, this, &MainWindow::onAutoSave);
+        connect(m_autosave_timer, &QTimer::timeout,
+                m_session_ctrl, &ProjectSessionController::autoSave);
     }
     if (s.autosave_min > 0)
         m_autosave_timer->start(s.autosave_min * 60 * 1000);
