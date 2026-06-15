@@ -133,8 +133,8 @@ void MainWindow::updateContextInfo()
 
     const QString project = QString::fromStdString(currentProject()->name());
     QString layer;
-    if (!m_active_layer_id.empty()) {
-        if (auto* l = currentProject()->findLayer(m_active_layer_id))
+    if (!activeLayerId().empty()) {
+        if (auto* l = currentProject()->findLayer(activeLayerId()))
             layer = QString::fromStdString(l->label);
     }
     m_status_bar->setProjectContext(project, layer);
@@ -290,14 +290,12 @@ void MainWindow::onLayerVisibilityChanged(const std::string& layer_id, bool visi
 void MainWindow::updateActionStates()
 {
     const bool has_project = currentProject() != nullptr;
-    const bool has_layer   = has_project && !m_active_layer_id.empty();
+    const bool has_layer   = has_project && !activeLayerId().empty();
 
     if (m_act_save)      m_act_save->setEnabled(has_project);
     if (m_act_run_all)   m_act_run_all->setEnabled(has_project);
     if (m_export_btn)    m_export_btn->setEnabled(has_project);
     // m_act_run_layer is capability-based; managed by updateControlsForModality.
-
-    updateNavigationButtons();
 }
 
 } // namespace dolphin::ui

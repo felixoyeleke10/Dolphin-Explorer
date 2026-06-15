@@ -28,6 +28,7 @@
 #include "ui/shell/AppInfo.h"
 #include <QApplication>
 #include <QProgressBar>
+#include <QPushButton>
 #include <QSettings>
 #include <QUndoStack>
 
@@ -58,13 +59,13 @@ MainWindow::MainWindow(QWidget* parent)
     // the new value on its next setLayer() call.
     auto reloadWaterfall = [this]() {
         if (!m_waterfall_win || !m_waterfall_win->isVisible()) return;
-        if (!currentProject() || m_active_layer_id.empty()) return;
-        if (auto* layer = currentProject()->findLayer(m_active_layer_id)) {
+        if (!currentProject() || activeLayerId().empty()) return;
+        if (auto* layer = currentProject()->findLayer(activeLayerId())) {
             const auto* src = currentProject()->findSource(layer->source_id);
             m_waterfall_win->setLayer(layer, m_import_service,
                 src ? src->path : std::string{},
                 src ? src->size_bytes : 0);
-            applyStoredNavParams(m_active_layer_id);
+            applyStoredNavParams(activeLayerId());
             if (layer->sss_display_state.customized)
                 m_waterfall_win->applyExternalParams(layer->sss_display_state.params);
         }
@@ -226,12 +227,13 @@ MainWindow::MainWindow(QWidget* parent)
     if constexpr (Features::kProcessing)
         m_processing_service = new app::ProcessingService(this);
 
-    // --- ProjectSessionController ------------------------------------------
-    // Owns: m_project, m_project_dirty, m_pending_crs, and all CRUD slots.
-    // All MainWindow aspect files access project state via currentProject() /
-    // currentProjectPtr() / isProjectDirty() / markProjectDirty() helpers.
+    // --- ProjectSessionController + LayerDisplayCoordinator -----------------
+    // PSC owns: m_project, m_project_dirty, m_pending_crs, and all CRUD slots.
+    // LDC owns: m_active_layer_id, navigation history.
+    // Aspect files access these via currentProject() / activeLayerId() helpers.
     m_session_ctrl = new ProjectSessionController(
         m_undo_stack, m_diag_hub, m_op_mgr, m_import_service, this, this);
+    m_layer_ctrl = new LayerDisplayCoordinator(m_session_ctrl, this);
 
     // openProject() for cache-only files encodes the path in a "job message"
     // prefixed with __import_cache__: so MainWindow can intercept it.
@@ -254,8 +256,8 @@ MainWindow::MainWindow(QWidget* parent)
         if (m_viewport_host) m_viewport_host->setUpdatesEnabled(false);
         if (m_sss_ctrl) m_sss_ctrl->deactivate(true);
         if (m_import_service) m_import_service->cancelPendingRebuild();
-        m_active_layer_id.clear();
-        clearNavigationHistory();
+        m_layer_ctrl->clearActiveLayer();
+        m_layer_ctrl->clearHistory();
     });
     connect(m_session_ctrl, &ProjectSessionController::projectChanged,
             this, [this](std::shared_ptr<app::Project>) {
@@ -286,6 +288,15 @@ MainWindow::MainWindow(QWidget* parent)
 
         if (!first_layer_id.empty())
             onLayerSelected(first_layer_id);
+    });
+
+    // LayerDisplayCoordinator signals.
+    connect(m_layer_ctrl, &LayerDisplayCoordinator::layerActivationRequested,
+            this, &MainWindow::onLayerSelected);
+    connect(m_layer_ctrl, &LayerDisplayCoordinator::navigationChanged,
+            this, [this](bool back, bool fwd) {
+        if (m_btn_nav_back)    m_btn_nav_back->setEnabled(back);
+        if (m_btn_nav_forward) m_btn_nav_forward->setEnabled(fwd);
     });
     // -----------------------------------------------------------------------
 
@@ -495,7 +506,7 @@ MainWindow::MainWindow(QWidget* parent)
                         m_import_ctrl->onMapLoadPending();
 
                     using M = app::Modality;
-                    if (m_active_layer_id.empty()) {
+                    if (activeLayerId().empty()) {
                         onLayerSelected(layer_id);
                     } else {
                         if (layer->modality == M::Sidescan && m_sss_ctrl)
@@ -613,6 +624,14 @@ bool MainWindow::isProjectDirty() const noexcept
 void MainWindow::markProjectDirty()
 {
     if (m_session_ctrl) m_session_ctrl->markDirty();
+}
+
+// -- Layer display helpers (shorthand for aspect files) ---------------------
+
+const std::string& MainWindow::activeLayerId() const noexcept
+{
+    static const std::string kEmpty;
+    return m_layer_ctrl ? m_layer_ctrl->activeLayerId() : kEmpty;
 }
 
 } // namespace dolphin::ui

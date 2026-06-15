@@ -69,8 +69,8 @@ void MainWindow::onWaterfallOpen()
                 this, [this](int idx) {
                     onPaletteChanged(idx);
                     // Persist per-layer SSS palette so it survives project close/reopen.
-                    if (!currentProject() || m_active_layer_id.empty()) return;
-                    auto* layer = currentProject()->findLayer(m_active_layer_id);
+                    if (!currentProject() || activeLayerId().empty()) return;
+                    auto* layer = currentProject()->findLayer(activeLayerId());
                     if (layer && layer->sss_palette != idx) {
                         layer->sss_palette = idx;
                         
@@ -130,7 +130,7 @@ void MainWindow::onWaterfallOpen()
 
             if (currentProject()) {
                 // Use the layer the waterfall is actually showing, which may
-                // differ from m_active_layer_id when the user has navigated
+                // differ from activeLayerId() when the user has navigated
                 // Prev/Next inside the waterfall window.
                 const std::string wf_id = m_waterfall_win->currentLayerId();
                 if (!wf_id.empty()) {
@@ -198,14 +198,14 @@ void MainWindow::onWaterfallOpen()
         m_waterfall_win->setProjectLayers(sss_layers);
     }
 
-    if (currentProject() && !m_active_layer_id.empty()) {
-        auto* layer = currentProject()->findLayer(m_active_layer_id);
+    if (currentProject() && !activeLayerId().empty()) {
+        auto* layer = currentProject()->findLayer(activeLayerId());
         if (layer && layer->modality == app::Modality::Sidescan) {
             const auto* src    = currentProject()->findSource(layer->source_id);
             const std::string path = src ? src->path : std::string{};
             const uint64_t    sz   = src ? src->size_bytes : 0;
             m_waterfall_win->setLayer(layer, m_import_service, path, sz);
-            applyStoredNavParams(m_active_layer_id);
+            applyStoredNavParams(activeLayerId());
             m_waterfall_win->setProjectContacts(currentProject()->contacts());
 
             // Restore per-layer display params if the user has previously adjusted them.
@@ -227,7 +227,7 @@ void MainWindow::onWaterfallOpen()
     // Sync palette: use the per-layer saved palette if available, otherwise fall
     // back to the Properties inspector (which shows the app-wide default).
     {
-        auto* layer = currentProject() ? currentProject()->findLayer(m_active_layer_id) : nullptr;
+        auto* layer = currentProject() ? currentProject()->findLayer(activeLayerId()) : nullptr;
         if (layer && layer->sss_palette >= 0)
             m_waterfall_win->setPalette(layer->sss_palette);
         else if (m_inspector)
@@ -245,7 +245,7 @@ void MainWindow::onWaterfallPrevLine(const std::string& from_layer_id)
     const auto& layers = currentProject()->layers();
     if (layers.empty()) return;
 
-    const std::string& ref_id = from_layer_id.empty() ? m_active_layer_id : from_layer_id;
+    const std::string& ref_id = from_layer_id.empty() ? activeLayerId() : from_layer_id;
 
     int cur = -1;
     for (int i = 0; i < static_cast<int>(layers.size()); ++i)
@@ -267,7 +267,7 @@ void MainWindow::onWaterfallNextLine(const std::string& from_layer_id)
     const auto& layers = currentProject()->layers();
     if (layers.empty()) return;
 
-    const std::string& ref_id = from_layer_id.empty() ? m_active_layer_id : from_layer_id;
+    const std::string& ref_id = from_layer_id.empty() ? activeLayerId() : from_layer_id;
 
     int cur = -1;
     for (int i = 0; i < static_cast<int>(layers.size()); ++i)
@@ -337,8 +337,8 @@ void MainWindow::onWaterfallContactCreated(float range_m, double lat, double lon
 
 void MainWindow::onWaterfallParamsApplied()
 {
-    if (!m_active_layer_id.empty() && currentProject()) {
-        if (const auto* layer = currentProject()->findLayer(m_active_layer_id)) {
+    if (!activeLayerId().empty() && currentProject()) {
+        if (const auto* layer = currentProject()->findLayer(activeLayerId())) {
             recordActivity(ActivityKind::DisplayParams,
                 tr("Display params applied to %1")
                     .arg(QString::fromStdString(layer->label)));
@@ -374,7 +374,7 @@ void MainWindow::onWaterfallMetadata()
 
     auto* win = qobject_cast<SSSMetadataWindow*>(m_metadata_win);
     if (win)
-        win->setProject(currentProject(), m_import_service, m_active_layer_id);
+        win->setProject(currentProject(), m_import_service, activeLayerId());
 
     m_metadata_win->show();
     m_metadata_win->raise();
@@ -400,8 +400,8 @@ void MainWindow::onWaterfallSetCrs(const std::string& from_layer_id)
     if (!currentProject()) return;
 
     // Use the layer the waterfall is actually showing, which may differ from
-    // m_active_layer_id when the user has used Prev/Next inside the waterfall.
-    const std::string ref_id = from_layer_id.empty() ? m_active_layer_id : from_layer_id;
+    // activeLayerId() when the user has used Prev/Next inside the waterfall.
+    const std::string ref_id = from_layer_id.empty() ? activeLayerId() : from_layer_id;
     auto* layer = currentProject()->findLayer(ref_id);
     if (!layer) return;
 
@@ -432,8 +432,8 @@ void MainWindow::onWaterfallSetCrs(const std::string& from_layer_id)
             tx.commit();
         }
         auto* lyr = currentProject()->findLayer(ref_id);
-        if (!ref_id.empty() && ref_id != m_active_layer_id) {
-            m_active_layer_id = ref_id;
+        if (!ref_id.empty() && ref_id != activeLayerId()) {
+            m_layer_ctrl->setActiveLayer(ref_id);
             m_app_state->setSelection({ref_id, lyr ? lyr->modality : app::Modality::Unknown});
             if (m_inspector && lyr) m_inspector->showLayer(lyr);
         }
@@ -509,8 +509,8 @@ void MainWindow::onChannelChanged(DisplayChannel ch)
         m_waterfall_win->setDisplayChannel(ch);
 
     // Persist into the active layer's display state so it is restored on layer switch.
-    if (currentProject() && !m_active_layer_id.empty()) {
-        if (auto* layer = currentProject()->findLayer(m_active_layer_id))
+    if (currentProject() && !activeLayerId().empty()) {
+        if (auto* layer = currentProject()->findLayer(activeLayerId()))
             layer->sss_display_state.params.display_channel = ch;
     }
 }

@@ -51,8 +51,8 @@ void MainWindow::onNodeGraph()
     }
 
     // Bind to the currently-active layer (may be null — that's fine)
-    if (currentProject() && !m_active_layer_id.empty()) {
-        auto* layer = currentProject()->findLayer(m_active_layer_id);
+    if (currentProject() && !activeLayerId().empty()) {
+        auto* layer = currentProject()->findLayer(activeLayerId());
         m_node_graph_win->setLayer(layer, currentProject());
     } else {
         m_node_graph_win->setLayer(nullptr, currentProject());

@@ -260,11 +260,11 @@ void MainWindow::onToolMeasure()
 
 void MainWindow::onBottomTrack()
 {
-    if (!currentProject() || m_active_layer_id.empty()) {
+    if (!currentProject() || activeLayerId().empty()) {
         appendJobMessage(tr("Select a sub-bottom layer first."));
         return;
     }
-    const auto* layer = currentProject()->findLayer(m_active_layer_id);
+    const auto* layer = currentProject()->findLayer(activeLayerId());
     if (!layer || layer->modality != app::Modality::SubBottom) {
         appendJobMessage(tr("Sub-bottom Viewer requires a sub-bottom profiler layer."));
         return;
@@ -330,9 +330,9 @@ void MainWindow::onContactPickedOnMap(double lon, double lat)
 
 void MainWindow::onRenumberContacts()
 {
-    const QString layer_name = (!m_active_layer_id.empty() && currentProject())
+    const QString layer_name = (!activeLayerId().empty() && currentProject())
         ? [&]() -> QString {
-              auto* l = currentProject()->findLayer(m_active_layer_id);
+              auto* l = currentProject()->findLayer(activeLayerId());
               return l ? QString::fromStdString(l->label) : tr("No layer selected");
           }()
         : tr("No layer selected");
@@ -351,14 +351,14 @@ void MainWindow::onRenumberContacts()
             this, [this, dlg]() {
                 if (m_sss_ctrl) {
                     m_sss_ctrl->setGeorefParams(dlg->headingParams());
-                    m_sss_ctrl->reloadLayer(m_active_layer_id);
+                    m_sss_ctrl->reloadLayer(activeLayerId());
                 }
             });
     connect(dlg, &SidescanCorrectionDialog::resetRequested,
             this, [this]() {
                 if (m_sss_ctrl) {
                     m_sss_ctrl->setGeorefParams({});
-                    m_sss_ctrl->reloadLayer(m_active_layer_id);
+                    m_sss_ctrl->reloadLayer(activeLayerId());
                 }
             });
     dlg->show();
@@ -368,9 +368,9 @@ void MainWindow::onRenumberContacts()
 
 void MainWindow::onLineProps()
 {
-    const QString layer_name = (!m_active_layer_id.empty() && currentProject())
+    const QString layer_name = (!activeLayerId().empty() && currentProject())
         ? [&]() -> QString {
-              auto* l = currentProject()->findLayer(m_active_layer_id);
+              auto* l = currentProject()->findLayer(activeLayerId());
               return l ? QString::fromStdString(l->label) : tr("No layer selected");
           }()
         : tr("No layer selected");
@@ -389,14 +389,14 @@ void MainWindow::onLineProps()
             this, [this, dlg]() {
                 if (m_sss_ctrl) {
                     m_sss_ctrl->setGeorefParams(dlg->headingParams());
-                    m_sss_ctrl->reloadLayer(m_active_layer_id);
+                    m_sss_ctrl->reloadLayer(activeLayerId());
                 }
             });
     connect(dlg, &SidescanCorrectionDialog::resetRequested,
             this, [this]() {
                 if (m_sss_ctrl) {
                     m_sss_ctrl->setGeorefParams({});
-                    m_sss_ctrl->reloadLayer(m_active_layer_id);
+                    m_sss_ctrl->reloadLayer(activeLayerId());
                 }
             });
     dlg->show();
@@ -406,7 +406,7 @@ void MainWindow::onLineProps()
 
 void MainWindow::onResetRaw()
 {
-    if (!m_sss_ctrl || m_active_layer_id.empty()) {
+    if (!m_sss_ctrl || activeLayerId().empty()) {
         appendJobMessage(tr("Select a layer first."));
         return;
     }

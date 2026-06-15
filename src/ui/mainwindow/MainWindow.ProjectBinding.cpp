@@ -113,8 +113,8 @@ void MainWindow::bindProjectUi()
     if constexpr (Features::kNodeGraph) {
         if (m_node_graph_win) {
             app::DataLayer* active_layer = nullptr;
-            if (raw && !m_active_layer_id.empty())
-                active_layer = raw->findLayer(m_active_layer_id);
+            if (raw && !activeLayerId().empty())
+                active_layer = raw->findLayer(activeLayerId());
             m_node_graph_win->setLayer(active_layer, raw);
         }
     }

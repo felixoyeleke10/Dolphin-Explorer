@@ -62,7 +62,7 @@ void MainWindow::onSubBottomOpen()
                     auto* win = qobject_cast<SBPMetadataWindow*>(m_sbp_metadata_win);
                     if (win)
                         win->setProject(currentProject(), m_import_service,
-                                        m_active_layer_id);
+                                        activeLayerId());
                     m_sbp_metadata_win->show();
                     m_sbp_metadata_win->raise();
                     m_sbp_metadata_win->activateWindow();
@@ -88,8 +88,8 @@ void MainWindow::onSubBottomOpen()
                                 if (m_inspector)
                                     m_inspector->rightPanelHost()->setSbpParams(m_sbp_win->displayParams());
                                 // Persist per-layer SBP palette from settings dialog.
-                                if (!currentProject() || m_active_layer_id.empty()) return;
-                                auto* layer = currentProject()->findLayer(m_active_layer_id);
+                                if (!currentProject() || activeLayerId().empty()) return;
+                                auto* layer = currentProject()->findLayer(activeLayerId());
                                 if (layer && layer->sbp_palette != p.palette_index) {
                                     layer->sbp_palette = p.palette_index;
                                     
@@ -102,7 +102,7 @@ void MainWindow::onSubBottomOpen()
                 this, [this](const std::string& from_id) {
                     if (!currentProject()) return;
                     const auto& layers = currentProject()->layers();
-                    const std::string& ref = from_id.empty() ? m_active_layer_id : from_id;
+                    const std::string& ref = from_id.empty() ? activeLayerId() : from_id;
                     int cur = -1;
                     for (int i = 0; i < static_cast<int>(layers.size()); ++i)
                         if (layers[i]->id == ref) { cur = i; break; }
@@ -119,7 +119,7 @@ void MainWindow::onSubBottomOpen()
                 this, [this](const std::string& from_id) {
                     if (!currentProject()) return;
                     const auto& layers = currentProject()->layers();
-                    const std::string& ref = from_id.empty() ? m_active_layer_id : from_id;
+                    const std::string& ref = from_id.empty() ? activeLayerId() : from_id;
                     int cur = -1;
                     for (int i = 0; i < static_cast<int>(layers.size()); ++i)
                         if (layers[i]->id == ref) { cur = i; break; }
@@ -175,8 +175,8 @@ void MainWindow::onSubBottomOpen()
                     this, [this](SubBottomDisplayParams p) {
                         if (m_sbp_win) m_sbp_win->applyDisplayParams(p);
                         // Persist per-layer SBP display params so they survive project reload.
-                        if (!currentProject() || m_active_layer_id.empty()) return;
-                        auto* layer = currentProject()->findLayer(m_active_layer_id);
+                        if (!currentProject() || activeLayerId().empty()) return;
+                        auto* layer = currentProject()->findLayer(activeLayerId());
                         if (!layer) return;
                         layer->sbp_display_state.display = p;
                         layer->sbp_display_state.display_customized = true;
@@ -258,8 +258,8 @@ void MainWindow::onSubBottomOpen()
         m_sbp_win->setProjectLayers(sbp_layers);
     }
 
-    if (currentProject() && !m_active_layer_id.empty()) {
-        auto* layer = currentProject()->findLayer(m_active_layer_id);
+    if (currentProject() && !activeLayerId().empty()) {
+        auto* layer = currentProject()->findLayer(activeLayerId());
         if (layer && layer->modality == app::Modality::SubBottom) {
             const auto* src = currentProject()->findSource(layer->source_id);
             m_sbp_win->setLayer(layer, m_import_service,

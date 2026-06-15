@@ -49,9 +49,9 @@ void MainWindow::setupTitleBar()
         m_btn_nav_back = mkNav(QStringLiteral("←"), tr("Go Back"));
         m_btn_nav_forward = mkNav(QStringLiteral("→"), tr("Go Forward"));
         connect(m_btn_nav_back, &QPushButton::clicked,
-                this, &MainWindow::onNavigateBack);
+                m_layer_ctrl, &LayerDisplayCoordinator::navigateBack);
         connect(m_btn_nav_forward, &QPushButton::clicked,
-                this, &MainWindow::onNavigateForward);
+                m_layer_ctrl, &LayerDisplayCoordinator::navigateForward);
         l->addWidget(m_btn_nav_back);
         l->addWidget(m_btn_nav_forward);
         nav->adjustSize();

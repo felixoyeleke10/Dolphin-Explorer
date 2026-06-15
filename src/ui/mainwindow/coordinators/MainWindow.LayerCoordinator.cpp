@@ -45,10 +45,10 @@ namespace dolphin::ui {
 void MainWindow::onLayerSelected(const std::string& layer_id)
 {
     if (!currentProject()) return;
-    if (!m_replaying_navigation)
-        recordNavigationSelection(layer_id);
+    if (!m_layer_ctrl->isReplaying())
+        m_layer_ctrl->recordSelection(layer_id);
 
-    m_active_layer_id = layer_id;
+    m_layer_ctrl->setActiveLayer(layer_id);
 
     auto* layer = currentProject()->findLayer(layer_id);
 
@@ -258,15 +258,15 @@ void MainWindow::onRemoveLayer(const std::string& layer_id)
     if (m_sss_ctrl) m_sss_ctrl->unloadLayer(layer_id);
     if (m_viewport_host) m_viewport_host->onLayerRemoved(layer_id);
     else if (m_map_view) m_map_view->removeLayerData(layer_id);
-    if (m_active_layer_id == layer_id) {
-        m_active_layer_id.clear();
+    if (activeLayerId() == layer_id) {
+        m_layer_ctrl->clearActiveLayer();
         if (m_inspector) m_inspector->showEmpty();
         updateControlsForModality(nullptr);
         updateActionStates();
         updateContextInfo();
     }
     currentProject()->removeLayer(layer_id);
-    pruneNavigationHistory();
+    m_layer_ctrl->pruneHistory(currentProject());
     refreshInspectorModalities();
     recordActivity(ActivityKind::GroupChange, tr("Removed: %1").arg(name));
 }
@@ -283,7 +283,7 @@ void MainWindow::onRemoveLayers(const std::vector<std::string>& layer_ids)
         return;
 
     const bool active_removed = std::find(
-        layer_ids.begin(), layer_ids.end(), m_active_layer_id) != layer_ids.end();
+        layer_ids.begin(), layer_ids.end(), activeLayerId()) != layer_ids.end();
 
     for (const auto& id : layer_ids) {
         m_pending_sbp_builds.erase(id);
@@ -294,134 +294,16 @@ void MainWindow::onRemoveLayers(const std::vector<std::string>& layer_ids)
         currentProject()->removeLayer(id);
     }
     if (active_removed) {
-        m_active_layer_id.clear();
+        m_layer_ctrl->clearActiveLayer();
         if (m_inspector) m_inspector->showEmpty();
         updateControlsForModality(nullptr);
         updateActionStates();
         updateContextInfo();
     }
-    pruneNavigationHistory();
+    m_layer_ctrl->pruneHistory(currentProject());
     refreshInspectorModalities();
     recordActivity(ActivityKind::GroupChange,
         tr("Removed %1 layer(s)").arg(n));
-}
-
-void MainWindow::onNavigateBack()
-{
-    if (!currentProject() || m_navigation_index <= 0) {
-        updateNavigationButtons();
-        return;
-    }
-
-    --m_navigation_index;
-    const std::string layer_id = m_navigation_history[static_cast<size_t>(m_navigation_index)];
-    m_replaying_navigation = true;
-    onLayerSelected(layer_id);
-    m_replaying_navigation = false;
-    updateNavigationButtons();
-}
-
-void MainWindow::onNavigateForward()
-{
-    if (!currentProject()
-            || m_navigation_index < 0
-            || m_navigation_index + 1 >= static_cast<int>(m_navigation_history.size())) {
-        updateNavigationButtons();
-        return;
-    }
-
-    ++m_navigation_index;
-    const std::string layer_id = m_navigation_history[static_cast<size_t>(m_navigation_index)];
-    m_replaying_navigation = true;
-    onLayerSelected(layer_id);
-    m_replaying_navigation = false;
-    updateNavigationButtons();
-}
-
-void MainWindow::clearNavigationHistory()
-{
-    m_navigation_history.clear();
-    m_navigation_index = -1;
-    // Do not reset m_replaying_navigation here: clearNavigationHistory can be
-    // called mid-replay (e.g. project close triggered from onLayerSelected).
-    // The replay guard is owned by onNavigateBack/Forward and reset there.
-    updateNavigationButtons();
-}
-
-void MainWindow::pruneNavigationHistory()
-{
-    if (!currentProject()) {
-        clearNavigationHistory();
-        return;
-    }
-
-    // Build a set of live IDs first so the inner lookup is O(1) not O(layers).
-    std::unordered_set<std::string> live;
-    for (const auto& l : currentProject()->layers())
-        live.insert(l->id);
-
-    std::vector<std::string> kept;
-    kept.reserve(m_navigation_history.size());
-    for (const auto& id : m_navigation_history) {
-        if (live.count(id)) {
-            if (kept.empty() || kept.back() != id)
-                kept.push_back(id);
-        }
-    }
-
-    m_navigation_history = std::move(kept);
-    if (m_navigation_history.empty()) {
-        m_navigation_index = -1;
-    } else {
-        m_navigation_index = std::clamp(
-            m_navigation_index, 0,
-            static_cast<int>(m_navigation_history.size()) - 1);
-    }
-    updateNavigationButtons();
-}
-
-static constexpr int kNavHistoryLimit = 100;
-
-void MainWindow::recordNavigationSelection(const std::string& layer_id)
-{
-    if (!currentProject() || layer_id.empty() || !currentProject()->findLayer(layer_id))
-        return;
-
-    if (m_navigation_index >= 0
-            && m_navigation_index < static_cast<int>(m_navigation_history.size())
-            && m_navigation_history[static_cast<size_t>(m_navigation_index)] == layer_id)
-        return;
-
-    if (m_navigation_index + 1 < static_cast<int>(m_navigation_history.size())) {
-        m_navigation_history.erase(
-            m_navigation_history.begin() + m_navigation_index + 1,
-            m_navigation_history.end());
-    }
-
-    m_navigation_history.push_back(layer_id);
-
-    // Trim oldest entries if the cap is exceeded.
-    if (static_cast<int>(m_navigation_history.size()) > kNavHistoryLimit) {
-        const int excess = static_cast<int>(m_navigation_history.size()) - kNavHistoryLimit;
-        m_navigation_history.erase(
-            m_navigation_history.begin(),
-            m_navigation_history.begin() + excess);
-        m_navigation_index = std::max(0, m_navigation_index - excess);
-    }
-
-    m_navigation_index = static_cast<int>(m_navigation_history.size()) - 1;
-    updateNavigationButtons();
-}
-
-void MainWindow::updateNavigationButtons()
-{
-    if (m_btn_nav_back)
-        m_btn_nav_back->setEnabled(currentProject() && m_navigation_index > 0);
-    if (m_btn_nav_forward)
-        m_btn_nav_forward->setEnabled(
-            currentProject()
-            && m_navigation_index >= 0
-            && m_navigation_index + 1 < static_cast<int>(m_navigation_history.size()));
 }
 
 void MainWindow::onRenameLayer(const std::string& layer_id)
@@ -441,7 +323,7 @@ void MainWindow::onRenameLayer(const std::string& layer_id)
         if (auto* l = currentProject() ? currentProject()->findLayer(lid) : nullptr) {
             if (m_line_list)    m_line_list->updateLayerLabel(lid, l->label);
             if (m_layer_picker) m_layer_picker->updateLayerLabel(lid, l->label);
-            if (m_inspector && m_active_layer_id == lid) m_inspector->showLayer(l);
+            if (m_inspector && activeLayerId() == lid) m_inspector->showLayer(l);
         }
         
         updateContextInfo();
@@ -493,8 +375,8 @@ void MainWindow::onRunAllLayers()
 void MainWindow::onRunSelectedLayer()
 {
     if constexpr (Features::kProcessing) {
-        if (!currentProject() || m_active_layer_id.empty() || !m_proc_ctrl) return;
-        auto* layer = currentProject()->findLayer(m_active_layer_id);
+        if (!currentProject() || activeLayerId().empty() || !m_proc_ctrl) return;
+        auto* layer = currentProject()->findLayer(activeLayerId());
         if (!layer) return;
         auto* src = currentProject()->findSource(layer->source_id);
         m_proc_ctrl->runLayer(layer, src ? src->path : std::string{});

@@ -21,6 +21,7 @@
 #include "app/tasks/OperationManager.h"
 #include "ui/mainwindow/AppSettingsDialog.h"
 #include "ui/mainwindow/ProjectSessionController.h"
+#include "ui/mainwindow/LayerDisplayCoordinator.h"
 #include "ui/systems/AppState.h"
 #include "ui/systems/WindowRegistry.h"
 #include "ui/systems/ProjectEventBus.h"
@@ -161,8 +162,7 @@ private slots:
 
     // Map context menu
     void onMapContextMenu(QPoint globalPos);
-    void onNavigateBack();
-    void onNavigateForward();
+    // (delegated to m_layer_ctrl — wired in MainWindow.cpp)
 
     // Activity bar — switch context panel
     void onActivityPanel(int panel_id);
@@ -262,10 +262,6 @@ private:
     void updateContextInfo();
     void appendJobMessage(const QString& message);
     void updateActionStates();
-    void clearNavigationHistory();
-    void pruneNavigationHistory();
-    void recordNavigationSelection(const std::string& layer_id);
-    void updateNavigationButtons();
     void refreshInspectorModalities();
 
     QWidget* makeContextPlaceholder(const QString& title, const QString& body);
@@ -292,7 +288,9 @@ private:
     // Mark dirty + emit windowTitleChanged via PSC.
     void markProjectDirty();
 
-    std::string m_active_layer_id;
+    // Layer selection state is owned by m_layer_ctrl; use this helper.
+    LayerDisplayCoordinator* m_layer_ctrl = nullptr;
+    const std::string& activeLayerId() const noexcept;
 
     app::OperationManager*  m_op_mgr = nullptr;  // central job runner + cancel registry
     app::ImportService*     m_import_service     = nullptr;
@@ -457,9 +455,6 @@ private:
     QPushButton* m_btn_primary_sidebar   = nullptr;
     QPushButton* m_btn_bottom_panel      = nullptr;
     QPushButton* m_btn_secondary_sidebar = nullptr;
-    std::vector<std::string> m_navigation_history;
-    int                      m_navigation_index = -1;
-    bool                     m_replaying_navigation = false;
 
     // Status bar
     MainStatusBar* m_status_bar = nullptr;

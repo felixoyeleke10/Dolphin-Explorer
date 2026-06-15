@@ -25,7 +25,7 @@ void MainWindow::onMapContextMenu(QPoint globalPos)
     const std::string clicked_id = (!is_3d_mode && m_map_view)
         ? m_map_view->hitTestLayer(local_pos)
         : std::string{};
-    const std::string layer_id = !clicked_id.empty() ? clicked_id : m_active_layer_id;
+    const std::string layer_id = !clicked_id.empty() ? clicked_id : activeLayerId();
     app::DataLayer* layer = (currentProject() && !layer_id.empty())
         ? currentProject()->findLayer(layer_id)
         : nullptr;
@@ -33,7 +33,7 @@ void MainWindow::onMapContextMenu(QPoint globalPos)
     const bool is_sidescan = layer && layer->modality == app::Modality::Sidescan;
     const bool is_sbp      = layer && layer->modality == app::Modality::SubBottom;
 
-    if (!clicked_id.empty() && clicked_id != m_active_layer_id)
+    if (!clicked_id.empty() && clicked_id != activeLayerId())
         onLayerSelected(clicked_id);
 
     auto addLayerAction = [&](const QString& text, auto slot) {
@@ -47,8 +47,8 @@ void MainWindow::onMapContextMenu(QPoint globalPos)
     QAction* open_viewer = menu.addAction(
         is_sbp ? tr("Open sub-bottom viewer") : tr("Open waterfall"),
         this, [this] {
-            if (!currentProject() || m_active_layer_id.empty()) return;
-            const auto* active = currentProject()->findLayer(m_active_layer_id);
+            if (!currentProject() || activeLayerId().empty()) return;
+            const auto* active = currentProject()->findLayer(activeLayerId());
             if (active && active->modality == app::Modality::SubBottom)
                 onSubBottomOpen();
             else
