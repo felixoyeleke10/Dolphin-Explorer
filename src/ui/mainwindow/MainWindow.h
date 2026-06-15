@@ -22,6 +22,8 @@
 #include "ui/mainwindow/AppSettingsDialog.h"
 #include "ui/mainwindow/ProjectSessionController.h"
 #include "ui/mainwindow/LayerDisplayCoordinator.h"
+#include "ui/mainwindow/TaskProgressController.h"
+#include "ui/mainwindow/ActivityLog.h"
 #include "ui/systems/AppState.h"
 #include "ui/systems/WindowRegistry.h"
 #include "ui/systems/ProjectEventBus.h"
@@ -79,7 +81,6 @@ class HeadingInfoPanel;
 class ImagingControlPanel;
 class MainStatusBar;
 class NavInfoPanel;
-class ProcessingDialog;
 class ProcessingWindow;
 
 class MainWindow : public QMainWindow {
@@ -162,7 +163,6 @@ private slots:
 
     // Map context menu
     void onMapContextMenu(QPoint globalPos);
-    // (delegated to m_layer_ctrl — wired in MainWindow.cpp)
 
     // Activity bar — switch context panel
     void onActivityPanel(int panel_id);
@@ -267,13 +267,12 @@ private:
     QWidget* makeContextPlaceholder(const QString& title, const QString& body);
     void     refreshSidebarSections(const QStringList& paths);
 
-    // Processing dialog — shared across all long-running operations.
+    // Thin delegates — state lives in m_task_ctrl.
     void taskBegin(const QString& id, const QString& label);
     void taskDone (const QString& id);
     void taskFail (const QString& id, const QString& error = {});
-    void onCancelProcessing();
 
-    ProcessingDialog* m_processing_dlg = nullptr;
+    TaskProgressController* m_task_ctrl = nullptr;
 
     DiagnosticsHub*   m_diag_hub     = nullptr;
     BottomDockPanel*  m_bottom_panel = nullptr;
@@ -358,21 +357,7 @@ private:
     QListWidget*        m_props_history_list  = nullptr;
     QPropertyAnimation* m_props_anim          = nullptr;
 
-    enum class ActivityKind {
-        Import        = 0,
-        Processing    = 1,
-        Palette       = 2,
-        DisplayParams = 3,
-        NavCorrection = 4,
-        Visibility    = 5,
-        CrsChange     = 6,
-        TagChange     = 7,
-        GroupChange   = 8,
-        Export        = 9,
-        ContactPick   = 10,
-    };
-    struct ProjectActivityEntry { ActivityKind kind; QString description; QDateTime timestamp; };
-    std::vector<ProjectActivityEntry> m_activity_log;
+    ActivityLog m_activity_log;
     void rebuildHistoryList();
     void recordActivity(ActivityKind kind, const QString& description);
 

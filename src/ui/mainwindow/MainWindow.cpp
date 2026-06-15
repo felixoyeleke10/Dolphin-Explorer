@@ -233,7 +233,8 @@ MainWindow::MainWindow(QWidget* parent)
     // Aspect files access these via currentProject() / activeLayerId() helpers.
     m_session_ctrl = new ProjectSessionController(
         m_undo_stack, m_diag_hub, m_op_mgr, m_import_service, this, this);
-    m_layer_ctrl = new LayerDisplayCoordinator(m_session_ctrl, this);
+    m_layer_ctrl  = new LayerDisplayCoordinator(m_session_ctrl, this);
+    m_task_ctrl   = new TaskProgressController(this, m_op_mgr, this);
 
     // openProject() for cache-only files encodes the path in a "job message"
     // prefixed with __import_cache__: so MainWindow can intercept it.

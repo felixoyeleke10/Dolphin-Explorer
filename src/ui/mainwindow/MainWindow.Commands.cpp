@@ -47,9 +47,9 @@ QList<CommandPaletteItem> MainWindow::buildCommandItems()
     };
 
     const bool has_project = currentProject() != nullptr;
-    const bool has_layer   = has_project && !m_active_layer_id.empty();
+    const bool has_layer   = has_project && !activeLayerId().empty();
     const bool has_sbp     = has_layer && [this]() -> bool {
-        const auto* l = currentProject()->findLayer(m_active_layer_id);
+        const auto* l = currentProject()->findLayer(activeLayerId());
         return l && l->modality == app::Modality::SubBottom;
     }();
 
@@ -119,9 +119,9 @@ QList<CommandPaletteItem> MainWindow::buildCommandItems()
 
         // Active layer floats to the top of the Line group on every open.
         for (const auto& layer : currentProject()->layers())
-            if (layer->id == m_active_layer_id) { items.append(makeLine(*layer)); break; }
+            if (layer->id == activeLayerId()) { items.append(makeLine(*layer)); break; }
         for (const auto& layer : currentProject()->layers())
-            if (layer->id != m_active_layer_id)  items.append(makeLine(*layer));
+            if (layer->id != activeLayerId())  items.append(makeLine(*layer));
     }
 
     if constexpr (Features::kContacts) {

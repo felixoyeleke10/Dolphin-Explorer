@@ -70,21 +70,21 @@ void MainWindow::onGeodeticSettings()
                     }
                     tx.commit();
                     m_geodesy_panel->refresh(currentProject(), m_session_ctrl->pendingCrs());
-                    if (!m_active_layer_id.empty()) {
-                        const auto* al = currentProject()->findLayer(m_active_layer_id);
+                    if (!activeLayerId().empty()) {
+                        const auto* al = currentProject()->findLayer(activeLayerId());
                         // Non-SSS active layer: rebuild the nav track with the new CRS.
                         // SSS tiles are reloaded by the CrsChanged broadcast below.
                         if (m_map_view && al && al->modality != app::Modality::Sidescan)
-                            m_map_view->setActiveLayer(m_active_layer_id);
+                            m_map_view->setActiveLayer(activeLayerId());
                     }
-                    if (m_inspector && !m_active_layer_id.empty()) {
-                        if (auto* layer = currentProject()->findLayer(m_active_layer_id))
+                    if (m_inspector && !activeLayerId().empty()) {
+                        if (auto* layer = currentProject()->findLayer(activeLayerId()))
                             m_inspector->showLayer(layer);
                     }
                     m_window_registry->broadcast(
-                        ViewerRefreshReason::CrsChanged, m_active_layer_id);
-                    if (!m_active_layer_id.empty())
-                        applyStoredNavParams(m_active_layer_id);
+                        ViewerRefreshReason::CrsChanged, activeLayerId());
+                    if (!activeLayerId().empty())
+                        applyStoredNavParams(activeLayerId());
                     appendJobMessage(
                         tr("Source CRS applied to %1 layer(s)").arg(n_applied));
                 });

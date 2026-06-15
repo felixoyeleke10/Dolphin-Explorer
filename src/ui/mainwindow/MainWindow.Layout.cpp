@@ -1,6 +1,4 @@
 ﻿// MainWindow.Layout.cpp — panel toggles, window geometry, and status bar helpers.
-// Maximum entries kept in the in-memory activity log (History panel).
-static constexpr int kActivityLogMaxEntries = 1000;
 #include "ui/mainwindow/MainWindow.h"
 #include "ui/mainwindow/MainStatusBar.h"
 #include "ui/mainwindow/commands/LayerCommands.h"
@@ -187,7 +185,7 @@ void MainWindow::rebuildHistoryList()
     if (!m_props_history_list) return;
     m_props_history_list->clear();
 
-    if (m_activity_log.empty()) {
+    if (m_activity_log.entries().empty()) {
         auto* hint = new QListWidgetItem(
             tr("No activity yet.\nImport a file, run processing, or adjust display settings."),
             m_props_history_list);
@@ -199,7 +197,7 @@ void MainWindow::rebuildHistoryList()
     const QDateTime now = QDateTime::currentDateTime();
     QString curSection;
 
-    for (const auto& entry : m_activity_log) {
+    for (const auto& entry : m_activity_log.entries()) {
         // Rolling-window buckets — not calendar-day boundaries
         const qint64 age = entry.timestamp.secsTo(now);   // seconds ago
         const bool is_today = entry.timestamp.date() == now.date();
@@ -242,10 +240,7 @@ void MainWindow::rebuildHistoryList()
 
 void MainWindow::recordActivity(ActivityKind kind, const QString& description)
 {
-    m_activity_log.insert(m_activity_log.begin(),
-        {kind, description, QDateTime::currentDateTime()});
-    if (m_activity_log.size() > kActivityLogMaxEntries)
-        m_activity_log.resize(kActivityLogMaxEntries);
+    m_activity_log.record(kind, description);
     // Refresh the list only if the History tab is currently visible.
     if (m_props_stack && m_props_stack->currentIndex() == 2)
         rebuildHistoryList();
