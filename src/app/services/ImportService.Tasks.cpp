@@ -8,7 +8,6 @@
 #include "io/jsf/JsfReader.h"
 #include "io/xtf/XtfReader.h"
 
-#include <QDebug>
 #include <algorithm>
 #include <cmath>
 #include <filesystem>

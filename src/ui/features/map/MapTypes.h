@@ -224,4 +224,12 @@ struct LayerMapData {
     std::vector<float> trace_amplitude;
 };
 
+// -- Viewport state -----------------------------------------------------------
+// Canonical scale/rotation state for the active view.
+// Owned by ViewportCoordinator; passed through viewportChanged signals.
+struct ViewportState {
+    double mpp     = 0.0;   // ground metres per screen pixel
+    double rot_deg = 0.0;   // bearing / camera yaw (degrees)
+};
+
 } // namespace dolphin::ui

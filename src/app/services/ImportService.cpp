@@ -419,6 +419,18 @@ void ImportService::rebuildCacheIndex(const std::string& layer_id,
         bool                cancelled = false;
     };
 
+    // Emit indexingProgress from the background thread via invokeMethod so the
+    // dialog progress bars animate during a full scan (old files without footer).
+    // For modern files with a footer the fast path returns immediately so no
+    // progress events are needed — they will just not fire.
+    QPointer<ImportService> self(this);
+    auto progress_fn = [self, layer_id](float p) {
+        const int pct = static_cast<int>(p * 100.f);
+        QMetaObject::invokeMethod(self, [self, layer_id, pct]() {
+            if (self) Q_EMIT self->indexingProgress(layer_id, pct);
+        }, Qt::QueuedConnection);
+    };
+
     auto* watcher = new QFutureWatcher<Result>(this);
     connect(watcher, &QFutureWatcher<Result>::finished, this,
             [this, watcher, project, layer_id, source_id]() {
@@ -439,9 +451,23 @@ void ImportService::rebuildCacheIndex(const std::string& layer_id,
             return;
         }
 
+        // Module-routed layers (e.g. SSS or SBP from a mixed XTF) were
+        // imported with a filtered artifact_index. Re-apply that filter so
+        // the rebuilt index doesn't suddenly include sibling modality types.
+        core::ArtifactIndex resolved = r.index;
+        const Modality mod = layer->modality;
+        if (mod != Modality::Unknown && mod != Modality::Mixed && !resolved.empty()) {
+            const core::ArtifactType wanted = artifactTypeForModality(mod);
+            bool mixed = false;
+            for (const auto& e : resolved.entries)
+                if (e.type != wanted) { mixed = true; break; }
+            if (mixed)
+                resolved = filteredByType(resolved, wanted);
+        }
+
         layer->artifact_index.source_id =
-            r.index.source_id.empty() ? source_id : r.index.source_id;
-        layer->artifact_index.entries = r.index.entries;
+            resolved.source_id.empty() ? source_id : resolved.source_id;
+        layer->artifact_index.entries = resolved.entries;
         layer->index_built = !layer->artifact_index.empty();
 
         // Back-fill metadata that may be absent from old JSON manifests.
@@ -455,6 +481,7 @@ void ImportService::rebuildCacheIndex(const std::string& layer_id,
             layer->modality = inferModality(layer->artifact_index);
 
         // Back-fill pipeline_applied for old projects that predate the field.
+        // metadata() after buildIndex() has correction_flags_seen from the footer.
         if (!layer->pipeline_applied && r.meta.correction_flags_seen != 0)
             layer->pipeline_applied = true;
 
@@ -462,19 +489,20 @@ void ImportService::rebuildCacheIndex(const std::string& layer_id,
         emit cacheIndexRebuilt(layer_id);
     });
 
-    watcher->setFuture(QtConcurrent::run([cache_path, token]() -> Result {
+    watcher->setFuture(QtConcurrent::run([cache_path, token, progress_fn]() -> Result {
         Result r;
         io::ParsedCacheReader reader;
         if (!reader.open(cache_path)) {
             r.error = "Cannot open cache: " + cache_path;
             return r;
         }
-        r.meta  = reader.metadata();
-        r.index = reader.buildIndex({}, token.flag());
+        r.index = reader.buildIndex(progress_fn, token.flag());
         if (token.isCancelled()) {
             r.cancelled = true;
             return r;
         }
+        // metadata() after buildIndex() includes correction_flags_seen from footer.
+        r.meta = reader.metadata();
         if (r.index.empty())
             r.error = "Cache index is empty: " + cache_path;
         return r;

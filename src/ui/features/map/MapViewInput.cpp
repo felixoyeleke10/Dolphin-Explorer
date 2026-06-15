@@ -320,6 +320,7 @@ void MapView::wheelEvent(QWheelEvent* event)
     m_zoom    = newZoom;
 
     update();
+    emit viewportChanged(viewportMetresPerPixel(), m_rotation_deg);
 }
 
 void MapView::leaveEvent(QEvent*)

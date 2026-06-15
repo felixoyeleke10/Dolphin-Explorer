@@ -6,11 +6,12 @@
 #include <QString>
 #include <memory>
 #include <string>
+#include <unordered_set>
 
-class QProgressBar;
 class QWidget;
 
 namespace dolphin::app {
+class ImportService;
 class Project;
 }
 
@@ -32,18 +33,23 @@ public:
     ExecutionController(app::ImportJobManager*   job_manager,
                         ExecutionProgressDialog* dialog,
                         LayerPickerWidget*       layer_picker,
-                        QProgressBar*            progress_bar,
                         QWidget*                 dialog_parent,
                         QObject*                 parent = nullptr);
 
     void setProject(std::shared_ptr<app::Project> project);
+    void connectToCacheRebuilds(app::ImportService* service);
 
     void importBatch(const QList<FileImportAction>& actions);
     void reindexLayer(const std::string& source_path, const std::string& layer_id);
 
+    void onMapLoadPending();
+    void onMapLoadDone();
+
 signals:
     void importCompleted(const std::string& layer_id);
     void importFailed(const QString& layer_id, const QString& error);
+    void cacheLayerReady(const std::string& layer_id);
+    void cacheLayerFailed(const QString& layer_id, const QString& error);
     void statusMessage(const QString& message);
     void progressChanged(int percent, bool visible);
     void batchCompleted(app::ImportJobManager::BatchSummary summary);
@@ -54,13 +60,17 @@ private:
     void onJobProgress(const std::string& layer_id, int percent);
     void onJobCompleted(const std::string& layer_id);
     void onJobFailed(const std::string& layer_id, const QString& error);
+    void onCacheRebuildStarted(app::ImportService* service, const std::string& layer_id);
+    void onCacheRebuildProgress(const std::string& layer_id, int percent);
+    void onCacheRebuilt(const std::string& layer_id);
+    void onCacheRebuildFailed(const std::string& layer_id, const std::string& error);
 
     app::ImportJobManager*        m_manager;
     ExecutionProgressDialog*      m_dialog;
     LayerPickerWidget*            m_layer_picker;
-    QProgressBar*                 m_progress_bar;
     QWidget*                      m_dialog_parent;
     std::shared_ptr<app::Project> m_project;
+    std::unordered_set<std::string> m_cache_rebuild_jobs;
 };
 
 } // namespace dolphin::ui

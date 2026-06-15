@@ -1,4 +1,6 @@
 ﻿// MainWindow.Layout.cpp — panel toggles, window geometry, and status bar helpers.
+// Maximum entries kept in the in-memory activity log (History panel).
+static constexpr int kActivityLogMaxEntries = 1000;
 #include "ui/mainwindow/MainWindow.h"
 #include "ui/mainwindow/MainStatusBar.h"
 #include "ui/mainwindow/commands/LayerCommands.h"
@@ -242,7 +244,8 @@ void MainWindow::recordActivity(ActivityKind kind, const QString& description)
 {
     m_activity_log.insert(m_activity_log.begin(),
         {kind, description, QDateTime::currentDateTime()});
-    if (m_activity_log.size() > 1000) m_activity_log.resize(1000);
+    if (m_activity_log.size() > kActivityLogMaxEntries)
+        m_activity_log.resize(kActivityLogMaxEntries);
     // Refresh the list only if the History tab is currently visible.
     if (m_props_stack && m_props_stack->currentIndex() == 2)
         rebuildHistoryList();

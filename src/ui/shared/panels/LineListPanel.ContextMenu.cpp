@@ -168,18 +168,10 @@ void LineListPanel::onContextMenuRequested(const QPoint& pos)
 
         menu.addSeparator();
 
-        // -- Export ------------------------------------------------------------
-        QMenu* exp = menu.addMenu(tr("Export"));
-        exp->addAction(tr("CSV Table"),       this, [this, ids] { emit exportLayersRequested(ids, "csv");     });
-        exp->addAction(tr("Navigation Data"), this, [this, ids] { emit exportLayersRequested(ids, "nav");     });
-        exp->addSeparator();
-        exp->addAction(tr("GeoTIFF"),         this, [this, ids] { emit exportLayersRequested(ids, "geotiff"); });
-        exp->addAction(tr("KMZ Archive"),     this, [this, ids] { emit exportLayersRequested(ids, "kmz");     });
-        exp->addAction(tr("PDF Report"),      this, [this, ids] { emit exportLayersRequested(ids, "pdf");     });
+        // -- Export (not yet implemented — disabled per D-05) -----------------
+        menu.addMenu(tr("Export"))->setEnabled(false);
 
-        menu.addAction(tr("Merge Lines…"), this, [this, ids] {
-            emit mergeLayersRequested(ids);
-        })->setEnabled(multi);
+        menu.addAction(tr("Merge Lines…"))->setEnabled(false);
 
         menu.addSeparator();
 

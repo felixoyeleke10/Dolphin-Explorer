@@ -99,6 +99,11 @@ void MapView3D::paintGL()
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing);
     drawHUD(painter);
+
+    if (!m_first_frame_emitted) {
+        m_first_frame_emitted = true;
+        emit firstFrameReady();
+    }
 }
 
 // -----------------------------------------------------------------------------

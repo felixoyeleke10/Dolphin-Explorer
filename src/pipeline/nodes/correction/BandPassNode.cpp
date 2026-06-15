@@ -6,13 +6,16 @@
 
 namespace dolphin::pipeline {
 
+static constexpr float kDefaultLowHz  = 10000.0f;
+static constexpr float kDefaultHighHz = 30000.0f;
+
 NodeSchema BandPassNode::schema() const
 {
     return NodeSchema{
         "bpf", "Band-Pass Filter", "Filter",
         {
-            {"low_hz",  {"Low cutoff (Hz)",  10000.0f, 100.0f,  200000.0f}},
-            {"high_hz", {"High cutoff (Hz)", 30000.0f, 100.0f,  200000.0f}},
+            {"low_hz",  {"Low cutoff (Hz)",  kDefaultLowHz,  100.0f, 200000.0f}},
+            {"high_hz", {"High cutoff (Hz)", kDefaultHighHz, 100.0f, 200000.0f}},
         }
     };
 }
@@ -20,8 +23,8 @@ NodeSchema BandPassNode::schema() const
 ArtifactBuffer BandPassNode::process(const ArtifactBuffer& input,
                                       const NodeParams& params) const
 {
-    float low_hz  = 10000.0f;
-    float high_hz = 30000.0f;
+    float low_hz  = kDefaultLowHz;
+    float high_hz = kDefaultHighHz;
 
     if (params.count("low_hz"))  low_hz  = std::get<float>(params.at("low_hz"));
     if (params.count("high_hz")) high_hz = std::get<float>(params.at("high_hz"));

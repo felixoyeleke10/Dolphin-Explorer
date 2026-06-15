@@ -4,6 +4,7 @@
 #include "ui/shell/Theme.h"
 
 #include <QDoubleSpinBox>
+#include <QValidator>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
@@ -18,13 +19,42 @@
 
 namespace dolphin::ui {
 
-// Local spin box subclass: logarithmic step so ▲ zooms IN (smaller ratio = larger scale).
+// Physical metres-per-pixel at 96 dpi (maps display ratio 1:n to real-world scale).
+static constexpr double kPhysicalMpp = 0.0254 / 96.0;
+
+// Stores mpp internally; displays as "1:n" map scale via textFromValue.
+// Arrow steps halve/double mpp logarithmically — precision-lossless round trip.
 class ScaleSpinBox : public QDoubleSpinBox {
 public:
     explicit ScaleSpinBox(QWidget* parent = nullptr) : QDoubleSpinBox(parent) {}
+
+    QString textFromValue(double mpp) const override {
+        if (mpp <= 0.0 || std::isnan(mpp)) return QStringLiteral("1:--");
+        const qint64 n = qRound64(mpp / kPhysicalMpp);
+        return n >= 1 ? QStringLiteral("1:") + QString::number(n)
+                      : QStringLiteral("1:1");
+    }
+
+    double valueFromText(const QString& text) const override {
+        QString s = text.trimmed();
+        if (s.startsWith(QStringLiteral("1:"))) s = s.mid(2).trimmed();
+        bool ok = false;
+        const double ratio = s.toDouble(&ok);
+        return (ok && ratio > 0.0) ? ratio * kPhysicalMpp : value();
+    }
+
+    QValidator::State validate(QString& text, int& /*pos*/) const override {
+        const QString inner = text.startsWith(QStringLiteral("1:"))
+                              ? text.mid(2).trimmed() : text.trimmed();
+        if (inner.isEmpty()) return QValidator::Intermediate;
+        bool ok = false;
+        const double v = inner.toDouble(&ok);
+        if (!ok)          return QValidator::Intermediate;
+        return v > 0.0    ? QValidator::Acceptable : QValidator::Intermediate;
+    }
+
     void stepBy(int steps) override {
-        // Each arrow click changes scale by a factor of 2 (halves/doubles ratio).
-        // Negate steps so ▲ decreases the ratio (zoom in = more detail).
+        // ▲ zooms in (smaller mpp = more detail); negate so upward → factor < 1.
         const double factor = std::pow(2.0, -steps);
         setValue(std::clamp(value() * factor, minimum(), maximum()));
     }
@@ -79,27 +109,25 @@ MainStatusBar::MainStatusBar(QWidget* parent)
     m_pos->setText(QStringLiteral("--"));
     m_pos->setMinimumWidth(148);
 
-    // Scale: QDoubleSpinBox — "1:50000" format, controls map zoom.
-    static constexpr double kPhysicalMpp = 0.0254 / 96.0;
-
+    // Scale: stores mpp directly; displays as "1:n" via ScaleSpinBox::textFromValue.
     m_lbl_scale  = makeFieldLabel("Scale");
     m_spin_scale = new ScaleSpinBox(this);
     m_spin_scale->setObjectName("statusSpinBox");
-    m_spin_scale->setPrefix(QStringLiteral("1:"));
-    m_spin_scale->setDecimals(0);
-    m_spin_scale->setRange(1.0, 1e8);
-    m_spin_scale->setSingleStep(5000.0);
+    m_spin_scale->setDecimals(15);                           // full mpp precision
+    // Lower bound: 1/100th of physical pixel — covers the map's internal 1e8 zoom limit.
+    // Upper bound: ~500 million:1 physical ratio, covering global overview scales.
+    m_spin_scale->setRange(kPhysicalMpp * 0.01, kPhysicalMpp * 5e8);
+    m_spin_scale->setSingleStep(kPhysicalMpp);
     m_spin_scale->setMinimumWidth(108);
-    m_spin_scale->setToolTip(tr("Map scale — use arrows to zoom"));
-    // Disable text input without disabling the arrows (setReadOnly would kill stepBy too).
-    if (auto* le = m_spin_scale->findChild<QLineEdit*>())
-        le->setReadOnly(true);
+    m_spin_scale->setToolTip(tr("Map scale — type 1:n or use arrows to zoom"));
     connect(m_spin_scale, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
-            this, [this](double ratio) {
-        static constexpr double kPhy = 0.0254 / 96.0;
-        emit scaleChangeRequested(ratio * kPhy);
+            this, [this](double mpp) {
+        emit scaleChangeRequested(mpp);
     });
-    Q_UNUSED(kPhysicalMpp);
+    // Start at a mid-range scale so UP/DOWN arrows both work before a project loads.
+    m_spin_scale->blockSignals(true);
+    m_spin_scale->setValue(kPhysicalMpp * 50000.0);   // "1:50000" — typical chart scale
+    m_spin_scale->blockSignals(false);
 
     // Rotation: QDoubleSpinBox — degrees, display-only for 2D (no map rotation yet).
     m_lbl_rot  = makeFieldLabel("Rotation");
@@ -111,9 +139,7 @@ MainStatusBar::MainStatusBar(QWidget* parent)
     m_spin_rot->setSingleStep(0.5);
     m_spin_rot->setWrapping(true);
     m_spin_rot->setMinimumWidth(72);
-    m_spin_rot->setToolTip(tr("Map rotation — use arrows or type to rotate"));
-    if (auto* le = m_spin_rot->findChild<QLineEdit*>())
-        le->setReadOnly(true);  // arrows active; block direct text entry
+    m_spin_rot->setToolTip(tr("Map rotation — type a value or use arrows to rotate"));
     connect(m_spin_rot, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
             this, [this](double deg) {
         emit rotationChangeRequested(deg);
@@ -270,12 +296,10 @@ void MainStatusBar::hideProgress()
 
 void MainStatusBar::setViewportInfo(double mpp, double rot_deg)
 {
-    static constexpr double kPhysicalMpp = 0.0254 / 96.0;
-
     // Block signals so updating the display doesn't trigger a scaleChangeRequested loop.
     m_spin_scale->blockSignals(true);
     if (mpp > 0.0 && !std::isnan(mpp))
-        m_spin_scale->setValue(std::round(mpp / kPhysicalMpp));
+        m_spin_scale->setValue(mpp);    // full precision; textFromValue handles display
     m_spin_scale->blockSignals(false);
 
     m_spin_rot->blockSignals(true);

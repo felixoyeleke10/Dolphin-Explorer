@@ -304,14 +304,11 @@ void MainWindow::loadProject(const std::string& path)
         if (!m_project || load_gen != m_project_load_gen) return;
         using M = app::Modality;
         std::string first_layer_id;
-        std::string first_sss_id;
         for (const auto& layer : m_project->layers()) {
             if (!layer || !layer->index_built || layer->artifact_index.empty()) continue;
             if (layer->modality == M::Sidescan) {
-                if (m_sss_ctrl && first_sss_id.empty()) {
+                if (m_sss_ctrl)
                     m_sss_ctrl->activateLayer(layer->id, m_project.get());
-                    first_sss_id = layer->id;
-                }
             } else if (m_map_view) {
                 m_map_view->setActiveLayer(layer->id);
                 m_map_view->setNavTrackVisible(layer->id, true);

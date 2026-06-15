@@ -169,13 +169,19 @@ void MainWindow::onExportScreenshot()
     if (suffix.isEmpty())
         path += QStringLiteral(".png");
 
-    const QPixmap shell_pixmap = grab();
-    QImage image = shell_pixmap.toImage().convertToFormat(QImage::Format_ARGB32_Premultiplied);
+    // Render the shell into an offscreen QImage instead of grab()-ing the live
+    // window. grab() forces DWM/OpenGL recomposition while a QOpenGLWidget is
+    // visible and causes the entire window to visibly flicker on Windows.
+    const qreal dpr = devicePixelRatio();
+    QImage image(QSize(qRound(width() * dpr), qRound(height() * dpr)),
+                 QImage::Format_ARGB32_Premultiplied);
+    image.setDevicePixelRatio(dpr);
+    image.fill(Qt::black);
+    render(&image);
 
     if (m_viewport_host) {
         const QImage viewport = m_viewport_host->grabViewportImage();
         if (!viewport.isNull()) {
-            const qreal dpr = shell_pixmap.devicePixelRatio();
             const QPoint top_left = m_viewport_host->mapTo(this, QPoint(0, 0));
             const QRect target(
                 QPoint(qRound(top_left.x() * dpr), qRound(top_left.y() * dpr)),
@@ -251,7 +257,6 @@ void MainWindow::onToolMeasure()
     appendJobMessage(tr("Click to add points. Right-click or double-click to reset."));
 }
 
-void MainWindow::onNavEditor()   {}
 
 void MainWindow::onBottomTrack()
 {

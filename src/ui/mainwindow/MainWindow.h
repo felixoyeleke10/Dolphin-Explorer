@@ -44,8 +44,6 @@ class DataLayer;
 class ImportJobManager;
 class ImportService;
 class ProcessingService;
-class SidescanCorrectionService;
-class SubBottomCorrectionService;
 }
 
 namespace dolphin::ui {
@@ -67,6 +65,9 @@ class SidescanViewController;
 class SubBottomWindow;
 class WaterfallWindow;
 
+class CorrectionBatchOperator;
+class ProjectOperationCoordinator;
+class ViewportCoordinator;
 class ConversationPanel;
 class CommandBar;
 class PanelChatWidget;
@@ -124,7 +125,6 @@ private slots:
     void onToggle3D();
     void onToolZoom();
     void onToolMeasure();
-    void onNavEditor();
     void onMeasurementUpdated(double metres);
     void onContactPickedOnMap(double lon, double lat);
     void onWaterfallOpen();
@@ -187,6 +187,7 @@ private slots:
     void onAbout();
     void onLayerVisibilityChanged(const std::string& layer_id, bool visible);
     void onPaletteChanged(int idx);
+    void onChannelChanged(DisplayChannel ch);
     void refreshLoadingIndicator();
     void onToggleContextPanel();
     void onTogglePropertiesPanel();
@@ -300,11 +301,12 @@ private:
     // Maps OperationManager op_id → DiagnosticsHub job_id for bridge.
     std::unordered_map<uint32_t, uint32_t>    m_op_job_ids;
 
-    SidescanViewController*            m_sss_ctrl        = nullptr;
-    ExecutionController*               m_import_ctrl     = nullptr;
-    ProcessingController*              m_proc_ctrl       = nullptr;
-    app::SidescanCorrectionService*    m_correction_svc      = nullptr;
-    app::SubBottomCorrectionService*   m_sbp_correction_svc  = nullptr;
+    SidescanViewController*  m_sss_ctrl    = nullptr;
+    ExecutionController*     m_import_ctrl = nullptr;
+    ProcessingController*    m_proc_ctrl   = nullptr;
+    CorrectionBatchOperator*      m_corr_op       = nullptr;
+    ProjectOperationCoordinator*  m_op_coord      = nullptr;
+    ViewportCoordinator*          m_viewport_coord = nullptr;
 
     // Map sonar preview quality actions (index == MapSonarQuality int value)
     std::array<QAction*, 6> m_act_map_quality{};

@@ -135,6 +135,10 @@ public:
     // External palette sync — updates inspector combo without re-emitting, then applies.
     void setPalette(int idx);
 
+    // External channel sync — updates m_display_channel and applies immediately.
+    void            setDisplayChannel(DisplayChannel ch);
+    DisplayChannel  displayChannel() const { return m_display_channel; }
+
     // Push a fresh copy of all project contacts to the waterfall overlay.
     // MainWindow calls this whenever contacts are added/removed from the project.
     void setProjectContacts(std::vector<core::Contact> contacts);

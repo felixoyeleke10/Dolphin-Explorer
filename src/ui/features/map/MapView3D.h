@@ -48,7 +48,8 @@ public:
 
     // -- Scene origin ------------------------------------------------------
     void setSceneOrigin(double lon_or_x, double lat_or_y, bool is_projected);
-    bool hasOrigin() const { return m_has_origin; }
+    bool hasOrigin()  const { return m_has_origin; }
+    bool isGLReady()  const { return m_gl_ready; }
 
     // -- Nav-track API -----------------------------------------------------
     void updateNavTrack(const std::string& layer_id,
@@ -114,6 +115,9 @@ public:
     void fitToScene();
     // Returns the layer under a screen point, or empty if no 3D layer was hit.
     std::string hitTestLayer(QPoint px) const;
+    // Programmatic camera control — driven by status-bar spin boxes.
+    void setYaw(double deg);
+    void setDistance(float metres);
 
     // -- Tool mode ---------------------------------------------------------
     // Values intentionally match AppState::ToolMode: Pan=0, Select=1,
@@ -137,6 +141,13 @@ signals:
     void contextMenuRequested(QPoint globalPos);
     // Emitted in ContactPick mode when the user clicks without dragging.
     void contactPickedAt(double lon, double lat);
+    // Emitted once, at the end of the first paintGL() call.
+    // Used by MapViewportHost to hide the transition overlay.
+    void firstFrameReady();
+    // Emitted after every camera change (orbit, pan, zoom).
+    // mpp = metres per pixel (approximation from camera distance + viewport height).
+    // rotation_deg = camera yaw in degrees [0, 360).
+    void viewportChanged(double metres_per_pixel, double rotation_deg);
 
 protected:
     void initializeGL() override;
@@ -293,8 +304,9 @@ private:
     QOpenGLBuffer m_nav_merged_vbo { QOpenGLBuffer::VertexBuffer }; // all nav tracks batched
     int  m_nav_merged_count = 0;
     int  m_survey_count = 0;
-    bool m_gl_ready     = false;
-    bool m_survey_dirty = false;
+    bool m_gl_ready            = false;
+    bool m_first_frame_emitted = false;
+    bool m_survey_dirty        = false;
 
     // -- Data layers -------------------------------------------------------
     std::vector<NavLayer3D>     m_layers;

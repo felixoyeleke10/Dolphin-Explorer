@@ -82,6 +82,8 @@ BottomDockPanel::BottomDockPanel(DiagnosticsHub* hub, QWidget* parent)
             this, &BottomDockPanel::onOutputLogged);
     connect(hub, &DiagnosticsHub::jobChanged,
             this, &BottomDockPanel::onJobChanged);
+    connect(hub, &DiagnosticsHub::batchChanged,
+            this, &BottomDockPanel::onBatchChanged);
 
     populateFromHub();
 }

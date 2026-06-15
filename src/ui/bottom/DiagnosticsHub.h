@@ -46,21 +46,52 @@ public:
     void logOutput(const QString& msg);
     const QList<OutputEntry>& outputs() const { return m_output; }
 
+    // -- Batches ---------------------------------------------------------------
+    enum class BatchState { Running, Completed, CompletedWithErrors, Failed, Cancelled };
+
+    struct Batch {
+        uint32_t   id        = 0;
+        QString    name;
+        int        total     = 0;
+        int        done      = 0;
+        int        succeeded = 0;
+        BatchState state     = BatchState::Running;
+        QDateTime  started;
+        QDateTime  ended;
+    };
+
+    uint32_t beginBatch (const QString& name, int total);
+    void     updateBatch(uint32_t batch_id, int done, int succeeded);
+    void     finishBatch(uint32_t batch_id, int succeeded, int total);
+    void     failBatch  (uint32_t batch_id, const QString& error = {});
+    void     cancelBatch(uint32_t batch_id);
+
+    int activeBatchCount() const;
+    const QList<Batch>& batches() const { return m_batches; }
+    const Batch* findBatch(uint32_t id) const;
+
     // -- Jobs ------------------------------------------------------------------
     enum class JobStatus { Running, Completed, Failed, Cancelled };
 
     struct Job {
-        uint32_t  id         = 0;
+        uint32_t  id           = 0;
+        uint32_t  batch_id     = 0;    // parent batch (0 = standalone)
         QString   name;
         QString   layer_id;
-        JobStatus status     = JobStatus::Running;
-        float     progress   = -1.f;  // -1 = indeterminate
+        QString   format_badge;        // display hint: "COR", "SBP", "IMP", "RUN", …
+        float     size_mb      = 0.f;  // display hint for import jobs
+        JobStatus status       = JobStatus::Running;
+        float     progress     = -1.f;  // -1 = indeterminate
         QString   detail;
         QDateTime started;
         QDateTime ended;
     };
 
-    uint32_t beginJob(const QString& name, const QString& layer_id = {});
+    uint32_t beginJob(const QString& name,
+                      const QString& layer_id     = {},
+                      uint32_t       batch_id     = 0,
+                      const QString& format_badge = {},
+                      float          size_mb      = 0.f);
     void     updateJob(uint32_t id, const QString& detail, float progress = -1.f);
     void     endJob(uint32_t id, const QString& summary = {});
     void     failJob(uint32_t id, const QString& error = {});
@@ -73,15 +104,18 @@ signals:
     void problemPosted(const dolphin::ui::DiagnosticsHub::Problem& p);
     void problemsCleared(const QString& layer_id);
     void outputLogged(const QString& msg);
+    void batchChanged(uint32_t batch_id);
     void jobChanged(uint32_t id);
 
 private:
-    Job* findJob(uint32_t id);
+    Job*   findJob  (uint32_t id);
+    Batch* findBatchMut(uint32_t id);
 
     static constexpr int kMaxOutputEntries = 2000;
 
     QList<Problem>     m_problems;
     QList<OutputEntry> m_output;
+    QList<Batch>       m_batches;
     QList<Job>         m_jobs;
     uint32_t           m_next_id = 1;
 };

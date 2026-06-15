@@ -51,39 +51,28 @@ namespace dolphin::ui {
 
 void MapView3D::drawHUD(QPainter& painter)
 {
-    const QString info = QString("N %1°  ·  pitch %2°  ·  %3 m")
-        .arg(qRound(m_camera.yaw))
-        .arg(qRound(m_camera.pitch))
-        .arg(qRound(m_camera.distance));
-
-    QFont f = painter.font();
-    f.setPointSizeF(f.pointSizeF() * 0.82);
-    painter.setFont(f);
-    const QFontMetrics fm(f);
-    const QSize ts = fm.boundingRect(info).size() + QSize(12, 6);
-    const QRect badge(12, height() - ts.height() - 10, ts.width(), ts.height());
-
-    painter.fillRect(badge, kHudBadgeBg);
-    painter.setPen(QColor(Theme::kIconStroke));
-    painter.drawText(badge, Qt::AlignCenter, info);
-
-    int nextX = badge.right() + 8;
-
     if (m_show_fps) {
+        QFont f = painter.font();
+        f.setPointSizeF(f.pointSizeF() * 0.82);
+        painter.setFont(f);
+        const QFontMetrics fm(f);
         const QString fps_str = QString("FPS %1").arg(m_fps_avg < 1.f ? 0 : qRound(m_fps_avg));
-        const QRect fpsbadge(nextX, badge.top(), fm.boundingRect(fps_str).width() + 12, badge.height());
+        const QSize ts = fm.boundingRect(fps_str).size() + QSize(12, 6);
+        const QRect fpsbadge(12, height() - ts.height() - 10, ts.width(), ts.height());
         painter.fillRect(fpsbadge, kHudBadgeBg);
         painter.setPen(QColor(Theme::kIconStroke));
         painter.drawText(fpsbadge, Qt::AlignCenter, fps_str);
     }
 
     // -- Depth colormap legend -------------------------------------------------
+    // Anchored above the scale bar (barY ≈ height()-14); stack legends upward.
+    const int legendBaseY = height() - 30;
     if (!m_terrain_layers.empty()) {
         const auto& T = m_terrain_layers.front();
         const QString leg = QString("Depth: %1 m → %2 m")
             .arg(qRound(-T.z_max)).arg(qRound(-T.z_min));
         painter.setPen(QColor(Theme::kIconStroke));
-        painter.drawText(15, badge.top() - 2, leg);
+        painter.drawText(15, legendBaseY, leg);
     }
 
     // -- SBP curtain depth legend ----------------------------------------------
@@ -93,16 +82,14 @@ void MapView3D::drawHUD(QPainter& painter)
             z_range_max = std::max(z_range_max, C.z_range);
         const QString leg = QString("SBP depth: 0 m → %1 m").arg(qRound(z_range_max));
         painter.setPen(QColor(Theme::kIconStroke));
-        painter.drawText(15, badge.top() - 2 - (m_terrain_layers.empty() ? 0 : 15), leg);
+        painter.drawText(15, legendBaseY - (m_terrain_layers.empty() ? 0 : 15), leg);
     }
 
     // -- Grid coordinate labels ------------------------------------------------
     if (m_show_grid && m_has_origin)
         drawGridLabels(painter);
 
-    // -- Scale bar + compass rose ----------------------------------------------
-    if (m_has_origin)
-        drawScaleBar3D(painter);
+    // -- Compass rose ----------------------------------------------------------
     drawCompassRose(painter);
 
     // -- Empty state -----------------------------------------------------------

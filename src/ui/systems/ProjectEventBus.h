@@ -34,6 +34,7 @@ signals:
 
 public:
     void postLayerDataChanged(const std::string& layer_id);
+    void postProjectModified();
 
 private:
     QPointer<app::Project> m_project;

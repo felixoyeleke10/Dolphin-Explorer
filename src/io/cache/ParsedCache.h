@@ -25,6 +25,12 @@ public:
     core::ArtifactIndex buildIndex(ProgressFn progress,
                                    const std::atomic<bool>* cancel_flag);
 
+    // Footer-only fast path: returns the index from the compact footer appended
+    // by a previous buildIndex() call.  Returns an empty index without doing any
+    // file scan when no footer exists.  Safe to call on the main thread because
+    // it does at most two seeks + N×56-byte reads; never scans the whole file.
+    core::ArtifactIndex quickIndex();
+
     std::optional<core::Artifact>
         readArtifact(const core::ArtifactIndexEntry& entry) override;
 

@@ -10,14 +10,16 @@
 #include "ui/features/import/ImportController.h"
 #include "ui/features/processing/ProcessingController.h"
 #include "ui/features/map/sidescan/SidescanViewController.h"
-#include "app/corrections/SidescanCorrectionService.h"
-#include "app/corrections/SubBottomCorrectionService.h"
+#include "ui/mainwindow/coordinators/CorrectionBatchOperator.h"
+#include "ui/mainwindow/coordinators/ProjectOperationCoordinator.h"
+#include "ui/mainwindow/coordinators/ViewportCoordinator.h"
 #include "ui/features/import/ImportProgressDialog.h"
 #include "ui/features/waterfall/WaterfallWindow.h"
 #include "ui/features/subbottom/SubBottomWindow.h"
 #include "ui/shared/dialogs/SettingsDialog.h"
 #include "ui/shared/widgets/LayerPickerWidget.h"
 #include "ui/features/map/MapView.h"
+#include "ui/features/map/MapViewportHost.h"
 #include "app/services/ImportService.h"
 #include "app/services/ProcessingService.h"
 #include "ui/shared/panels/LineListPanel.h"
@@ -214,28 +216,6 @@ MainWindow::MainWindow(QWidget* parent)
                              QString::fromStdString(error));
                 });
 
-        // Background cache-index rebuild completed (deferred from project open).
-        // Activate the layer in the map and — if nothing is selected yet — select it.
-        connect(m_import_service, &app::ImportService::cacheIndexRebuilt, this,
-                [this](const std::string& layer_id) {
-                    if (!m_project) return;
-                    auto* layer = m_project->findLayer(layer_id);
-                    if (!layer || !layer->index_built) return;
-
-                    // Push nav track and swath preview into the map.
-                    using M = app::Modality;
-                    if (layer->modality == M::Sidescan && m_sss_ctrl)
-                        m_sss_ctrl->activateLayer(layer_id, m_project.get());
-                    else if (m_map_view)
-                        m_map_view->setActiveLayer(layer_id);
-
-                    // If no layer is selected yet (project just opened), select this one.
-                    if (m_active_layer_id.empty())
-                        onLayerSelected(layer_id);
-
-                    m_project_dirty = true;
-                    setWindowTitleFromProject();
-                });
     }
 
     if constexpr (Features::kProcessing)
@@ -247,16 +227,15 @@ MainWindow::MainWindow(QWidget* parent)
     setupMenuBar();
     setupStatusBar();
 
-    // Scale spin box → map zoom: both m_status_bar and m_map_view exist after this point.
+    // Viewport coordinator — single path for all scale/rotation commands and feedback.
+    m_viewport_coord = new ViewportCoordinator(m_viewport_host, this);
     connect(m_status_bar, &MainStatusBar::scaleChangeRequested,
-            this, [this](double mpp) {
-        if (m_map_view) m_map_view->setZoomFromMpp(mpp);
-    });
-
-    // Rotation spin box → map bearing.
+            m_viewport_coord, &ViewportCoordinator::requestScale);
     connect(m_status_bar, &MainStatusBar::rotationChangeRequested,
-            this, [this](double deg) {
-        if (m_map_view) m_map_view->setRotationDeg(deg);
+            m_viewport_coord, &ViewportCoordinator::requestRotation);
+    connect(m_viewport_coord, &ViewportCoordinator::stateChanged,
+            this, [this](ViewportState s) {
+        m_status_bar->setViewportInfo(s.mpp, s.rot_deg);
     });
 
     // CRS badge → open Geodetic Settings dialog.
@@ -348,7 +327,8 @@ MainWindow::MainWindow(QWidget* parent)
     });
     connect(m_sss_ctrl, &SidescanViewController::loadingFinished, this, [this]() {
         m_status_bar->hideProgress();
-        m_import_overlay->onMapLoadDone();
+        if (m_import_ctrl)
+            m_import_ctrl->onMapLoadDone();
     });
     connect(m_sss_ctrl, &SidescanViewController::mapDiagnosticsReady,
             this, &MainWindow::onMapDiagnosticsReady);
@@ -357,77 +337,37 @@ MainWindow::MainWindow(QWidget* parent)
     // Uses m_map_view as the host widget for auto-cleanup on destroy.
     m_window_registry->registerViewer(m_map_view, m_sss_ctrl);
 
-    // Bakes processing corrections (TVG, ARC, AGC) into .dlpd amplitude data.
-    // Wired to the waterfall Apply buttons in onWaterfallOpen().
-    m_correction_svc = new app::SidescanCorrectionService(m_import_service, this);
-    connect(m_correction_svc, &app::SidescanCorrectionService::applyStarted,
-            this, [this](const std::string& layer_id) {
-                auto* layer = m_project ? m_project->findLayer(layer_id) : nullptr;
-                const QString label = layer
-                    ? tr("Baking corrections into %1…").arg(QString::fromStdString(layer->label))
-                    : tr("Baking sidescan corrections…");
-                taskBegin(QStringLiteral("correction:") + QString::fromStdString(layer_id), label);
-            });
-    connect(m_correction_svc, &app::SidescanCorrectionService::correctionsPersisted,
+    // Single source of truth for correction bakes (SSS + SBP).
+    // CorrectionBatchOperator owns both services and routes lifecycle events
+    // through DiagnosticsHub and ExecutionProgressDialog internally.
+    m_corr_op = new CorrectionBatchOperator(m_import_service, m_diag_hub, m_import_overlay, this);
+    // correctionPersisted: layer mutation, contract, save, and viewer reload
+    // are handled entirely by ProjectOperationCoordinator (wired below).
+    // MainWindow only emits the user-visible log message.
+    connect(m_corr_op, &CorrectionBatchOperator::correctionPersisted,
             this, [this](const std::string& layer_id,
-                         const std::string& new_path,
-                         const core::ArtifactIndex& new_index) {
-                auto* layer = m_project ? m_project->findLayer(layer_id) : nullptr;
-                if (!layer) return;
-                layer->artifact_store_path   = new_path;
-                layer->artifact_store_format = "dlpd";
-                layer->artifact_index        = new_index;
-                m_project_dirty = true;
-                setWindowTitleFromProject();
-                if (m_sss_ctrl) m_sss_ctrl->reloadLayer(layer_id);
-                appendJobMessage(
-                    tr("Corrections baked into %1")
+                         const std::string& /*new_path*/,
+                         const core::ArtifactIndex& /*new_index*/) {
+                const auto* layer = m_project ? m_project->findLayer(layer_id) : nullptr;
+                if (layer)
+                    appendJobMessage(tr("Corrections baked into %1")
                         .arg(QString::fromStdString(layer->label)));
-                taskDone(QStringLiteral("correction:") + QString::fromStdString(layer_id));
             });
-    connect(m_correction_svc, &app::SidescanCorrectionService::applyFailed,
-            this, [this](const std::string& layer_id, const std::string& error) {
-                appendJobMessage(tr("Correction bake failed: %1")
-                    .arg(QString::fromStdString(error)));
-                taskFail(QStringLiteral("correction:") + QString::fromStdString(layer_id),
-                         QString::fromStdString(error));
-            });
-
-    // Bakes SBP processing corrections into .dlpd float samples.
-    // Wired to the SBP Apply buttons in onSubBottomOpen().
-    m_sbp_correction_svc = new app::SubBottomCorrectionService(m_import_service, this);
-    connect(m_sbp_correction_svc, &app::SubBottomCorrectionService::applyStarted,
+    connect(m_corr_op, &CorrectionBatchOperator::correctionSkipped,
             this, [this](const std::string& layer_id) {
-                auto* layer = m_project ? m_project->findLayer(layer_id) : nullptr;
-                const QString label = layer
-                    ? tr("Baking corrections into %1…").arg(QString::fromStdString(layer->label))
-                    : tr("Baking sub-bottom corrections…");
-                taskBegin(QStringLiteral("sbp_correction:") + QString::fromStdString(layer_id), label);
-            });
-    connect(m_sbp_correction_svc, &app::SubBottomCorrectionService::correctionsPersisted,
-            this, [this](const std::string& layer_id,
-                         const std::string& new_path,
-                         const core::ArtifactIndex& new_index) {
-                auto* layer = m_project ? m_project->findLayer(layer_id) : nullptr;
-                if (!layer) return;
-                layer->artifact_store_path   = new_path;
-                layer->artifact_store_format = "dlpd";
-                layer->artifact_index        = new_index;
-                m_project_dirty = true;
-                setWindowTitleFromProject();
-                if (m_sbp_win && m_sbp_win->currentLayerId() == layer_id)
-                    m_sbp_win->reloadCurrentLayer();
-                appendJobMessage(
-                    tr("Corrections baked into %1")
+                const auto* layer = m_project ? m_project->findLayer(layer_id) : nullptr;
+                if (layer)
+                    appendJobMessage(tr("Corrections already baked — skipped %1")
                         .arg(QString::fromStdString(layer->label)));
-                taskDone(QStringLiteral("sbp_correction:") + QString::fromStdString(layer_id));
             });
-    connect(m_sbp_correction_svc, &app::SubBottomCorrectionService::applyFailed,
-            this, [this](const std::string& layer_id, const std::string& error) {
-                appendJobMessage(tr("SBP correction bake failed: %1")
-                    .arg(QString::fromStdString(error)));
-                taskFail(QStringLiteral("sbp_correction:") + QString::fromStdString(layer_id),
-                         QString::fromStdString(error));
+    connect(m_corr_op, &CorrectionBatchOperator::correctionFailed,
+            this, [this](const std::string& /*layer_id*/, const QString& error) {
+                appendJobMessage(tr("Correction bake failed: %1").arg(error));
+            });
+    connect(m_corr_op, &CorrectionBatchOperator::batchComplete,
+            this, [this](int succeeded, int total) {
+                appendJobMessage(tr("Correction bake complete: %1/%2 lines")
+                    .arg(succeeded).arg(total));
             });
 
     {
@@ -441,7 +381,8 @@ MainWindow::MainWindow(QWidget* parent)
         m_import_job_mgr = new app::ImportJobManager(m_import_service, this);
         m_import_ctrl = new ExecutionController(
             m_import_job_mgr, m_import_overlay, m_layer_picker,
-            m_status_bar->progressBar(), this, this);
+            this, this);
+        m_import_ctrl->connectToCacheRebuilds(m_import_service);
         connect(m_import_ctrl, &ExecutionController::importFailed,
                 this, [this](const QString& layer_id, const QString& error) {
                     m_diag_hub->postProblem(
@@ -457,7 +398,7 @@ MainWindow::MainWindow(QWidget* parent)
                     const bool  needs_map_build = layer
                         && layer->modality == app::Modality::Sidescan;
                     if (needs_map_build)
-                        m_import_overlay->onMapLoadPending();
+                        m_import_ctrl->onMapLoadPending();
                     // Evict stale map data so activateLayer() does a fresh load.
                     if (m_sss_ctrl)
                         m_sss_ctrl->unloadLayer(layer_id);
@@ -476,6 +417,32 @@ MainWindow::MainWindow(QWidget* parent)
                     // shows the correct sections for the newly indexed layer.
                     if (m_line_list) m_line_list->refresh();
                     refreshInspectorModalities();
+                });
+        connect(m_import_ctrl, &ExecutionController::cacheLayerReady,
+                this, [this](const std::string& layer_id) {
+                    if (!m_project) return;
+                    auto* layer = m_project->findLayer(layer_id);
+                    if (!layer || !layer->index_built) return;
+
+                    const bool needs_map_build =
+                        layer->modality == app::Modality::Sidescan && m_sss_ctrl;
+                    if (needs_map_build)
+                        m_import_ctrl->onMapLoadPending();
+
+                    using M = app::Modality;
+                    if (m_active_layer_id.empty()) {
+                        onLayerSelected(layer_id);
+                    } else {
+                        if (layer->modality == M::Sidescan && m_sss_ctrl)
+                            m_sss_ctrl->activateLayer(layer_id, m_project.get());
+                        else if (m_map_view) {
+                            m_map_view->setActiveLayer(layer_id);
+                            m_map_view->setNavTrackVisible(layer_id, true);
+                        }
+                    }
+
+                    m_project_dirty = true;
+                    setWindowTitleFromProject();
                 });
         connect(m_import_ctrl, &ExecutionController::statusMessage,
                 this, &MainWindow::appendJobMessage);
@@ -526,23 +493,16 @@ MainWindow::MainWindow(QWidget* parent)
                         DiagnosticsHub::Severity::Error, QString::fromStdString(id));
                     taskFail(QStringLiteral("proc:") + QString::fromStdString(id), error);
                 });
-        connect(m_proc_ctrl, &ProcessingController::processingPersisted,
-                this, [this](const std::string& id,
-                             const std::string& /*proc_path*/,
-                             const core::ArtifactIndex& proc_index,
-                             bool slant_range_corrected) {
-                    auto* layer = m_project ? m_project->findLayer(id) : nullptr;
-                    if (!layer) return;
-                    // The .dlpd was overwritten in-place; only the index changes.
-                    layer->artifact_index         = proc_index;
-                    layer->pipeline_applied       = true;
-                    layer->slant_range_corrected  = slant_range_corrected;
-                    m_project_dirty = true;
-                    setWindowTitleFromProject();
-                    // Reload viewers from the now-updated .dlpd.
-                    m_event_bus->postLayerDataChanged(id);
-                });
+        // processingPersisted: layer mutation, contract, save, and viewer reload
+        // are handled entirely by ProjectOperationCoordinator (wired below).
+        // Nothing left for MainWindow to do here.
     }
+
+    // ProjectOperationCoordinator — bridges service completion into the Worker
+    // registry, ContractStore, event bus, and project persistence.
+    m_op_coord = new ProjectOperationCoordinator(m_event_bus, this);
+    m_op_coord->connectToProcessing(m_proc_ctrl);
+    m_op_coord->connectToCorrections(m_corr_op);
 
     setupTitleBar();
 

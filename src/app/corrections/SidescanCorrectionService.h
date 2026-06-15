@@ -6,7 +6,6 @@
 
 namespace dolphin::app {
 class ImportService;
-class Project;
 }
 
 namespace dolphin::app {
@@ -14,17 +13,13 @@ namespace dolphin::app {
 // Bakes enabled processing corrections from SidescanCorrectionParams into the
 // .dlpd amplitude data in a background thread.
 //
-// Unlike the display-time pipeline, baked corrections are permanent: the
-// modified uint16 amplitudes are written back to the artifact store so exports
-// and every viewer see the corrected data.
-//
-// Covered corrections (pre-assembly, operate directly on ping samples):
-//   TVG (CorrectionFlag::Tvg)            — time-varying gain
-//   ARC (CorrectionFlag::Arc)            — angle range correction
-//   AGC (CorrectionFlag::GainNormalized) — gain normalisation
+// Each applyToLine() call emits exactly one terminal signal:
+//   correctionsPersisted — bake succeeded; new amplitudes written to the artifact store
+//   applySkipped         — all requested corrections were already baked; nothing written
+//   applyFailed          — store unreadable, write failed, or unexpected exception
 //
 // Already-baked flags are respected — re-applying the same correction is
-// silently skipped so calling applyToLine twice is idempotent.
+// idempotent. Batch tracking (pending/succeeded counters) belongs to the caller.
 class SidescanCorrectionService : public QObject {
     Q_OBJECT
 public:
@@ -38,13 +33,13 @@ public:
                      const std::string& source_path,
                      const SidescanCorrectionParams& params);
 
-    void applyToAll(Project& project, const SidescanCorrectionParams& params);
-
 signals:
-    void applyStarted(const std::string& layer_id);
+    // Emitted when corrections were actually written to the artifact store.
     void correctionsPersisted(const std::string& layer_id,
                               const std::string& new_store_path,
                               const core::ArtifactIndex& new_index);
+    // Emitted when all requested corrections were already baked — nothing written.
+    void applySkipped(const std::string& layer_id);
     void applyFailed(const std::string& layer_id, const std::string& error);
 
 private:

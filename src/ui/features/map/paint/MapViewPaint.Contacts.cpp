@@ -77,13 +77,8 @@ void MapView::paintContacts(QPainter& p) const
         }
     }
 
-    // -- Rubber-band selection rect --------------------------------------------
-    if (m_rubberbanding && m_drag_moved) {
-        const QRect rect = QRect(m_drag_start, m_rubberband_end).normalized();
-        p.setPen(QPen(kRubberbandStroke, 1, Qt::DashLine));
-        p.setBrush(kRubberbandFill);
-        p.drawRect(rect);
-    }
+    // Rubber-band is drawn in screen space (after painter rotation is restored)
+    // — see MapViewPaint.cpp paintEvent, HUD phase.
 }
 
 } // namespace dolphin::ui

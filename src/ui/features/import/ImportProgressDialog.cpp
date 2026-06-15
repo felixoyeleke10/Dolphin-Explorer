@@ -3,6 +3,7 @@
 #include "ui/shell/Theme.h"
 
 #include <QDateTime>
+#include <QCloseEvent>
 #include <QFontMetrics>
 #include <QFrame>
 #include <QHBoxLayout>
@@ -103,7 +104,7 @@ ExecutionProgressDialog::ExecutionProgressDialog(QWidget* parent)
 
     m_bg_btn = new QPushButton(tr("Run in Background"), footer);
     m_bg_btn->setObjectName("bgBtn");
-    connect(m_bg_btn, &QPushButton::clicked, this, &QDialog::hide);
+    connect(m_bg_btn, &QPushButton::clicked, this, &ExecutionProgressDialog::runInBackground);
     foot_lay->addWidget(m_bg_btn);
 
     m_close_btn = new QPushButton(tr("Close"), footer);
@@ -137,6 +138,8 @@ void ExecutionProgressDialog::addJob(const std::string& layer_id,
     if (m_all_done) {
         clearFinishedRows();
         m_all_done = false;
+        m_backgrounded = false;
+        m_pending_map_loads = 0;
         m_title_lbl->setText(tr("Background Tasks"));
         m_close_btn->setEnabled(false);
         m_bg_btn->setEnabled(true);
@@ -171,19 +174,12 @@ void ExecutionProgressDialog::addJob(const std::string& layer_id,
 
     updateHeader();
 
-    if (!isVisible()) {
-        if (parentWidget()) {
-            const QRect pr = parentWidget()->geometry();
-            move(pr.center().x() - width() / 2,
-                 pr.center().y() - height() / 2);
-        }
-        show();
-        m_start_ms = QDateTime::currentMSecsSinceEpoch();
-        m_timer->start();
-    }
+    showForActiveBatch();
 
-    raise();
-    activateWindow();
+    if (!m_backgrounded) {
+        raise();
+        activateWindow();
+    }
 }
 
 void ExecutionProgressDialog::updateJob(const std::string& layer_id, int percent)
@@ -447,6 +443,12 @@ void ExecutionProgressDialog::checkAllDone()
 
 void ExecutionProgressDialog::onMapLoadPending()
 {
+    if (m_all_done) {
+        m_all_done = false;
+        m_backgrounded = false;
+        m_close_btn->setEnabled(false);
+        m_bg_btn->setEnabled(true);
+    }
     ++m_pending_map_loads;
 }
 
@@ -464,6 +466,37 @@ void ExecutionProgressDialog::onTick()
     const int secs = static_cast<int>(elapsed % 60);
     m_elapsed_lbl->setText(
         QString("Elapsed: %1:%2").arg(mins).arg(secs, 2, 10, QChar('0')));
+}
+
+void ExecutionProgressDialog::runInBackground()
+{
+    m_backgrounded = true;
+    hide();
+}
+
+void ExecutionProgressDialog::showForActiveBatch()
+{
+    if (m_backgrounded || isVisible()) return;
+
+    if (parentWidget()) {
+        const QRect pr = parentWidget()->geometry();
+        move(pr.center().x() - width() / 2,
+             pr.center().y() - height() / 2);
+    }
+    show();
+    m_start_ms = QDateTime::currentMSecsSinceEpoch();
+    m_timer->start();
+}
+
+void ExecutionProgressDialog::closeEvent(QCloseEvent* event)
+{
+    if (!m_all_done) {
+        runInBackground();
+        event->ignore();
+        return;
+    }
+
+    QDialog::closeEvent(event);
 }
 
 } // namespace dolphin::ui

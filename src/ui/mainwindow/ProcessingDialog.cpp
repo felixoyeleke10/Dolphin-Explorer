@@ -211,7 +211,9 @@ void ProcessingDialog::taskDone(const QString& id)
         m_spinner->setStyleSheet(
             QStringLiteral("color: %1; font-size: 18px; background: transparent; border: none;")
                 .arg(QLatin1String(Theme::kSuccess)));
-        QTimer::singleShot(400, this, &QDialog::accept);
+        // Guard against a new task starting within the 400ms window: only
+        // accept() if m_active_count is still 0 when the timer fires.
+        QTimer::singleShot(400, this, [this] { if (m_active_count == 0) accept(); });
     } else {
         for (auto it = m_tasks.begin(); it != m_tasks.end(); ++it)
             if (it.value().active) { m_status->setText(it.value().label); break; }
@@ -241,7 +243,7 @@ void ProcessingDialog::taskFail(const QString& id, const QString& error)
         m_spinner->setStyleSheet(
             QStringLiteral("color: %1; font-size: 18px; background: transparent; border: none;")
                 .arg(QLatin1String(Theme::kDangerBright)));
-        QTimer::singleShot(2000, this, &QDialog::accept);
+        QTimer::singleShot(2000, this, [this] { if (m_active_count == 0) accept(); });
     } else {
         for (auto it = m_tasks.begin(); it != m_tasks.end(); ++it)
             if (it.value().active) { m_status->setText(it.value().label); break; }

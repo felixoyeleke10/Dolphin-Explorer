@@ -138,14 +138,8 @@ void MainWindow::onMapContextMenu(QPoint globalPos)
     import_menu->addAction(tr("Import survey files..."), this, &MainWindow::onImportFile)
         ->setEnabled(m_project != nullptr);
 
-    QMenu* export_menu = menu.addMenu(tr("Export"));
-    export_menu->setEnabled(has_layer);
-    export_menu->addAction(tr("CSV..."), this, [this, layer_id] {
-        onExportLayers({ layer_id }, QStringLiteral("csv"));
-    });
-    export_menu->addAction(tr("GeoTIFF..."), this, [this, layer_id] {
-        onExportLayers({ layer_id }, QStringLiteral("geotiff"));
-    });
+    // Export not yet implemented — disabled per D-05.
+    menu.addMenu(tr("Export"))->setEnabled(false);
 
     QAction* processing_settings = menu.addAction(tr("Processing settings"), this,
         &MainWindow::onRunSelectedLayer);

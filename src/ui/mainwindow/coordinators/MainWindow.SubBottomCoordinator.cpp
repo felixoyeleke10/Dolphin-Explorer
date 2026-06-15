@@ -1,7 +1,7 @@
 // MainWindow.SubBottomCoordinator.cpp — SubBottomWindow lifecycle and state reflection.
 
 #include "ui/mainwindow/MainWindow.h"
-#include "app/corrections/SubBottomCorrectionService.h"
+#include "ui/mainwindow/coordinators/CorrectionBatchOperator.h"
 #include "ui/systems/AppState.h"
 #include "ui/shell/ViewerWindow.h"
 #include "ui/mainwindow/MainStatusBar.h"
@@ -192,21 +192,18 @@ void MainWindow::onSubBottomOpen()
                 connect(gain_mod, &SbpGainModule::applyToLineRequested,
                         this, [this](SbpGainParams p) {
                             const std::string lid = m_sbp_win ? m_sbp_win->currentLayerId() : std::string{};
-                            if (lid.empty() || !m_project || !m_sbp_correction_svc) return;
+                            if (lid.empty() || !m_project || !m_corr_op) return;
                             auto* layer = m_project->findLayer(lid);
                             if (!layer) return;
                             layer->sbp_display_state.gain = p;
                             layer->sbp_display_state.gain_customized = true;
                             const auto* src = m_project->findSource(layer->source_id);
-                            m_sbp_correction_svc->applyToLine(
-                                lid, layer->artifact_store_path,
-                                layer->artifact_store_format, layer->artifact_index,
-                                src ? src->path : std::string{},
-                                p, layer->sbp_display_state.signal);
+                            m_corr_op->applySBP(layer, src ? src->path : std::string{},
+                                                p, layer->sbp_display_state.signal);
                         });
                 connect(gain_mod, &SbpGainModule::applyToAllRequested,
                         this, [this](SbpGainParams p) {
-                            if (!m_project || !m_sbp_correction_svc) return;
+                            if (!m_project || !m_corr_op) return;
                             const SbpSignalParams sig = (m_sbp_win && m_project)
                                 ? [&]() -> SbpSignalParams {
                                     auto* l = m_project->findLayer(m_sbp_win->currentLayerId());
@@ -218,28 +215,25 @@ void MainWindow::onSubBottomOpen()
                                     l->sbp_display_state.gain = p;
                                     l->sbp_display_state.gain_customized = true;
                                 }
-                            m_sbp_correction_svc->applyToAll(*m_project, p, sig);
+                            m_corr_op->applyAllSBP(*m_project, p, sig);
                         });
             }
             if (auto* sig_mod = host->sbpSignalModule()) {
                 connect(sig_mod, &SbpSignalModule::applyToLineRequested,
                         this, [this](SbpSignalParams p) {
                             const std::string lid = m_sbp_win ? m_sbp_win->currentLayerId() : std::string{};
-                            if (lid.empty() || !m_project || !m_sbp_correction_svc) return;
+                            if (lid.empty() || !m_project || !m_corr_op) return;
                             auto* layer = m_project->findLayer(lid);
                             if (!layer) return;
                             layer->sbp_display_state.signal = p;
                             layer->sbp_display_state.signal_customized = true;
                             const auto* src = m_project->findSource(layer->source_id);
-                            m_sbp_correction_svc->applyToLine(
-                                lid, layer->artifact_store_path,
-                                layer->artifact_store_format, layer->artifact_index,
-                                src ? src->path : std::string{},
-                                layer->sbp_display_state.gain, p);
+                            m_corr_op->applySBP(layer, src ? src->path : std::string{},
+                                                layer->sbp_display_state.gain, p);
                         });
                 connect(sig_mod, &SbpSignalModule::applyToAllRequested,
                         this, [this](SbpSignalParams p) {
-                            if (!m_project || !m_sbp_correction_svc) return;
+                            if (!m_project || !m_corr_op) return;
                             const SbpGainParams gain = (m_sbp_win && m_project)
                                 ? [&]() -> SbpGainParams {
                                     auto* l = m_project->findLayer(m_sbp_win->currentLayerId());
@@ -251,7 +245,7 @@ void MainWindow::onSubBottomOpen()
                                     l->sbp_display_state.signal = p;
                                     l->sbp_display_state.signal_customized = true;
                                 }
-                            m_sbp_correction_svc->applyToAll(*m_project, gain, p);
+                            m_corr_op->applyAllSBP(*m_project, gain, p);
                         });
             }
         }

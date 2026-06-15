@@ -53,6 +53,8 @@ RightPanelHost::RightPanelHost(QWidget* parent)
 
     connect(m_display, &DisplayModule::paletteChanged,
             this,      &RightPanelHost::paletteChanged);
+    connect(m_display, &DisplayModule::channelChanged,
+            this,      &RightPanelHost::channelChanged);
 
     connect(m_sbp_display, &SubBottomDisplayModule::paramsChanged,
             this,          &RightPanelHost::sbpParamsChanged);
@@ -130,6 +132,11 @@ int RightPanelHost::currentPaletteIndex() const
 void RightPanelHost::setPalette(int idx)
 {
     if (m_display) m_display->setPalette(idx);
+}
+
+void RightPanelHost::setChannel(DisplayChannel ch)
+{
+    if (m_display) m_display->setChannel(ch);
 }
 
 void RightPanelHost::setSbpParams(const SubBottomDisplayParams& p)

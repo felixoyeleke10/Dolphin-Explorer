@@ -64,10 +64,9 @@ public:
 
     // -- Backward-compat accessors for SidescanViewController -------------
     //    Prefer the typed setters above for all MainWindow-side code.
-    QLabel*       pingLabel()  const { return m_range;    }
-    QLabel*       depthLabel() const { return m_depth;    }
-    QLabel*       posLabel()   const { return m_pos;      }
-    QProgressBar* progressBar() const { return m_progress; }
+    QLabel*       pingLabel()  const { return m_range; }
+    QLabel*       depthLabel() const { return m_depth; }
+    QLabel*       posLabel()   const { return m_pos;   }
 
 signals:
     void scaleChangeRequested(double mpp);      // user changed scale spin box

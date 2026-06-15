@@ -17,6 +17,22 @@ core::ArtifactIndex ParsedCacheReader::buildIndex(ProgressFn progress,
     if (!m_file) return index;
 
     index.source_id = m_path;
+
+    // Fast path: try to load the pre-built index footer.
+    // Always attempted first regardless of callbacks — the footer read is two
+    // file seeks plus N×56-byte reads, so it's safe to do even with a progress
+    // or cancel callback active.  Falls through to the full scan only when the
+    // footer is absent (old files) or corrupted, then writes the footer so the
+    // next open is instant.
+    if (tryReadIndexFooter(m_file, m_fileSize, m_meta.coordinate_ref, index, m_meta)) {
+        if (!index.empty()) {
+            index.source_id = m_path;
+            m_cur_pos = UINT64_MAX;
+            return index;
+        }
+    }
+    index.entries.clear();
+
     if (!seekFile(m_file, sizeof(CacheFileHeader))) return index;
 
     double first_ts = -1.0;
@@ -109,7 +125,45 @@ core::ArtifactIndex ParsedCacheReader::buildIndex(ProgressFn progress,
     m_meta.start_time     = first_ts;
     m_meta.end_time       = last_ts;
 
+    // Append a compact index footer so the next project open takes the fast path.
+    // Open in "r+b" (read-write, no truncate) to append without rebuilding.
+    // Silently skip on failure — the file is still readable; next open will retry.
+    // Write even when cancel_flag was provided, as long as the scan was NOT cancelled
+    // (a cancellation returns {} early above, so reaching here means the scan finished).
+    const bool was_cancelled = cancel_flag && cancel_flag->load(std::memory_order_relaxed);
+    if (!was_cancelled && !index.empty()) {
+        FILE* wf = nullptr;
+#ifdef _WIN32
+        fopen_s(&wf, m_path.c_str(), "r+b");
+#else
+        wf = std::fopen(m_path.c_str(), "r+b");
+#endif
+        if (wf) {
+            if (detail::seekEnd(wf))
+                writeIndexFooter(wf, index,
+                                 m_meta.correction_flags_seen,
+                                 m_meta.bottom_pick_src_mask);
+            std::fclose(wf);
+            // Update cached file size so subsequent reads don't reject the footer.
+            m_fileSize += static_cast<uint64_t>(index.entries.size()) * sizeof(CacheIndexEntry)
+                        + sizeof(CacheIndexFooter);
+        }
+    }
+
     return index;
+}
+
+core::ArtifactIndex ParsedCacheReader::quickIndex()
+{
+    core::ArtifactIndex index;
+    if (!m_file) return index;
+    index.source_id = m_path;
+    if (tryReadIndexFooter(m_file, m_fileSize, m_meta.coordinate_ref, index, m_meta)
+            && !index.empty()) {
+        m_cur_pos = UINT64_MAX;
+        return index;
+    }
+    return {};  // no footer — caller must schedule background buildIndex()
 }
 
 } // namespace dolphin::io

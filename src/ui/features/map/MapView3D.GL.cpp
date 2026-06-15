@@ -262,8 +262,8 @@ void MapView3D::initializeGL()
 
     // -- Flat-colour shader ----------------------------------------------------
     m_shader = new QOpenGLShaderProgram(this);
-    if (!m_shader->addShaderFromSourceCode(QOpenGLShader::Vertex,   kVertSrc) ||
-        !m_shader->addShaderFromSourceCode(QOpenGLShader::Fragment, kFragSrc) ||
+    if (!m_shader->addCacheableShaderFromSourceCode(QOpenGLShader::Vertex,   kVertSrc) ||
+        !m_shader->addCacheableShaderFromSourceCode(QOpenGLShader::Fragment, kFragSrc) ||
         !m_shader->link()) {
         emit glInitError(tr("3D view: flat shader failed — %1").arg(m_shader->log()));
     }
@@ -272,8 +272,8 @@ void MapView3D::initializeGL()
 
     // -- Procedural grid shader ------------------------------------------------
     m_grid_shader = new QOpenGLShaderProgram(this);
-    if (!m_grid_shader->addShaderFromSourceCode(QOpenGLShader::Vertex,   kGridVertSrc) ||
-        !m_grid_shader->addShaderFromSourceCode(QOpenGLShader::Fragment, kGridFragSrc) ||
+    if (!m_grid_shader->addCacheableShaderFromSourceCode(QOpenGLShader::Vertex,   kGridVertSrc) ||
+        !m_grid_shader->addCacheableShaderFromSourceCode(QOpenGLShader::Fragment, kGridFragSrc) ||
         !m_grid_shader->link()) {
         emit glInitError(tr("3D view: grid shader failed — %1").arg(m_grid_shader->log()));
     }
@@ -299,8 +299,8 @@ void MapView3D::initializeGL()
 
     // -- Terrain shader --------------------------------------------------------
     m_terrain_shader = new QOpenGLShaderProgram(this);
-    if (!m_terrain_shader->addShaderFromSourceCode(QOpenGLShader::Vertex,   kTerrVertSrc) ||
-        !m_terrain_shader->addShaderFromSourceCode(QOpenGLShader::Fragment, kTerrFragSrc) ||
+    if (!m_terrain_shader->addCacheableShaderFromSourceCode(QOpenGLShader::Vertex,   kTerrVertSrc) ||
+        !m_terrain_shader->addCacheableShaderFromSourceCode(QOpenGLShader::Fragment, kTerrFragSrc) ||
         !m_terrain_shader->link()) {
         emit glInitError(tr("3D view: terrain shader failed — %1").arg(m_terrain_shader->log()));
     }
@@ -312,8 +312,8 @@ void MapView3D::initializeGL()
 
     // -- Curtain shader --------------------------------------------------------
     m_curtain_shader = new QOpenGLShaderProgram(this);
-    if (!m_curtain_shader->addShaderFromSourceCode(QOpenGLShader::Vertex,   kCurtainVertSrc) ||
-        !m_curtain_shader->addShaderFromSourceCode(QOpenGLShader::Fragment, kCurtainFragSrc) ||
+    if (!m_curtain_shader->addCacheableShaderFromSourceCode(QOpenGLShader::Vertex,   kCurtainVertSrc) ||
+        !m_curtain_shader->addCacheableShaderFromSourceCode(QOpenGLShader::Fragment, kCurtainFragSrc) ||
         !m_curtain_shader->link()) {
         emit glInitError(tr("3D view: curtain shader failed — %1").arg(m_curtain_shader->log()));
     }
@@ -323,8 +323,8 @@ void MapView3D::initializeGL()
 
     // -- Drape shader ----------------------------------------------------------
     m_drape_shader = new QOpenGLShaderProgram(this);
-    if (!m_drape_shader->addShaderFromSourceCode(QOpenGLShader::Vertex,   kDrapeVertSrc) ||
-        !m_drape_shader->addShaderFromSourceCode(QOpenGLShader::Fragment, kDrapeFragSrc) ||
+    if (!m_drape_shader->addCacheableShaderFromSourceCode(QOpenGLShader::Vertex,   kDrapeVertSrc) ||
+        !m_drape_shader->addCacheableShaderFromSourceCode(QOpenGLShader::Fragment, kDrapeFragSrc) ||
         !m_drape_shader->link()) {
         emit glInitError(tr("3D view: drape shader failed — %1").arg(m_drape_shader->log()));
     }
@@ -443,11 +443,14 @@ void MapView3D::uploadPendingDrapes()
         if (!D.dirty) continue;
 
         if (!D.pending_image.isNull()) {
+            // Construct before destroying the old texture: if allocation throws,
+            // D.texture remains valid and pointing at the previous resource.
+            auto* tex = new QOpenGLTexture(D.pending_image);
+            tex->setMinificationFilter(QOpenGLTexture::LinearMipMapLinear);
+            tex->setMagnificationFilter(QOpenGLTexture::Linear);
+            tex->setWrapMode(QOpenGLTexture::ClampToEdge);
             delete D.texture;
-            D.texture = new QOpenGLTexture(D.pending_image);
-            D.texture->setMinificationFilter(QOpenGLTexture::LinearMipMapLinear);
-            D.texture->setMagnificationFilter(QOpenGLTexture::Linear);
-            D.texture->setWrapMode(QOpenGLTexture::ClampToEdge);
+            D.texture = tex;
             buildDrapeQuad(D);
             D.pending_image = QImage();
         }

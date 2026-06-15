@@ -29,10 +29,12 @@
 
 namespace dolphin::io::detail_cache {
 
-inline constexpr std::array<char, 8> kFileMagic   = {'D', 'P', 'C', 'A', 'C', 'H', 'E', '1'};
-inline constexpr std::array<char, 4> kRecordMagic = {'D', 'P', 'R', '1'};
+inline constexpr std::array<char, 8> kFileMagic        = {'D', 'P', 'C', 'A', 'C', 'H', 'E', '1'};
+inline constexpr std::array<char, 4> kRecordMagic      = {'D', 'P', 'R', '1'};
+inline constexpr std::array<char, 8> kIndexFooterMagic = {'D', 'P', 'I', 'D', 'X', '1', '\0', '\0'};
 inline constexpr uint32_t kCacheVersion         = 26;  // current write version
 inline constexpr uint32_t kMinAcceptableVersion = 25;  // v25 SBP lacks correction_flags; read as 0
+inline constexpr uint8_t  kIndexFooterVersion   = 1;
 
 #pragma pack(push, 1)
 struct CacheFileHeader {
@@ -148,6 +150,35 @@ struct CacheMagPayloadHeader {
     float igrf_nT = 0.0f;
     float residual_nT = 0.0f;
 };
+
+// -- Index footer (appended after all records) ---------------------------------
+// Allows O(1) index loading on project open without rescanning the whole file.
+// Layout at end of file: [N × CacheIndexEntry] [CacheIndexFooter]
+// Detection: read sizeof(CacheIndexFooter) from fileEnd, check magic field.
+
+struct CacheIndexEntry {
+    uint64_t artifact_id;
+    int64_t  timestamp_us;
+    uint64_t file_offset;
+    uint32_t byte_length;
+    float    frequency_hz;
+    uint32_t ping_number;
+    double   lat;
+    double   lon;
+    uint8_t  type;
+    uint8_t  is_projected;
+    uint8_t  spatial_ref_kind;
+    uint8_t  reserved;
+};  // 56 bytes — deliberately no padding needed with this field ordering
+
+struct CacheIndexFooter {
+    uint32_t entry_count;
+    uint32_t correction_flags_seen;
+    uint8_t  bottom_pick_src_mask;
+    uint8_t  footer_version;  // = kIndexFooterVersion
+    uint8_t  reserved[2];
+    char     magic[8];  // kIndexFooterMagic — kept last for easy detection
+};  // 20 bytes
 #pragma pack(pop)
 
 template <typename T>
@@ -441,6 +472,101 @@ static inline void removeIfExists(const std::string& path)
 {
     std::error_code ec;
     std::filesystem::remove(std::filesystem::path(path), ec);
+}
+
+// -- Index footer helpers ------------------------------------------------------
+
+// Write the compact index footer after all records have been written.
+// Appends [N × CacheIndexEntry][CacheIndexFooter] to the current file position.
+static inline bool writeIndexFooter(FILE* file,
+                                    const core::ArtifactIndex& index,
+                                    uint32_t correction_flags_seen,
+                                    uint8_t  bottom_pick_src_mask)
+{
+    for (const auto& e : index.entries) {
+        CacheIndexEntry ce{};
+        ce.artifact_id      = e.artifact_id;
+        ce.timestamp_us     = e.timestamp_us;
+        ce.file_offset      = e.file_offset;
+        ce.byte_length      = e.byte_length;
+        ce.frequency_hz     = e.frequency_hz;
+        ce.ping_number      = e.ping_number;
+        ce.lat              = e.lat;
+        ce.lon              = e.lon;
+        ce.type             = static_cast<uint8_t>(e.type);
+        ce.is_projected     = e.is_projected ? 1u : 0u;
+        ce.spatial_ref_kind = static_cast<uint8_t>(e.spatial_ref_kind);
+        if (!writePod(file, ce)) return false;
+    }
+    CacheIndexFooter footer{};
+    footer.entry_count          = static_cast<uint32_t>(index.entries.size());
+    footer.correction_flags_seen = correction_flags_seen;
+    footer.bottom_pick_src_mask  = bottom_pick_src_mask;
+    footer.footer_version        = kIndexFooterVersion;
+    std::memcpy(footer.magic, kIndexFooterMagic.data(), kIndexFooterMagic.size());
+    return writePod(file, footer);
+}
+
+// Try to load the compact index from the footer section.
+// Returns true on success; caller must still check index.empty() for validity.
+// On success also populates correction_flags_seen and bottom_pick_src_mask via meta.
+static inline bool tryReadIndexFooter(FILE* file,
+                                      uint64_t file_size,
+                                      const core::SpatialRef& file_ref,
+                                      core::ArtifactIndex& index,
+                                      FormatMeta& meta)
+{
+    static constexpr uint64_t kFooterSz = sizeof(CacheIndexFooter);
+    static constexpr uint64_t kEntrySz  = sizeof(CacheIndexEntry);
+
+    if (file_size < sizeof(CacheFileHeader) + kFooterSz) return false;
+
+    // Read footer from the end of the file.
+    if (!seekFile(file, file_size - kFooterSz)) return false;
+    CacheIndexFooter footer{};
+    if (!readPod(file, footer)) return false;
+    if (!sameMagic(footer.magic, kIndexFooterMagic)) return false;
+    if (footer.footer_version != kIndexFooterVersion) return false;
+
+    // Validate that the entries block fits between the file header and footer.
+    const uint64_t entries_block = static_cast<uint64_t>(footer.entry_count) * kEntrySz;
+    const uint64_t entries_start = file_size - kFooterSz - entries_block;
+    if (entries_start < sizeof(CacheFileHeader)) return false;
+    if (entries_start + entries_block + kFooterSz != file_size) return false;
+
+    if (!seekFile(file, entries_start)) return false;
+
+    index.entries.reserve(footer.entry_count);
+    for (uint32_t i = 0; i < footer.entry_count; ++i) {
+        CacheIndexEntry ce{};
+        if (!readPod(file, ce)) { index.entries.clear(); return false; }
+        core::ArtifactIndexEntry e{};
+        e.artifact_id      = ce.artifact_id;
+        e.timestamp_us     = ce.timestamp_us;
+        e.file_offset      = ce.file_offset;
+        e.subrecord_offset = 0;
+        e.byte_length      = ce.byte_length;
+        e.frequency_hz     = ce.frequency_hz;
+        e.ping_number      = ce.ping_number;
+        e.lat              = ce.lat;
+        e.lon              = ce.lon;
+        e.type             = static_cast<core::ArtifactType>(ce.type);
+        e.is_projected     = ce.is_projected != 0;
+        e.spatial_ref_kind = static_cast<core::SpatialRefKind>(ce.spatial_ref_kind);
+
+        // Apply the same geographic-bounds fix as appendIndexEntry.
+        if (!e.is_projected && (std::fabs(e.lon) > 180.0 || std::fabs(e.lat) > 90.0)) {
+            e.is_projected    = true;
+            e.spatial_ref_kind = core::SpatialRefKind::Projected;
+        }
+        (void)file_ref;  // coordinate_ref is baked per-entry into spatial_ref_kind
+
+        index.entries.push_back(e);
+    }
+
+    meta.correction_flags_seen = footer.correction_flags_seen;
+    meta.bottom_pick_src_mask  = footer.bottom_pick_src_mask;
+    return true;
 }
 
 } // namespace dolphin::io::detail_cache

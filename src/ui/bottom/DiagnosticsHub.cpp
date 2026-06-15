@@ -53,16 +53,98 @@ void DiagnosticsHub::logOutput(const QString& msg)
     emit outputLogged(msg);
 }
 
+// -- Batches -------------------------------------------------------------------
+
+uint32_t DiagnosticsHub::beginBatch(const QString& name, int total)
+{
+    Batch b;
+    b.id      = m_next_id++;
+    b.name    = name;
+    b.total   = total;
+    b.started = QDateTime::currentDateTime();
+    m_batches.prepend(b);
+    emit batchChanged(b.id);
+    return b.id;
+}
+
+void DiagnosticsHub::updateBatch(uint32_t batch_id, int done, int succeeded)
+{
+    if (auto* b = findBatchMut(batch_id)) {
+        b->done      = done;
+        b->succeeded = succeeded;
+        emit batchChanged(batch_id);
+    }
+}
+
+void DiagnosticsHub::finishBatch(uint32_t batch_id, int succeeded, int total)
+{
+    if (auto* b = findBatchMut(batch_id)) {
+        b->done      = total;
+        b->succeeded = succeeded;
+        b->state     = (succeeded == total) ? BatchState::Completed
+                     : (succeeded > 0)      ? BatchState::CompletedWithErrors
+                     :                        BatchState::Failed;
+        b->ended     = QDateTime::currentDateTime();
+        emit batchChanged(batch_id);
+    }
+}
+
+void DiagnosticsHub::failBatch(uint32_t batch_id, const QString& error)
+{
+    if (auto* b = findBatchMut(batch_id)) {
+        b->state = BatchState::Failed;
+        b->ended = QDateTime::currentDateTime();
+        if (!error.isEmpty()) b->name = error;
+        emit batchChanged(batch_id);
+    }
+}
+
+void DiagnosticsHub::cancelBatch(uint32_t batch_id)
+{
+    if (auto* b = findBatchMut(batch_id)) {
+        b->state = BatchState::Cancelled;
+        b->ended = QDateTime::currentDateTime();
+        emit batchChanged(batch_id);
+    }
+}
+
+int DiagnosticsHub::activeBatchCount() const
+{
+    int n = 0;
+    for (const auto& b : m_batches)
+        if (b.state == BatchState::Running) ++n;
+    return n;
+}
+
+const DiagnosticsHub::Batch* DiagnosticsHub::findBatch(uint32_t id) const
+{
+    for (const auto& b : m_batches)
+        if (b.id == id) return &b;
+    return nullptr;
+}
+
+DiagnosticsHub::Batch* DiagnosticsHub::findBatchMut(uint32_t id)
+{
+    for (auto& b : m_batches)
+        if (b.id == id) return &b;
+    return nullptr;
+}
+
 // -- Jobs ----------------------------------------------------------------------
 
-uint32_t DiagnosticsHub::beginJob(const QString& name, const QString& layer_id)
+uint32_t DiagnosticsHub::beginJob(const QString& name, const QString& layer_id,
+                                   uint32_t batch_id, const QString& format_badge,
+                                   float size_mb)
 {
     Job j;
-    j.id       = m_next_id++;
-    j.name     = name;
-    j.layer_id = layer_id;
-    j.status   = JobStatus::Running;
-    j.started  = QDateTime::currentDateTime();
+    j.id           = m_next_id++;
+    j.name         = name;
+    j.layer_id     = layer_id;
+    j.batch_id     = batch_id;
+    j.format_badge = format_badge;
+    j.size_mb      = size_mb;
+    j.status       = JobStatus::Running;
+    j.started      = QDateTime::currentDateTime();
     m_jobs.prepend(j);  // newest first
     emit jobChanged(j.id);
     return j.id;

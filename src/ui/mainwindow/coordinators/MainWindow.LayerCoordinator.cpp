@@ -180,6 +180,9 @@ void MainWindow::onLayerSelected(const std::string& layer_id)
                 m_waterfall_win->setPalette(layer->sss_palette);
             else if (m_inspector)
                 m_waterfall_win->setPalette(m_inspector->currentPaletteIndex());
+            // Restore per-layer channel selection.
+            m_waterfall_win->setDisplayChannel(
+                layer->sss_display_state.params.display_channel);
         } else if (!layer) {
             m_waterfall_win->clearLayer();
         }

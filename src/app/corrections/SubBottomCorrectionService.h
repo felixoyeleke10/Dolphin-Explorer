@@ -7,7 +7,6 @@
 
 namespace dolphin::app {
 class ImportService;
-class Project;
 }
 
 namespace dolphin::app {
@@ -15,15 +14,13 @@ namespace dolphin::app {
 // Bakes enabled SBP processing corrections into the .dlpd float sample data
 // in a background thread.
 //
-// Covered corrections:
-//   DcRemoval  — per-trace mean subtraction
-//   Envelope   — instantaneous amplitude
-//   Normalize  — per-trace peak normalisation
-//   StaticGain — constant dB gain
-//   Agc        — sliding-window RMS normalisation
+// Each applyToLine() call emits exactly one terminal signal:
+//   correctionsPersisted — bake succeeded; new samples written to the artifact store
+//   applySkipped         — all requested corrections were already baked; nothing written
+//   applyFailed          — store unreadable, write failed, or unexpected exception
 //
 // Already-baked flags are respected — re-applying the same correction is
-// silently skipped so calling applyToLine twice is idempotent.
+// idempotent. Batch tracking (pending/succeeded counters) belongs to the caller.
 class SubBottomCorrectionService : public QObject {
     Q_OBJECT
 public:
@@ -38,15 +35,13 @@ public:
                      const SbpGainParams& gain,
                      const SbpSignalParams& signal);
 
-    void applyToAll(Project& project,
-                    const SbpGainParams& gain,
-                    const SbpSignalParams& signal);
-
 signals:
-    void applyStarted(const std::string& layer_id);
+    // Emitted when corrections were actually written to the artifact store.
     void correctionsPersisted(const std::string& layer_id,
                               const std::string& new_store_path,
                               const core::ArtifactIndex& new_index);
+    // Emitted when all requested corrections were already baked — nothing written.
+    void applySkipped(const std::string& layer_id);
     void applyFailed(const std::string& layer_id, const std::string& error);
 
 private:

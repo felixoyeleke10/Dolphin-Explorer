@@ -159,6 +159,13 @@ void MapView::paintScaleAndBadges(QPainter& p) const
         p.setPen(QPen(QColor(255, 255, 255, 30), 1));
         p.drawEllipse(QPoint(kCX, kCY), kR, kR);
 
+        // Rotate needle/label so the white tip always points to geographic north.
+        // Canvas is already reset to screen space; counter-rotate by map bearing.
+        p.save();
+        p.translate(kCX, kCY);
+        p.rotate(-m_rotation_deg);
+        p.translate(-kCX, -kCY);
+
         const QPolygonF north_needle{
             QPointF(kCX,     kCY - kR + 2),
             QPointF(kCX + 5, kCY + 3),
@@ -182,6 +189,8 @@ void MapView::paintScaleAndBadges(QPainter& p) const
         p.setPen(QColor(200, 200, 200, 210));
         const int nw = QFontMetrics(nf).horizontalAdvance("N");
         p.drawText(kCX - nw / 2, kCY - kR - 1, "N");
+
+        p.restore();
     }
 
     // -- Status badges (top-right) ---------------------------------------------

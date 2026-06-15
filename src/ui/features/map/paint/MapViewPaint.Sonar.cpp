@@ -39,12 +39,6 @@ void MapView::paintEmptyState(QPainter& p) const
                Qt::AlignHCenter | Qt::AlignVCenter,
                tr("No survey loaded"));
 
-    QFont sfont("Segoe UI", 9);
-    p.setFont(sfont);
-    p.setPen(QColor(Theme::kTextMuted));
-    p.drawText(QRect(cx - 200, cy + 18, 400, 22),
-               Qt::AlignHCenter | Qt::AlignVCenter,
-               tr("Use File → Import to open XTF / JSF files"));
 }
 
 void MapView::paintSonarLayers(QPainter& p) const

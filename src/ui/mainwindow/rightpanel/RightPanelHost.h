@@ -1,6 +1,7 @@
 #pragma once
 #include "ui/features/subbottom/panels/SubBottomDisplayPanel.h"  // SubBottomDisplayParams
 #include "app/layers/LayerUtils.h"
+#include "app/display/WaterfallParams.h"  // DisplayChannel
 #include <QSet>
 #include <QVector>
 #include <QWidget>
@@ -49,9 +50,10 @@ public:
     GainControlPanel*    gainPanel()     const;
     ImagingControlPanel* imagingPanel()  const;
 
-    // Palette forwarding from DisplayModule (SSS).
+    // Palette and channel forwarding from DisplayModule (SSS).
     int  currentPaletteIndex() const;
     void setPalette(int idx);
+    void setChannel(DisplayChannel ch);
 
     // SBP display params forwarding.
     void setSbpParams(const SubBottomDisplayParams& p);
@@ -62,6 +64,7 @@ public:
 
 signals:
     void paletteChanged(int idx);
+    void channelChanged(DisplayChannel ch);
     void sbpParamsChanged(SubBottomDisplayParams params);
 
 private:

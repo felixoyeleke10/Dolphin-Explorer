@@ -38,31 +38,41 @@ void SidescanViewController::activateLayer(const std::string& layer_id,
     if (m_quality == MapSonarQuality::Off) {
         if (m_map_view) m_map_view->setActiveLayer(layer_id);
         if (m_status_ping) m_status_ping->setText(tr("Map sonar off"));
+        emit loadingFinished();
         return;
     }
 
-    if (m_loaded_layers.count(layer_id))
+    if (m_loaded_layers.count(layer_id)) {
+        emit loadingFinished();
         return;
+    }
 
     auto* layer = project ? project->findLayer(layer_id) : nullptr;
-    if (!layer) { deactivate(false); return; }
+    if (!layer) {
+        deactivate(false);
+        emit loadingFinished();
+        return;
+    }
 
     // Defensive guard: this controller only processes Sidescan layers.
     // Non-sidescan modalities (SBP, MAG, MBES) are routed through
     // MainWindow.LayerCoordinator which extracts their nav track directly.
     if (layer->modality != app::Modality::Sidescan &&
         layer->modality != app::Modality::Unknown) {
+        emit loadingFinished();
         return;
     }
 
     if (!layer->index_built) {
         if (m_status_ping) m_status_ping->setText(tr("Layer not yet indexed"));
+        emit loadingFinished();
         return;
     }
     if (layer->sidescanCount() == 0) {
         if (m_status_ping)
             m_status_ping->setText(
                 tr("No sidescan data  (%1 artifacts total)").arg(layer->artifactCount()));
+        emit loadingFinished();
         return;
     }
 
@@ -141,8 +151,10 @@ void SidescanViewController::activateLayer(const std::string& layer_id,
             // layers accumulate on the map independently.
             {
                 const auto it = m_layer_generations.find(res.layer_id);
-                if (it == m_layer_generations.end() || res.generation != it->second)
+                if (it == m_layer_generations.end() || res.generation != it->second) {
+                    emit loadingFinished();
                     return;
+                }
             }
 
             if (res.load_failed || res.raw_count == 0) {
@@ -257,6 +269,7 @@ void SidescanViewController::activateLayer(const std::string& layer_id,
         if (m_status_ping)
             m_status_ping->setText(tr("Layer has no artifact store — reimport required"));
         watcher->deleteLater();
+        emit loadingFinished();
         return;
     }
 
@@ -264,6 +277,7 @@ void SidescanViewController::activateLayer(const std::string& layer_id,
     if (!svc) {
         if (m_status_ping) m_status_ping->setText(tr("Import service unavailable"));
         watcher->deleteLater();
+        emit loadingFinished();
         return;
     }
 

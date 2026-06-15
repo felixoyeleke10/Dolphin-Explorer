@@ -13,6 +13,12 @@
 
 namespace dolphin::io {
 
+// Physical sound-velocity range for seawater (m/s).
+// Values outside this window indicate a missing or corrupt SV field.
+static constexpr float kSoundVelocityMin_mps     = 1350.f;
+static constexpr float kSoundVelocityMax_mps     = 1700.f;
+static constexpr float kSoundVelocityDefault_mps = 1500.f;
+
 std::optional<core::Artifact>
 XtfReader::readArtifact(const core::ArtifactIndexEntry& entry)
 {
@@ -236,13 +242,15 @@ XtfReader::readArtifact(const core::ArtifactIndexEntry& entry)
         const float raw_sv = (pkt.SoundVelocity > 0.f)
                            ? pkt.SoundVelocity
                            : pkt.ComputedSoundVelocity;
-        ping.sound_velocity_ms = (raw_sv >= 1350.f && raw_sv <= 1700.f) ? raw_sv : 0.f;
+        ping.sound_velocity_ms = (raw_sv >= kSoundVelocityMin_mps &&
+                                   raw_sv <= kSoundVelocityMax_mps) ? raw_sv : 0.f;
     }
     ping.tow_depth_m    = pkt.SensorDepth;
     // Blanking: first sample starts at TimeDelay seconds into the record window.
     // Compute the near-field dead-zone distance using the ping's own SV, or 1500 m/s.
     {
-        const float sv = (ping.sound_velocity_ms > 0.f) ? ping.sound_velocity_ms : 1500.f;
+        const float sv = (ping.sound_velocity_ms > 0.f) ? ping.sound_velocity_ms
+                                                         : kSoundVelocityDefault_mps;
         ping.blanking_m = chan.TimeDelay * sv * 0.5f;
     }
     ping.gain_code         = chan.GainCode;

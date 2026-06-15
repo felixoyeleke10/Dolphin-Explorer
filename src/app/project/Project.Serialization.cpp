@@ -183,9 +183,9 @@ std::string Project::toJson() const
         jindex["source_id"] = util::JsonValue(l->artifact_index.source_id);
 
         // Only embed entries when there is no .dlpd cache to recover from.
-        // For layers with a valid parsed store the entries are rebuilt at
-        // project-open time from the compact binary file, keeping the .dlp
-        // manifest small regardless of survey size.
+        // For layers with a valid parsed store the entries are reloaded at
+        // project-open time directly from the binary footer (O(N) binary read,
+        // no full file scan), keeping the manifest small and all fields intact.
         const bool has_dlpd = !l->artifact_store_path.empty()
             && (normaliseFormat(l->artifact_store_format) == "dlpd"
                 || normaliseFormat(l->artifact_store_format) == "dpcache");

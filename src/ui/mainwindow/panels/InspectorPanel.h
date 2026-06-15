@@ -1,6 +1,7 @@
 #pragma once
 #include "app/layers/DataLayer.h"
 #include "app/layers/LayerUtils.h"
+#include "app/display/WaterfallParams.h"  // DisplayChannel
 #include "core/Contact.h"
 #include <QSet>
 #include <QWidget>
@@ -29,9 +30,11 @@ public:
 
     int  currentPaletteIndex() const;
     void setPalette(int idx);
+    void setChannel(DisplayChannel ch);
 
 signals:
     void paletteChanged(int idx);
+    void channelChanged(DisplayChannel ch);
 
 private:
     QStackedWidget*       m_stack   = nullptr;

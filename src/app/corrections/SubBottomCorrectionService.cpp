@@ -1,7 +1,5 @@
 #include "app/corrections/SubBottomCorrectionService.h"
 #include "app/services/ImportService.h"
-#include "app/project/Project.h"
-#include "app/layers/DataLayer.h"
 #include "io/cache/ParsedCache.h"
 #include "core/Artifact.h"
 #include "core/SubBottomTrace.h"
@@ -11,6 +9,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <filesystem>
 #include <vector>
 
 namespace dolphin::app {
@@ -57,6 +56,7 @@ SbpCorrectionResult execute(const SbpCorrectionRequest& req, ImportService* svc)
     }
 
     io::FormatMeta meta;
+    std::string write_path = req.store_path;
     {
         io::ParsedCacheReader reader;
         if (!reader.open(req.store_path)) {
@@ -64,6 +64,15 @@ SbpCorrectionResult execute(const SbpCorrectionRequest& req, ImportService* svc)
             return result;
         }
         meta = reader.metadata();
+        // If this layer's index is a strict subset of the full store, write to a
+        // per-layer sidecar so sibling layers are never corrupted.
+        const auto full_index = reader.buildIndex();
+        if (req.artifact_index.entries.size() < full_index.entries.size()) {
+            namespace fs = std::filesystem;
+            const fs::path p(req.store_path);
+            write_path = (p.parent_path()
+                          / (p.stem().string() + "_" + req.layer_id + ".dlpd")).string();
+        }
     }
 
     auto traces = svc->loadAllSubBottomTraces(
@@ -74,7 +83,9 @@ SbpCorrectionResult execute(const SbpCorrectionRequest& req, ImportService* svc)
         return result;
     }
 
-    const uint32_t baked = traces.front().correction_flags;
+    // AND of all trace flags: only skip a correction if every trace already has it.
+    uint32_t baked = ~0u;
+    for (const auto& t : traces) baked &= t.correction_flags;
     bool modified = false;
 
     for (auto& t : traces) {
@@ -158,8 +169,10 @@ SbpCorrectionResult execute(const SbpCorrectionRequest& req, ImportService* svc)
     }
 
     if (!modified) {
-        result.ok      = true;
-        result.skipped = true;
+        result.ok        = true;
+        result.skipped   = true;
+        result.new_path  = req.store_path;
+        result.new_index = req.artifact_index;
         return result;
     }
 
@@ -169,14 +182,14 @@ SbpCorrectionResult execute(const SbpCorrectionRequest& req, ImportService* svc)
         buffer.emplace_back(std::move(t));
 
     core::ArtifactIndex out_index;
-    if (!io::writeArtifactBufferToCache(req.store_path, buffer, meta, out_index)) {
-        result.error = "Failed to write corrected data to " + req.store_path;
+    if (!io::writeArtifactBufferToCache(write_path, buffer, meta, out_index)) {
+        result.error = "Failed to write corrected data to " + write_path;
         return result;
     }
 
     out_index.source_id = req.artifact_index.source_id;
     result.ok        = true;
-    result.new_path  = req.store_path;
+    result.new_path  = write_path;
     result.new_index = std::move(out_index);
     return result;
 }
@@ -207,41 +220,28 @@ void SubBottomCorrectionService::applyToLine(
     req.gain           = gain;
     req.signal         = signal;
 
-    emit applyStarted(layer_id);
-
     ImportService* svc = m_import_service;
     auto* watcher = new QFutureWatcher<SbpCorrectionResult>(this);
     connect(watcher, &QFutureWatcher<SbpCorrectionResult>::finished, this,
-            [this, watcher]() {
+            [this, watcher, layer_id]() {
                 watcher->deleteLater();
                 SbpCorrectionResult res;
-                try { res = watcher->result(); } catch (...) { return; }
-                if (res.skipped) return;
-                if (!res.ok)
+                try { res = watcher->result(); } catch (...) {
+                    emit applyFailed(layer_id, "Unexpected exception in SBP correction thread");
+                    return;
+                }
+                if (!res.ok) {
                     emit applyFailed(res.layer_id, res.error);
-                else
+                } else if (res.skipped) {
+                    emit applySkipped(res.layer_id);
+                } else {
                     emit correctionsPersisted(res.layer_id, res.new_path, res.new_index);
+                }
             });
     watcher->setFuture(QtConcurrent::run([req, svc]() {
         return execute(req, svc);
     }));
 }
 
-void SubBottomCorrectionService::applyToAll(Project& project,
-                                             const SbpGainParams& gain,
-                                             const SbpSignalParams& signal)
-{
-    for (const auto& layer : project.layers()) {
-        if (!layer || layer->modality != Modality::SubBottom) continue;
-        if (!layer->index_built || layer->subBottomCount() == 0) continue;
-        const auto* src = project.findSource(layer->source_id);
-        applyToLine(layer->id,
-                    layer->artifact_store_path,
-                    layer->artifact_store_format,
-                    layer->artifact_index,
-                    src ? src->path : std::string{},
-                    gain, signal);
-    }
-}
 
 } // namespace dolphin::app

@@ -8,7 +8,7 @@
 #include "ui/mainwindow/panels/GainControlPanel.h"
 #include "ui/mainwindow/panels/ImagingControlPanel.h"
 #include "ui/features/map/sidescan/SidescanViewController.h"
-#include "app/corrections/SidescanCorrectionService.h"
+#include "ui/mainwindow/coordinators/CorrectionBatchOperator.h"
 #include "ui/shell/Features.h"
 #include "ui/shared/dialogs/CrsPickerDialog.h"
 #include "ui/features/metadata/SSSMetadataWindow.h"
@@ -163,7 +163,7 @@ void MainWindow::onWaterfallOpen()
             if (m_sss_ctrl) m_sss_ctrl->reloadCurrentLayer();
             tx.commit();
             // Bake amplitude corrections into every layer's .dlpd.
-            if (m_correction_svc) m_correction_svc->applyToAll(*m_project, toCorrectionParams(p));
+            if (m_corr_op) m_corr_op->applyAllSSS(*m_project, toCorrectionParams(p));
         });
 
         // -- Bake-to-dlpd wiring -----------------------------------------------
@@ -171,7 +171,7 @@ void MainWindow::onWaterfallOpen()
         // Line / Apply to All buttons in the panel), also write the corrected
         // amplitudes back into the .dlpd so exports and future sessions see the
         // corrected data — not just the current session's display preview.
-        if (m_correction_svc) {
+        if (m_corr_op) {
             auto bakeCurrentLine = [this](const WaterfallParams& p) {
                 if (!m_project || !m_waterfall_win) return;
                 const std::string wf_id = m_waterfall_win->currentLayerId();
@@ -179,13 +179,8 @@ void MainWindow::onWaterfallOpen()
                 auto* layer = m_project->findLayer(wf_id);
                 if (!layer) return;
                 const auto* src = m_project->findSource(layer->source_id);
-                m_correction_svc->applyToLine(
-                    wf_id,
-                    layer->artifact_store_path,
-                    layer->artifact_store_format,
-                    layer->artifact_index,
-                    src ? src->path : std::string{},
-                    toCorrectionParams(p));
+                m_corr_op->applySSS(layer, src ? src->path : std::string{},
+                                    toCorrectionParams(p));
             };
 
             connect(m_gain_panel,    &GainControlPanel::applyToLineRequested,
@@ -193,8 +188,7 @@ void MainWindow::onWaterfallOpen()
             connect(m_imaging_panel, &ImagingControlPanel::applyToLineRequested,
                     this, bakeCurrentLine);
             // applyToAll baking is handled by the WaterfallWindow::applyToAllRequested
-            // lambda above (line 163) which calls m_correction_svc->applyToAll after
-            // applyExternalParamsToAll emits the signal — no duplicate connection needed.
+            // lambda above which calls m_corr_op->applyAllSSS — no duplicate connection needed.
         }
     }
 
@@ -506,6 +500,23 @@ void MainWindow::applyStoredNavParams(const std::string& layer_id)
     const auto it = m_layer_nav_params.find(layer_id);
     if (it == m_layer_nav_params.end()) return;
     m_waterfall_win->applyNavToLine(it->second);
+}
+
+void MainWindow::onChannelChanged(DisplayChannel ch)
+{
+    // Sync the inspector combo (may already be the source — uses QSignalBlocker).
+    if (m_inspector)
+        m_inspector->setChannel(ch);
+
+    // Apply to the waterfall.
+    if (m_waterfall_win)
+        m_waterfall_win->setDisplayChannel(ch);
+
+    // Persist into the active layer's display state so it is restored on layer switch.
+    if (m_project && !m_active_layer_id.empty()) {
+        if (auto* layer = m_project->findLayer(m_active_layer_id))
+            layer->sss_display_state.params.display_channel = ch;
+    }
 }
 
 void MainWindow::onPaletteChanged(int idx)

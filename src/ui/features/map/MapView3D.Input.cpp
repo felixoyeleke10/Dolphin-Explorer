@@ -11,6 +11,17 @@
 
 namespace dolphin::ui {
 
+// -- Viewport signal helper ----------------------------------------------------
+
+static void emitCameraViewport(MapView3D* self,
+                                float yaw_deg, float distance_m, int viewport_h)
+{
+    const double mpp = (viewport_h > 0)
+        ? double(distance_m) * 2.0 / double(viewport_h)
+        : 0.0;
+    emit self->viewportChanged(mpp, double(yaw_deg));
+}
+
 // -- Tool mode -----------------------------------------------------------------
 
 static Qt::CursorShape cursorForMode(int mode)
@@ -91,6 +102,7 @@ void MapView3D::mouseMoveEvent(QMouseEvent* ev)
         }
         m_camera.yaw   = std::fmod(m_drag_yaw0   - d.x() * 0.4f + 360.f, 360.f);
         m_camera.pitch = std::clamp(m_drag_pitch0 + d.y() * 0.25f, 5.f, 89.f);
+        emitCameraViewport(this, m_camera.yaw, m_camera.distance, height());
         update();
     }
 
@@ -135,6 +147,25 @@ void MapView3D::wheelEvent(QWheelEvent* ev)
                                     1.f, m_scene_radius * 20.f);
     m_camera.near_z    = m_camera.distance * 0.0002f;
     m_camera.far_z     = m_camera.distance * 200.f;
+    emitCameraViewport(this, m_camera.yaw, m_camera.distance, height());
+    update();
+}
+
+// -- Programmatic camera control -----------------------------------------------
+
+void MapView3D::setYaw(double deg)
+{
+    m_camera.yaw = static_cast<float>(std::fmod(deg + 360.0, 360.0));
+    emitCameraViewport(this, m_camera.yaw, m_camera.distance, height());
+    update();
+}
+
+void MapView3D::setDistance(float metres)
+{
+    m_camera.distance = std::clamp(metres, 1.f, m_scene_radius * 20.f);
+    m_camera.near_z   = m_camera.distance * 0.0002f;
+    m_camera.far_z    = m_camera.distance * 200.f;
+    emitCameraViewport(this, m_camera.yaw, m_camera.distance, height());
     update();
 }
 

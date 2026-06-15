@@ -10,11 +10,11 @@
 #include <QImage>
 #include <QLabel>
 #include <QMessageBox>
-#include <QPixmap>
 #include <QPushButton>
 #include <QResizeEvent>
 #include <QStackedWidget>
 #include <QString>
+#include <QTimer>
 #include <QToolButton>
 #include <QVBoxLayout>
 
@@ -73,7 +73,7 @@ MapViewportHost::MapViewportHost(QWidget* parent)
     // A QVBoxLayout centers the import button automatically; no manual move() needed.
     m_empty_state      = new QWidget(this);
     auto* empty_layout = makeCompactLayout<QVBoxLayout>(m_empty_state);
-    empty_layout->addStretch(58);   // push button to ~58 % from top, below the painted hint text
+    empty_layout->addStretch(64);   // push button to ~64 % from top, clear of the painted title
 
     m_import_hint_btn = new QPushButton(tr("Import Files…"), m_empty_state);
     m_import_hint_btn->setObjectName("mapImportHintBtn");
@@ -81,7 +81,7 @@ MapViewportHost::MapViewportHost(QWidget* parent)
             this, &MapViewportHost::importFilesRequested);
 
     empty_layout->addWidget(m_import_hint_btn, 0, Qt::AlignHCenter);
-    empty_layout->addStretch(42);
+    empty_layout->addStretch(36);
 
     // Hide overlay once any 2D layer loads; restored by setShowImportHint on project change.
     connect(m_view2d, &MapView::layerDataUpdated, this, [this](const std::string&) {
@@ -92,20 +92,28 @@ MapViewportHost::MapViewportHost(QWidget* parent)
     connect(m_view2d, &MapView::cursorMoved,
             this, &MapViewportHost::cursorMoved);
     connect(m_view2d, &MapView::viewportChanged,
-            this, &MapViewportHost::viewportChanged);
+            this, [this](double mpp, double rot) {
+                m_last_mpp     = mpp;
+                m_last_rot_deg = rot;
+                if (!m_is_3d) emit viewportChanged(mpp, rot);
+            });
 
-    // Forward layer data to the 3D view only if it already exists.
-    // The 3D view is created lazily on first setMode3D(true); at that point
-    // setMode3D replays all current 2D layer data so nothing is lost.
+    // Forward all 2D layer data to the pre-created 3D view.
     connect(m_view2d, &MapView::layerDataUpdated, this, [this](const std::string& lid) {
-        if (!m_view3d) return;
         const LayerMapData* ld = m_view2d->layerData(lid);
         if (ld) onLayerDataLoaded(lid, *ld, colorForLayer(lid));
     });
 
-    // 3D context menu → load terrain
+    // 3D view is created lazily in ensureView3D() the first time the user switches
+    // to 3D mode.  An eagerly-created hidden QOpenGLWidget in the main window's
+    // hierarchy forces Windows DWM into GL-compositing mode even in pure 2D,
+    // causing persistent flickering and breaking external screenshot tools.
 
-    // Relay 3D selection signals so MainWindow can wire them the same as 2D.
+    // Transition cover — a solid-colour widget that floats over the stack during the
+    // brief window between the first 2D→3D switch and the first completed GL frame.
+    m_transition_cover = new QWidget(this);
+    m_transition_cover->setAttribute(Qt::WA_TransparentForMouseEvents);
+    m_transition_cover->hide();
 }
 
 MapView3D* MapViewportHost::ensureView3D()
@@ -157,6 +165,21 @@ MapView3D* MapViewportHost::ensureView3D()
             this, &MapViewportHost::glInitError);
     connect(m_view3d, &MapView3D::contactPickedAt,
             this, &MapViewportHost::contactPickedAt);
+
+    connect(m_view3d, &MapView3D::viewportChanged,
+            this, [this](double mpp, double rot) {
+                m_last_mpp     = mpp;
+                m_last_rot_deg = rot;
+                if (m_is_3d) emit viewportChanged(mpp, rot);
+            });
+
+    // Replay layer data that accumulated in the 2D view while the 3D view did
+    // not yet exist.  onLayerDataLoaded sets the scene origin on the first valid
+    // track, so subsequent layers are positioned correctly.
+    for (const auto& lid : m_view2d->layerDataIds()) {
+        if (const LayerMapData* data = m_view2d->layerData(lid))
+            onLayerDataLoaded(lid, *data, colorForLayer(lid));
+    }
 
     return m_view3d;
 }
@@ -243,16 +266,23 @@ void MapViewportHost::setMode3D(bool on)
     if (m_is_3d == on) return;
     m_is_3d = on;
     if (on) {
-        const bool first_open = (m_view3d == nullptr);
         auto* view3d = ensureView3D();
-        if (first_open) {
-            // Replay all layer data that arrived while we were in 2D mode.
-            for (const auto& lid : m_view2d->layerDataIds()) {
-                if (const LayerMapData* ld = m_view2d->layerData(lid))
-                    onLayerDataLoaded(lid, *ld, colorForLayer(lid));
-            }
-        }
         m_stack->setCurrentWidget(view3d);
+
+        if (!view3d->isGLReady()) {
+            // GL has not completed its first frame yet.  Show a solid cover
+            // matching the map background so the user never sees the black
+            // zero-frame that QOpenGLWidget paints before initializeGL() runs.
+            if (m_map_bg_color.isValid())
+                m_transition_cover->setStyleSheet(
+                    "background:" + m_map_bg_color.name(QColor::HexRgb) + ";");
+            m_transition_cover->setGeometry(m_stack->geometry());
+            m_transition_cover->show();
+            m_transition_cover->raise();
+            connect(view3d, &MapView3D::firstFrameReady,
+                    this, [this]() { m_transition_cover->hide(); },
+                    Qt::SingleShotConnection);
+        }
     } else {
         m_stack->setCurrentWidget(m_view2d);
     }
@@ -261,15 +291,24 @@ void MapViewportHost::setMode3D(bool on)
                          : tr("Switch to 3D OpenGL view"));
     if (m_terrain_btn)
         m_terrain_btn->setVisible(on);
+
+    // Push cached viewport state into the newly-active view so the status bar
+    // stays accurate and the new view opens at the same scale/rotation.
+    if (m_last_mpp > 0.0) {
+        if (on && m_view3d) {
+            const float h = static_cast<float>(m_view3d->height());
+            if (h > 0.f)
+                m_view3d->setDistance(static_cast<float>(m_last_mpp) * h * 0.5f);
+            m_view3d->setYaw(m_last_rot_deg);
+        } else if (!on && m_view2d) {
+            m_view2d->setZoomFromMpp(m_last_mpp);
+            m_view2d->setRotationDeg(m_last_rot_deg);
+        }
+        emit viewportChanged(m_last_mpp, m_last_rot_deg);
+    }
+
     positionOverlay();
     emit modeChanged(on);
-
-    // QOpenGLWidget creates a native HWND on first show; Windows briefly
-    // activates it, pushing the main window behind other apps. Reclaim focus.
-    if (auto* w = window()) {
-        w->activateWindow();
-        w->raise();
-    }
 }
 
 void MapViewportHost::promptLoadTerrain()
@@ -386,7 +425,6 @@ void MapViewportHost::onLayerRemoved(const std::string& layer_id)
 {
     m_layer_visibility.erase(layer_id);
     m_view2d->removeLayerData(layer_id);
-    if (!m_view3d) return;
     m_view3d->removeLayer(layer_id);
     m_view3d->removeProfileCurtain(layer_id);
     m_view3d->removeSonarDrape(layer_id);
@@ -403,6 +441,8 @@ void MapViewportHost::resizeEvent(QResizeEvent* e)
 {
     QWidget::resizeEvent(e);
     if (m_empty_state) m_empty_state->setGeometry(rect());
+    if (m_transition_cover && m_transition_cover->isVisible())
+        m_transition_cover->setGeometry(m_stack->geometry());
     positionOverlay();
 }
 
@@ -423,12 +463,22 @@ void MapViewportHost::setToolMode(ToolMode mode)
 
 void MapViewportHost::setViewportScale(double mpp)
 {
-    if (m_view2d) m_view2d->setZoomFromMpp(mpp);
+    if (mpp <= 0.0 || std::isnan(mpp)) return;
+    m_last_mpp = mpp;
+    if (m_is_3d && m_view3d) {
+        // In 3D, mpp ≈ distance * 2 / height — invert to set camera distance.
+        const float h = static_cast<float>(m_view3d->height());
+        if (h > 0.f) m_view3d->setDistance(static_cast<float>(mpp) * h * 0.5f);
+    } else {
+        if (m_view2d) m_view2d->setZoomFromMpp(mpp);
+    }
 }
 
 void MapViewportHost::setRotationDeg(double deg)
 {
-    if (m_view2d) m_view2d->setRotationDeg(deg);
+    m_last_rot_deg = deg;
+    if (m_is_3d && m_view3d) m_view3d->setYaw(deg);
+    else if (m_view2d)        m_view2d->setRotationDeg(deg);
 }
 
 void MapViewportHost::panByPixels(int dx, int dy)

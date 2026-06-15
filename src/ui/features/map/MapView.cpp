@@ -351,7 +351,10 @@ void MapView::setZoomFromMpp(double mpp)
     if (mpp <= 0.0 || std::isnan(mpp)) return;
     const double metresPerUnit = m_is_projected ? 1.0 : 111320.0;
     const double newZoom = std::clamp(metresPerUnit / (baseScale() * mpp), 1e-6, 1e8);
-    m_zoom = newZoom;
+    // Scale origin by the zoom ratio so the viewport centre stays fixed on the
+    // same geographic position — identical to wheel-zoom from the centre pixel.
+    m_origin *= (newZoom / m_zoom);
+    m_zoom    = newZoom;
     m_user_interacted = true;
     update();
     emit viewportChanged(viewportMetresPerPixel(), m_rotation_deg);

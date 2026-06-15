@@ -49,6 +49,7 @@ private slots:
     void onProblemsCleared(const QString& layer_id);
     void onOutputLogged(const QString& msg);
     void onJobChanged(uint32_t id);
+    void onBatchChanged(uint32_t id);
 
 private:
     void buildLayout();

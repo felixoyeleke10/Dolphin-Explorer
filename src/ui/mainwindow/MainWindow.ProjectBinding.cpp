@@ -5,6 +5,7 @@
 #include "ui/shell/Features.h"
 #include "ui/features/datalibrary/DataLibraryWindow.h"
 #include "ui/features/import/ImportController.h"
+#include "ui/mainwindow/coordinators/ProjectOperationCoordinator.h"
 #include "ui/features/processing/ProcessingController.h"
 #include "ui/features/map/sidescan/SidescanViewController.h"
 #include "ui/features/geodesy/GeodesyPanel.h"
@@ -119,6 +120,9 @@ void MainWindow::bindProjectUi()
     // Wire the event bus to the new project. All component subscriptions were
     // established once in the constructor; no per-project reconnection needed.
     m_event_bus->setProject(m_project.get());
+
+    if (m_op_coord)
+        m_op_coord->setProject(m_project);
 
     updateContextInfo();
 }

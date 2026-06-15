@@ -122,15 +122,72 @@ void BottomDockPanel::onOutputLogged(const QString& msg)
         sb->setValue(sb->maximum());
 }
 
+// Returns active batches + running standalone jobs (batch_id==0).
+// Avoids double-counting batch child jobs that are also active jobs.
+static int activeDisplayCount(const DiagnosticsHub* hub)
+{
+    int n = hub->activeBatchCount();
+    for (const auto& j : hub->jobs())
+        if (j.status == DiagnosticsHub::JobStatus::Running && j.batch_id == 0)
+            ++n;
+    return n;
+}
+
 void BottomDockPanel::onJobChanged(uint32_t /*id*/)
 {
     rebuildJobsTab();
-    updateBadge(2, m_hub->activeJobCount(), false);
+    updateBadge(2, activeDisplayCount(m_hub), false);
+}
+
+void BottomDockPanel::onBatchChanged(uint32_t /*id*/)
+{
+    rebuildJobsTab();
+    updateBadge(2, activeDisplayCount(m_hub), false);
 }
 
 void BottomDockPanel::rebuildJobsTab()
 {
     m_job_list->clear();
+
+    // Batch summaries — shown above standalone jobs so in-progress batches are visible.
+    for (const auto& b : m_hub->batches()) {
+        QString prefix;
+        QColor  col;
+        switch (b.state) {
+            case DiagnosticsHub::BatchState::Running:
+                prefix = QStringLiteral("[BATCH] ");
+                col    = QColor(kAccent);
+                break;
+            case DiagnosticsHub::BatchState::Completed:
+                prefix = QStringLiteral("[BATCH DONE] ");
+                col    = QColor(kSuccess);
+                break;
+            case DiagnosticsHub::BatchState::CompletedWithErrors:
+                prefix = QStringLiteral("[BATCH PARTIAL] ");
+                col    = QColor(kWarning);
+                break;
+            case DiagnosticsHub::BatchState::Failed:
+                prefix = QStringLiteral("[BATCH FAILED] ");
+                col    = QColor(kDanger);
+                break;
+            case DiagnosticsHub::BatchState::Cancelled:
+                prefix = QStringLiteral("[BATCH CANCELLED] ");
+                col    = QColor(kTextMuted);
+                break;
+        }
+        QString text = prefix + b.name;
+        if (b.state == DiagnosticsHub::BatchState::Running)
+            text += QString("  %1/%2").arg(b.done).arg(b.total);
+        else
+            text += QString("  %1/%2").arg(b.succeeded).arg(b.total);
+
+        auto* item = new QListWidgetItem(text, m_job_list);
+        item->setForeground(col);
+        if (b.started.isValid())
+            item->setToolTip("Started: " + b.started.toString("hh:mm:ss"));
+    }
+
+    // Individual jobs (standalone and batch children interleaved by insertion order).
     for (const auto& j : m_hub->jobs()) {
         const char* status_label =
             (j.status == DiagnosticsHub::JobStatus::Running)    ? "[RUNNING] " :

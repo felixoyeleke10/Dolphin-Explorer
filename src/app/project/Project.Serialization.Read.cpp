@@ -5,6 +5,7 @@
 
 #include "app/project/Project.h"
 #include "app/project/Project_p.h"
+#include "app/layers/LayerUtils.h"
 #include "geo/GeoUtils.h"
 #include "io/cache/ParsedCache.h"
 #include "util/Json.h"
@@ -245,29 +246,66 @@ bool Project::fromJson(const std::string& json)
             }
         }
 
-        // If entries were not saved (omitted when a .dlpd cache exists), read
-        // only the file header to recover metadata — the full artifact index scan
-        // is deferred to a background rebuildCacheIndex call after project open.
-        // This keeps fromJson O(1) per layer regardless of cache size.
+        // When entries were not saved in the manifest (layers with a .dlpd store),
+        // load them now via the binary footer fast path: two file seeks + N×56-byte
+        // binary reads.  For typical surveys (≤10k pings) this is sub-millisecond
+        // on SSD — all fields are preserved (including frequency_hz and ping_number
+        // which JSON serialization omits).  Falls back to background rebuildCacheIndex
+        // only if the footer is absent (pre-footer .dlpd) or corrupt.
         if (layer->artifact_index.entries.empty() && !layer->artifact_store_path.empty()) {
             const std::string sfmt = normaliseFormat(layer->artifact_store_format);
-            if ((sfmt == "dlpd" || sfmt == "dpcache")
-                && io::parsedCacheIsValid(layer->artifact_store_path)) {
+            const bool store_valid = (sfmt == "dlpd" || sfmt == "dpcache")
+                && io::parsedCacheIsValid(layer->artifact_store_path);
+            if (store_valid) {
                 io::ParsedCacheReader cache_reader;
                 if (cache_reader.open(layer->artifact_store_path)) {
-                    // Header open only — sonar/survey/vessel names come from the
-                    // file header and are available immediately without buildIndex.
-                    const io::FormatMeta cached_meta = cache_reader.metadata();
-                    if (layer->sonar_name.empty() && !cached_meta.sonar_name.empty())
-                        layer->sonar_name = cached_meta.sonar_name;
-                    if (layer->survey_name.empty() && !cached_meta.survey_name.empty())
-                        layer->survey_name = cached_meta.survey_name;
-                    if (layer->vessel_name.empty() && !cached_meta.vessel_name.empty())
-                        layer->vessel_name = cached_meta.vessel_name;
-                    // correction_flags_seen requires a full buildIndex scan; that
-                    // backfill is done by ImportService::rebuildCacheIndex after open.
+                    // Read file-header metadata (sonar/survey/vessel names) before
+                    // buildIndex() so we can back-fill missing JSON fields.
+                    const io::FormatMeta hdr_meta = cache_reader.metadata();
+                    if (layer->sonar_name.empty() && !hdr_meta.sonar_name.empty())
+                        layer->sonar_name = hdr_meta.sonar_name;
+                    if (layer->survey_name.empty() && !hdr_meta.survey_name.empty())
+                        layer->survey_name = hdr_meta.survey_name;
+                    if (layer->vessel_name.empty() && !hdr_meta.vessel_name.empty())
+                        layer->vessel_name = hdr_meta.vessel_name;
+
+                    // quickIndex() reads only the compact footer — two seeks plus
+                    // N×56-byte reads, never falls back to a full file scan.
+                    // Returns empty when no footer exists; the safety-net below
+                    // leaves index_built=false so loadProject schedules a
+                    // background rebuild (with progress) instead.
+                    auto loaded = cache_reader.quickIndex();
+                    if (!loaded.empty()) {
+                        // Preserve the layer's source_id (buildIndex sets it to the
+                        // file path, which is wrong here).
+                        loaded.source_id = layer->artifact_index.source_id.empty()
+                            ? layer->source_id
+                            : layer->artifact_index.source_id;
+
+                        // Re-apply modality filter: a shared .dlpd (mixed-modality
+                        // source, e.g. XTF with SSS+SBP) holds all artifact types;
+                        // this layer only owns one family.
+                        if (layer->modality != Modality::Unknown
+                                && layer->modality != Modality::Mixed) {
+                            const core::ArtifactType wanted =
+                                artifactTypeForModality(layer->modality);
+                            bool has_siblings = false;
+                            for (const auto& e : loaded.entries)
+                                if (e.type != wanted) { has_siblings = true; break; }
+                            if (has_siblings)
+                                loaded = filteredByType(loaded, wanted);
+                        }
+
+                        layer->artifact_index = std::move(loaded);
+
+                        // Back-fill pipeline_applied for old projects: non-zero
+                        // correction_flags_seen means corrections are baked in.
+                        // metadata() after buildIndex() returns the updated value.
+                        if (!layer->pipeline_applied
+                                && cache_reader.metadata().correction_flags_seen != 0)
+                            layer->pipeline_applied = true;
+                    }
                 }
-                // Leave artifact_index empty — marked for background reindex by caller.
             }
         }
 
@@ -302,11 +340,19 @@ bool Project::fromJson(const std::string& json)
             // can trigger a re-import explicitly if they want fresh data.
             const bool stale_cache = !missing_store
                 && !io::parsedCacheIsValid(layer->artifact_store_path);
-            if (missing_store || stale_cache) {
+            if (missing_store) {
+                // File is gone — clear everything so the layer can be re-imported.
                 layer->artifact_index.entries.clear();
                 layer->index_built = false;
                 layer->artifact_store_path.clear();
                 layer->artifact_store_format.clear();
+            } else if (stale_cache) {
+                // File exists but header version is outside the accepted range.
+                // Clear cached entries and let rebuildCacheIndex attempt a scan —
+                // it will report a proper error via indexingFailed rather than
+                // silently stranding the layer with no path to trigger rebuild.
+                layer->artifact_index.entries.clear();
+                layer->index_built = false;
             }
         }
 
@@ -314,9 +360,8 @@ bool Project::fromJson(const std::string& json)
             layer->artifact_index.source_id = layer->source_id;
         if (!layer->artifact_index.empty())
             layer->index_built = true;
-        // Entries are empty when a DLPD cache exists (deferred load path).
-        // Ensure index_built is false so loadProject triggers rebuildCacheIndex —
-        // JSON may have persisted index_built=true from the previous session.
+        // If entries are still empty after the footer read (pre-footer .dlpd,
+        // corrupt footer, or no store), fall back to background rebuildCacheIndex.
         if (layer->artifact_index.empty() && !layer->artifact_store_path.empty())
             layer->index_built = false;
         if (layer->modality == Modality::Unknown && !layer->artifact_index.empty())

@@ -11,6 +11,7 @@
 #include <QPointer>
 #include <QtConcurrent/QtConcurrent>
 #include <cctype>
+#include <filesystem>
 #include <memory>
 #include <set>
 
@@ -95,6 +96,20 @@ RunResult executeRequest(const RunRequest& request)
     // Capture metadata before the reader is consumed by runLine.
     const io::FormatMeta meta = reader->metadata();
 
+    // If this layer's index is a strict subset of the full store, write to a
+    // per-layer sidecar so sibling layers (mixed-modality OR same-modality
+    // split, e.g. dual-frequency) are never overwritten by this processing pass.
+    std::string write_path = request.artifact_path;
+    {
+        const auto full_index = reader->buildIndex();  // fast: uses footer if present
+        if (request.artifact_index.entries.size() < full_index.entries.size()) {
+            namespace fs = std::filesystem;
+            const fs::path p(request.artifact_path);
+            write_path = (p.parent_path()
+                          / (p.stem().string() + "_" + request.layer_id + ".dlpd")).string();
+        }
+    }
+
     pipeline::GraphJob job;
     job.line_id     = request.layer_id;
     job.source_path = request.source_path;
@@ -129,10 +144,13 @@ RunResult executeRequest(const RunRequest& request)
         reader.reset(); // release the read handle before writing to the same path
 
         core::ArtifactIndex proc_index;
-        if (io::writeArtifactBufferToCache(request.artifact_path, processed, meta, proc_index)) {
+        if (io::writeArtifactBufferToCache(write_path, processed, meta, proc_index)) {
             proc_index.source_id   = request.artifact_index.source_id; // restore after write zeroes it
-            result.processed_path  = request.artifact_path;
+            result.processed_path  = write_path;
             result.processed_index = std::move(proc_index);
+        } else {
+            result.failed = true;
+            result.error  = "Failed to write processed data to " + write_path;
         }
     }
 
@@ -162,9 +180,12 @@ void ProcessingService::runLayer(Project& project, DataLayer* layer, const std::
     RunRequest request;
     request.layer_id       = layer->id;
     request.source_path    = source_path;
-    request.artifact_path  = layer->artifact_store_path.empty()
-        ? source_path
-        : layer->artifact_store_path;
+    if (layer->artifact_store_path.empty()) {
+        emit runFailed(layer->id,
+                       "Layer has no indexed artifact — re-import the file before running processing");
+        return;
+    }
+    request.artifact_path   = layer->artifact_store_path;
     request.artifact_format = layer->artifact_store_format.empty()
         ? formatFromPath(request.artifact_path)
         : normaliseFormat(layer->artifact_store_format);
@@ -210,19 +231,19 @@ void ProcessingService::runAll(Project& project)
     std::vector<RunRequest> requests;
     requests.reserve(project.layers().size());
 
-    std::set<std::string> queued_store_paths;
     for (auto& layer : project.layers()) {
         if (!layer || !layer->index_built) continue;
 
         auto* src = project.findSource(layer->source_id);
         if (!src) continue;
 
-        // Deduplicate layers that share a DLPD and skip paths with an active runLayer write.
-        const std::string store_path = layer->artifact_store_path.empty()
-            ? src->path
-            : layer->artifact_store_path;
-        if (!queued_store_paths.insert(store_path).second)
-            continue;
+        // Skip layers that have no indexed artifact — never fall back to the raw source.
+        if (layer->artifact_store_path.empty()) continue;
+
+        // Skip if an in-flight runLayer call is already writing to this store.
+        // (Layers sharing a store each write to their own per-layer sidecar, so
+        // there is no deduplication by store path needed — every layer runs.)
+        const std::string store_path = layer->artifact_store_path;
         if (m_active_paths.count(store_path))
             continue;
 
@@ -244,6 +265,9 @@ void ProcessingService::runAll(Project& project)
         emit batchComplete(0, 0);
         return;
     }
+
+    for (const auto& req : requests)
+        emit runStarted(req.layer_id);
 
     emit batchProgress(0, static_cast<int>(requests.size()));
 

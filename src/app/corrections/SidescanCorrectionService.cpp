@@ -1,8 +1,6 @@
 #include "app/corrections/SidescanCorrectionService.h"
 #include "app/corrections/CorrectionAlgorithms.h"
 #include "app/services/ImportService.h"
-#include "app/layers/DataLayer.h"
-#include "app/project/Project.h"
 #include "io/cache/ParsedCache.h"
 #include "io/xtf/XtfReader.h"
 #include "io/jsf/JsfReader.h"
@@ -12,6 +10,7 @@
 #include <QFutureWatcher>
 #include <QtConcurrent/QtConcurrent>
 #include <cctype>
+#include <filesystem>
 
 namespace dolphin::app {
 
@@ -65,6 +64,7 @@ CorrectionResult execute(const CorrectionRequest& req, ImportService* svc)
     }
 
     io::FormatMeta meta;
+    std::string write_path = req.store_path;
     {
         auto reader = makeReader(fmt);
         if (!reader->open(req.store_path)) {
@@ -72,6 +72,16 @@ CorrectionResult execute(const CorrectionRequest& req, ImportService* svc)
             return result;
         }
         meta = reader->metadata();
+        // If this layer's index is a strict subset of the full store, write to a
+        // per-layer sidecar so sibling layers (mixed-modality OR same-modality
+        // split, e.g. dual-frequency) are never corrupted by this correction pass.
+        const auto full_index = reader->buildIndex();
+        if (req.artifact_index.entries.size() < full_index.entries.size()) {
+            namespace fs = std::filesystem;
+            const fs::path p(req.store_path);
+            write_path = (p.parent_path()
+                          / (p.stem().string() + "_" + req.layer_id + ".dlpd")).string();
+        }
     }
 
     auto pings = svc->loadAllSidescanPingsFromStore(
@@ -82,7 +92,9 @@ CorrectionResult execute(const CorrectionRequest& req, ImportService* svc)
         return result;
     }
 
-    const uint32_t already_baked = pings.front().correction_flags;
+    // AND of all ping flags: only skip a correction if every ping already has it.
+    uint32_t already_baked = ~0u;
+    for (const auto& p : pings) already_baked &= p.correction_flags;
     bool modified = false;
 
     if (req.params.tvg.enabled &&
@@ -107,8 +119,10 @@ CorrectionResult execute(const CorrectionRequest& req, ImportService* svc)
     }
 
     if (!modified) {
-        result.ok      = true;
-        result.skipped = true;
+        result.ok        = true;
+        result.skipped   = true;
+        result.new_path  = req.store_path;
+        result.new_index = req.artifact_index;
         return result;
     }
 
@@ -118,14 +132,14 @@ CorrectionResult execute(const CorrectionRequest& req, ImportService* svc)
         buffer.emplace_back(std::move(ping));
 
     core::ArtifactIndex out_index;
-    if (!io::writeArtifactBufferToCache(req.store_path, buffer, meta, out_index)) {
-        result.error = "Failed to write corrected data to " + req.store_path;
+    if (!io::writeArtifactBufferToCache(write_path, buffer, meta, out_index)) {
+        result.error = "Failed to write corrected data to " + write_path;
         return result;
     }
 
     out_index.source_id = req.artifact_index.source_id;
     result.ok       = true;
-    result.new_path = req.store_path;
+    result.new_path = write_path;
     result.new_index = std::move(out_index);
     return result;
 }
@@ -154,40 +168,28 @@ void SidescanCorrectionService::applyToLine(
     req.artifact_index = artifact_index;
     req.params         = params;
 
-    emit applyStarted(layer_id);
-
     ImportService* svc = m_import_service;
     auto* watcher = new QFutureWatcher<CorrectionResult>(this);
     connect(watcher, &QFutureWatcher<CorrectionResult>::finished, this,
-            [this, watcher]() {
+            [this, watcher, layer_id]() {
                 watcher->deleteLater();
                 CorrectionResult res;
-                try { res = watcher->result(); } catch (...) { return; }
-                if (res.skipped) return;
-                if (!res.ok)
+                try { res = watcher->result(); } catch (...) {
+                    emit applyFailed(layer_id, "Unexpected exception in correction thread");
+                    return;
+                }
+                if (!res.ok) {
                     emit applyFailed(res.layer_id, res.error);
-                else
+                } else if (res.skipped) {
+                    emit applySkipped(res.layer_id);
+                } else {
                     emit correctionsPersisted(res.layer_id, res.new_path, res.new_index);
+                }
             });
     watcher->setFuture(QtConcurrent::run([req, svc]() {
         return execute(req, svc);
     }));
 }
 
-void SidescanCorrectionService::applyToAll(Project& project,
-                                            const SidescanCorrectionParams& params)
-{
-    for (const auto& layer : project.layers()) {
-        if (!layer || layer->modality != Modality::Sidescan) continue;
-        if (!layer->index_built || layer->sidescanCount() == 0) continue;
-        const auto* src = project.findSource(layer->source_id);
-        applyToLine(layer->id,
-                    layer->artifact_store_path,
-                    layer->artifact_store_format,
-                    layer->artifact_index,
-                    src ? src->path : std::string{},
-                    params);
-    }
-}
 
 } // namespace dolphin::app

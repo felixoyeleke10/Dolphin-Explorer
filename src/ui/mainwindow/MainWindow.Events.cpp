@@ -98,6 +98,7 @@ void MainWindow::showEvent(QShowEvent* event)
         s_purged = true;
         QTimer::singleShot(0, [] { purgeStaleTempProjects(); });
     }
+
 }
 
 void MainWindow::dragEnterEvent(QDragEnterEvent* event)

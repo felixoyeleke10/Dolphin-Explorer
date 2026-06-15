@@ -107,15 +107,21 @@ private:
     MapView3D* ensureView3D();
     void positionOverlay();
 
-    MapView*        m_view2d          = nullptr;
-    MapView3D*      m_view3d          = nullptr;
-    QStackedWidget* m_stack           = nullptr;
-    QToolButton*    m_btn             = nullptr;   // 2D / 3D toggle
-    QToolButton*    m_terrain_btn     = nullptr;   // Load Terrain (3D mode only)
-    QLabel*         m_terrain_label   = nullptr;   // "Loading…" feedback
-    QWidget*        m_empty_state     = nullptr;   // transparent overlay: layout-centered empty-state CTA
-    QPushButton*    m_import_hint_btn = nullptr;   // button inside m_empty_state
-    bool            m_is_3d           = false;
+    MapView*        m_view2d              = nullptr;
+    MapView3D*      m_view3d              = nullptr;
+    QStackedWidget* m_stack               = nullptr;
+    QToolButton*    m_btn                 = nullptr;   // 2D / 3D toggle
+    QToolButton*    m_terrain_btn         = nullptr;   // Load Terrain (3D mode only)
+    QLabel*         m_terrain_label       = nullptr;   // "Loading…" feedback
+    QWidget*        m_empty_state         = nullptr;   // transparent overlay: layout-centered empty-state CTA
+    QPushButton*    m_import_hint_btn     = nullptr;   // button inside m_empty_state
+    bool            m_is_3d               = false;
+    QWidget*        m_transition_cover    = nullptr;
+
+    // Cached viewport state — updated by every viewportChanged from either child.
+    // Used to push the correct scale/rotation into the newly-active view on mode switch.
+    double          m_last_mpp            = 0.0;
+    double          m_last_rot_deg        = 0.0;
 
     // Cached display settings — applyLiveSettings always runs before ensureView3D(),
     // so these are populated before the 3D view is created and applied on creation.

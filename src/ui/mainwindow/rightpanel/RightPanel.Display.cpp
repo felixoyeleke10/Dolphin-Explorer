@@ -57,23 +57,65 @@ DisplayModule::DisplayModule(QWidget* parent)
     rl->addWidget(k);
     rl->addWidget(m_palette, 1);
     vl->addWidget(row);
+
+    // Channel row — Port / Both / Starboard
+    auto* ch_row = new QWidget(this);
+    auto* crl    = new QHBoxLayout(ch_row);
+    crl->setContentsMargins(Theme::kSpacing4, 3, Theme::kSpacing4, 5);
+    crl->setSpacing(Theme::kSpacing3);
+
+    auto* ck = new QLabel(tr("Channel"), this);
+    ck->setObjectName("inspMetaKey");
+    ck->setFixedWidth(Theme::kKeyLabelW);
+    ck->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+
+    m_channel = new QComboBox(this);
+    m_channel->setObjectName("avChannelCombo");
+    m_channel->setToolTip(
+        tr("Choose which transducer channels to display.\n"
+           "Both: port and starboard side by side (default).\n"
+           "Port: left channel only.\n"
+           "Starboard: right channel only."));
+    m_channel->addItem(tr("Both"),      static_cast<int>(DisplayChannel::Both));
+    m_channel->addItem(tr("Port"),      static_cast<int>(DisplayChannel::Port));
+    m_channel->addItem(tr("Starboard"), static_cast<int>(DisplayChannel::Starboard));
+
+    connect(m_channel, qOverload<int>(&QComboBox::currentIndexChanged),
+            this, [this](int /*idx*/) {
+                emit channelChanged(static_cast<DisplayChannel>(
+                    m_channel->currentData().toInt()));
+            });
+
+    crl->addWidget(ck);
+    crl->addWidget(m_channel, 1);
+    vl->addWidget(ch_row);
     vl->addStretch(1);
 }
 
 void DisplayModule::setLayer(app::DataLayer* layer)
 {
-    if (!m_palette || !layer) return;
-    int pal = layer->sss_palette;
-    if (pal < 0) {
-        QSettings qs;
-        const QVariant v = qs.value(QStringLiteral("sss/paletteIdx"));
-        pal = v.isValid() ? v.toInt()
-                          : SSSPalette::indexFromName(
-                                qs.value(SettingsDialog::kKeyDefaultPalette,
-                                         QStringLiteral("Gray")).toString());
+    if (!layer) return;
+
+    if (m_palette) {
+        int pal = layer->sss_palette;
+        if (pal < 0) {
+            QSettings qs;
+            const QVariant v = qs.value(QStringLiteral("sss/paletteIdx"));
+            pal = v.isValid() ? v.toInt()
+                              : SSSPalette::indexFromName(
+                                    qs.value(SettingsDialog::kKeyDefaultPalette,
+                                             QStringLiteral("Gray")).toString());
+        }
+        QSignalBlocker sb(m_palette);
+        m_palette->setCurrentIndex(pal);
     }
-    QSignalBlocker sb(m_palette);
-    m_palette->setCurrentIndex(pal);
+
+    if (m_channel) {
+        const int ch  = static_cast<int>(layer->sss_display_state.params.display_channel);
+        const int idx = m_channel->findData(ch);
+        QSignalBlocker sb(m_channel);
+        m_channel->setCurrentIndex(idx >= 0 ? idx : 0);
+    }
 }
 
 int DisplayModule::currentPaletteIndex() const
@@ -86,6 +128,14 @@ void DisplayModule::setPalette(int idx)
     if (!m_palette) return;
     QSignalBlocker sb(m_palette);
     m_palette->setCurrentIndex(idx);
+}
+
+void DisplayModule::setChannel(DisplayChannel ch)
+{
+    if (!m_channel) return;
+    const int idx = m_channel->findData(static_cast<int>(ch));
+    QSignalBlocker sb(m_channel);
+    if (idx >= 0) m_channel->setCurrentIndex(idx);
 }
 
 } // namespace dolphin::ui

@@ -10,6 +10,7 @@ namespace dolphin::app::contracts {
 
 enum class ContractType {
     ProcessedSidescanLayer,
+    CorrectionApplied,
     BottomTrackResult,
     QCFlags,
     SurveyStatistics,
@@ -25,6 +26,12 @@ struct ProcessedSidescanLayer {
     std::string         artifact_store_format;
     core::ArtifactIndex artifact_index;
     std::string         graph_hash;
+};
+
+struct CorrectionApplied {
+    std::string         layer_id;
+    std::string         artifact_store_path;
+    core::ArtifactIndex artifact_index;
 };
 
 struct BottomTrackResult {
@@ -55,6 +62,7 @@ struct ReportPackage {
 
 using ContractPayload = std::variant<
     ProcessedSidescanLayer,
+    CorrectionApplied,
     BottomTrackResult,
     QCFlags,
     SurveyStatistics,

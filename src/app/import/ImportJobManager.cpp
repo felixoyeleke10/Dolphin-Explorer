@@ -205,6 +205,11 @@ void ImportJobManager::dispatchNext()
 
 void ImportJobManager::onIndexingStarted(const std::string& layer_id)
 {
+    // rebuildCacheIndex shares indexingStarted but is not a queued import job.
+    // It has no matching dispatchNext() call, so it must not touch m_active_count
+    // or m_active_jobs — those only track jobs that went through importBatch().
+    if (m_service->isRebuildingLayer(layer_id)) return;
+
     // Always update internal state so queue advancement is consistent after cancel.
     if (m_awaiting_start_count > 0) --m_awaiting_start_count;
 
@@ -310,7 +315,13 @@ void ImportJobManager::onIndexingFailed(const std::string& layer_id,
     // Update tracking.  m_awaiting_start_count must be decremented if
     // indexingStarted never fired for this job (either because it's an ImportNew
     // that failed synchronously, or a RebuildExisting that failed before started).
+    //
+    // rebuildCacheIndex failures reach here with an empty m_active_jobs entry
+    // (onIndexingStarted now early-returns for rebuilds) and m_awaiting_start_count==0.
+    // Don't decrement m_active_count for those — no dispatchNext() slot was taken.
     auto it = m_active_jobs.find(layer_id);
+    const bool is_tracked = (it != m_active_jobs.end()) || (m_awaiting_start_count > 0);
+
     if (it == m_active_jobs.end()) {
         // ImportNew sync fail — not yet in m_active_jobs.
         if (m_awaiting_start_count > 0) --m_awaiting_start_count;
@@ -321,6 +332,8 @@ void ImportJobManager::onIndexingFailed(const std::string& layer_id,
     }
 
     if (live) ++m_summary.failed;
+    if (!is_tracked) return;  // cache rebuild failure — no concurrency slot was held
+
     --m_active_count;
 
     const uint32_t tok = m_epoch;

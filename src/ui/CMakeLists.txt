@@ -103,6 +103,8 @@ target_link_libraries(dolphin-ui-contacts
 # -- 6a. Data Library ----------------------------------------------------------
 add_library(dolphin-ui-datalibrary STATIC
     features/datalibrary/DataLibraryWindow.cpp
+    features/datalibrary/DataLibraryWindow.Layout.cpp
+    features/datalibrary/DataLibraryWindow.Refresh.cpp
 )
 target_include_directories(dolphin-ui-datalibrary PUBLIC ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(dolphin-ui-datalibrary
@@ -194,6 +196,9 @@ add_library(dolphin-ui-waterfall STATIC
     features/waterfall/WaterfallWindow.Status.cpp
     features/waterfall/WaterfallWindow.ContextMenu.cpp
     features/waterfall/WaterfallWindowLoad.cpp
+    features/waterfall/WaterfallWindow.Lifecycle.cpp
+    features/waterfall/WaterfallWindow.Params.cpp
+    features/waterfall/WaterfallWindow.Repipe.cpp
     features/waterfall/components/WaterfallScrollSync.cpp
     features/waterfall/processing/SeabedAutoDetector.cpp
     features/waterfall/processing/SeabedAutoDetector.Scanners.cpp
@@ -361,6 +366,9 @@ add_library(dolphin-ui-mainwindow STATIC
     mainwindow/coordinators/MainWindow.NodeGraphCoordinator.cpp
     mainwindow/coordinators/MainWindow.ProcessingCoordinator.cpp
     mainwindow/coordinators/MainWindow.DataLibraryCoordinator.cpp
+    mainwindow/coordinators/CorrectionBatchOperator.cpp
+    mainwindow/coordinators/ProjectOperationCoordinator.cpp
+    mainwindow/coordinators/ViewportCoordinator.cpp
     mainwindow/MainWindow.MapContextMenu.cpp
     mainwindow/MainStatusBar.cpp
     mainwindow/MainWindow.AppSettings.cpp

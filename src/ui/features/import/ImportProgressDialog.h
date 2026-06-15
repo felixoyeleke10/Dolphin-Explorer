@@ -5,6 +5,7 @@
 #include <vector>
 
 class QFrame;
+class QCloseEvent;
 class QLabel;
 class QProgressBar;
 class QPushButton;
@@ -53,6 +54,9 @@ public:
 
     void reanchor() {} // no-op; kept for API compatibility with old overlay
 
+protected:
+    void closeEvent(QCloseEvent* event) override;
+
 private slots:
     void onTick();
 
@@ -82,6 +86,8 @@ private:
     void     updateOverallProgress();
     void     checkAllDone();
     void     applyCardState(FileRow& row, FileRow::State s);
+    void     runInBackground();
+    void     showForActiveBatch();
 
     QLabel*       m_title_lbl   = nullptr;
     QLabel*       m_sub_lbl     = nullptr;
@@ -97,6 +103,7 @@ private:
     int    m_queue_total        = 0;
     int    m_pending_map_loads  = 0;
     bool   m_all_done           = false;
+    bool   m_backgrounded       = false;
     QTimer* m_timer      = nullptr;
     qint64  m_start_ms   = 0;
 };

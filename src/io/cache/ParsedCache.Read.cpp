@@ -242,6 +242,12 @@ bool writeParsedCache(const std::string& cache_path,
 
     if (progress) progress(1.0f);
 
+    // Append the compact index footer so project-open can skip the full scan.
+    // correction_flags_seen and bottom_pick_src_mask are not available here
+    // (no source_meta.correction_flags_seen on writeParsedCache path); they
+    // will be populated on the first full-scan pass if needed.
+    writeIndexFooter(file, cache_index, 0u, 0u);
+
     if (std::fclose(file) != 0) {
         removeIfExists(temp_path);
         return false;
@@ -324,6 +330,19 @@ bool writeArtifactBufferToCache(const std::string& cache_path,
 
         appendIndexEntry(out_index, record, offset, meta.coordinate_ref);
     }
+
+    // Collect correction_flags_seen and bottom_pick_src_mask from the buffer
+    // so the footer carries the right metadata from the first write.
+    uint32_t corr_flags = 0u;
+    uint8_t  bp_mask    = 0u;
+    for (const auto& artifact : buffer) {
+        if (const auto* ping = std::get_if<core::SidescanPing>(&artifact)) {
+            corr_flags |= ping->correction_flags;
+            if (ping->bottom_pick.source == 1) bp_mask |= 0x01u;
+            else if (ping->bottom_pick.source == 2) bp_mask |= 0x02u;
+        }
+    }
+    writeIndexFooter(file, out_index, corr_flags, bp_mask);
 
     if (std::fclose(file) != 0) {
         removeIfExists(temp_path);

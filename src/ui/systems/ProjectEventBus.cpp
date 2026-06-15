@@ -39,4 +39,9 @@ void ProjectEventBus::postLayerDataChanged(const std::string& layer_id)
     emit layerDataChanged(layer_id);
 }
 
+void ProjectEventBus::postProjectModified()
+{
+    emit projectModified();
+}
+
 } // namespace dolphin::ui

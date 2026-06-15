@@ -170,6 +170,8 @@ void MainWindow::setupCentralWidget()
 
     connect(m_inspector, &InspectorPanel::paletteChanged,
             this,        &MainWindow::onPaletteChanged);
+    connect(m_inspector, &InspectorPanel::channelChanged,
+            this,        &MainWindow::onChannelChanged);
 
     // Properties panel tab bar
     connect(m_props_tab_tools,   &QToolButton::clicked, this, [this]{ onPropsTabChanged(0); });
@@ -217,12 +219,6 @@ void MainWindow::setupCentralWidget()
         }
         m_status_bar->setCursorPosition(lat, lon, m_map_view->isProjected());
     });
-
-    connect(m_viewport_host, &MapViewportHost::viewportChanged,
-            this, [this](double mpp, double rot) {
-        m_status_bar->setViewportInfo(mpp, rot);
-    });
-
 
     connect(m_viewport_host, &MapViewportHost::gpuInfo,
             this, [this](const QString& renderer, const QString& version, int max_tex) {

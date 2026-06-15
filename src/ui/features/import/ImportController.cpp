@@ -7,24 +7,22 @@
 #include "ui/shared/CoordFormat.h"
 #include "app/layers/DataLayer.h"
 #include "app/project/Project.h"
+#include "app/services/ImportService.h"
 
 #include <QFileInfo>
 #include <QMessageBox>
-#include <QProgressBar>
 
 namespace dolphin::ui {
 
 ExecutionController::ExecutionController(app::ImportJobManager*   job_manager,
                                          ExecutionProgressDialog* dialog,
                                          LayerPickerWidget*       layer_picker,
-                                         QProgressBar*            progress_bar,
                                          QWidget*                 dialog_parent,
                                          QObject*                 parent)
     : QObject(parent)
     , m_manager(job_manager)
     , m_dialog(dialog)
     , m_layer_picker(layer_picker)
-    , m_progress_bar(progress_bar)
     , m_dialog_parent(dialog_parent)
 {
     connect(m_manager, &app::ImportJobManager::jobStarted,
@@ -49,6 +47,21 @@ void ExecutionController::setProject(std::shared_ptr<app::Project> project)
     m_manager->setProject(std::move(project));
 }
 
+void ExecutionController::connectToCacheRebuilds(app::ImportService* service)
+{
+    if (!service) return;
+    connect(service, &app::ImportService::indexingStarted,
+            this, [this, service](const std::string& layer_id) {
+                onCacheRebuildStarted(service, layer_id);
+            });
+    connect(service, &app::ImportService::indexingProgress,
+            this, &ExecutionController::onCacheRebuildProgress);
+    connect(service, &app::ImportService::cacheIndexRebuilt,
+            this, &ExecutionController::onCacheRebuilt);
+    connect(service, &app::ImportService::indexingFailed,
+            this, &ExecutionController::onCacheRebuildFailed);
+}
+
 void ExecutionController::importBatch(const QList<FileImportAction>& actions)
 {
     if (!m_project) return;
@@ -66,6 +79,18 @@ void ExecutionController::reindexLayer(const std::string& source_path,
                                        const std::string& layer_id)
 {
     m_manager->reindexLayer(source_path, layer_id);
+}
+
+void ExecutionController::onMapLoadPending()
+{
+    if (m_dialog)
+        m_dialog->onMapLoadPending();
+}
+
+void ExecutionController::onMapLoadDone()
+{
+    if (m_dialog)
+        m_dialog->onMapLoadDone();
 }
 
 void ExecutionController::onJobStarted(const std::string& layer_id,
@@ -127,6 +152,78 @@ void ExecutionController::onJobFailed(const std::string& layer_id, const QString
     m_dialog->failJob(layer_id, error);
     emit importFailed(QString::fromStdString(layer_id), error);
     QMessageBox::warning(m_dialog_parent, tr("Import Failed"), error);
+}
+
+void ExecutionController::onCacheRebuildStarted(app::ImportService* service,
+                                                const std::string& layer_id)
+{
+    if (!service || !service->isRebuildingLayer(layer_id)) return;
+    m_cache_rebuild_jobs.insert(layer_id);
+
+    QString filename = QString::fromStdString(layer_id);
+    QString format = QStringLiteral("DLPD");
+    float size_mb = 0.f;
+
+    if (m_project) {
+        if (const auto* layer = m_project->findLayer(layer_id)) {
+            filename = QString::fromStdString(layer->label);
+            if (!layer->artifact_store_format.empty())
+                format = QString::fromStdString(layer->artifact_store_format).toUpper();
+            if (!layer->artifact_store_path.empty()) {
+                QFileInfo fi(QString::fromStdString(layer->artifact_store_path));
+                if (fi.exists())
+                    size_mb = static_cast<float>(fi.size()) / (1024.f * 1024.f);
+            }
+        }
+    }
+
+    emit progressChanged(0, true);
+    if (m_dialog) {
+        m_dialog->addJob(layer_id, filename, format, size_mb);
+        m_dialog->raise();
+    }
+}
+
+void ExecutionController::onCacheRebuildProgress(const std::string& layer_id, int percent)
+{
+    if (!m_cache_rebuild_jobs.count(layer_id)) return;
+    emit progressChanged(percent, true);
+    if (m_dialog)
+        m_dialog->updateJob(layer_id, percent);
+}
+
+void ExecutionController::onCacheRebuilt(const std::string& layer_id)
+{
+    if (!m_cache_rebuild_jobs.erase(layer_id)) return;
+
+    emit progressChanged(100, false);
+    emit cacheLayerReady(layer_id);
+
+    QString result = tr("Cached data loaded");
+    if (m_project) {
+        if (const auto* layer = m_project->findLayer(layer_id)) {
+            const int artifacts = layer->bandArtifactCount();
+            result = artifacts >= 1000
+                ? tr("%1k artifacts cached").arg(artifacts / 1000.0, 0, 'f', 1)
+                : tr("%1 artifacts cached").arg(artifacts);
+        }
+    }
+    if (m_dialog)
+        m_dialog->finishJob(layer_id, result);
+    if (m_layer_picker)
+        m_layer_picker->refresh();
+}
+
+void ExecutionController::onCacheRebuildFailed(const std::string& layer_id,
+                                               const std::string& error)
+{
+    if (!m_cache_rebuild_jobs.erase(layer_id)) return;
+
+    emit progressChanged(0, false);
+    const QString qerror = QString::fromStdString(error);
+    if (m_dialog)
+        m_dialog->failJob(layer_id, qerror);
+    emit cacheLayerFailed(QString::fromStdString(layer_id), qerror);
 }
 
 } // namespace dolphin::ui

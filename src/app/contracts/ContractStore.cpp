@@ -58,6 +58,7 @@ std::string contractTypeName(ContractType type)
 {
     switch (type) {
     case ContractType::ProcessedSidescanLayer: return "ProcessedSidescanLayer";
+    case ContractType::CorrectionApplied:      return "CorrectionApplied";
     case ContractType::BottomTrackResult:      return "BottomTrackResult";
     case ContractType::QCFlags:                return "QCFlags";
     case ContractType::SurveyStatistics:       return "SurveyStatistics";
