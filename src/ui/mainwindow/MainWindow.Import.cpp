@@ -46,7 +46,12 @@ static void reclassify(QList<FileImportAction>& files, const app::Project* proje
 {
     if (!project) return;
     for (auto& action : files) {
-        const auto fresh = app::classifyImportAction(action.path, project);
+        // Re-classify against the now-open project, keeping the action's chosen
+        // module(s) so the decision stays modality-aware — otherwise a requested
+        // modality missing from an already-imported source would be downgraded to
+        // ReuseExisting and its layer never created.
+        const auto fresh = app::classifyImportAction(action.path, project,
+                                                     action.module_filter);
         action.kind               = fresh.kind;
         action.existing_layer_id  = fresh.existing_layer_id;
         action.existing_source_id = fresh.existing_source_id;
