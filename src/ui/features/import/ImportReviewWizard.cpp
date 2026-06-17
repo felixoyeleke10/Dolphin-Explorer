@@ -334,12 +334,16 @@ void ImportReviewWizard::buildModalityChecks(int idx)
         return std::find(v.begin(), v.end(), t) != v.end();
     };
 
-    // Seed: if a menu preset is active, pre-check the detected families it names;
-    // otherwise (or if none overlap) pre-check everything the file contains.
+    // Seed the selection:
+    //  - sensor chosen up front (sensor window / modality menu): pre-check ONLY that
+    //    family — empty if the file doesn't contain it, so a wrong-sensor file (e.g.
+    //    dragged in) imports nothing rather than being auto-selected.
+    //  - generic browse / drag-drop with no choice: pre-check everything detected.
     std::vector<core::ArtifactType> initial;
-    if (!m_module_filter.empty())
+    if (m_module_filter.empty())
+        initial = detected;
+    else
         for (auto t : detected) if (in(m_module_filter, t)) initial.push_back(t);
-    if (initial.empty()) initial = detected;
     e.module_filter = initial;
 
     for (auto t : detected) {
