@@ -124,7 +124,8 @@ void MainWindow::buildFileMenu()
     bathy->addAction(tr("Reson S7K\u2026"),          this, importAs({AT::Multibeam}));
 
     imp->addSeparator();
-    imp->addAction(tr("Browse All Formats\u2026"),   this, &MainWindow::onImportFile);
+    // Generic browse: no sensor preset \u2014 the wizard detects each file's modalities.
+    imp->addAction(tr("Browse All Formats\u2026"),   this, importAs({}));
 
     file->addSeparator();
     QMenu* exp = file->addMenu(QIcon(":/icons/export.svg"), tr("E&xport"));

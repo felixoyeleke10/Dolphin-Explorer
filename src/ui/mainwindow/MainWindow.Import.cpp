@@ -3,6 +3,7 @@
 #include "ui/shell/AppInfo.h"
 #include "ui/shell/Features.h"
 #include "ui/features/import/ImportReviewWizard.h"
+#include "ui/features/import/ImportSetupDialog.h"
 #include "app/import/ImportClassifier.h"
 #include "app/layers/LayerUtils.h"     // kModuleArtifactTypes (menu presets)
 #include "app/project/Project.h"
@@ -130,7 +131,11 @@ bool MainWindow::ensureProjectForImport(const ImportDialogResult& res)
 
 void MainWindow::onImportFile()
 {
-    importFilesWithPreset({});
+    // Step 1 — sensor-type window. Picks the modality up front; the review wizard
+    // then detects each file's contents and lets the user confirm/adjust per file.
+    ImportSetupDialog setup(this);
+    if (setup.exec() != QDialog::Accepted) return;
+    importFilesWithPreset(setup.moduleFilter());
 }
 
 // Detect-then-confirm import. No blind "what are you importing?" step: the wizard
