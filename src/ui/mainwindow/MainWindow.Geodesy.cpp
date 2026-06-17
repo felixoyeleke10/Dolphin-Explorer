@@ -85,6 +85,7 @@ void MainWindow::onGeodeticSettings()
                         ViewerRefreshReason::CrsChanged, activeLayerId());
                     if (!activeLayerId().empty())
                         applyStoredNavParams(activeLayerId());
+                    updateContextInfo();   // refresh the status-bar working CRS
                     appendJobMessage(
                         tr("Source CRS applied to %1 layer(s)").arg(n_applied));
                 });

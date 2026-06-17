@@ -5,11 +5,12 @@
 #include <vector>
 
 #include "core/ArtifactIndex.h"
+#include "app/layers/LayerUtils.h"   // Modality
 
 namespace dolphin::app::contracts {
 
 enum class ContractType {
-    ProcessedSidescanLayer,
+    ProcessedLayer,
     CorrectionApplied,
     BottomTrackResult,
     QCFlags,
@@ -19,13 +20,17 @@ enum class ContractType {
 
 std::string contractTypeName(ContractType type);
 
-struct ProcessedSidescanLayer {
+// Output of a processing run on a layer of any modality. (Renamed from
+// ProcessedSidescanLayer + given a `modality` so it is honest for SBP/MAG layers
+// too, not just sidescan.)
+struct ProcessedLayer {
     std::string         layer_id;
     std::string         source_id;
     std::string         artifact_store_path;
     std::string         artifact_store_format;
     core::ArtifactIndex artifact_index;
     std::string         graph_hash;
+    Modality            modality = Modality::Sidescan;
 };
 
 struct CorrectionApplied {
@@ -61,7 +66,7 @@ struct ReportPackage {
 };
 
 using ContractPayload = std::variant<
-    ProcessedSidescanLayer,
+    ProcessedLayer,
     CorrectionApplied,
     BottomTrackResult,
     QCFlags,

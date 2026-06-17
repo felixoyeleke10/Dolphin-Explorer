@@ -9,6 +9,7 @@
 
 #include "app/project/Project.h"
 #include "app/project/Project_p.h"
+#include "core/SpatialRef.h"
 #include "geo/GeoUtils.h"
 
 #include <QFileInfo>
@@ -81,6 +82,35 @@ void Project::setCrs(const std::string& epsg)
 {
     const core::SpatialRef ref = geo::spatialRefFromId(epsg);
     m_display_spatial_ref = ref.empty() ? core::makeWgs84SpatialRef() : ref;
+}
+
+core::SpatialRef Project::workingCrs() const
+{
+    // The survey/working grid = the projected CRS the source data is in.  Pick
+    // the most common projected source CRS across the project's sources; if no
+    // source is projected (pure geographic data), fall back to the display ref.
+    std::map<std::string, int> counts;
+    core::SpatialRef best;
+    int best_n = 0;
+    for (const auto& src : m_sources) {
+        const core::SpatialRef& sr = src.source_spatial_ref;
+        if (sr.empty() || !core::spatialRefIsProjected(sr)) continue;
+        const int n = ++counts[sr.id];
+        if (n > best_n) { best_n = n; best = sr; }
+    }
+    return best.empty() ? m_display_spatial_ref : best;
+}
+
+bool Project::hasMixedProjectedSources() const
+{
+    std::string first;
+    for (const auto& src : m_sources) {
+        const core::SpatialRef& sr = src.source_spatial_ref;
+        if (sr.empty() || !core::spatialRefIsProjected(sr)) continue;
+        if (first.empty())       first = sr.id;
+        else if (sr.id != first) return true;
+    }
+    return false;
 }
 
 std::shared_ptr<Project> Project::create(const std::string& name,

@@ -45,25 +45,31 @@ std::vector<contracts::ContractEnvelope> ProcessingWorkerAdapter::collectOutputs
         return {};
 
     const std::string base_path = layer->artifact_store_path;
-    std::string write_path = base_path;
-    {
-        io::ParsedCacheReader check;
-        if (check.open(base_path)) {
-            const auto fi = check.buildIndex();
-            if (layer->artifact_index.entries.size() < fi.entries.size()) {
-                namespace fs = std::filesystem;
-                const fs::path p(base_path);
-                write_path = (p.parent_path()
-                    / (p.stem().string() + "_" + context.worker->id + ".dlpd")).string();
-            }
-        }
-    }
 
     io::FormatMeta meta;
     {
         io::ParsedCacheReader mr;
         if (mr.open(base_path)) meta = mr.metadata();
     }
+
+    // Always write to a per-layer sidecar — never overwrite the original parsed
+    // store (D-04). "Already our sidecar" = formal role marker (preferred) or the
+    // legacy "_<layerId>" filename suffix; re-runs overwrite that sidecar in place.
+    std::string write_path;
+    {
+        namespace fs = std::filesystem;
+        const fs::path p(base_path);
+        const std::string suffix = "_" + context.worker->id;
+        const std::string stem   = p.stem().string();
+        const bool legacy_named = stem.size() > suffix.size()
+            && stem.compare(stem.size() - suffix.size(), suffix.size(), suffix) == 0;
+        const bool already_sidecar =
+            (meta.artifact_role == io::kArtifactRoleSidecar) || legacy_named;
+        write_path = already_sidecar
+            ? base_path
+            : (p.parent_path() / (stem + suffix + ".dlpd")).string();
+    }
+    meta.artifact_role = io::kArtifactRoleSidecar;  // formal marker on the output
 
     core::ArtifactIndex out_index;
     if (!io::writeArtifactBufferToCache(write_path, graph_output, meta, out_index))
@@ -74,15 +80,16 @@ std::vector<contracts::ContractEnvelope> ProcessingWorkerAdapter::collectOutputs
     contracts::ContractEnvelope env;
     env.id                 = context.worker->id + "_proc";
     env.binding_key        = context.worker->id;
-    env.type               = contracts::ContractType::ProcessedSidescanLayer;
+    env.type               = contracts::ContractType::ProcessedLayer;
     env.producer_worker_id = context.worker->id;
 
-    contracts::ProcessedSidescanLayer pl;
+    contracts::ProcessedLayer pl;
     pl.layer_id              = context.worker->id;
     pl.source_id             = layer->source_id;
     pl.artifact_store_path   = write_path;
     pl.artifact_store_format = "dlpd";
     pl.artifact_index        = std::move(out_index);
+    pl.modality              = layer->modality;
     env.payload = std::move(pl);
     return {std::move(env)};
 }

@@ -1,12 +1,13 @@
 #pragma once
 #include "app/tasks/CancellationToken.h"
-#include "ui/features/waterfall/NavProcessingParams.h"
+#include "app/display/NavProcessingParams.h"
 #include "ui/features/waterfall/WaterfallParams.h"
 #include "ui/features/waterfall/WaterfallSettingsDialog.h"
 #include "ui/shared/dialogs/CommandPaletteDialog.h"
 #include "ui/shared/widgets/ViewerToolbar.h"
 #include "ui/shell/ViewerWindow.h"
 #include "core/Contact.h"
+#include "core/SidescanPing.h"
 #include <QCloseEvent>
 #include <QWidget>
 #include <string>
@@ -25,6 +26,7 @@ class QToolButton;
 namespace dolphin::app {
 class DataLayer;
 class ImportService;
+class OperationManager;
 }
 
 namespace dolphin::ui {
@@ -149,6 +151,10 @@ public:
     // Returns the ID of the layer currently loaded in the waterfall, or empty.
     const std::string& currentLayerId() const;
 
+    // Returns a copy of the raw pings held by the view, including any bottom_pick
+    // fields set by seabed detection or user editing.  Empty if no data is loaded.
+    std::vector<core::SidescanPing> currentRawPings() const;
+
     void reloadCurrentLayer();
 
     // Returns the fraction of this layer's pings that have been scrolled past.
@@ -167,10 +173,10 @@ public:
     // view's held raw pings — no disk I/O.  No-op if no pings are loaded.
     void invalidateProcessedCache();
 
-    // Returns a copy of the current load-cancellation token.  The copy shares
-    // the underlying flag with the running background task, so cancelling it
-    // from outside (e.g. via TaskRegistry) stops the active load.
-    app::CancellationToken loadToken() const { return m_load_cancel; }
+    // Inject the shared OperationManager (owns this window's pipeline ops, keyed
+    // "wf:pipeline" so load/repipe/nav-process supersede each other and respect
+    // the heavy-job cap). Set once, after construction, by the coordinator.
+    void setOperationManager(app::OperationManager* m) { m_op_mgr = m; }
 
 public slots:
     // Apply params from an external control panel (GainControlPanel, ImagingControlPanel).
@@ -180,11 +186,12 @@ public slots:
     // MainWindow can propagate the params to every project layer.
     void applyExternalParamsToAll(const WaterfallParams& p);
 
-    // Nav corrections from the main window Nav/Heading panels.
-    // applyNavToAll also emits navProcessAllLinesRequested so MainWindow
-    // can propagate the correction to every project layer.
+    // Live nav correction for the line shown in this window. The main-window
+    // Nav/Geometry panels are wired to model-owned MainWindow slots at
+    // construction; this is the viewer-refresh entry point those slots call while
+    // the window is open. (Apply-to-all persistence is handled by MainWindow via
+    // navProcessAllLinesRequested, emitted by this window's analysis panel.)
     void applyNavToLine(const dolphin::ui::NavProcessingParams& p);
-    void applyNavToAll(const dolphin::ui::NavProcessingParams& p);
 
 protected:
     void closeEvent(QCloseEvent* ev) override;
@@ -281,8 +288,7 @@ private:
     uint64_t            m_source_size_bytes = 0;
     int                 m_active_mode       = ModeNavigate;
 
-    int                           m_load_gen    = 0;
-    app::CancellationToken        m_load_cancel;
+    app::OperationManager*        m_op_mgr      = nullptr;  // owns pipeline ops (keyed)
     ViewerDataState               m_data_state  = ViewerDataState::Idle;
     int   m_total_ssc_entries     = 0;
     int   m_window_first_row      = 0;

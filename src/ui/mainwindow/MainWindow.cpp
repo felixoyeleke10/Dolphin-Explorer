@@ -114,9 +114,18 @@ MainWindow::MainWindow(QWidget* parent)
     // Central operation manager — bridges lifecycle signals to DiagnosticsHub
     // so any subsystem using m_op_mgr->run<T>() gets automatic job tracking.
     m_op_mgr = new app::OperationManager(this);
+    connect(m_op_mgr, &app::OperationManager::operationQueued, this,
+            [this](uint32_t op_id, const QString& name) {
+                // Submitted but parked behind a lane cap — show as Queued, not Running.
+                m_op_job_ids[op_id] = m_diag_hub->beginJob(
+                    name, {}, 0, {}, 0.f, DiagnosticsHub::JobStatus::Queued);
+            });
     connect(m_op_mgr, &app::OperationManager::operationStarted, this,
             [this](uint32_t op_id, const QString& name) {
-                m_op_job_ids[op_id] = m_diag_hub->beginJob(name);
+                // If it was queued, flip it to Running; otherwise create it running.
+                const auto it = m_op_job_ids.find(op_id);
+                if (it != m_op_job_ids.end()) m_diag_hub->startJob(it->second);
+                else m_op_job_ids[op_id] = m_diag_hub->beginJob(name);
             });
     connect(m_op_mgr, &app::OperationManager::operationCompleted, this,
             [this](uint32_t op_id) {
@@ -178,7 +187,6 @@ MainWindow::MainWindow(QWidget* parent)
                     const uint32_t jid = m_diag_hub->beginJob(
                         label, QString::fromStdString(layer_id));
                     m_import_job_ids[layer_id] = jid;
-                    taskBegin(QStringLiteral("import:") + QString::fromStdString(layer_id), label);
                 });
         connect(m_import_service, &app::ImportService::indexingProgress, this,
                 [this](const std::string& layer_id, int percent) {
@@ -193,7 +201,6 @@ MainWindow::MainWindow(QWidget* parent)
                         m_diag_hub->endJob(it->second, tr("Ready"));
                         m_import_job_ids.erase(it);
                     }
-                    taskDone(QStringLiteral("import:") + QString::fromStdString(layer_id));
                     if (currentProject()) {
                         if (const auto* layer = currentProject()->findLayer(layer_id))
                             recordActivity(ActivityKind::Import,
@@ -218,8 +225,6 @@ MainWindow::MainWindow(QWidget* parent)
                             DiagnosticsHub::Severity::Warning, "cache-rebuild");
                         return;
                     }
-                    taskFail(QStringLiteral("import:") + QString::fromStdString(layer_id),
-                             QString::fromStdString(error));
                 });
 
     }
@@ -234,7 +239,6 @@ MainWindow::MainWindow(QWidget* parent)
     m_session_ctrl = new ProjectSessionController(
         m_undo_stack, m_diag_hub, m_op_mgr, m_import_service, this, this);
     m_layer_ctrl  = new LayerDisplayCoordinator(m_session_ctrl, this);
-    m_task_ctrl   = new TaskProgressController(this, m_op_mgr, this);
 
     // openProject() for cache-only files encodes the path in a "job message"
     // prefixed with __import_cache__: so MainWindow can intercept it.
@@ -274,21 +278,40 @@ MainWindow::MainWindow(QWidget* parent)
         const auto proj = m_session_ctrl->project();
         if (!proj) return;
 
-        using M = app::Modality;
-        for (const auto& layer : proj->layers()) {
-            if (!layer || !layer->index_built || layer->artifact_index.empty()) continue;
-            if (layer->modality == M::Sidescan) {
-                if (m_sss_ctrl)
-                    m_sss_ctrl->activateLayer(layer->id, proj.get());
-            } else if (m_map_view) {
-                m_map_view->setActiveLayer(layer->id);
-                m_map_view->setNavTrackVisible(layer->id, true);
+        // Frame the whole survey as the lines arrive (active mosaic + every other
+        // line's nav track). Without this the view stays on the active line's extent
+        // — a programmatic viewport sync sets the interaction flag, so lines whose
+        // extent falls outside the active line's box are left off-screen.
+        if (m_map_view) m_map_view->requestFrameSurvey();
+
+        // Load the selected/restored layer's full mosaic first (priority). Count it
+        // as a pending map load so the background panel surfaces "Building map" while
+        // the survey loads (each load is balanced by loadingFinished → onMapLoadDone).
+        if (!first_layer_id.empty()) {
+            const auto* fl = proj->findLayer(first_layer_id);
+            if (m_import_ctrl && fl && fl->modality == app::Modality::Sidescan)
+                m_import_ctrl->onMapLoadPending();
+            onLayerSelected(first_layer_id);
+        }
+
+        // …and show the whole survey as RASTER, not just the active line. For every
+        // other indexed sidescan line: draw its nav track instantly from the index
+        // (zero I/O) for immediate feedback, then load its raster as a non-active
+        // overview layer. The raster load is cache-first — a fresh .draster paints
+        // with no ping decode (instant on reopen); a cache miss builds + caches it in
+        // the background (map lane, cap 2), upgrading the track to a raster. Lines not
+        // yet indexed (footerless first open) get theirs as their reindex completes
+        // (cacheLayerReady). The active line still loads first (priority).
+        if (m_sss_ctrl) {
+            for (const auto& layer : proj->layers()) {
+                if (!layer || layer->id == first_layer_id) continue;
+                if (!layer->index_built || layer->artifact_index.empty()) continue;
+                if (layer->modality != app::Modality::Sidescan) continue;
+                m_sss_ctrl->showNavTrackFromIndex(layer->id, proj.get());
+                if (m_import_ctrl) m_import_ctrl->onMapLoadPending();
+                m_sss_ctrl->activateLayer(layer->id, proj.get(), /*as_active=*/false);
             }
         }
-        if (m_viewport_host) m_viewport_host->setActiveLayer({});
-
-        if (!first_layer_id.empty())
-            onLayerSelected(first_layer_id);
     });
 
     // LayerDisplayCoordinator signals.
@@ -397,13 +420,18 @@ MainWindow::MainWindow(QWidget* parent)
     m_sss_ctrl = new SidescanViewController(
         m_map_view, m_import_service,
         m_status_bar->pingLabel(), m_status_bar->posLabel(), m_status_bar->depthLabel(), this);
+    m_sss_ctrl->setOperationManager(m_op_mgr);  // owns per-layer map-build ops (keyed)
     connect(m_sss_ctrl, &SidescanViewController::contactPicked,
             this, &MainWindow::onContactPicked);
     connect(m_sss_ctrl, &SidescanViewController::loadingStarted, this, [this]() {
-        m_status_bar->setProgressIndeterminate();
+        // The controller has already flagged itself Loading; let the shared
+        // indicator reflect the aggregate busy state of all viewers.
+        refreshLoadingIndicator();
     });
     connect(m_sss_ctrl, &SidescanViewController::loadingFinished, this, [this]() {
-        m_status_bar->hideProgress();
+        // Only clear the indicator if no other viewer (or concurrent map build)
+        // is still busy — the controller's state is updated before this fires.
+        refreshLoadingIndicator();
         if (m_import_ctrl)
             m_import_ctrl->onMapLoadDone();
     });
@@ -448,10 +476,12 @@ MainWindow::MainWindow(QWidget* parent)
             });
 
     {
-        // Apply the persisted map sonar quality (default: CoverageOnly).
+        // Apply the persisted map sonar quality (default: CoverageOnly — a new
+        // project shows coverage + nav instantly and pays no raster cost until the
+        // user picks a higher tier).
         QSettings qs;
         const int saved = qs.value(SettingsDialog::kKeyMapSonarQuality,
-                                   static_cast<int>(MapSonarQuality::Low)).toInt();
+                                   static_cast<int>(MapSonarQuality::CoverageOnly)).toInt();
         m_sss_ctrl->setMapSonarQuality(static_cast<MapSonarQuality>(saved));
     }
     if constexpr (Features::kImport) {
@@ -501,22 +531,37 @@ MainWindow::MainWindow(QWidget* parent)
                     auto* layer = currentProject()->findLayer(layer_id);
                     if (!layer || !layer->index_built) return;
 
-                    const bool needs_map_build =
-                        layer->modality == app::Modality::Sidescan && m_sss_ctrl;
-                    if (needs_map_build)
-                        m_import_ctrl->onMapLoadPending();
-
                     using M = app::Modality;
+                    const bool needs_map_build =
+                        layer->modality == M::Sidescan && m_sss_ctrl;
+
+                    // Lazy: a freshly-reindexed layer only loads into the map when it
+                    // IS the active selection (or when nothing is selected yet — then
+                    // it becomes the selection). Other reindexed layers stay indexed
+                    // but unloaded, so opening a project with N lines doesn't rebuild
+                    // N mosaics — only the one the user is looking at.
                     if (activeLayerId().empty()) {
+                        if (needs_map_build) m_import_ctrl->onMapLoadPending();
                         onLayerSelected(layer_id);
-                    } else {
-                        if (layer->modality == M::Sidescan && m_sss_ctrl)
+                    } else if (layer_id == activeLayerId()) {
+                        if (needs_map_build) {
+                            m_import_ctrl->onMapLoadPending();
                             m_sss_ctrl->activateLayer(layer_id, currentProject());
-                        else if (m_map_view) {
+                        } else if (m_map_view) {
                             m_map_view->setActiveLayer(layer_id);
                             m_map_view->setNavTrackVisible(layer_id, true);
                         }
+                    } else if (needs_map_build) {
+                        // Reindexed non-active sidescan layer: instant nav-track
+                        // overview, then load its raster as a non-active overview
+                        // layer (cache-first; builds + caches on miss) so the whole
+                        // survey shows as raster, not just the active line.
+                        m_sss_ctrl->showNavTrackFromIndex(layer_id, currentProject());
+                        m_sss_ctrl->activateLayer(layer_id, currentProject(),
+                                                  /*as_active=*/false);
                     }
+                    // Refresh the tree so the reindexed layer shows ready.
+                    if (m_line_list) m_line_list->refresh();
 
                     markProjectDirty();
                 });
@@ -541,8 +586,6 @@ MainWindow::MainWindow(QWidget* parent)
                     m_import_job_ids[id] = m_diag_hub->beginJob(
                         tr("Processing: %1").arg(label), QString::fromStdString(id));
                     m_import_overlay->addJob(id, label, "RUN", 0.f);
-                    taskBegin(QStringLiteral("proc:") + QString::fromStdString(id),
-                              tr("Processing: %1").arg(label));
                 });
         connect(m_proc_ctrl, &ProcessingController::layerRunFinished,
                 this, [this](const std::string& id, const QString& summary) {
@@ -552,7 +595,6 @@ MainWindow::MainWindow(QWidget* parent)
                         m_import_job_ids.erase(it);
                     }
                     m_import_overlay->finishJob(id, summary);
-                    taskDone(QStringLiteral("proc:") + QString::fromStdString(id));
                     // Viewer reload happens in processingPersisted (after index is updated).
                     // If no data was written (empty buffer) the .dlpd is unchanged — no reload needed.
                 });
@@ -567,7 +609,6 @@ MainWindow::MainWindow(QWidget* parent)
                     m_diag_hub->postProblem(
                         tr("Processing failed: %1").arg(error),
                         DiagnosticsHub::Severity::Error, QString::fromStdString(id));
-                    taskFail(QStringLiteral("proc:") + QString::fromStdString(id), error);
                 });
         // processingPersisted: layer mutation, contract, save, and viewer reload
         // are handled entirely by ProjectOperationCoordinator (wired below).

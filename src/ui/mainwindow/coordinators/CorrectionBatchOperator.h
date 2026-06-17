@@ -3,6 +3,7 @@
 #include "app/corrections/SbpGainParams.h"
 #include "app/corrections/SbpSignalParams.h"
 #include "core/ArtifactIndex.h"
+#include "core/SidescanPing.h"
 #include <QObject>
 #include <QString>
 #include <deque>
@@ -10,6 +11,7 @@
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <vector>
 
 namespace dolphin::app {
 class DataLayer;
@@ -30,7 +32,8 @@ namespace dolphin::ui {
 // DiagnosticsHub and ExecutionProgressDialog so call sites only touch one object.
 //
 // Single-layer applies create a standalone DiagnosticsHub job.
-// applyAll creates a DiagnosticsHub batch with one job per layer.
+// bakeCustomized creates a DiagnosticsHub batch with one job per layer, dispatched
+// through a kMaxConcurrent-capped queue (D-14).
 // MainWindow connects to the domain signals (correctionPersisted / correctionFailed
 // / batchComplete) to update layer state and reload viewers.
 class CorrectionBatchOperator : public QObject {
@@ -41,21 +44,26 @@ public:
                                      ExecutionProgressDialog* overlay,
                                      QObject*                 parent = nullptr);
 
-    // Single-layer applies
+    // Single-layer applies.
+    // viewer_pings: optional current pings from the waterfall viewer.  When
+    // non-empty, detected/user-edited bottom picks are merged into the DLPD in
+    // the same write pass as the amplitude corrections.
     void applySSS(app::DataLayer*                        layer,
                   const std::string&                     source_path,
-                  const app::SidescanCorrectionParams&   params);
+                  const app::SidescanCorrectionParams&   params,
+                  std::vector<core::SidescanPing>        viewer_pings = {});
 
     void applySBP(app::DataLayer*                layer,
                   const std::string&             source_path,
                   const app::SbpGainParams&      gain,
                   const app::SbpSignalParams&    signal);
 
-    // Batch applies — iterate all eligible layers in the project
-    void applyAllSSS(app::Project& project, const app::SidescanCorrectionParams& params);
-    void applyAllSBP(app::Project& project,
-                     const app::SbpGainParams&   gain,
-                     const app::SbpSignalParams& signal);
+    // Bake every customized layer's OWN display state into .dlpd sidecars, run
+    // through the capped (kMaxConcurrent) dispatch queue so the heavy read+correct+
+    // write jobs honour the D-14 concurrency cap. SSS uses each layer's gain/imaging
+    // params; SBP uses each layer's gain/signal. Sets up an SSS batch and/or an SBP
+    // batch depending on which modalities have customized layers.
+    void bakeCustomized(app::Project& project);
 
     // Cancel any in-flight batch: drains the queued items immediately;
     // in-flight service calls are allowed to finish but their hub jobs are
@@ -71,7 +79,7 @@ signals:
     void correctionSkipped(std::string layer_id);
     // Bake failed for this layer.
     void correctionFailed(std::string layer_id, QString error);
-    // Emitted once after applyAllSSS / applyAllSBP completes.
+    // Emitted once after a bakeCustomized batch (SSS or SBP) completes.
     void batchComplete(int succeeded, int total);
 
 private:

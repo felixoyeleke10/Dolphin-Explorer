@@ -11,6 +11,7 @@ class QProgressBar;
 class QPushButton;
 class QScrollArea;
 class QTimer;
+class QHBoxLayout;
 class QVBoxLayout;
 
 namespace dolphin::ui {
@@ -66,6 +67,7 @@ private:
         QString      display_name;
         QString      format;
         float        size_mb    = 0.f;
+        int          percent    = 0;   // reading progress (no per-row bar widget now)
 
         QFrame*      card       = nullptr;
         QLabel*      badge      = nullptr;
@@ -86,6 +88,8 @@ private:
     void     updateOverallProgress();
     void     checkAllDone();
     void     applyCardState(FileRow& row, FileRow::State s);
+    void     buildStageChips(int n);   // (re)create the pipeline stage chips
+    void     updateStages();           // refresh stage chips + "now" line from state
     void     runInBackground();
     void     showForActiveBatch();
 
@@ -98,6 +102,16 @@ private:
     QLabel*       m_elapsed_lbl = nullptr;
     QPushButton*  m_bg_btn      = nullptr;
     QPushButton*  m_close_btn   = nullptr;
+
+    // Stage pipeline — the primary view (the per-line card list is kept for state
+    // but hidden). Chips are built once per batch from the operation kind.
+    QWidget*             m_stage_box        = nullptr;
+    QHBoxLayout*         m_stage_lay        = nullptr;
+    std::vector<QLabel*> m_stage_lbls;
+    bool                 m_stages_built     = false;
+    bool                 m_op_is_processing = false;  // true = no map phase (bake/process)
+    bool                 m_has_map_phase    = false;
+    int                  m_map_total        = 0;
 
     std::vector<FileRow> m_rows;
     int    m_queue_total        = 0;

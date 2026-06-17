@@ -2,6 +2,7 @@
 
 #include "ui/features/waterfall/WaterfallWindow.h"
 #include "app/layers/DataLayer.h"
+#include "app/tasks/OperationManager.h"
 #include "ui/features/waterfall/WaterfallView.h"
 #include "ui/features/waterfall/panels/WaterfallInspectorPanel.h"
 #include "ui/features/waterfall/panels/WaterfallAnalysisPanel.h"
@@ -38,10 +39,7 @@ void WaterfallWindow::scheduleNavProcessing(const NavProcessingParams& nav)
 {
     if (!m_view || m_view->rawPings().empty()) return;
 
-    m_load_cancel.cancel();
-    m_load_cancel.reset();
-    auto cancel = m_load_cancel;
-    const int gen = ++m_load_gen;
+    if (!m_op_mgr) return;
     setDataState(ViewerDataState::Processing);
     startProgress();
 
@@ -54,45 +52,40 @@ void WaterfallWindow::scheduleNavProcessing(const NavProcessingParams& nav)
     struct Repipe {
         std::vector<core::SidescanPing> raw_pings;
         WaterfallView::WfPipelineResult pipeline;
+        bool ok = false;
     };
-    auto* watcher = new QFutureWatcher<Repipe>(this);
-    connect(watcher, &QFutureWatcher<Repipe>::finished,
-            this, [this, watcher, gen]() {
-                watcher->deleteLater();
-                if (gen != m_load_gen) return;
-                finishProgress();
-                try {
-                    auto r = watcher->result();
-                    m_view->setPreassembledRows(std::move(r.raw_pings),
-                                               std::move(r.pipeline),
-                                               /*preserve_view=*/true);
-                    pushParams();
-                    setDataState(ViewerDataState::Ready);
-                } catch (...) {
-                    setDataState(ViewerDataState::Failed);
-                }
-            });
-    watcher->setFuture(QtConcurrent::run(
-        [r = std::move(raw), nav, params, seabed, seabed_en, cancel]() mutable -> Repipe {
-            if (cancel.isCancelled()) return {};
-            r = WaterfallView::runNavCorrections(std::move(r), nav);
-            if (cancel.isCancelled()) return {};
+    // Keyed "wf:pipeline" so this supersedes any in-flight load/repipe/nav run.
+    m_op_mgr->run<Repipe>(
+        tr("Waterfall nav processing"),
+        [r = std::move(raw), nav, params, seabed, seabed_en]
+        (app::CancellationToken cancel) mutable -> Repipe {
             Repipe out;
-            out.pipeline  = WaterfallView::runPipeline(r, params, seabed, seabed_en);
-            out.raw_pings = std::move(r);
+            try {
+                if (cancel.isCancelled()) return out;
+                r = WaterfallView::runNavCorrections(std::move(r), nav);
+                if (cancel.isCancelled()) return out;
+                out.pipeline  = WaterfallView::runPipeline(r, params, seabed, seabed_en);
+                out.raw_pings = std::move(r);
+                out.ok = true;
+            } catch (...) { out.ok = false; }
             return out;
-        }));
+        },
+        [this](Repipe r) {
+            finishProgress();
+            if (!r.ok) { setDataState(ViewerDataState::Failed); return; }
+            m_view->setPreassembledRows(std::move(r.raw_pings),
+                                        std::move(r.pipeline),
+                                        /*preserve_view=*/true);
+            pushParams();
+            setDataState(ViewerDataState::Ready);
+        },
+        "wf:pipeline",
+        /*heavy=*/false);
 }
 
 void WaterfallWindow::applyNavToLine(const NavProcessingParams& p)
 {
     scheduleNavProcessing(p);
-}
-
-void WaterfallWindow::applyNavToAll(const NavProcessingParams& p)
-{
-    scheduleNavProcessing(p);
-    emit navProcessAllLinesRequested(p);
 }
 
 const WaterfallParams& WaterfallWindow::currentParams() const

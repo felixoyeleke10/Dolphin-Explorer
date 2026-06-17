@@ -2,6 +2,7 @@
 #include "ui/shared/UiUtils.h"
 #include "ui/shell/Theme.h"
 
+#include <QColor>
 #include <QDateTime>
 #include <QCloseEvent>
 #include <QFontMetrics>
@@ -19,7 +20,10 @@
 namespace dolphin::ui {
 
 static constexpr int kDialogW  = 520;  // fixed dialog width
-static constexpr int kBadgeSz  = 32;   // format-type badge square size
+static constexpr int kListMinH = 140;  // task list min height (comfortable with few tasks)
+static constexpr int kListMaxH = 440;  // task list max height before it scrolls (~9 rows)
+// Format-badge size is a design token (Theme::kFormatBadgeSize / @badgeSize in QSS)
+// so the C++ setFixedSize and the stylesheet min/max stay in sync from one source.
 
 namespace {
 
@@ -58,9 +62,15 @@ ExecutionProgressDialog::ExecutionProgressDialog(QWidget* parent)
     m_title_lbl->setObjectName("titleLabel");
     hdr_lay->addWidget(m_title_lbl);
 
-    m_sub_lbl = new QLabel(tr("Starting…"), header);
-    m_sub_lbl->setObjectName("subtitleLabel");
-    hdr_lay->addWidget(m_sub_lbl);
+    // Stage pipeline (e.g. Reading → Building map). Chips are created on the first
+    // job once the operation kind is known, and refreshed by updateStages().
+    m_stage_box = new QWidget(header);
+    m_stage_box->setObjectName("epdStages");
+    m_stage_lay = new QHBoxLayout(m_stage_box);
+    m_stage_lay->setContentsMargins(0, 2, 0, 2);
+    m_stage_lay->setSpacing(Theme::kSpacing2);
+    m_stage_lay->addStretch(1);
+    hdr_lay->addWidget(m_stage_box);
 
     hdr_lay->addSpacing(4);
 
@@ -71,6 +81,11 @@ ExecutionProgressDialog::ExecutionProgressDialog(QWidget* parent)
     m_overall_bar->setTextVisible(false);
     hdr_lay->addWidget(m_overall_bar);
 
+    // Current-activity line ("Reading …" / "Building map — X of Y" / "… complete").
+    m_sub_lbl = new QLabel(tr("Starting…"), header);
+    m_sub_lbl->setObjectName("subtitleLabel");
+    hdr_lay->addWidget(m_sub_lbl);
+
     root->addWidget(header);
 
     // -- Scrollable file list --------------------------------------------------
@@ -78,14 +93,14 @@ ExecutionProgressDialog::ExecutionProgressDialog(QWidget* parent)
     m_scroll->setWidgetResizable(true);
     m_scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     m_scroll->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
-    m_scroll->setMinimumHeight(60);
-    m_scroll->setMaximumHeight(260);
+    m_scroll->setMinimumHeight(kListMinH);
+    m_scroll->setMaximumHeight(kListMaxH);
 
     m_list_body = new QWidget();
     m_list_body->setObjectName("epdListBody");
     m_list_lay = new QVBoxLayout(m_list_body);
-    m_list_lay->setContentsMargins(Theme::kSpacing3, Theme::kSpacing3, Theme::kSpacing3, Theme::kSpacing3);
-    m_list_lay->setSpacing(Theme::kSpacing2);
+    m_list_lay->setContentsMargins(Theme::kSpacing3, Theme::kSpacing2, Theme::kSpacing3, Theme::kSpacing2);
+    m_list_lay->setSpacing(0);   // rows are flush; separated by each row's bottom border
     m_list_lay->addStretch(1);
 
     m_scroll->setWidget(m_list_body);
@@ -140,11 +155,23 @@ void ExecutionProgressDialog::addJob(const std::string& layer_id,
         m_all_done = false;
         m_backgrounded = false;
         m_pending_map_loads = 0;
+        m_map_total = 0;
+        m_has_map_phase = false;
+        m_stages_built = false;   // rebuild chips for the new batch's operation kind
         m_title_lbl->setText(tr("Background Tasks"));
         m_close_btn->setEnabled(false);
         m_bg_btn->setEnabled(true);
         m_start_ms = QDateTime::currentMSecsSinceEpoch();
         m_timer->start();
+    }
+
+    // Determine the operation kind (and build the stage chips) from the first job:
+    // correction/processing tags have no map phase; everything else is an import.
+    if (!m_stages_built) {
+        const QString f = format.toUpper();
+        m_op_is_processing = (f == "COR" || f == "SBP" || f == "RUN");
+        buildStageChips(m_op_is_processing ? 1 : 2);
+        m_stages_built = true;
     }
 
     // Duplicate check: skip Active (already in-flight), replace Done/Failed (re-import)
@@ -157,7 +184,7 @@ void ExecutionProgressDialog::addJob(const std::string& layer_id,
     QFont fn = font();
     fn.setPixelSize(12);
     const QString elided =
-        QFontMetrics(fn).elidedText(filename, Qt::ElideMiddle, 320);
+        QFontMetrics(fn).elidedText(filename, Qt::ElideMiddle, 260);
 
     FileRow row;
     row.layer_id     = layer_id;
@@ -186,8 +213,9 @@ void ExecutionProgressDialog::updateJob(const std::string& layer_id, int percent
 {
     auto* r = findRow(layer_id);
     if (!r) return;
-    if (r->bar)
-        r->bar->setValue(percent);
+    r->percent = percent;
+    if (r->result_lbl && r->state == FileRow::State::Active)
+        r->result_lbl->setText(tr("Reading %1%").arg(percent));
     updateOverallProgress();
 }
 
@@ -201,20 +229,17 @@ void ExecutionProgressDialog::finishJob(const std::string& layer_id,
 
     applyCardState(*r, FileRow::State::Done);
 
-    if (r->bar)        { r->bar->setValue(100); r->bar->hide(); }
-    if (r->status_lbl) { r->status_lbl->hide(); }
+    (void)freq_khz; (void)coord_sys;  // CRS/freq detail belongs in the layer inspector
 
     QStringList parts;
     parts << (artifact_count >= 1000
-        ? QString("%1k artifacts").arg(artifact_count / 1000.0, 0, 'f', 1)
-        : QString("%1 artifacts").arg(artifact_count));
-    if (!coord_sys.isEmpty() && coord_sys != "—")
-        parts << coord_sys;
-    if (freq_khz > 0.f)
-        parts << QString("%1 kHz").arg(static_cast<int>(freq_khz));
+        ? QString("%1k records").arg(artifact_count / 1000.0, 0, 'f', 1)
+        : QString("%1 records").arg(artifact_count));
+    if (r->size_mb > 0.f)
+        parts << sizeMbStr(r->size_mb);
 
     if (r->result_lbl) {
-        r->result_lbl->setText("✔  " + parts.join("  ·  "));
+        r->result_lbl->setText(parts.join("  ·  "));
         r->result_lbl->setProperty("state", "done");
         r->result_lbl->style()->unpolish(r->result_lbl);
         r->result_lbl->style()->polish(r->result_lbl);
@@ -234,11 +259,8 @@ void ExecutionProgressDialog::finishJob(const std::string& layer_id,
 
     applyCardState(*r, FileRow::State::Done);
 
-    if (r->bar)        { r->bar->setValue(100); r->bar->hide(); }
-    if (r->status_lbl) { r->status_lbl->hide(); }
-
     if (r->result_lbl) {
-        r->result_lbl->setText("✔  " + result_text);
+        r->result_lbl->setText(result_text);
         r->result_lbl->setProperty("state", "done");
         r->result_lbl->style()->unpolish(r->result_lbl);
         r->result_lbl->style()->polish(r->result_lbl);
@@ -265,13 +287,11 @@ void ExecutionProgressDialog::failJob(const std::string& layer_id,
 
     applyCardState(*r, FileRow::State::Failed);
 
-    if (r->bar)        { r->bar->hide(); }
-    if (r->status_lbl) { r->status_lbl->hide(); }
-
     if (r->result_lbl) {
-        const QString msg = error.length() > 60
-            ? error.left(57) + "…" : error;
-        r->result_lbl->setText("✕  " + msg);
+        const QString msg = error.length() > 38 ? error.left(35) + "…"
+                          : error.isEmpty()     ? tr("Failed") : error;
+        r->result_lbl->setText(msg);
+        r->result_lbl->setToolTip(error);   // full error on hover
         r->result_lbl->setProperty("state", "failed");
         r->result_lbl->style()->unpolish(r->result_lbl);
         r->result_lbl->style()->polish(r->result_lbl);
@@ -325,47 +345,35 @@ QFrame* ExecutionProgressDialog::buildCard(FileRow& row, QWidget* parent)
     auto* card = new QFrame(parent);
     card->setObjectName("fileCard");
 
-    auto* v = new QVBoxLayout(card);
-    v->setContentsMargins(Theme::kSpacing4, Theme::kSpacing2, Theme::kSpacing4, Theme::kSpacing2);
-    v->setSpacing(Theme::kSpacing1);
+    // One compact line: [status icon] [name (elided, stretch)] [status/result (right)].
+    // No nested vertical layout and no per-row bar, so a row is always a single line.
+    auto* h = new QHBoxLayout(card);
+    h->setContentsMargins(Theme::kSpacing3, Theme::kSpacing2, Theme::kSpacing3, Theme::kSpacing2);
+    h->setSpacing(Theme::kSpacing2);
 
-    // Single row: format badge · filename · size · result
-    auto* top = new QWidget(card);
-    auto* h = makeCompactLayout<QHBoxLayout>(top, Theme::kSpacing2);
-
-    row.badge = new QLabel(row.format.left(3), top);
-    row.badge->setObjectName("formatBadge");
+    // Status icon (replaces the old DLP badge): ● reading / ✓ done / ✕ failed.
+    row.badge = new QLabel(QStringLiteral("●"), card);
+    row.badge->setObjectName("rowStatusIcon");
     row.badge->setAlignment(Qt::AlignCenter);
-    row.badge->setFixedSize(kBadgeSz, kBadgeSz);
+    row.badge->setFixedWidth(16);
+    row.badge->setStyleSheet(QString("color:%1; font-weight:700;")
+        .arg(QColor(Theme::kAccent).name()));
     h->addWidget(row.badge);
 
-    row.name_lbl = new QLabel(row.display_name, top);
+    row.name_lbl = new QLabel(row.display_name, card);
     row.name_lbl->setObjectName("fileName");
     h->addWidget(row.name_lbl, 1);
 
-    if (row.size_mb > 0.f) {
-        row.meta_lbl = new QLabel(sizeMbStr(row.size_mb), top);
-        row.meta_lbl->setObjectName("fileMeta");
-        h->addWidget(row.meta_lbl);
-    }
-
-    row.result_lbl = new QLabel("", top);
+    // Live status while active ("Reading X%"), then the result / error. Right-aligned
+    // and kept short (name pre-elided) so the row never overflows — no h-scroll.
+    row.result_lbl = new QLabel(tr("Reading…"), card);
     row.result_lbl->setObjectName("fileResult");
-    row.result_lbl->hide();
+    row.result_lbl->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     h->addWidget(row.result_lbl);
 
-    v->addWidget(top);
-
-    // Thin progress bar — hides when done/failed, result_lbl appears instead
-    row.bar = new QProgressBar(card);
-    row.bar->setObjectName("fileBar");
-    row.bar->setRange(0, 100);
-    row.bar->setValue(0);
-    row.bar->setTextVisible(false);
-    v->addWidget(row.bar);
-
-    row.status_lbl = nullptr;  // not used in compact layout
-
+    row.bar        = nullptr;   // overall bar + per-row "Reading X%" instead
+    row.meta_lbl   = nullptr;
+    row.status_lbl = nullptr;
     return card;
 }
 
@@ -373,35 +381,106 @@ void ExecutionProgressDialog::applyCardState(FileRow& row, FileRow::State s)
 {
     row.state = s;
     if (!row.badge) return;
-
-    const char* sv = (s == FileRow::State::Done)   ? "done"
-                   : (s == FileRow::State::Failed) ? "failed"
-                   :                                  "active";
-    row.badge->setProperty("state", sv);
-    row.badge->style()->unpolish(row.badge);
-    row.badge->style()->polish(row.badge);
-    row.badge->update();
+    const QString glyph = (s == FileRow::State::Done)   ? QStringLiteral("✓")
+                        : (s == FileRow::State::Failed) ? QStringLiteral("✕")
+                                                        : QStringLiteral("●");
+    const QColor c = (s == FileRow::State::Done)   ? QColor(Theme::kSuccess)
+                   : (s == FileRow::State::Failed) ? QColor(Theme::kDanger)
+                                                   : QColor(Theme::kAccent);
+    row.badge->setText(glyph);
+    row.badge->setStyleSheet(QString("color:%1; font-weight:600;").arg(c.name()));
 }
 
 void ExecutionProgressDialog::updateHeader()
 {
-    const int done = static_cast<int>(std::count_if(
-        m_rows.begin(), m_rows.end(),
-        [](const FileRow& r) { return r.state != FileRow::State::Active; }));
     const int total = std::max(m_queue_total, static_cast<int>(m_rows.size()));
 
-    if (total <= 0) {
-        m_sub_lbl->setText(tr("Starting…"));
-    } else if (m_all_done) {
+    if (m_all_done)
         m_title_lbl->setText(tr("All Done"));
-        m_sub_lbl->setText(total == 1
-            ? tr("1 task completed")
-            : tr("%1 tasks completed").arg(total));
-    } else {
-        m_sub_lbl->setText(total == 1
-            ? tr("Running 1 task…")
-            : tr("Task %1 of %2").arg(done + 1).arg(total));
+    else if (total <= 0)
+        m_title_lbl->setText(tr("Background Tasks"));
+    else
+        m_title_lbl->setText(m_op_is_processing
+            ? tr("Processing %1 line(s)").arg(total)
+            : tr("Importing %1 line(s)").arg(total));
+
+    // The stepper + the sub-label ("now" line) are owned by updateStages().
+    updateStages();
+}
+
+void ExecutionProgressDialog::buildStageChips(int n)
+{
+    if (!m_stage_lay) return;
+    // Wipe any existing chips / arrows / stretch, then build n fresh chips.
+    QLayoutItem* it;
+    while ((it = m_stage_lay->takeAt(0)) != nullptr) {
+        if (auto* w = it->widget()) w->deleteLater();
+        delete it;
     }
+    m_stage_lbls.clear();
+    for (int i = 0; i < n; ++i) {
+        if (i > 0) {
+            auto* arrow = new QLabel(QStringLiteral("→"), m_stage_box);
+            arrow->setStyleSheet(QString("color:%1;")
+                .arg(QColor(Theme::kTextMuted).name()));
+            m_stage_lay->addWidget(arrow);
+        }
+        auto* chip = new QLabel(m_stage_box);
+        chip->setObjectName("stageChip");
+        m_stage_lbls.push_back(chip);
+        m_stage_lay->addWidget(chip);
+    }
+    m_stage_lay->addStretch(1);
+}
+
+void ExecutionProgressDialog::updateStages()
+{
+    if (m_stage_lbls.empty()) return;
+
+    const int total = static_cast<int>(m_rows.size());
+    int done = 0, failed = 0;
+    for (int i = 0; i < total; ++i) {
+        if      (m_rows[i].state == FileRow::State::Done)   ++done;
+        else if (m_rows[i].state == FileRow::State::Failed) ++failed;
+    }
+    const int  parsed       = done + failed;
+    const bool reading_done = total > 0 && (parsed == total);
+
+    // st: 0 = pending · 1 = active · 2 = done
+    auto setChip = [&](int idx, const QString& name, int st) {
+        if (idx < 0 || idx >= static_cast<int>(m_stage_lbls.size())) return;
+        const QString icon = (st == 2) ? QStringLiteral("✓")
+                           : (st == 1) ? QStringLiteral("●")
+                                       : QStringLiteral("○");
+        const QColor c = (st == 2) ? QColor(Theme::kSuccess)
+                       : (st == 1) ? QColor(Theme::kAccent)
+                                   : QColor(Theme::kTextMuted);
+        m_stage_lbls[idx]->setText(icon + "  " + name);
+        m_stage_lbls[idx]->setStyleSheet(QString("color:%1; font-weight:%2;")
+            .arg(c.name(), st == 1 ? "600" : "400"));
+    };
+
+    // Sub-line is an aggregate summary — per-line detail lives in the rows below.
+    QString now;
+    if (m_op_is_processing) {
+        setChip(0, tr("Processing"), reading_done ? 2 : 1);
+        now = reading_done ? tr("%1 line(s) complete").arg(total)
+                           : tr("Processing… %1 of %2").arg(parsed).arg(total);
+    } else {
+        setChip(0, tr("Reading"), reading_done ? 2 : 1);
+        const bool map_done = reading_done && m_pending_map_loads == 0;
+        setChip(1, tr("Building map"),
+                !reading_done ? 0 : (map_done ? 2 : 1));
+        if (!reading_done)
+            now = tr("Reading… %1 of %2 lines").arg(parsed).arg(total);
+        else if (m_pending_map_loads > 0)
+            now = tr("Building map — %1 of %2")
+                    .arg(m_map_total - m_pending_map_loads).arg(m_map_total);
+        else
+            now = tr("%1 line(s) complete").arg(total);
+    }
+    if (failed > 0) now += tr("   ·   %1 failed").arg(failed);
+    if (m_sub_lbl) m_sub_lbl->setText(now);
 }
 
 void ExecutionProgressDialog::updateOverallProgress()
@@ -409,13 +488,10 @@ void ExecutionProgressDialog::updateOverallProgress()
     if (m_rows.empty()) return;
     const int total = static_cast<int>(m_rows.size());
     int sum = 0;
-    for (const auto& r : m_rows) {
-        if (r.state != FileRow::State::Active)
-            sum += 100;
-        else if (r.bar)
-            sum += r.bar->value();
-    }
+    for (const auto& r : m_rows)
+        sum += (r.state != FileRow::State::Active) ? 100 : r.percent;
     m_overall_bar->setValue(sum / total);
+    updateStages();
 }
 
 void ExecutionProgressDialog::checkAllDone()
@@ -425,8 +501,9 @@ void ExecutionProgressDialog::checkAllDone()
         if (r.state == FileRow::State::Active) return;
 
     // All rows parsed — wait for the rasteriser before declaring "All Done".
+    // updateStages() shows "Building map — X of Y" on the sub-line meanwhile.
     if (m_pending_map_loads > 0) {
-        m_sub_lbl->setText(tr("Loading into map…"));
+        updateStages();
         return;
     }
 
@@ -434,6 +511,15 @@ void ExecutionProgressDialog::checkAllDone()
     m_timer->stop();
     m_overall_bar->setValue(100);
     updateHeader();
+
+    // Map-only phase (opening a project — no import/reindex rows to review): this
+    // panel was pure loading feedback, so auto-dismiss instead of forcing a manual
+    // close on every open. Import/reindex (rows present) keeps the manual close so
+    // the user can review per-file results.
+    if (m_rows.empty()) {
+        hide();
+        return;
+    }
 
     m_bg_btn->setEnabled(false);
     m_close_btn->setEnabled(true);
@@ -449,7 +535,23 @@ void ExecutionProgressDialog::onMapLoadPending()
         m_close_btn->setEnabled(false);
         m_bg_btn->setEnabled(true);
     }
+    const bool phase_starting = (m_pending_map_loads == 0);
     ++m_pending_map_loads;
+    ++m_map_total;
+    m_has_map_phase = true;
+    updateStages();
+
+    // Surface the panel for map-only work (e.g. opening a recent project, which has
+    // no import/reindex rows to call addJob()). Deferred so a fast cached open that
+    // finishes in well under the delay never flashes a dialog — it only appears when
+    // loading actually takes a moment. Auto-dismissed in checkAllDone() when a
+    // map-only phase completes.
+    if (phase_starting && !isVisible() && !m_backgrounded) {
+        QTimer::singleShot(400, this, [this] {
+            if (m_pending_map_loads > 0 && !m_all_done)
+                showForActiveBatch();
+        });
+    }
 }
 
 void ExecutionProgressDialog::onMapLoadDone()

@@ -64,6 +64,9 @@ private:
     void removeProblemsEmptyState();
     void updateProblemsEmptyState();
     void rebuildJobsTab();
+    // Coalesce bursts of job/batch changes into one rebuild — the rebuild is O(jobs)
+    // and a multi-line load / bake fires many changes in quick succession.
+    void scheduleJobsRefresh();
     void populateFromHub();
 
     DiagnosticsHub*   m_hub;
@@ -92,6 +95,7 @@ private:
     TerminalWidget*   m_terminal     = nullptr;
 
     int               m_active_tab   = 1;  // default: Output
+    bool              m_jobs_refresh_pending = false;  // coalescing guard
 };
 
 } // namespace dolphin::ui

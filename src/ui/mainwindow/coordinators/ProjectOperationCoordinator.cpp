@@ -85,21 +85,22 @@ void ProjectOperationCoordinator::onProcessingPersisted(
         worker->last_graph_hash = graph_hash;
     }
 
-    // ── 4. Publish ProcessedSidescanLayer contract ────────────────────────────
+    // ── 4. Publish ProcessedLayer contract ────────────────────────────────────
     {
         app::contracts::ContractEnvelope env;
         env.id                 = layer_id + "_proc";
         env.binding_key        = layer_id;
-        env.type               = app::contracts::ContractType::ProcessedSidescanLayer;
+        env.type               = app::contracts::ContractType::ProcessedLayer;
         env.producer_worker_id = layer_id;
 
-        app::contracts::ProcessedSidescanLayer pl;
+        app::contracts::ProcessedLayer pl;
         pl.layer_id              = layer_id;
         pl.source_id             = layer->source_id;
         pl.artifact_store_path   = proc_path;
         pl.artifact_store_format = "dlpd";
         pl.artifact_index        = proc_index;
         pl.graph_hash            = graph_hash;
+        pl.modality              = layer->modality;
         env.payload = std::move(pl);
         m_project->contractStore().publish(layer_id, {std::move(env)});
     }

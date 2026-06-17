@@ -124,6 +124,9 @@ inline constexpr int kAvProgressW     = 160; // bottom bar progress indicator wi
 // SSS-only (frequency selector lives only in WaterfallWindow toolbar)
 inline constexpr int kWfFreqSelectorH = 26;  // frequency band combo box height
 inline constexpr int kWfFreqSelectorW = 120; // frequency band combo box minimum width
+inline constexpr int kFormatBadgeSize = 26;  // file-format type chip (import/jobs);
+                                             // exposed to QSS as @badgeSize so the
+                                             // C++ setFixedSize and stylesheet agree
 
 // -- Spacing scale (px, logical) ----------------------------------------------
 // Use for setContentsMargins() / setSpacing() — visual design decisions only.

@@ -102,6 +102,17 @@ public:
     std::string        dataPath()     const;   // project/data/ directory
     const std::string& crs()          const { return m_display_spatial_ref.id; }
     const core::SpatialRef& displaySpatialRef() const { return m_display_spatial_ref; }
+    // Survey/working coordinate system: the projected grid the data was logged/
+    // confirmed in (the user-facing "project CRS" shown in the status bar).
+    // Distinct from displaySpatialRef() — the geographic CRS the *map* renders in
+    // (WGS84) — and from a layer's source_spatial_ref (per-layer metadata).
+    // Derived as the most common projected source CRS; falls back to the display
+    // ref when no source is projected.
+    core::SpatialRef   workingCrs() const;
+    // True when the project's sources span more than one distinct projected CRS,
+    // so the single working-CRS badge can be flagged "(mixed)" rather than
+    // implying a uniform survey grid.
+    bool               hasMixedProjectedSources() const;
     void               setCrs(const std::string& epsg);
 
     // Temporary (unsaved) projects exist only for the current session.

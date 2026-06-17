@@ -25,6 +25,7 @@ public:
     void showEmpty  ();
 
     void setAvailableModalities(const QSet<app::Modality>& modalities);
+    void setModalityFilter(app::Modality filter);
 
     RightPanelHost* rightPanelHost() const { return m_layer; }
 

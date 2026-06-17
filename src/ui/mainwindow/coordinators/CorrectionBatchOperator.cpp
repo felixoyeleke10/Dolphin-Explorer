@@ -2,6 +2,7 @@
 #include "app/corrections/SidescanCorrectionService.h"
 #include "app/corrections/SubBottomCorrectionService.h"
 #include "app/layers/DataLayer.h"
+#include "app/display/WaterfallParams.h"   // toCorrectionParams (per-layer SSS bake)
 #include "app/project/Project.h"
 #include "ui/bottom/DiagnosticsHub.h"
 #include "ui/features/import/ImportProgressDialog.h"
@@ -37,7 +38,8 @@ CorrectionBatchOperator::CorrectionBatchOperator(app::ImportService*      import
 
 void CorrectionBatchOperator::applySSS(app::DataLayer*                      layer,
                                         const std::string&                   source_path,
-                                        const app::SidescanCorrectionParams& params)
+                                        const app::SidescanCorrectionParams& params,
+                                        std::vector<core::SidescanPing>      viewer_pings)
 {
     if (!layer) return;
     const std::string& lid   = layer->id;
@@ -55,7 +57,8 @@ void CorrectionBatchOperator::applySSS(app::DataLayer*                      laye
     m_overlay->addJob(lid, label, QStringLiteral("COR"), 0.f);
 
     m_sss_svc->applyToLine(lid, layer->artifact_store_path, layer->artifact_store_format,
-                            layer->artifact_index, source_path, params);
+                            layer->artifact_index, source_path, params,
+                            std::move(viewer_pings));
 }
 
 void CorrectionBatchOperator::applySBP(app::DataLayer*             layer,
@@ -82,132 +85,137 @@ void CorrectionBatchOperator::applySBP(app::DataLayer*             layer,
                             layer->artifact_index, source_path, gain, signal);
 }
 
-// -- Batch applies ------------------------------------------------------------
+// -- Bake all customized layers ----------------------------------------------
+// Each layer bakes its OWN display state (per-layer params), dispatched through the
+// kMaxConcurrent-capped queue so heavy read+correct+write jobs honour D-14. Sets up
+// an SSS batch and/or an SBP batch depending on which modalities have work.
 
-void CorrectionBatchOperator::applyAllSSS(app::Project&                        project,
-                                           const app::SidescanCorrectionParams& params)
+void CorrectionBatchOperator::bakeCustomized(app::Project& project)
 {
+    // -- SSS: one job per customized sidescan layer ---------------------------
     if (m_sss_batch_id != 0) {
         m_hub->logOutput(tr("SSS correction batch already in progress — request ignored"));
-        return;
-    }
-
-    // Count eligible layers, skipping any with a job already in flight.
-    int total = 0;
-    for (const auto& l : project.layers()) {
-        if (!l || l->modality != app::Modality::Sidescan) continue;
-        if (!l->index_built || l->sidescanCount() == 0) continue;
-        if (m_job_ids.count(l->id) > 0) {
-            m_hub->logOutput(tr("Correction already in progress for %1 — skipped in batch")
-                .arg(QString::fromStdString(l->label)));
-            continue;
+    } else {
+        int total = 0;
+        for (const auto& l : project.layers()) {
+            if (!l || l->modality != app::Modality::Sidescan) continue;
+            if (!l->sss_display_state.customized) continue;
+            if (!l->index_built || l->sidescanCount() == 0) continue;
+            if (m_job_ids.count(l->id) > 0) {
+                m_hub->logOutput(tr("Correction already in progress for %1 — skipped in batch")
+                    .arg(QString::fromStdString(l->label)));
+                continue;
+            }
+            ++total;
         }
-        ++total;
+        if (total > 0) {
+            m_sss_total      = total;
+            m_sss_pending    = total;
+            m_sss_succeeded  = 0;
+            m_sss_dispatched = 0;
+            m_sss_batch_layer_ids.clear();
+            m_sss_queue.clear();
+            m_sss_batch_id = m_hub->beginBatch(
+                tr("Baking SSS corrections (%1 lines)").arg(total), total);
+            const uint32_t batch_id = m_sss_batch_id;
+
+            for (const auto& l : project.layers()) {
+                if (!l || l->modality != app::Modality::Sidescan) continue;
+                if (!l->sss_display_state.customized) continue;
+                if (!l->index_built || l->sidescanCount() == 0) continue;
+                if (m_job_ids.count(l->id) > 0) continue; // already guarded above
+
+                m_sss_batch_layer_ids.insert(l->id);
+
+                // Capture all data by value; the per-layer params come from the
+                // layer's own display state. Hub job is created inside the lambda so
+                // only dispatched items (≤ kMaxConcurrent) appear as [RUNNING].
+                const std::string lid        = l->id;
+                const std::string label_s    = l->label;
+                const std::string store_path = l->artifact_store_path;
+                const std::string store_fmt  = l->artifact_store_format;
+                const core::ArtifactIndex ai = l->artifact_index;
+                const auto* src = project.findSource(l->source_id);
+                const std::string src_path   = src ? src->path : std::string{};
+                const app::SidescanCorrectionParams params =
+                    toCorrectionParams(l->sss_display_state.params);
+
+                m_sss_queue.push_back([this, lid, label_s, store_path, store_fmt,
+                                        ai, src_path, batch_id, params]() {
+                    const QString label = QString::fromStdString(label_s);
+                    const uint32_t jid  = m_hub->beginJob(
+                        tr("Baking corrections into %1…").arg(label),
+                        QString::fromStdString(lid), batch_id, QStringLiteral("COR"));
+                    m_job_ids[lid] = jid;
+                    m_overlay->addJob(lid, label, QStringLiteral("COR"), 0.f);
+                    m_sss_svc->applyToLine(lid, store_path, store_fmt, ai, src_path, params);
+                });
+            }
+            dispatchNextSss();
+        }
     }
-    if (total == 0) return;
 
-    m_sss_total      = total;
-    m_sss_pending    = total;
-    m_sss_succeeded  = 0;
-    m_sss_dispatched = 0;
-    m_sss_batch_layer_ids.clear();
-    m_sss_queue.clear();
-    m_sss_batch_id = m_hub->beginBatch(
-        tr("Baking SSS corrections (%1 lines)").arg(total), total);
-    const uint32_t batch_id = m_sss_batch_id;
-
-    for (const auto& l : project.layers()) {
-        if (!l || l->modality != app::Modality::Sidescan) continue;
-        if (!l->index_built || l->sidescanCount() == 0) continue;
-        if (m_job_ids.count(l->id) > 0) continue; // already guarded above
-
-        m_sss_batch_layer_ids.insert(l->id);
-
-        // Capture all data by value. Hub job is created inside the lambda so
-        // only dispatched items (≤ kMaxConcurrent) appear as [RUNNING] in the panel.
-        const std::string lid        = l->id;
-        const std::string label_s    = l->label;
-        const std::string store_path = l->artifact_store_path;
-        const std::string store_fmt  = l->artifact_store_format;
-        const core::ArtifactIndex ai = l->artifact_index;
-        const auto* src = project.findSource(l->source_id);
-        const std::string src_path   = src ? src->path : std::string{};
-
-        m_sss_queue.push_back([this, lid, label_s, store_path, store_fmt,
-                                ai, src_path, batch_id, params]() {
-            const QString label = QString::fromStdString(label_s);
-            const uint32_t jid  = m_hub->beginJob(
-                tr("Baking corrections into %1…").arg(label),
-                QString::fromStdString(lid), batch_id, QStringLiteral("COR"));
-            m_job_ids[lid] = jid;
-            m_overlay->addJob(lid, label, QStringLiteral("COR"), 0.f);
-            m_sss_svc->applyToLine(lid, store_path, store_fmt, ai, src_path, params);
-        });
-    }
-
-    dispatchNextSss();
-}
-
-void CorrectionBatchOperator::applyAllSBP(app::Project&               project,
-                                           const app::SbpGainParams&   gain,
-                                           const app::SbpSignalParams& signal)
-{
+    // -- SBP: one job per customized sub-bottom layer -------------------------
     if (m_sbp_batch_id != 0) {
         m_hub->logOutput(tr("SBP correction batch already in progress — request ignored"));
-        return;
-    }
-
-    int total = 0;
-    for (const auto& l : project.layers()) {
-        if (!l || l->modality != app::Modality::SubBottom) continue;
-        if (!l->index_built || l->subBottomCount() == 0) continue;
-        if (m_job_ids.count(l->id) > 0) {
-            m_hub->logOutput(tr("Correction already in progress for %1 — skipped in batch")
-                .arg(QString::fromStdString(l->label)));
-            continue;
+    } else {
+        int total = 0;
+        for (const auto& l : project.layers()) {
+            if (!l || l->modality != app::Modality::SubBottom) continue;
+            if (!(l->sbp_display_state.gain_customized
+                  || l->sbp_display_state.signal_customized)) continue;
+            if (!l->index_built || l->subBottomCount() == 0) continue;
+            if (m_job_ids.count(l->id) > 0) {
+                m_hub->logOutput(tr("Correction already in progress for %1 — skipped in batch")
+                    .arg(QString::fromStdString(l->label)));
+                continue;
+            }
+            ++total;
         }
-        ++total;
+        if (total > 0) {
+            m_sbp_total      = total;
+            m_sbp_pending    = total;
+            m_sbp_succeeded  = 0;
+            m_sbp_dispatched = 0;
+            m_sbp_batch_layer_ids.clear();
+            m_sbp_queue.clear();
+            m_sbp_batch_id = m_hub->beginBatch(
+                tr("Baking SBP corrections (%1 lines)").arg(total), total);
+            const uint32_t batch_id = m_sbp_batch_id;
+
+            for (const auto& l : project.layers()) {
+                if (!l || l->modality != app::Modality::SubBottom) continue;
+                if (!(l->sbp_display_state.gain_customized
+                      || l->sbp_display_state.signal_customized)) continue;
+                if (!l->index_built || l->subBottomCount() == 0) continue;
+                if (m_job_ids.count(l->id) > 0) continue;
+
+                m_sbp_batch_layer_ids.insert(l->id);
+
+                const std::string lid        = l->id;
+                const std::string label_s    = l->label;
+                const std::string store_path = l->artifact_store_path;
+                const std::string store_fmt  = l->artifact_store_format;
+                const core::ArtifactIndex ai = l->artifact_index;
+                const auto* src = project.findSource(l->source_id);
+                const std::string src_path   = src ? src->path : std::string{};
+                const app::SbpGainParams   gain   = l->sbp_display_state.gain;
+                const app::SbpSignalParams signal = l->sbp_display_state.signal;
+
+                m_sbp_queue.push_back([this, lid, label_s, store_path, store_fmt,
+                                        ai, src_path, batch_id, gain, signal]() {
+                    const QString label = QString::fromStdString(label_s);
+                    const uint32_t jid  = m_hub->beginJob(
+                        tr("Baking corrections into %1…").arg(label),
+                        QString::fromStdString(lid), batch_id, QStringLiteral("SBP"));
+                    m_job_ids[lid] = jid;
+                    m_overlay->addJob(lid, label, QStringLiteral("SBP"), 0.f);
+                    m_sbp_svc->applyToLine(lid, store_path, store_fmt, ai, src_path, gain, signal);
+                });
+            }
+            dispatchNextSbp();
+        }
     }
-    if (total == 0) return;
-
-    m_sbp_total      = total;
-    m_sbp_pending    = total;
-    m_sbp_succeeded  = 0;
-    m_sbp_dispatched = 0;
-    m_sbp_batch_layer_ids.clear();
-    m_sbp_queue.clear();
-    m_sbp_batch_id = m_hub->beginBatch(
-        tr("Baking SBP corrections (%1 lines)").arg(total), total);
-    const uint32_t batch_id = m_sbp_batch_id;
-
-    for (const auto& l : project.layers()) {
-        if (!l || l->modality != app::Modality::SubBottom) continue;
-        if (!l->index_built || l->subBottomCount() == 0) continue;
-        if (m_job_ids.count(l->id) > 0) continue;
-
-        m_sbp_batch_layer_ids.insert(l->id);
-
-        const std::string lid        = l->id;
-        const std::string label_s    = l->label;
-        const std::string store_path = l->artifact_store_path;
-        const std::string store_fmt  = l->artifact_store_format;
-        const core::ArtifactIndex ai = l->artifact_index;
-        const auto* src = project.findSource(l->source_id);
-        const std::string src_path   = src ? src->path : std::string{};
-
-        m_sbp_queue.push_back([this, lid, label_s, store_path, store_fmt,
-                                ai, src_path, batch_id, gain, signal]() {
-            const QString label = QString::fromStdString(label_s);
-            const uint32_t jid  = m_hub->beginJob(
-                tr("Baking corrections into %1…").arg(label),
-                QString::fromStdString(lid), batch_id, QStringLiteral("SBP"));
-            m_job_ids[lid] = jid;
-            m_overlay->addJob(lid, label, QStringLiteral("SBP"), 0.f);
-            m_sbp_svc->applyToLine(lid, store_path, store_fmt, ai, src_path, gain, signal);
-        });
-    }
-
-    dispatchNextSbp();
 }
 
 // -- Private settlement helpers -----------------------------------------------

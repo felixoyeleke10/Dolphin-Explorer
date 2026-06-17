@@ -13,6 +13,7 @@
 #include "io/segy/SegyReader.h"
 #include "io/xtf/XtfReader.h"
 #include <QDebug>
+#include <QElapsedTimer>
 #include <QFileInfo>
 #include <QFutureWatcher>
 #include <QFutureWatcherBase>
@@ -386,14 +387,33 @@ std::string ImportService::reindexLayer(const std::string& path,
 void ImportService::rebuildCacheIndex(const std::string& layer_id,
                                       std::shared_ptr<Project> project)
 {
+    // Queue + dispatch at most kMaxConcurrentRebuilds at a time, so opening a project
+    // with N layers doesn't kick off N concurrent full-file scans (disk thrash).
+    m_rebuild_queue.push_back({layer_id, std::move(project)});
+    pumpRebuilds();
+}
+
+void ImportService::pumpRebuilds()
+{
+    while (m_rebuilds_running < kMaxConcurrentRebuilds && !m_rebuild_queue.empty()) {
+        auto req = m_rebuild_queue.front();
+        m_rebuild_queue.pop_front();
+        if (startRebuild(req.first, req.second))
+            ++m_rebuilds_running;
+    }
+}
+
+bool ImportService::startRebuild(const std::string& layer_id,
+                                 std::shared_ptr<Project> project)
+{
     if (!project || layer_id.empty()) {
         emit indexingFailed(layer_id, "rebuildCacheIndex: no project or layer ID");
-        return;
+        return false;
     }
     auto* layer = project->findLayer(layer_id);
     if (!layer) {
         emit indexingFailed(layer_id, "rebuildCacheIndex: layer not found");
-        return;
+        return false;
     }
 
     const std::string cache_path = layer->artifact_store_path;
@@ -401,7 +421,7 @@ void ImportService::rebuildCacheIndex(const std::string& layer_id,
 
     if (cache_path.empty()) {
         emit indexingFailed(layer_id, "rebuildCacheIndex: no artifact store path");
-        return;
+        return false;
     }
 
     // Cancel any previous rebuild for this layer_id before starting a new one.
@@ -417,6 +437,7 @@ void ImportService::rebuildCacheIndex(const std::string& layer_id,
         io::FormatMeta      meta;
         std::string         error;
         bool                cancelled = false;
+        qint64              scan_ms   = 0;
     };
 
     // Emit indexingProgress from the background thread via invokeMethod so the
@@ -436,9 +457,13 @@ void ImportService::rebuildCacheIndex(const std::string& layer_id,
             [this, watcher, project, layer_id, source_id]() {
         watcher->deleteLater();
         m_rebuild_tokens.erase(layer_id);
+        if (m_rebuilds_running > 0) --m_rebuilds_running;
+        pumpRebuilds();   // dispatch the next queued rebuild (sequential)
 
         const Result r = watcher->result();
         if (r.cancelled) return;  // project switched mid-scan; discard silently
+        qInfo("[timing] rebuildCacheIndex %s: full .dlpd scan = %lld ms (%zu entries)",
+              layer_id.c_str(), static_cast<long long>(r.scan_ms), r.index.entries.size());
 
         if (!r.error.empty()) {
             emit indexingFailed(layer_id, r.error);
@@ -496,7 +521,9 @@ void ImportService::rebuildCacheIndex(const std::string& layer_id,
             r.error = "Cannot open cache: " + cache_path;
             return r;
         }
+        QElapsedTimer scan_t; scan_t.start();
         r.index = reader.buildIndex(progress_fn, token.flag());
+        r.scan_ms = scan_t.elapsed();
         if (token.isCancelled()) {
             r.cancelled = true;
             return r;
@@ -507,6 +534,7 @@ void ImportService::rebuildCacheIndex(const std::string& layer_id,
             r.error = "Cache index is empty: " + cache_path;
         return r;
     }));
+    return true;
 }
 
 void ImportService::cancelPendingRebuild()
@@ -514,6 +542,9 @@ void ImportService::cancelPendingRebuild()
     for (auto& [id, tok] : m_rebuild_tokens)
         tok.cancel();
     m_rebuild_tokens.clear();
+    // Drop queued-but-not-started rebuilds; in-flight ones decrement via their
+    // finished handlers (don't zero m_rebuilds_running here).
+    m_rebuild_queue.clear();
 }
 
 } // namespace dolphin::app

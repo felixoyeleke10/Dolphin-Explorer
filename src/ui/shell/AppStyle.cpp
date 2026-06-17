@@ -84,6 +84,12 @@ QString applyTokens(QString css)
     css.replace(QLatin1String("@radius3"), QLatin1String(kRadius3Px));
     css.replace(QLatin1String("@radius2"), QLatin1String(kRadius2Px));
     css.replace(QLatin1String("@radius1"), QLatin1String(kRadius1Px));
+
+    // Component dimensions — single source of truth for sizes shared by C++ layout
+    // code and QSS (e.g. the format badge: setFixedSize(kFormatBadgeSize) + the
+    // QLabel#formatBadge min/max below both resolve from this one token).
+    css.replace(QLatin1String("@badgeSize"),
+                QString::number(kFormatBadgeSize) + QLatin1String("px"));
     // White overlay surfaces (rgba, dark-UI convention) — semantic tier:
     //   @overlayEl   = element resting surface (inputs, combos, buttons)
     //   @overlayHov  = hover feedback (dominant: 28 occurrences)

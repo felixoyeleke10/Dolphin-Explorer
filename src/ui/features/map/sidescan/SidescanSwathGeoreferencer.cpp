@@ -66,7 +66,11 @@ SwathGeorefResult georeferenceSidescanPings(
         const double sin_side = std::sin(side_rad);
         const double cos_side = std::cos(side_rad);
 
-        const double altitude_m  = std::max(0.0, static_cast<double>(ping.nav.altitude_m));
+        // Prefer user/auto-detected bottom pick over raw nav altitude — the pick
+        // is more accurate and is what seabed correction was applied to in the viewer.
+        const double altitude_m = (ping.bottom_pick.valid() && ping.bottom_pick.source > 0)
+            ? static_cast<double>(ping.bottom_pick.range_m)
+            : std::max(0.0, static_cast<double>(ping.nav.altitude_m));
         const double min_range_m = ping.blanking_m > 0.f
             ? static_cast<double>(ping.blanking_m)
             : kDefaultBlankingM;

@@ -1,15 +1,53 @@
 // WaterfallViewSeabed.cpp — seabed editing helpers
-//   applyManualSeabedPicks — overlays persistent manual picks onto freshly assembled rows
-//   interpolateSeabedGaps  — fills eraser gaps with straight-line interpolation
-//   detectSeabedInBox      — threshold-detects seabed within a box selection
-//   smartPenRange          — snaps pen cursor to nearest peak amplitude
+//   applyManualSeabedPicks    — overlays persistent manual picks onto freshly assembled rows
+//   applySeabedPicksToPings   — writes viewer seabed state into raw ping bottom_pick fields
+//   interpolateSeabedGaps     — fills eraser gaps with straight-line interpolation
+//   detectSeabedInBox         — threshold-detects seabed within a box selection
+//   smartPenRange             — snaps pen cursor to nearest peak amplitude
 
 #include "ui/features/waterfall/WaterfallView.h"
 
 #include <algorithm>
 #include <cstdint>
+#include <unordered_map>
 
 namespace dolphin::ui {
+
+// -----------------------------------------------------------------------------
+//  Export seabed picks to raw pings (for DLPD persistence)
+// -----------------------------------------------------------------------------
+
+void WaterfallView::applySeabedPicksToPings(std::vector<core::SidescanPing>& pings) const
+{
+    if (pings.empty() || (m_rows.empty() && m_manual_seabed.empty()))
+        return;
+
+    // Build timestamp → (range_m, source) from assembled rows first (source=1),
+    // then overlay m_manual_seabed entries (source=2) so user edits win.
+    std::unordered_map<int64_t, std::pair<float, uint8_t>> picks;
+    picks.reserve(m_rows.size() + m_manual_seabed.size());
+
+    for (const auto& row : m_rows) {
+        if (row.timestamp_us == 0) continue;
+        if (row.seabed.detected && row.seabed.range_m > 0.f && !row.seabed.is_manual)
+            picks.emplace(row.timestamp_us, std::make_pair(row.seabed.range_m, uint8_t{1}));
+    }
+
+    for (const auto& [ts, range_m] : m_manual_seabed) {
+        if (range_m > 0.f)
+            picks.insert_or_assign(ts, std::make_pair(range_m, uint8_t{2}));
+    }
+
+    if (picks.empty()) return;
+
+    for (auto& ping : pings) {
+        const auto it = picks.find(ping.timestamp_us);
+        if (it == picks.end()) continue;
+        ping.bottom_pick.range_m    = it->second.first;
+        ping.bottom_pick.confidence = 1.f;
+        ping.bottom_pick.source     = it->second.second;
+    }
+}
 
 // -----------------------------------------------------------------------------
 //  Persistent manual picks — applied after every assembly/detection pass

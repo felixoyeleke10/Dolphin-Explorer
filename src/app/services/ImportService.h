@@ -1,8 +1,10 @@
 #pragma once
 #include <QObject>
+#include <deque>
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 #include "app/project/Project.h"
 #include "app/tasks/CancellationToken.h"
@@ -151,8 +153,17 @@ signals:
     void cacheIndexRebuilt(const std::string& layer_id);
 
 private:
+    // rebuildCacheIndex is queued and dispatched at most kMaxConcurrentRebuilds at a
+    // time, so opening a project doesn't launch N concurrent full-file scans (which
+    // thrash a spinning disk and stretch project-open to minutes).
+    bool startRebuild(const std::string& layer_id, std::shared_ptr<Project> project);
+    void pumpRebuilds();
+
     // Cancellation tokens for in-flight rebuildCacheIndex calls, keyed by layer_id.
     std::unordered_map<std::string, CancellationToken> m_rebuild_tokens;
+    std::deque<std::pair<std::string, std::shared_ptr<Project>>> m_rebuild_queue;
+    int m_rebuilds_running = 0;
+    static constexpr int kMaxConcurrentRebuilds = 1;  // sequential: best on slow disks
 };
 
 } // namespace dolphin::app

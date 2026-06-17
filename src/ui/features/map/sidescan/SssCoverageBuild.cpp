@@ -111,7 +111,9 @@ void buildSwathCoverage(const std::vector<core::SidescanPing>& pings,
             const double slant_m  = ping.slant_range_m > 0.f
                 ? static_cast<double>(ping.slant_range_m)
                 : kFallbackRangeM;
-            const double alt_m    = std::max(0.0, static_cast<double>(ping.nav.altitude_m));
+            const double alt_m    = (ping.bottom_pick.valid() && ping.bottom_pick.source > 0)
+                ? static_cast<double>(ping.bottom_pick.range_m)
+                : std::max(0.0, static_cast<double>(ping.nav.altitude_m));
             const double ground_m = (alt_m > 0.0 && slant_m > alt_m)
                 ? std::sqrt(slant_m * slant_m - alt_m * alt_m)
                 : slant_m;

@@ -72,8 +72,8 @@ WaterfallInspectorPanel::WaterfallInspectorPanel(QWidget* parent)
     // -- COORDINATE SYSTEM (collapsed) -------------------------------------
     {
         auto* bl = makeSection("Coordinate System", false, container, vl);
-        makeRow(bl, tr("CRS"),  m_val_crs);
-        makeRow(bl, tr("Type"), m_val_crs_kind);
+        makeRow(bl, tr("Source CRS"), m_val_crs);
+        makeRow(bl, tr("Type"),       m_val_crs_kind);
 
         // "Set Source CRS" button — shown only when source CRS is auto-detected / unconfirmed.
         m_btn_set_crs = new QPushButton(tr("Set Source CRS…"), container);

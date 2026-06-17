@@ -55,6 +55,18 @@ set_target_properties(test_sidescan_georef PROPERTIES
 
 add_test(NAME SidescanGeoref COMMAND test_sidescan_georef)
 
+# -- Raster cache round-trip / staleness (raster-first persistence) ------------
+add_executable(test_raster_cache
+    test_raster_cache.cpp
+)
+target_include_directories(test_raster_cache PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_raster_cache PRIVATE dolphin-ui-map)
+set_target_properties(test_raster_cache PROPERTIES
+    CXX_STANDARD 20
+    AUTOMOC OFF
+)
+add_test(NAME RasterCache COMMAND test_raster_cache)
+
 # -- Nav-correction unit tests -------------------------------------------------
 add_executable(test_nav_corrections
     test_nav_corrections.cpp

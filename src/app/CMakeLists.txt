@@ -13,6 +13,9 @@ add_library(dolphin-app STATIC
     layers/DataLayer.cpp
     layers/LayerUtils.cpp
 
+    # Display-time corrections (shared by waterfall + map; single nav model)
+    display/NavCorrection.cpp
+
     # Services
     services/ImportService.cpp
     services/ImportService.Tasks.cpp

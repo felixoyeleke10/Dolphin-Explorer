@@ -134,7 +134,7 @@ DiagnosticsHub::Batch* DiagnosticsHub::findBatchMut(uint32_t id)
 
 uint32_t DiagnosticsHub::beginJob(const QString& name, const QString& layer_id,
                                    uint32_t batch_id, const QString& format_badge,
-                                   float size_mb)
+                                   float size_mb, JobStatus initial)
 {
     Job j;
     j.id           = m_next_id++;
@@ -143,11 +143,24 @@ uint32_t DiagnosticsHub::beginJob(const QString& name, const QString& layer_id,
     j.batch_id     = batch_id;
     j.format_badge = format_badge;
     j.size_mb      = size_mb;
-    j.status       = JobStatus::Running;
+    j.status       = initial;
+    // For a Running job this is the start time; for a Queued job it is the enqueue
+    // time, refreshed to the real start time by startJob().
     j.started      = QDateTime::currentDateTime();
     m_jobs.prepend(j);  // newest first
+    pruneJobs();
     emit jobChanged(j.id);
     return j.id;
+}
+
+void DiagnosticsHub::startJob(uint32_t id)
+{
+    if (auto* j = findJob(id)) {
+        if (j->status != JobStatus::Queued) return;
+        j->status  = JobStatus::Running;
+        j->started = QDateTime::currentDateTime();
+        emit jobChanged(id);
+    }
 }
 
 void DiagnosticsHub::updateJob(uint32_t id, const QString& detail, float progress)
@@ -192,7 +205,7 @@ int DiagnosticsHub::activeJobCount() const
 {
     int n = 0;
     for (const auto& j : m_jobs)
-        if (j.status == JobStatus::Running) ++n;
+        if (j.status == JobStatus::Running || j.status == JobStatus::Queued) ++n;
     return n;
 }
 
@@ -201,6 +214,22 @@ DiagnosticsHub::Job* DiagnosticsHub::findJob(uint32_t id)
     for (auto& j : m_jobs)
         if (j.id == id) return &j;
     return nullptr;
+}
+
+void DiagnosticsHub::pruneJobs()
+{
+    int over = static_cast<int>(m_jobs.size()) - kMaxJobs;
+    if (over <= 0) return;
+    // Remove oldest finished jobs (from the back; the list is newest-first). Keep
+    // Running/Queued jobs regardless so in-flight work is never dropped.
+    for (int i = static_cast<int>(m_jobs.size()) - 1; i >= 0 && over > 0; --i) {
+        const auto s = m_jobs[i].status;
+        if (s == JobStatus::Completed || s == JobStatus::Failed
+                || s == JobStatus::Cancelled) {
+            m_jobs.removeAt(i);
+            --over;
+        }
+    }
 }
 
 } // namespace dolphin::ui

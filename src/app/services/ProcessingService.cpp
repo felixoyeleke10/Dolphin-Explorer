@@ -93,22 +93,30 @@ RunResult executeRequest(const RunRequest& request)
         return result;
     }
 
-    // Capture metadata before the reader is consumed by runLine.
-    const io::FormatMeta meta = reader->metadata();
+    // Capture metadata before the reader is consumed by runLine (non-const: we set
+    // the role marker on the output below).
+    io::FormatMeta meta = reader->metadata();
 
-    // If this layer's index is a strict subset of the full store, write to a
-    // per-layer sidecar so sibling layers (mixed-modality OR same-modality
-    // split, e.g. dual-frequency) are never overwritten by this processing pass.
-    std::string write_path = request.artifact_path;
+    // Always write to a per-layer sidecar — never overwrite the original parsed
+    // store (D-04), even for an explicit processing run. A store is "already our
+    // sidecar" when its formal role marker says so (preferred), or — for stores
+    // written before the marker existed — when the filename carries the legacy
+    // "_<layerId>" suffix; re-runs overwrite that sidecar in place.
+    std::string write_path;
     {
-        const auto full_index = reader->buildIndex();  // fast: uses footer if present
-        if (request.artifact_index.entries.size() < full_index.entries.size()) {
-            namespace fs = std::filesystem;
-            const fs::path p(request.artifact_path);
-            write_path = (p.parent_path()
-                          / (p.stem().string() + "_" + request.layer_id + ".dlpd")).string();
-        }
+        namespace fs = std::filesystem;
+        const fs::path p(request.artifact_path);
+        const std::string suffix = "_" + request.layer_id;
+        const std::string stem   = p.stem().string();
+        const bool legacy_named = stem.size() > suffix.size()
+            && stem.compare(stem.size() - suffix.size(), suffix.size(), suffix) == 0;
+        const bool already_sidecar =
+            (meta.artifact_role == io::kArtifactRoleSidecar) || legacy_named;
+        write_path = already_sidecar
+            ? request.artifact_path
+            : (p.parent_path() / (stem + suffix + ".dlpd")).string();
     }
+    meta.artifact_role = io::kArtifactRoleSidecar;  // formal marker on the output
 
     pipeline::GraphJob job;
     job.line_id     = request.layer_id;

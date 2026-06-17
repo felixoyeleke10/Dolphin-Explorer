@@ -73,8 +73,8 @@ SubBottomInspectorPanel::SubBottomInspectorPanel(QWidget* parent)
     // -- COORDINATE SYSTEM (collapsed) -------------------------------------
     {
         auto* bl = makeSection("Coordinate System", false, container, vl);
-        makeRow(bl, tr("CRS"),  m_val_crs);
-        makeRow(bl, tr("Type"), m_val_crs_kind);
+        makeRow(bl, tr("Source CRS"), m_val_crs);
+        makeRow(bl, tr("Type"),       m_val_crs_kind);
     }
 
     // -- SONAR -------------------------------------------------------------

@@ -1,8 +1,10 @@
 #pragma once
 #include <QObject>
 #include <string>
+#include <vector>
 #include "app/corrections/SidescanCorrectionParams.h"
 #include "core/ArtifactIndex.h"
+#include "core/SidescanPing.h"
 
 namespace dolphin::app {
 class ImportService;
@@ -26,12 +28,15 @@ public:
     explicit SidescanCorrectionService(ImportService* import_service,
                                        QObject* parent = nullptr);
 
+    // Bake amplitude corrections and optionally merge bottom picks from the viewer
+    // into the same DLPD write pass.  viewer_pings may be empty (no-op for picks).
     void applyToLine(const std::string& layer_id,
                      const std::string& store_path,
                      const std::string& store_format,
                      const core::ArtifactIndex& artifact_index,
                      const std::string& source_path,
-                     const SidescanCorrectionParams& params);
+                     const SidescanCorrectionParams& params,
+                     std::vector<core::SidescanPing> viewer_pings = {});
 
 signals:
     // Emitted when corrections were actually written to the artifact store.

@@ -2,9 +2,12 @@
 
 namespace dolphin::ui {
 
-// Parameters for on-demand nav corrections in the waterfall.
-// These modify the stored raw pings and are applied only when the user
-// explicitly clicks "Apply" — never auto-applied on data load.
+// Parameters for on-demand navigation corrections (sidescan waterfall + sub-bottom).
+// Modality-agnostic; owned per-layer by DataLayer::nav_state and applied only when
+// the user explicitly clicks Apply — never auto-applied on data load.
+//
+// Canonical location: app/display/ (no Qt dependency) so the app model and every
+// UI feature can share it without a cross-feature include.
 struct NavProcessingParams {
     // -- Position ----------------------------------------------------------
     bool  smooth_enabled  = false;

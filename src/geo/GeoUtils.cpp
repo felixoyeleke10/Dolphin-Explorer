@@ -101,11 +101,16 @@ std::optional<UtmZone> parseUtmZone(std::string_view crs)
 
 } // namespace (anonymous)
 
-// -- Public: latLonToUtm -------------------------------------------------------
+// -- Public: latLonToUtm / latLonToProjected ----------------------------------
 
-bool latLonToUtm(double lat_deg, double lon_deg,
-                 int& zone_out, bool& north_out,
-                 double& easting_out, double& northing_out)
+namespace {
+
+// Forward UTM projection core with an explicit zone + hemisphere (WGS84
+// ellipsoid — adequate for the ETRS89 / NAD83 / GDA datums we recognise, which
+// share the ellipsoid to sub-metre level). Shared by latLonToUtm (auto-zone)
+// and latLonToProjected (zone taken from a target CRS).
+bool utmForward(double lat_deg, double lon_deg, int zone, bool north_hemi,
+                double& easting_out, double& northing_out)
 {
     if (!std::isfinite(lat_deg) || !std::isfinite(lon_deg)) return false;
     if (lat_deg < -90.0 || lat_deg > 90.0)   return false;
@@ -113,8 +118,6 @@ bool latLonToUtm(double lat_deg, double lon_deg,
 
     const double phi  = lat_deg * kDegToRad;
     const double lam  = lon_deg * kDegToRad;
-
-    const int zone = static_cast<int>((lon_deg + 180.0) / 6.0) + 1;
     const double lam0 = ((static_cast<double>(zone) - 1.0) * 6.0 - 180.0 + 3.0) * kDegToRad;
 
     const double e2       = kWgs84F * (2.0 - kWgs84F);
@@ -151,16 +154,40 @@ bool latLonToUtm(double lat_deg, double lon_deg,
             + (61.0 - 58.0*T + T*T + 600.0*C - 330.0*e_prime2) * A6 / 720.0
         )
     );
-    const bool north = lat_deg >= 0.0;
-    if (!north) northing += kFalseNorthingSouth;
+    if (!north_hemi) northing += kFalseNorthingSouth;
 
     if (!std::isfinite(easting) || !std::isfinite(northing)) return false;
 
-    zone_out     = zone;
-    north_out    = north;
     easting_out  = easting;
     northing_out = northing;
     return true;
+}
+
+} // namespace
+
+bool latLonToUtm(double lat_deg, double lon_deg,
+                 int& zone_out, bool& north_out,
+                 double& easting_out, double& northing_out)
+{
+    if (!std::isfinite(lon_deg) || lon_deg < -180.0 || lon_deg > 180.0) return false;
+    // Clamp the antimeridian (lon == 180.0 → zone 61) into the valid 1–60 range.
+    const int  zone  = std::min(60, static_cast<int>((lon_deg + 180.0) / 6.0) + 1);
+    const bool north = lat_deg >= 0.0;
+    if (!utmForward(lat_deg, lon_deg, zone, north, easting_out, northing_out))
+        return false;
+    zone_out  = zone;
+    north_out = north;
+    return true;
+}
+
+bool latLonToProjected(double lat_deg, double lon_deg,
+                       const core::SpatialRef& target,
+                       double& northing_out, double& easting_out)
+{
+    const auto zone = parseUtmZone(target.id);
+    if (!zone) return false;
+    return utmForward(lat_deg, lon_deg, zone->zone, zone->north_hemisphere,
+                      easting_out, northing_out);
 }
 
 namespace {

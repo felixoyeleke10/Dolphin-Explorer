@@ -42,7 +42,8 @@ struct CacheFileHeader {
     uint32_t version;
     uint8_t  coord_kind = 0;
     uint8_t  coord_exact = 0;
-    uint16_t reserved = 0;
+    uint8_t  artifact_role = 0;  // kArtifactRole* (0 = original; was half of `reserved`)
+    uint8_t  reserved = 0;
     float    frequency_hz     = 0.0f;
     float    low_frequency_hz = 0.0f;
     char     coord_id[64] = {};
@@ -236,6 +237,7 @@ static inline void setFileSpatialRef(CacheFileHeader& header, const core::Spatia
 static inline void setFileHeaderMetadata(CacheFileHeader& header, const FormatMeta& meta)
 {
     setFileSpatialRef(header, meta.coordinate_ref);
+    header.artifact_role    = meta.artifact_role;
     header.frequency_hz     = meta.frequency_hz;
     header.low_frequency_hz = meta.low_frequency_hz;
     copyFixedString(header.vessel_name, sizeof(header.vessel_name), meta.vessel_name);
@@ -257,6 +259,7 @@ static inline core::SpatialRef spatialRefFromFileHeader(const CacheFileHeader& h
 static inline void loadFileHeaderMetadata(const CacheFileHeader& header, FormatMeta& meta)
 {
     meta.coordinate_ref = spatialRefFromFileHeader(header);
+    meta.artifact_role    = header.artifact_role;
     meta.frequency_hz     = header.frequency_hz;
     meta.low_frequency_hz = header.low_frequency_hz;
     meta.vessel_name      = readFixedString(header.vessel_name, sizeof(header.vessel_name));

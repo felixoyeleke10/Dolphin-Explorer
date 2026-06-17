@@ -217,6 +217,19 @@ bool Project::fromJson(const std::string& json)
             d.signal.bp_hi_hz      = static_cast<float>(jd.get("sig_bp_hi").asDouble());
         }
 
+        if (jl.has("nav_state")) {
+            const auto& jn = jl.get("nav_state");
+            auto& nv = layer->nav_state;
+            nv.smooth_enabled     = jn.get("smooth_en").asBool();
+            nv.smooth_window      = jn.get("smooth_win").asInt();
+            nv.layback_enabled    = jn.get("layback_en").asBool();
+            nv.layback_m          = static_cast<float>(jn.get("layback_m").asDouble());
+            nv.heading_offset_deg = static_cast<float>(jn.get("heading_off").asDouble());
+            nv.pitch_offset_deg   = static_cast<float>(jn.get("pitch_off").asDouble());
+            nv.roll_offset_deg    = static_cast<float>(jn.get("roll_off").asDouble());
+            layer->nav_customized = true;
+        }
+
         layer->sonar_name  = jl.get("sonar_name").asString();
         layer->survey_name = jl.get("survey_name").asString();
         layer->vessel_name = jl.get("vessel_name").asString();

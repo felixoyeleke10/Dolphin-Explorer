@@ -9,6 +9,7 @@
 #include "app/layers/DataLayer.h"
 #include "app/layers/LayerUtils.h"
 #include "app/services/ImportService.h"
+#include "app/tasks/OperationManager.h"
 #include "core/Artifact.h"
 
 #include <QComboBox>
@@ -275,9 +276,7 @@ void WaterfallWindow::clearLayer()
 
     m_scroll_debounce->stop();
     m_pending_abs_row = -1;
-    m_load_cancel.cancel();
-    m_load_cancel.reset();   // fresh token so the next loadWindow() doesn't bail immediately
-    m_load_gen++;
+    if (m_op_mgr) m_op_mgr->cancelByKey("wf:pipeline");
     setDataState(ViewerDataState::Idle);
     m_layer                   = nullptr;
     m_import_service          = nullptr;

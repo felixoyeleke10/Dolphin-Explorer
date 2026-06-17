@@ -63,6 +63,7 @@ void MapView::zoomAtPoint(QPointF pos, double factor)
     m_origin -= rel * (newZoom / m_zoom - 1.0);
     m_zoom    = newZoom;
     m_user_interacted = true;
+    m_frame_survey_pending = false;
     update();
     emit viewportChanged(viewportMetresPerPixel(), m_rotation_deg);
 }
@@ -280,6 +281,7 @@ void MapView::mouseMoveEvent(QMouseEvent* event)
                 update();
             } else {
                 m_user_interacted = true;
+                m_frame_survey_pending = false;
                 m_origin    += event->pos() - m_drag_start;
                 m_drag_start = event->pos();
                 update();
@@ -311,6 +313,7 @@ void MapView::mouseMoveEvent(QMouseEvent* event)
 void MapView::wheelEvent(QWheelEvent* event)
 {
     m_user_interacted = true;
+    m_frame_survey_pending = false;
     const double factor  = (event->angleDelta().y() > 0) ? 1.15 : (1.0 / 1.15);
     const double newZoom = std::clamp(m_zoom * factor, 1e-6, 1e8);
 

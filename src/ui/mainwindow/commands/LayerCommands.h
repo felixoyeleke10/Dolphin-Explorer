@@ -3,7 +3,7 @@
 #include "app/layers/DataLayer.h"
 #include "core/Contact.h"
 #include "core/SpatialRef.h"
-#include "ui/features/waterfall/NavProcessingParams.h"
+#include "app/display/NavProcessingParams.h"
 #include <QUndoCommand>
 #include <functional>
 #include <string>

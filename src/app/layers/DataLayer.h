@@ -9,6 +9,7 @@
 #include "app/layers/LayerUtils.h"   // Modality enum, modalityLabel(), inferModality()
 #include "app/display/SssDisplayState.h"
 #include "app/display/SbpDisplayState.h"
+#include "app/display/NavProcessingParams.h"
 
 namespace dolphin::app {
 
@@ -60,6 +61,12 @@ public:
     // layer open.  Not yet persisted in project JSON; reset to defaults on project reload.
     dolphin::ui::SssDisplayState sss_display_state;
     dolphin::ui::SbpDisplayState sbp_display_state;
+
+    // Per-layer navigation corrections (GPS smoothing / towfish layback / heading
+    // offset). Modality-agnostic; owned here as the single source of truth and
+    // applied on layer open by the waterfall / sub-bottom coordinators.
+    dolphin::ui::NavProcessingParams nav_state;
+    bool                             nav_customized = false;
 
     // Tagging and grouping
     std::vector<std::string> tags;

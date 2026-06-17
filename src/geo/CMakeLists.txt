@@ -2,7 +2,6 @@ add_library(dolphin-geo STATIC
     CoordinateTransformService.cpp
     EpsgDatabase.cpp
     GeoUtils.cpp
-    NavSmoother.cpp
     SpatialRefParsing.cpp
     NormalizeSidescanPings.cpp
 )

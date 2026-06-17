@@ -10,7 +10,7 @@ namespace dolphin::app::contracts {
 struct ContractEnvelope {
     std::string     id;
     std::string     binding_key;
-    ContractType    type = ContractType::ProcessedSidescanLayer;
+    ContractType    type = ContractType::ProcessedLayer;
     ContractPayload payload;
     std::string     producer_worker_id;
     std::string     schema_version = "1";

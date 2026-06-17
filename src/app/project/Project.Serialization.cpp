@@ -171,6 +171,21 @@ std::string Project::toJson() const
             jl["sbp_display"] = std::move(jd);
         }
 
+        // Per-layer nav-correction state (model-owned; SSS + SBP) — only written
+        // when the user has applied corrections, so untouched layers stay clean.
+        if (l->nav_customized) {
+            const auto& nv = l->nav_state;
+            util::JsonValue jn = util::JsonValue::object();
+            jn["smooth_en"]   = util::JsonValue(nv.smooth_enabled);
+            jn["smooth_win"]  = util::JsonValue(nv.smooth_window);
+            jn["layback_en"]  = util::JsonValue(nv.layback_enabled);
+            jn["layback_m"]   = util::JsonValue(static_cast<double>(nv.layback_m));
+            jn["heading_off"] = util::JsonValue(static_cast<double>(nv.heading_offset_deg));
+            jn["pitch_off"]   = util::JsonValue(static_cast<double>(nv.pitch_offset_deg));
+            jn["roll_off"]    = util::JsonValue(static_cast<double>(nv.roll_offset_deg));
+            jl["nav_state"] = std::move(jn);
+        }
+
         jl["sonar_name"]  = util::JsonValue(l->sonar_name);
         jl["survey_name"] = util::JsonValue(l->survey_name);
         jl["vessel_name"] = util::JsonValue(l->vessel_name);

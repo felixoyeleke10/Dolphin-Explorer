@@ -15,7 +15,7 @@ std::string payloadFingerprint(const ContractEnvelope& envelope)
         std::ostringstream oss;
         oss << contractTypeName(envelope.type) << '|';
 
-        if constexpr (std::is_same_v<T, ProcessedSidescanLayer>) {
+        if constexpr (std::is_same_v<T, ProcessedLayer>) {
             oss << payload.layer_id << '|'
                 << payload.source_id << '|'
                 << payload.artifact_store_path << '|'
@@ -57,7 +57,7 @@ std::string stableHash(const std::string& text)
 std::string contractTypeName(ContractType type)
 {
     switch (type) {
-    case ContractType::ProcessedSidescanLayer: return "ProcessedSidescanLayer";
+    case ContractType::ProcessedLayer:         return "ProcessedLayer";
     case ContractType::CorrectionApplied:      return "CorrectionApplied";
     case ContractType::BottomTrackResult:      return "BottomTrackResult";
     case ContractType::QCFlags:                return "QCFlags";

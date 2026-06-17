@@ -18,47 +18,54 @@
 
 namespace dolphin::ui {
 
-RightPanelHost::RightPanelHost(QWidget* parent)
+RightPanelHost::RightPanelHost(ShowMode mode, QWidget* parent)
     : QWidget(parent)
+    , m_show_mode(mode)
 {
     setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Minimum);
-
     m_layout = makeCompactLayout<QVBoxLayout>(this);
 
-    // QWidget modules — parented to this, re-parented into their section by addModule.
-    m_info        = new InfoModule(this);
-    m_display     = new DisplayModule(this);
-    m_sbp_display = new SubBottomDisplayModule(this);
-    m_sbp_gain    = new SbpGainModule(this);
-    m_sbp_signal  = new SbpSignalModule(this);
+    using M = app::Modality;
+    if (m_show_mode == ShowMode::UniversalOnly) {
+        // Universal modules: always relevant, never modality-filtered.
+        m_info = new InfoModule(this);
+        addModule(m_info);
+    } else {
+        // Modal modules: sensor-specific, shown/hidden by modality filter.
+        m_display     = new DisplayModule(this);
+        m_sbp_display = new SubBottomDisplayModule(this);
+        m_sbp_gain    = new SbpGainModule(this);
+        m_sbp_signal  = new SbpSignalModule(this);
+        m_radiometry  = std::make_unique<RadiometryModule>();
+        m_enhancement = std::make_unique<EnhancementModule>();
+        // Navigation + Geometry are per-modality: one instance per sensor tab so
+        // SSS and SBP each get their own section (and their own panel for wiring).
+        m_navigation_sss = std::make_unique<NavigationModule>(M::Sidescan);
+        m_navigation_sbp = std::make_unique<NavigationModule>(M::SubBottom);
+        m_geometry_sss   = std::make_unique<GeometryModule>(M::Sidescan);
+        m_geometry_sbp   = std::make_unique<GeometryModule>(M::SubBottom);
 
-    // Non-QObject wrapper modules.
-    m_navigation  = std::make_unique<NavigationModule>();
-    m_geometry    = std::make_unique<GeometryModule>();
-    m_radiometry  = std::make_unique<RadiometryModule>();
-    m_enhancement = std::make_unique<EnhancementModule>();
+        // Section order per tab: display → processing → Navigation → Geometry.
+        addModule(m_display);
+        addModule(m_sbp_display);
+        addModule(m_sbp_gain);
+        addModule(m_sbp_signal);
+        addModule(m_radiometry.get());
+        addModule(m_enhancement.get());
+        addModule(m_navigation_sss.get());
+        addModule(m_geometry_sss.get());
+        addModule(m_navigation_sbp.get());
+        addModule(m_geometry_sbp.get());
 
-    // Section order: Info → Display (SSS) → Display (SBP) → Gain (SBP) → Signal (SBP) → Radiometry → Enhancement → Navigation → Geometry
-    addModule(m_info);
-    addModule(m_display);
-    addModule(m_sbp_display);
-    addModule(m_sbp_gain);
-    addModule(m_sbp_signal);
-    addModule(m_radiometry.get());
-    addModule(m_enhancement.get());
-    addModule(m_navigation.get());
-    addModule(m_geometry.get());
+        connect(m_display, &DisplayModule::paletteChanged,
+                this,      &RightPanelHost::paletteChanged);
+        connect(m_display, &DisplayModule::channelChanged,
+                this,      &RightPanelHost::channelChanged);
+        connect(m_sbp_display, &SubBottomDisplayModule::paramsChanged,
+                this,          &RightPanelHost::sbpParamsChanged);
+    }
 
     m_layout->addStretch(1);
-
-    connect(m_display, &DisplayModule::paletteChanged,
-            this,      &RightPanelHost::paletteChanged);
-    connect(m_display, &DisplayModule::channelChanged,
-            this,      &RightPanelHost::channelChanged);
-
-    connect(m_sbp_display, &SubBottomDisplayModule::paramsChanged,
-            this,          &RightPanelHost::sbpParamsChanged);
-
     clearLayer();  // start with all sections hidden
 }
 
@@ -80,38 +87,55 @@ void RightPanelHost::setAvailableModalities(const QSet<app::Modality>& modalitie
     m_available_modalities = modalities;
 }
 
+void RightPanelHost::setModalityFilter(app::Modality filter)
+{
+    m_modality_filter = filter;
+    if (!m_current_layer) return;
+    for (int i = 0; i < m_modules.size(); ++i)
+        m_sections[i]->setVisible(computeFilterVisible(m_modules[i]->primaryModality()));
+}
+
+bool RightPanelHost::computeFilterVisible(app::Modality primary) const
+{
+    if (m_show_mode == ShowMode::UniversalOnly)
+        return true;  // all modules in this host are Unknown-primary
+    // ModalOnly: filter by active sensor tab, falling back to availability.
+    if (m_modality_filter != app::Modality::Unknown)
+        return primary == m_modality_filter;
+    return m_available_modalities.contains(primary);
+}
+
 void RightPanelHost::setLayer(app::DataLayer* layer)
 {
+    m_current_layer = layer;
     for (int i = 0; i < m_modules.size(); ++i) {
         const auto primary = m_modules[i]->primaryModality();
-        // Modality-specific sections are hidden when that modality isn't in the project.
-        // Universal sections (Unknown) are always shown.
-        const bool show =
-            primary == app::Modality::Unknown ||
-            m_available_modalities.contains(primary);
-        m_sections[i]->setVisible(show);
-        if (!show) continue;
-
+        // Always evaluate supports() so setApplicable is correct even for
+        // sections that are currently hidden by the modality filter.
         const bool ok = m_modules[i]->supports(*layer);
         m_sections[i]->setApplicable(ok, m_modules[i]->notApplicableHint());
         if (ok) m_modules[i]->setLayer(layer);
+        m_sections[i]->setVisible(computeFilterVisible(primary));
     }
 }
 
 void RightPanelHost::clearLayer()
 {
+    m_current_layer = nullptr;
     for (auto* sec : m_sections)
         sec->setVisible(false);
 }
 
-NavInfoPanel* RightPanelHost::navPanel() const
+NavInfoPanel* RightPanelHost::navPanel(app::Modality m) const
 {
-    return m_navigation ? m_navigation->panel() : nullptr;
+    const auto& mod = (m == app::Modality::SubBottom) ? m_navigation_sbp : m_navigation_sss;
+    return mod ? mod->panel() : nullptr;
 }
 
-HeadingInfoPanel* RightPanelHost::headingPanel() const
+HeadingInfoPanel* RightPanelHost::headingPanel(app::Modality m) const
 {
-    return m_geometry ? m_geometry->panel() : nullptr;
+    const auto& mod = (m == app::Modality::SubBottom) ? m_geometry_sbp : m_geometry_sss;
+    return mod ? mod->panel() : nullptr;
 }
 
 GainControlPanel* RightPanelHost::gainPanel() const

@@ -1,5 +1,5 @@
 #pragma once
-#include "ui/features/waterfall/NavProcessingParams.h"
+#include "app/display/NavProcessingParams.h"
 #include "ui/features/waterfall/PingRow.h"
 #include "ui/features/waterfall/processing/SeabedAutoDetector.h"
 #include "ui/features/waterfall/processing/WaterfallAmpProfile.h"
@@ -146,6 +146,10 @@ public:
     const core::SidescanPing* pingAt(int idx) const;
     // Read-only access to all raw pings (for external re-pipeline without disk I/O).
     const std::vector<core::SidescanPing>& rawPings() const { return m_raw_pings; }
+    // Populate bottom_pick on each of the supplied pings from the viewer's current
+    // seabed detection state (m_rows for auto-detected, m_manual_seabed for user edits).
+    // source=1 (auto), source=2 (manual).  Pings not in either map are left unchanged.
+    void applySeabedPicksToPings(std::vector<core::SidescanPing>& pings) const;
     int   scrollRow()      const { return m_scroll.scrollRow(); }
     int   visibleRows()    const { return m_renderer.maxVisible(); }
     int   samplesPerPing() const;

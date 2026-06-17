@@ -8,10 +8,13 @@
 #include "ui/mainwindow/MainStatusBar.h"
 #include "ui/bottom/BottomDockPanel.h"
 #include "ui/mainwindow/panels/InspectorPanel.h"
+#include "ui/mainwindow/rightpanel/RightPanelHost.h"
 #include "ui/shared/panels/LineListPanel.h"
 #include "ui/features/map/MapView.h"
 #include "ui/features/map/MapViewportHost.h"
 #include "app/project/Project.h"
+#include "geo/GeoUtils.h"
+#include "core/SpatialRef.h"
 
 #include <QFrame>
 #include <QHBoxLayout>
@@ -27,6 +30,28 @@ namespace dolphin::ui {
 
 static constexpr int kEdgeStripW    = 14;  // collapse/expand strip width
 static constexpr int kCollapseBtnH  = 36;  // tall narrow toggle button height
+
+// Update the status-bar cursor position from a viewer. Inputs may be geographic
+// (WGS84 lat/lon, is_projected=false) or already-projected source coordinates
+// (is_projected=true). Geographic input is reprojected into the project working
+// grid when that grid is a transformable projected CRS, so the map, waterfall and
+// sub-bottom readouts all report in the same survey grid (SonarWiz convention).
+void MainWindow::showCursorPosition(double lat, double lon, bool is_projected)
+{
+    if (!m_status_bar) return;
+    if (!is_projected) {
+        if (auto* proj = currentProject()) {
+            const core::SpatialRef wc = proj->workingCrs();
+            double n = 0.0, e = 0.0;
+            if (core::spatialRefIsProjected(wc) &&
+                geo::latLonToProjected(lat, lon, wc, n, e)) {
+                m_status_bar->setCursorPosition(n, e, /*is_projected=*/true);
+                return;
+            }
+        }
+    }
+    m_status_bar->setCursorPosition(lat, lon, is_projected);
+}
 
 void MainWindow::setupCentralWidget()
 {
@@ -168,15 +193,13 @@ void MainWindow::setupCentralWidget()
                 });
     }
 
-    connect(m_inspector, &InspectorPanel::paletteChanged,
-            this,        &MainWindow::onPaletteChanged);
-    connect(m_inspector, &InspectorPanel::channelChanged,
-            this,        &MainWindow::onChannelChanged);
+    connect(m_modal_host, &RightPanelHost::paletteChanged,
+            this,         &MainWindow::onPaletteChanged);
+    connect(m_modal_host, &RightPanelHost::channelChanged,
+            this,         &MainWindow::onChannelChanged);
 
-    // Properties panel tab bar
-    connect(m_props_tab_tools,   &QToolButton::clicked, this, [this]{ onPropsTabChanged(0); });
-    connect(m_props_tab_chats,   &QToolButton::clicked, this, [this]{ onPropsTabChanged(1); });
-    connect(m_props_tab_history, &QToolButton::clicked, this, [this]{ onPropsTabChanged(2); });
+    // Properties panel tab bar — handled by PanelTabBar::tabChanged, wired in
+    // buildPropertiesPanel().
 
     // History list — clicking a layer row navigates to it
     if (m_props_history_list) {
@@ -217,7 +240,8 @@ void MainWindow::setupCentralWidget()
             m_status_bar->clearCursorDepth();
             return;
         }
-        m_status_bar->setCursorPosition(lat, lon, m_map_view->isProjected());
+        // Map renders in WGS84; report the readout in the project working grid.
+        showCursorPosition(lat, lon, /*is_projected=*/false);
     });
 
     connect(m_viewport_host, &MapViewportHost::gpuInfo,

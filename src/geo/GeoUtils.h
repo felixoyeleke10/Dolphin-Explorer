@@ -35,6 +35,15 @@ bool latLonToUtm(double lat_deg, double lon_deg,
                  int& zone_out, bool& north_out,
                  double& easting_out, double& northing_out);
 
+// Forward-project geographic WGS84 lat/lon into a target projected CRS, using
+// the target's own zone (not auto-derived from longitude). Only UTM-family
+// targets recognised by parseUtmZone are supported (same set as
+// isTransformableCrs); returns false for geographic/unsupported targets so the
+// caller can fall back to a geographic readout. Outputs metres.
+bool latLonToProjected(double lat_deg, double lon_deg,
+                       const core::SpatialRef& target,
+                       double& northing_out, double& easting_out);
+
 bool offsetNavByGroundMetres(const core::NavPoint& nav,
                              double east_m,
                              double north_m,

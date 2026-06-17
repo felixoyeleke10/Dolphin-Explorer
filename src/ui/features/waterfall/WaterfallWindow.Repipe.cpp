@@ -2,6 +2,7 @@
 
 #include "ui/features/waterfall/WaterfallWindow.h"
 #include "app/layers/DataLayer.h"
+#include "app/tasks/OperationManager.h"
 #include "ui/features/waterfall/WaterfallView.h"
 #include "ui/features/waterfall/panels/WaterfallInspectorPanel.h"
 #include "ui/features/waterfall/panels/WaterfallAnalysisPanel.h"
@@ -48,6 +49,18 @@ void WaterfallWindow::refreshContactOverlay()
 }
 
 // -----------------------------------------------------------------------------
+//  Raw ping access
+// -----------------------------------------------------------------------------
+
+std::vector<core::SidescanPing> WaterfallWindow::currentRawPings() const
+{
+    if (!m_view) return {};
+    auto pings = m_view->rawPings();           // copy raw pings from disk-load
+    m_view->applySeabedPicksToPings(pings);   // overlay viewer seabed detection results
+    return pings;
+}
+
+// -----------------------------------------------------------------------------
 //  Cache invalidation and repipe
 // -----------------------------------------------------------------------------
 
@@ -55,8 +68,8 @@ void WaterfallWindow::invalidateProcessedCache()
 {
     if (!m_view || m_view->rawPings().empty()) return;
 
-    // Cancel any in-flight task immediately — no point finishing stale params.
-    m_load_cancel.cancel();
+    // No explicit cancel — the keyed "wf:pipeline" op supersedes any in-flight
+    // run when onRepipeDebounce launches the next one.
     setDataState(ViewerDataState::Processing);
     startProgress();
 
@@ -69,9 +82,7 @@ void WaterfallWindow::onRepipeDebounce()
 {
     if (!m_view || m_view->rawPings().empty()) return;
 
-    m_load_cancel.reset();
-    auto cancel = m_load_cancel;
-    const int gen = ++m_load_gen;
+    if (!m_op_mgr) return;
 
     const WaterfallParams  params         = m_view->params();
     const SeabedAutoParams seabed_params  = m_analysis ? m_analysis->currentSeabedAutoParams()
@@ -80,32 +91,32 @@ void WaterfallWindow::onRepipeDebounce()
     auto raw = m_view->rawPings();   // copy raw pings for the background task
 
     struct Repipe { std::vector<core::SidescanPing> raw_pings;
-                    WaterfallView::WfPipelineResult  pipeline; };
-    auto* watcher = new QFutureWatcher<Repipe>(this);
-    connect(watcher, &QFutureWatcher<Repipe>::finished,
-            this, [this, watcher, gen]() {
-                watcher->deleteLater();
-                if (gen != m_load_gen) return;
-                finishProgress();
-                try {
-                    auto r = watcher->result();
-                    m_view->setPreassembledRows(std::move(r.raw_pings),
-                                                std::move(r.pipeline),
-                                                /*preserve_view=*/true);
-                    pushParams();
-                    setDataState(ViewerDataState::Ready);
-                } catch (...) {
-                    setDataState(ViewerDataState::Failed);
-                }
-            });
-    watcher->setFuture(QtConcurrent::run(
-        [r = std::move(raw), params, seabed_params, seabed_enabled, cancel]() mutable -> Repipe {
-            if (cancel.isCancelled()) return {};
+                    WaterfallView::WfPipelineResult  pipeline;
+                    bool ok = false; };
+    m_op_mgr->run<Repipe>(
+        tr("Waterfall reprocessing"),
+        [r = std::move(raw), params, seabed_params, seabed_enabled]
+        (app::CancellationToken cancel) mutable -> Repipe {
             Repipe out;
-            out.pipeline  = WaterfallView::runPipeline(r, params, seabed_params, seabed_enabled);
-            out.raw_pings = std::move(r);
+            try {
+                if (cancel.isCancelled()) return out;
+                out.pipeline  = WaterfallView::runPipeline(r, params, seabed_params, seabed_enabled);
+                out.raw_pings = std::move(r);
+                out.ok = true;
+            } catch (...) { out.ok = false; }
             return out;
-        }));
+        },
+        [this](Repipe r) {
+            finishProgress();
+            if (!r.ok) { setDataState(ViewerDataState::Failed); return; }
+            m_view->setPreassembledRows(std::move(r.raw_pings),
+                                        std::move(r.pipeline),
+                                        /*preserve_view=*/true);
+            pushParams();
+            setDataState(ViewerDataState::Ready);
+        },
+        "wf:pipeline",
+        /*heavy=*/false);
 }
 
 // -----------------------------------------------------------------------------

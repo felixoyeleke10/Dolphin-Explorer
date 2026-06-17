@@ -28,13 +28,17 @@ class HeadingInfoPanel;
 class GainControlPanel;
 class ImagingControlPanel;
 
-// Hosts all right-panel modules as CollapsibleSections.
-// Each module decides whether it supports the current layer via supports().
-// setLayer() shows relevant modules and feeds each one the active layer.
+// Hosts a subset of right-panel modules as CollapsibleSections.
+// ShowMode controls which module set is created at construction time:
+//   UniversalOnly — Info, Navigation, Geometry (always relevant, never modality-filtered)
+//   ModalOnly     — Display/SSS, SbpDisplay/Gain/Signal, Radiometry, Enhancement
+//                   (shown/hidden by setModalityFilter)
 class RightPanelHost : public QWidget {
     Q_OBJECT
 public:
-    explicit RightPanelHost(QWidget* parent = nullptr);
+    enum class ShowMode { UniversalOnly, ModalOnly };
+
+    explicit RightPanelHost(ShowMode mode, QWidget* parent = nullptr);
     ~RightPanelHost() override;
 
     void setLayer(app::DataLayer* layer);
@@ -44,9 +48,15 @@ public:
     // which modality-specific sections to show vs. hide entirely.
     void setAvailableModalities(const QSet<app::Modality>& modalities);
 
-    // Panel accessors — used by WaterfallCoordinator for signal wiring.
-    NavInfoPanel*        navPanel()      const;
-    HeadingInfoPanel*    headingPanel()  const;
+    // Restricts visible sections to Universal (Unknown) + the given modality.
+    // Pass Unknown to show only universal modules (Map tab behaviour).
+    void setModalityFilter(app::Modality filter);
+
+    // Panel accessors — used by the waterfall / sub-bottom coordinators for
+    // signal wiring. Navigation / Geometry are per-modality: pass the modality
+    // whose sensor-tab instance you want (Sidescan or SubBottom).
+    NavInfoPanel*        navPanel(app::Modality m)     const;
+    HeadingInfoPanel*    headingPanel(app::Modality m) const;
     GainControlPanel*    gainPanel()     const;
     ImagingControlPanel* imagingPanel()  const;
 
@@ -69,8 +79,12 @@ signals:
 
 private:
     void addModule(IRightPanelModule* mod);
+    bool computeFilterVisible(app::Modality primary) const;
 
-    QVBoxLayout* m_layout = nullptr;
+    ShowMode         m_show_mode       = ShowMode::UniversalOnly;
+    QVBoxLayout*     m_layout         = nullptr;
+    app::Modality    m_modality_filter = app::Modality::Unknown;
+    app::DataLayer*  m_current_layer   = nullptr;
 
     // QWidget modules — Qt-owned after addModule re-parents them into sections.
     InfoModule*             m_info        = nullptr;
@@ -80,8 +94,12 @@ private:
     SbpSignalModule*        m_sbp_signal  = nullptr;
 
     // Non-QObject wrapper modules — owned via unique_ptr.
-    std::unique_ptr<NavigationModule>  m_navigation;
-    std::unique_ptr<GeometryModule>    m_geometry;
+    // Navigation + Geometry are per-modality so SSS and SBP each get their own
+    // section (with its own panel) under their respective sensor tab.
+    std::unique_ptr<NavigationModule>  m_navigation_sss;
+    std::unique_ptr<NavigationModule>  m_navigation_sbp;
+    std::unique_ptr<GeometryModule>    m_geometry_sss;
+    std::unique_ptr<GeometryModule>    m_geometry_sbp;
     std::unique_ptr<RadiometryModule>  m_radiometry;
     std::unique_ptr<EnhancementModule> m_enhancement;
 

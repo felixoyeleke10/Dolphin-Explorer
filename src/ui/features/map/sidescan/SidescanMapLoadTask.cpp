@@ -6,11 +6,14 @@
 #include "ui/features/map/sidescan/SidescanMapLoadParams.h"
 #include "ui/shared/CoordFormat.h"
 #include "ui/features/map/sidescan/SidescanEntryFilter.h"
+#include "ui/features/map/sidescan/SidescanRasterCache.h"
 #include "ui/features/map/MapView.h"
 #include "ui/features/map/sidescan/SssMapBuild.h"
 #include "app/services/ImportService.h"
+#include "app/tasks/OperationManager.h"
 #include "app/layers/DataLayer.h"
 #include "app/project/Project.h"
+#include "app/display/NavCorrection.h"
 #include "geo/GeoUtils.h"
 
 #include <QFutureWatcher>
@@ -29,15 +32,20 @@ using detail::kFullSafeLimit;
 // -- activateLayer -------------------------------------------------------------
 
 void SidescanViewController::activateLayer(const std::string& layer_id,
-                                           app::Project*      project)
+                                           app::Project*      project,
+                                           bool               as_active)
 {
-    m_active_layer_id = layer_id;
+    // as_active=false: load this line's raster onto the map as part of the survey
+    // overview WITHOUT making it the selected layer (no active-layer state, no
+    // viewport centring, no status-bar takeover). Used on project open to show
+    // every cached line's raster, not just the selected one.
+    if (as_active) m_active_layer_id = layer_id;
     m_project         = project;
 
     // Off quality: show nav track only, no ping I/O.
     if (m_quality == MapSonarQuality::Off) {
-        if (m_map_view) m_map_view->setActiveLayer(layer_id);
-        if (m_status_ping) m_status_ping->setText(tr("Map sonar off"));
+        if (as_active && m_map_view) m_map_view->setActiveLayer(layer_id);
+        if (as_active && m_status_ping) m_status_ping->setText(tr("Map sonar off"));
         emit loadingFinished();
         return;
     }
@@ -64,12 +72,12 @@ void SidescanViewController::activateLayer(const std::string& layer_id,
     }
 
     if (!layer->index_built) {
-        if (m_status_ping) m_status_ping->setText(tr("Layer not yet indexed"));
+        if (as_active && m_status_ping) m_status_ping->setText(tr("Layer not yet indexed"));
         emit loadingFinished();
         return;
     }
     if (layer->sidescanCount() == 0) {
-        if (m_status_ping)
+        if (as_active && m_status_ping)
             m_status_ping->setText(
                 tr("No sidescan data  (%1 artifacts total)").arg(layer->artifactCount()));
         emit loadingFinished();
@@ -95,18 +103,32 @@ void SidescanViewController::activateLayer(const std::string& layer_id,
     const core::SpatialRef display_ref =
         project ? project->displaySpatialRef() : core::SpatialRef{};
 
-    const QualityParams qp = paramsForQuality(m_quality);
+    // Progressive load: the heavy tiers (High/Full) paint a fast Medium preview
+    // first, then upgrade to the requested tier in the background (prebuildTier →
+    // prebuildTierComplete swap). CoverageOnly/Low/Medium build directly, so the
+    // common default path is unchanged — only the slow tiers stage.
+    MapSonarQuality build_quality = m_quality;
+    bool            stage_upgrade = false;
+    if (m_quality == MapSonarQuality::High || m_quality == MapSonarQuality::Full) {
+        build_quality = MapSonarQuality::Medium;
+        stage_upgrade = true;
+    }
+    const QualityParams qp = paramsForQuality(build_quality);
 
     const int palette_idx = m_palette_idx;
 
-    if (m_status_ping) m_status_ping->setText(tr("Loading…"));
+    // Display-time nav corrections live on the layer (model-owned). Captured here
+    // and applied in the background task — the SAME correction the waterfall uses.
+    const NavProcessingParams nav_params = layer->nav_state;
 
-    // Show nav track immediately from the already-loaded index (zero I/O).
-    if (m_map_view) {
+    if (as_active && m_status_ping) m_status_ping->setText(tr("Loading…"));
+
+    // Active line: mark it active and pre-fit the viewport from the index nav
+    // extent so the map centres on it before the background ping load completes.
+    // Non-active overview lines skip this — they accumulate on the map and the
+    // open-time survey framing (requestFrameSurvey) fits the combined extent.
+    if (as_active && m_map_view) {
         m_map_view->setActiveLayer(layer_id);
-
-        // Pre-fit the viewport from the index nav extent so the map is centred
-        // on this layer before the background ping load completes.
         const auto ext = idx.navExtent();
         if (ext.valid && !m_map_view->userInteracted()) {
             const bool proj = apply_layer_crs
@@ -117,60 +139,54 @@ void SidescanViewController::activateLayer(const std::string& layer_id,
         }
     }
 
-    // -- Set up per-layer cancellation and generation guard --------------------
-    // Only cancel a previous load of the SAME layer. Other layers' background
-    // tasks are unaffected, allowing multiple layers to load concurrently.
-    auto& layer_cancel = m_layer_cancel_flags[layer_id];
-    if (layer_cancel)
-        layer_cancel->store(true, std::memory_order_relaxed);
-    layer_cancel = std::make_shared<std::atomic_bool>(false);
+    // -- Guards: need an artifact store, import service, and op manager --------
+    if (store_path.empty()) {
+        if (as_active && m_status_ping)
+            m_status_ping->setText(tr("Layer has no artifact store — reimport required"));
+        emit loadingFinished();
+        return;
+    }
+    app::ImportService* svc = m_import_service;
+    if (!svc) {
+        if (as_active && m_status_ping) m_status_ping->setText(tr("Import service unavailable"));
+        emit loadingFinished();
+        return;
+    }
+    if (!m_op_mgr) { emit loadingFinished(); return; }
 
-    const uint64_t gen = ++m_layer_generations[layer_id];
-    auto           cancel = layer_cancel;   // shared ownership into lambda
+    SssGeorefParams       georef_params   = m_georef_params;
+    georef_params.slant_range_corrected   = layer->slant_range_corrected;
+    const MapSonarQuality current_quality = build_quality;
 
-    // -- Kick off the background load ------------------------------------------
-    auto* watcher = new QFutureWatcher<SidescanLoadResult>(this);
+    // Raster-first cache: a fresh persisted raster lets the background task skip
+    // ping decode + rasterization entirely (parse once, then work from the raster).
+    // Keyed on store fingerprint + nav params + slant-range + quality tier; the
+    // image is recoloured from the persisted intensity grid on load (palette is
+    // not part of the key).
+    const rastercache::Meta cache_meta = rastercache::makeMeta(
+        store_path, nav_params, layer->slant_range_corrected, build_quality,
+        display_ref.id);
+    const std::string cache_path =
+        rastercache::cachePath(store_path, layer_id, build_quality);
 
-    connect(watcher, &QFutureWatcher<SidescanLoadResult>::finished, this,
-        [this, watcher, layer_id]() {
-            watcher->deleteLater();
-
-            SidescanLoadResult res;
-            try {
-                res = watcher->result();
-            } catch (...) {
-                if (m_status_ping)
-                    m_status_ping->setText(tr("Failed to load sidescan data"));
-                emit loadingFinished();
-                return;
-            }
-
-            // Discard stale results: only reject if a newer load for this specific
-            // layer has been started since this task was launched. Results for
-            // layers other than the currently active one are still applied — all
-            // layers accumulate on the map independently.
-            {
-                const auto it = m_layer_generations.find(res.layer_id);
-                if (it == m_layer_generations.end() || res.generation != it->second) {
-                    emit loadingFinished();
-                    return;
-                }
-            }
-
+    // Apply the result on the main thread (success path). Stale/superseded results
+    // are dropped by OperationManager (per-layer key), so no generation guard is
+    // needed; busy-state and loadingFinished are balanced in on_finally below.
+    auto on_done = [this, layer_id, palette_idx, build_quality, as_active](SidescanLoadResult res) {
             if (res.load_failed || res.raw_count == 0) {
-                if (m_status_ping)
+                if (as_active && m_status_ping)
                     m_status_ping->setText(
                         tr("Sidescan index OK but no pings loaded — cache may be unreadable"));
-                emit loadingFinished();
                 return;
             }
-
-            emit loadingFinished();
 
             if (m_map_view) {
                 // Copy diagnostics before the move so we can enrich with
                 // view state (visibility, fit, paint rect) after placement.
                 NavStats stats = res.layer_data.nav_stats;
+
+                // A real amplitude raster was built/loaded (vs. coverage/track only).
+                const bool has_raster = !res.layer_data.intensity_cache.empty();
 
                 // Extract intensity cache before moving res.layer_data.
                 {
@@ -188,7 +204,7 @@ void SidescanViewController::activateLayer(const std::string& layer_id,
                         // level is immediately available for instant switching.
                         PrebuiltTier& tier =
                             m_quality_tier_cache[res.layer_id]
-                                               [static_cast<int>(m_quality)];
+                                               [static_cast<int>(build_quality)];
                         tier.coverage        = res.layer_data.coverage;
                         tier.nav_track       = res.layer_data.nav_track;
                         tier.lon_min         = res.layer_data.lon_min;
@@ -202,9 +218,31 @@ void SidescanViewController::activateLayer(const std::string& layer_id,
                     }
                 }
 
+                // Recolour from the cached intensity if the current look differs
+                // from what the background raster baked in (palette captured at load
+                // start; the raster applies no display-param overrides). Skipped in
+                // the common case — unchanged palette, no custom gain/contrast — so
+                // loads pay no extra LUT pass. Mirrors the repalette success handler.
+                {
+                    const bool palette_changed = (palette_idx != m_palette_idx);
+                    const bool params_active = m_display_params.has_value()
+                        && !(*m_display_params == SonarDisplayParams{});
+                    const auto ic_it = m_layer_intensity_cache.find(res.layer_id);
+                    if ((palette_changed || params_active)
+                            && ic_it != m_layer_intensity_cache.end()
+                            && ic_it->second.valid())
+                        res.layer_data.preview_image = colorizeIntensityCache(
+                            ic_it->second, m_display_params, m_palette_idx);
+                }
                 m_map_view->setLayerMapData(layer_id, std::move(res.layer_data));
                 if (layer_id == m_active_layer_id)
                     m_map_view->setActiveLayer(layer_id);
+                // Non-active overview line that now has a raster: drop the temporary
+                // index nav track so it reads as a swath (like the active line), not
+                // a swath-plus-centreline. setLayerMapData preserves the track flag
+                // set by showNavTrackFromIndex, so clear it explicitly here.
+                if (!as_active && has_raster)
+                    m_map_view->setNavTrackVisible(layer_id, false);
                 m_loaded_layers.insert(layer_id);
                 m_layer_pings_cache[res.layer_id] = std::move(res.map_pings_cache);
 
@@ -220,7 +258,7 @@ void SidescanViewController::activateLayer(const std::string& layer_id,
 
                 emit mapDiagnosticsReady(QString::fromStdString(layer_id), stats);
 
-                if (!res.has_sample_nav && m_status_ping) {
+                if (!res.has_sample_nav && as_active && m_status_ping) {
                     const qulonglong total_pings = res.total_ssc_entries / 2;
                     m_status_ping->setText(
                         tr("%1 pings — no valid GPS for map display")
@@ -228,9 +266,11 @@ void SidescanViewController::activateLayer(const std::string& layer_id,
                                                  : static_cast<qulonglong>(res.raw_count)));
                     return;
                 }
+                if (!res.has_sample_nav) return;  // non-active: nothing more to do
             }
 
-            // -- Status bar ----------------------------------------------------
+            // -- Status bar (active line only) ---------------------------------
+            if (!as_active) return;
             if (res.has_sample_nav) {
                 if (m_status_pos)
                     m_status_pos->setText(
@@ -263,40 +303,68 @@ void SidescanViewController::activateLayer(const std::string& layer_id,
                     ping_text += tr(" · preview reduced");
                 m_status_ping->setText(ping_text);
             }
-        });
+    };
 
-    if (store_path.empty()) {
-        if (m_status_ping)
-            m_status_ping->setText(tr("Layer has no artifact store — reimport required"));
-        watcher->deleteLater();
-        emit loadingFinished();
-        return;
-    }
+    ++m_active_builds;
+    m_data_state = ViewerDataState::Loading;
+    emit loadingStarted();
 
-    app::ImportService* svc = m_import_service;
-    if (!svc) {
-        if (m_status_ping) m_status_ping->setText(tr("Import service unavailable"));
-        watcher->deleteLater();
-        emit loadingFinished();
-        return;
-    }
-
-
-    SssGeorefParams         georef_params    = m_georef_params;
-    georef_params.slant_range_corrected      = layer->slant_range_corrected;
-    const MapSonarQuality   current_quality  = m_quality;
-
-    QFuture<SidescanLoadResult> future = QtConcurrent::run(
+    // Keyed per-layer so a newer load for the SAME layer supersedes this one,
+    // while other layers load concurrently (distinct keys). NOT heavy: this is
+    // display rasterization of an already-imported layer, not an import/decode
+    // job, so it must not sit under the D-14 cap (2) — capping it starved
+    // multi-line projects to 2 cores and made parse→display feel slow. The global
+    // QThreadPool still bounds total concurrency. Auto-tracked in DiagnosticsHub;
+    // on_finally balances the busy counter + loadingFinished on every outcome.
+    m_op_mgr->run<SidescanLoadResult>(
+        tr("Loading sidescan map — %1").arg(QString::fromStdString(layer_id)),
         [svc, store_path, store_format, idx, source_path,
          layer_src_ref, apply_layer_crs, display_ref, layer_id,
-         layer_freq_hz, layer_low_freq_hz, qp, palette_idx, gen, cancel,
-         georef_params, current_quality]()
+         layer_freq_hz, layer_low_freq_hz, qp, palette_idx,
+         georef_params, current_quality, nav_params,
+         cache_path, cache_meta](app::CancellationToken cancel)
         -> SidescanLoadResult
         {
             try {
             SidescanLoadResult result;
             result.layer_id   = layer_id;
-            result.generation = gen;
+
+            // -- Raster fast path: load the persisted raster, skip ping decode --
+            // If a fresh cached raster exists, reconstruct the map data straight
+            // from it (no store read, no rasterization). Status-bar summary is
+            // persisted alongside so the UI is identical to a freshly-built load.
+            {
+                rastercache::Summary sum;
+                if (rastercache::load(cache_path, cache_meta, result.layer_data, sum)) {
+                    result.raw_count          = 1;  // non-zero → not a load failure
+                    result.has_sample_nav     = sum.has_sample_nav;
+                    result.sample_lat         = sum.sample_lat;
+                    result.sample_lon         = sum.sample_lon;
+                    result.sample_alt_m       = sum.sample_alt;
+                    result.sample_is_proj     = sum.sample_is_proj;
+                    result.track_m            = sum.track_m;
+                    result.total_ssc_entries  = sum.total_ssc_entries;
+                    result.preview_port_count = sum.preview_port_count;
+                    result.quality_reduced    = sum.quality_reduced;
+                    // Colourise from the persisted intensity grid (palette captured
+                    // at load start; on_done re-LUTs if palette/params changed since).
+                    if (!result.layer_data.intensity_cache.empty()) {
+                        IntensityCache ic;
+                        ic.pixels    = result.layer_data.intensity_cache;
+                        ic.w         = result.layer_data.intensity_w;
+                        ic.h         = result.layer_data.intensity_h;
+                        ic.disp_low  = result.layer_data.intensity_disp_low;
+                        ic.disp_high = result.layer_data.intensity_disp_high;
+                        result.layer_data.preview_image =
+                            SidescanViewController::colorizeIntensityCache(
+                                ic, std::nullopt, palette_idx);
+                    }
+                    qInfo("[raster] %s: loaded from cache (%dx%d) — no ping decode",
+                          layer_id.c_str(), result.layer_data.intensity_w,
+                          result.layer_data.intensity_h);
+                    return result;
+                }
+            }
 
             // -- Build bounded preview index -----------------------------------
             core::ArtifactIndex map_idx = idx;
@@ -333,7 +401,7 @@ void SidescanViewController::activateLayer(const std::string& layer_id,
             }
             // else: Full quality within safe limit — load all ping groups as-is.
 
-            if (cancel->load(std::memory_order_relaxed)) {
+            if (cancel.isCancelled()) {
                 result.load_failed = true; return result;
             }
 
@@ -354,9 +422,15 @@ void SidescanViewController::activateLayer(const std::string& layer_id,
                 }
             }
 
-            if (cancel->load(std::memory_order_relaxed)) {
+            if (cancel.isCancelled()) {
                 result.load_failed = true; return result;
             }
+
+            // Display-time nav corrections (model-owned) — the SAME correction the
+            // waterfall applies via WaterfallView::runNavCorrections, so the map and
+            // waterfall agree. No-op when the layer has none; applied to the source
+            // nav before normalize/reprojection.
+            raw = applySidescanNavCorrections(std::move(raw), nav_params);
 
             auto map_pings = geo::normalizeSidescanPingsForMap(
                 std::move(raw), display_ref, &result.unresolved_crs);
@@ -374,10 +448,10 @@ void SidescanViewController::activateLayer(const std::string& layer_id,
             buildSwathCoverage(map_pings, result.layer_data, georef_params);
 
             // -- Sonar preview image (quality >= Low) --------------------------
-            if (qp.max_image_dim > 0 && !cancel->load(std::memory_order_relaxed)) {
+            if (qp.max_image_dim > 0 && !cancel.isCancelled()) {
                 const bool built = buildSwathPreviewImage(
                     map_pings, result.layer_data,
-                    qp.max_image_dim, palette_idx, *cancel,
+                    qp.max_image_dim, palette_idx, *cancel.flag(),
                     georef_params, qp.min_strip_cos, qp.cell_budget_div);
                 result.quality_reduced = built && result.layer_data.preview_reduced;
             }
@@ -436,6 +510,29 @@ void SidescanViewController::activateLayer(const std::string& layer_id,
                 }
             }
 
+            // -- Persist the built raster (parse once, reuse forever) ----------
+            // Write the intensity grid + coverage + nav track so the next open
+            // takes the fast path above instead of decoding pings again. Derived
+            // artifact — safe to delete; the fingerprint in cache_meta invalidates
+            // it if the store, nav params, or quality tier change.
+            if (!cancel.isCancelled()) {
+                rastercache::Summary sum;
+                sum.has_sample_nav     = result.has_sample_nav;
+                sum.sample_lat         = result.sample_lat;
+                sum.sample_lon         = result.sample_lon;
+                sum.sample_alt         = result.sample_alt_m;
+                sum.sample_is_proj     = result.sample_is_proj;
+                sum.track_m            = result.track_m;
+                sum.total_ssc_entries  = result.total_ssc_entries;
+                sum.preview_port_count = result.preview_port_count;
+                sum.quality_reduced    = result.quality_reduced;
+                const bool wrote = rastercache::save(cache_path, cache_meta, sum,
+                                                     result.layer_data);
+                qInfo("[raster] %s: built from pings + %s (%dx%d)",
+                      layer_id.c_str(), wrote ? "cached" : "CACHE WRITE FAILED",
+                      result.layer_data.intensity_w, result.layer_data.intensity_h);
+            }
+
             // Keep normalized pings so a palette change can re-rasterize without
             // re-reading from disk.  Moved here (after all stats loops) so the
             // vector is not consumed before we need it above.
@@ -447,19 +544,99 @@ void SidescanViewController::activateLayer(const std::string& layer_id,
                 qWarning() << "SidescanViewController BG: exception:" << e.what()
                            << "layer=" << QString::fromStdString(layer_id);
                 SidescanLoadResult err;
-                err.layer_id = layer_id; err.generation = gen; err.load_failed = true;
+                err.layer_id = layer_id; err.load_failed = true;
                 return err;
             } catch (...) {
                 qWarning() << "SidescanViewController BG: unknown exception"
                            << "layer=" << QString::fromStdString(layer_id);
                 SidescanLoadResult err;
-                err.layer_id = layer_id; err.generation = gen; err.load_failed = true;
+                err.layer_id = layer_id; err.load_failed = true;
                 return err;
             }
-        });
+        },
+        std::move(on_done),
+        "sss:load:" + layer_id,
+        /*heavy=*/false,   // display build, not import/decode — capped via the "map"
+                           // lane below, not the D-14 import cap
+        [this]() {
+            // Every outcome (success / supersede / fail): balance the busy counter
+            // and signal so the indicator + import "Loading into map…" stay correct.
+            if (m_active_builds > 0) --m_active_builds;
+            // Only transition Loading→Ready: don't resurrect a viewer that
+            // deactivate() already reset to Idle while a cancelled build's
+            // finalizer was still pending.
+            if (m_active_builds == 0 && m_data_state == ViewerDataState::Loading)
+                m_data_state = ViewerDataState::Ready;
+            emit loadingFinished();
+        },
+        // Dedicated map-build lane (cap 2) so loading many lines doesn't fan out all
+        // at once and stays separate from the import/decode ("heavy") lane.
+        /*lane=*/"map");
 
-    emit loadingStarted();
-    watcher->setFuture(future);
+    // Stage 2: upgrade to the full requested tier in the background. When it lands,
+    // prebuildTierComplete swaps it in (guarded on still-current quality + layer).
+    if (stage_upgrade) prebuildTier(layer_id, m_quality, project);
+}
+
+// -- showNavTrackFromIndex -----------------------------------------------------
+// Instant survey overview: draw a layer's track from the in-memory artifact index
+// (no ping decode, no raster). Reprojects each index nav point to the display CRS.
+
+void SidescanViewController::showNavTrackFromIndex(const std::string& layer_id,
+                                                   app::Project*      project)
+{
+    if (!m_map_view) return;
+    auto* layer = project ? project->findLayer(layer_id) : nullptr;
+    if (!layer || !layer->index_built || layer->artifact_index.empty()) return;
+
+    // Don't clobber a layer that already has full map data (or any nav track).
+    if (m_loaded_layers.count(layer_id)) return;
+    if (const auto* ex = m_map_view->layerData(layer_id); ex && !ex->nav_track.empty())
+        return;
+
+    const auto* src = project->findSource(layer->source_id);
+    core::SpatialRef src_ref = layer->source_spatial_ref;
+    if (src_ref.empty() && src) src_ref = src->source_spatial_ref;
+    const core::SpatialRef display_ref = project->displaySpatialRef();
+
+    const auto& entries = layer->artifact_index.entries;
+    const size_t step   = std::max<size_t>(1, entries.size() / 1000);  // ~1000 points
+
+    LayerMapData ld;
+    ld.kind           = LayerMapKind::Track;
+    ld.show_nav_track = true;
+    ld.is_projected   = false;   // reprojected to the display CRS below
+    ld.nav_track.reserve(entries.size() / step + 2);
+    for (size_t i = 0; i < entries.size(); i += step) {
+        const auto& e = entries[i];
+        if (e.lat == 0.0 && e.lon == 0.0) continue;
+        core::NavPoint np;
+        np.lat          = e.lat;
+        np.lon          = e.lon;
+        np.is_projected = e.is_projected;
+        np.spatial_ref  = src_ref;
+        np.valid        = true;
+        core::NavPoint out;
+        if (!geo::normalizeNavForMap(np, display_ref, out) || !out.valid) continue;
+        ld.nav_track.emplace_back(out.lon, out.lat);
+        ld.lon_min = std::min(ld.lon_min, out.lon);
+        ld.lon_max = std::max(ld.lon_max, out.lon);
+        ld.lat_min = std::min(ld.lat_min, out.lat);
+        ld.lat_max = std::max(ld.lat_max, out.lat);
+    }
+    if (ld.nav_track.empty()) {
+        qInfo("[nav] %s: 0 track points from %zu index entries (reproject failed?)",
+              layer_id.c_str(), entries.size());
+        return;
+    }
+    const size_t pts = ld.nav_track.size();
+    const double lo0 = ld.lon_min, lo1 = ld.lon_max, la0 = ld.lat_min, la1 = ld.lat_max;
+    m_map_view->setLayerMapData(layer_id, std::move(ld));
+    // setLayerMapData() preserves an existing layer's show_nav_track, so force it on
+    // (mirrors the SBP/MAG path) — otherwise the track is built but never rendered.
+    m_map_view->setNavTrackVisible(layer_id, true);
+    qInfo("[nav] %s: %zu pts  lon[%.3f..%.3f] lat[%.3f..%.3f]",
+          layer_id.c_str(), pts, lo0, lo1, la0, la1);
 }
 
 } // namespace dolphin::ui

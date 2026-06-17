@@ -22,6 +22,7 @@ namespace dolphin::app {
 class DataLayer;
 class ImportService;
 class Project;
+class OperationManager;
 }
 
 namespace dolphin::ui {
@@ -67,8 +68,22 @@ public:
                            QLabel*             status_depth,
                            QObject*            parent = nullptr);
 
+    // Inject the shared OperationManager (owns per-layer map-build ops, keyed
+    // "sss:load:<layer-id>"). Set once, after construction, by MainWindow.
+    void setOperationManager(app::OperationManager* m) { m_op_mgr = m; }
+
     // Load a layer onto the map (additive – does not remove other layers).
-    void activateLayer(const std::string& layer_id, app::Project* project);
+    // as_active=true (default): make it the selected layer (active state, viewport
+    // centring, status bar). as_active=false: load its raster as part of the survey
+    // overview without taking selection — used on open to show every cached line's
+    // raster, not just the active one. Cache-first either way (no ping decode on hit).
+    void activateLayer(const std::string& layer_id, app::Project* project,
+                       bool as_active = true);
+
+    // Draw a layer's nav track straight from the in-memory artifact index (no ping
+    // I/O, no raster) for an instant survey overview. No-op if the layer is already
+    // fully loaded. Reprojects index nav to the map's display CRS.
+    void showNavTrackFromIndex(const std::string& layer_id, app::Project* project);
 
     // Remove one layer's swath from the map.
     void unloadLayer(const std::string& layer_id);
@@ -105,6 +120,10 @@ public:
     // IViewerWindow
     void onViewerRefresh(ViewerRefreshReason reason,
                          const std::string& layer_id = {}) override;
+    // Reports Loading while any background map build is in flight so
+    // anyViewerBusy() / refreshLoadingIndicator() keep the loading indicator up
+    // until the map is actually built — not just until disk parsing finishes.
+    ViewerDataState viewerDataState() const override { return m_data_state; }
 
     // -- ProcessingWindow API --------------------------------------------------
     // Build and cache a single quality tier for a layer without displaying it.
@@ -134,8 +153,9 @@ signals:
     void prebuildTierComplete(const std::string& layer_id, MapSonarQuality quality);
 
 private:
-    MapView*            m_map_view;
-    app::ImportService* m_import_service;
+    MapView*               m_map_view;
+    app::ImportService*    m_import_service;
+    app::OperationManager* m_op_mgr = nullptr;  // owns per-layer map-build ops (keyed)
     QLabel*             m_status_ping;
     QLabel*             m_status_pos;
     QLabel*             m_status_depth;
@@ -144,14 +164,19 @@ private:
     std::string           m_active_layer_id;
     std::set<std::string> m_loaded_layers;   // layers currently on the map
 
+    // Aggregate background-build state for viewerDataState(). m_active_builds
+    // counts in-flight activateLayer tasks (layers can load concurrently); the
+    // controller reports Loading while any are running and Ready once they end.
+    ViewerDataState m_data_state    = ViewerDataState::Idle;
+    int             m_active_builds = 0;
+
     MapSonarQuality  m_quality        = MapSonarQuality::CoverageOnly;
     SssGeorefParams  m_georef_params;
     int              m_palette_idx   = 1;   // PaletteIndex::Greyscale
     std::optional<SonarDisplayParams> m_display_params;  // nullopt = use per-layer auto-stretch
 
-    // Per-layer generation counters and cancel flags.
-    std::unordered_map<std::string, uint64_t>                          m_layer_generations;
-    std::unordered_map<std::string, std::shared_ptr<std::atomic_bool>> m_layer_cancel_flags;
+    // Per-layer map builds run through OperationManager keyed "sss:load:<id>",
+    // so supersession + cancellation replace the old generation/cancel-flag maps.
 
     // Normalized pings cached after a successful load.
     // Retained as a fallback for layers that predate the intensity cache.
@@ -166,6 +191,12 @@ private:
     // quality switching.
     std::unordered_map<std::string,
         std::unordered_map<int, PrebuiltTier>> m_quality_tier_cache;
+
+    // Apply a pre-built quality tier (from m_quality_tier_cache) to the map with no
+    // background work — O(pixels) recolour only. Returns false if no tier is cached
+    // for this layer+quality. Shared by setMapSonarQuality() (instant switch) and
+    // the staged-upgrade swap (prebuildTierComplete).
+    bool applyCachedTier(const std::string& layer_id, MapSonarQuality quality);
 
     void repaletteAllLayers();
 };

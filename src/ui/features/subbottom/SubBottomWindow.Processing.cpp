@@ -4,7 +4,9 @@
 
 #include "ui/features/subbottom/SubBottomWindow.h"
 #include "ui/features/subbottom/SubBottomView.h"
+#include "app/display/NavCorrection.h"
 #include "app/tasks/CancellationToken.h"
+#include "app/tasks/OperationManager.h"
 #include <QFutureWatcher>
 #include <QtConcurrent/QtConcurrent>
 #include <algorithm>
@@ -138,6 +140,12 @@ void SubBottomWindow::applySignalParams(const SbpSignalParams& p)
     scheduleProcessing();
 }
 
+void SubBottomWindow::applyNavToLine(const NavProcessingParams& p)
+{
+    m_nav_params = p;
+    scheduleProcessing();   // re-runs the pipeline; nav corrections applied below
+}
+
 void SubBottomWindow::scheduleProcessing()
 {
     if (!m_traces_raw || m_traces_raw->empty()) {
@@ -145,8 +153,8 @@ void SubBottomWindow::scheduleProcessing()
         return;
     }
 
-    // Cancel any in-flight task immediately — no point finishing stale params.
-    m_proc_cancel.cancel();
+    // No explicit cancel here — the keyed OperationManager op supersedes any
+    // in-flight processing when onProcDebounce launches the next one.
     setDataState(ViewerDataState::Processing);
 
     // Defer the actual launch so rapid param changes (slider drags) collapse
@@ -156,45 +164,41 @@ void SubBottomWindow::scheduleProcessing()
 
 void SubBottomWindow::onProcDebounce()
 {
-    if (!m_traces_raw || m_traces_raw->empty()) return;
+    if (!m_traces_raw || m_traces_raw->empty() || !m_op_mgr) return;
 
-    m_proc_cancel.reset();
-    auto cancel = m_proc_cancel;
-
-    // Transition after the token reset so that procToken() returns the new
-    // token when the dataStateChanged signal reaches the coordinator.
     setDataState(ViewerDataState::Processing);
 
-    const int gen = ++m_proc_gen;
+    const SbpGainParams       gp  = m_gain_params;
+    const SbpSignalParams     sp  = m_signal_params;
+    const NavProcessingParams np  = m_nav_params;
+    auto                      raw = m_traces_raw;  // shared_ptr copy — O(1), no data copy
 
-    const SbpGainParams   gp  = m_gain_params;
-    const SbpSignalParams sp  = m_signal_params;
-    auto                  raw = m_traces_raw;  // shared_ptr copy — O(1), no data copy
-
-    auto* watcher = new QFutureWatcher<std::vector<core::SubBottomTrace>>(this);
-    connect(watcher, &QFutureWatcher<std::vector<core::SubBottomTrace>>::finished,
-            this, [this, watcher, gen]() {
-                watcher->deleteLater();
-                if (gen != m_proc_gen) return;
-                try {
-                    m_view->setTraces(watcher->result());
-                    setDataState(ViewerDataState::Ready);
-                } catch (...) {
-                    setDataState(ViewerDataState::Failed);
-                }
-            });
-
-    watcher->setFuture(QtConcurrent::run(
-        [raw = std::move(raw), gp, sp, cancel]()
+    // Keyed so a newer run supersedes the in-flight one (replaces the generation
+    // guard + manual cancel token). The DSP is light, so not flagged heavy.
+    m_op_mgr->run<std::vector<core::SubBottomTrace>>(
+        tr("Processing sub-bottom"),
+        [raw = std::move(raw), gp, sp, np](app::CancellationToken cancel)
                 -> std::vector<core::SubBottomTrace> {
-            // First cancellation check: cancelled before work started — zero cost.
-            if (cancel.isCancelled()) return {};
-            // Copy raw traces inside the background thread so rapid UI param
-            // changes never block the main thread waiting for the allocation.
-            std::vector<core::SubBottomTrace> traces = *raw;
-            if (cancel.isCancelled()) return {};
-            return processTraces(std::move(traces), gp, sp, cancel);
-        }));
+            try {
+                if (cancel.isCancelled()) return {};
+                // Copy raw traces on the bg thread so rapid UI param changes never
+                // block the main thread waiting for the allocation.
+                std::vector<core::SubBottomTrace> traces = *raw;
+                if (cancel.isCancelled()) return {};
+                // Nav corrections shift trace positions (cursor read-out + map);
+                // applied before DSP so the sample passes operate on the final set.
+                applySbpNavCorrections(traces, np);
+                return processTraces(std::move(traces), gp, sp, cancel);
+            } catch (...) {
+                return {};   // empty → on_done sets Ready, never leaves busy stuck
+            }
+        },
+        [this](std::vector<core::SubBottomTrace> result) {
+            m_view->setTraces(std::move(result));
+            setDataState(ViewerDataState::Ready);
+        },
+        "sbpwin:proc",
+        /*heavy=*/false);
 }
 
 } // namespace dolphin::ui

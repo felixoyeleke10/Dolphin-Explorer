@@ -40,19 +40,25 @@ inline QualityParams paramsForQuality(MapSonarQuality q)
     // Artifact guards are uniform across all tiers so switching quality
     // doesn't change which data is visible — only how detailed it looks.
     //                        pings    samp   img
+    // Caps are sized for a map *overview* mosaic, not a full-res waterfall: a map
+    // preview gains little from >1k samples/ping or huge ping counts, but the read
+    // + rasterise cost scales with all three. High/Full were trimmed (was
+    // 25000/2048/2048 and a 40000 Full fallback) so first map load isn't slower
+    // than parsing; the waterfall still shows full detail. Full keeps 4096px for an
+    // explicit max-quality mosaic but falls back to High sooner on very large files.
     switch (q) {
     case MapSonarQuality::Off:
     case MapSonarQuality::CoverageOnly: return {5000,   16,    0, 0.0, 0};
     case MapSonarQuality::Low:          return {5000,  256,  512, 0.0, 0};
     case MapSonarQuality::Medium:       return {10000, 512, 1024, 0.0, 0};
-    case MapSonarQuality::High:         return {25000, 2048, 2048, 0.0, 0};
+    case MapSonarQuality::High:         return {16000, 1024, 2048, 0.0, 0};
     case MapSonarQuality::Full:         return {0,       0, 4096, 0.0, 0};
     }
     return {5000, 16, 0, 0.0, 0};
 }
 
 // Ping-group limit above which Full quality falls back to High params.
-constexpr size_t kFullSafeLimit = 40000;
+constexpr size_t kFullSafeLimit = 24000;
 
 struct SidescanLoadResult {
     std::string  layer_id;

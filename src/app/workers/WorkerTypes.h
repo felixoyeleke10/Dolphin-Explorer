@@ -25,7 +25,7 @@ enum class WorkerStatus {
 
 struct WorkerPort {
     std::string              name;
-    contracts::ContractType  type = contracts::ContractType::ProcessedSidescanLayer;
+    contracts::ContractType  type = contracts::ContractType::ProcessedLayer;
     std::string              binding_key;
     bool                     required = true;
 };

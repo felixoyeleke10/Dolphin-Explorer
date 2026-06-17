@@ -374,6 +374,64 @@ static void testDisplayStatePersistence()
     CHECK(ll->sbp_palette == 2);
 }
 
+// 10. Nav-correction state round-trip — the model-owned nav_state / nav_customized
+//     (shared by SSS + SBP) survive save → reopen. An untouched layer stays
+//     uncustomized (nav_state is only written when nav_customized).
+static void testNavStatePersistence()
+{
+    QTemporaryDir tmp;
+    CHECK(tmp.isValid());
+    if (!tmp.isValid()) return;
+
+    const std::string manifest = (tmp.path() + "/nav.dlp").toStdString();
+    auto proj = dolphin::app::Project::create("nav", manifest);
+    CHECK(proj != nullptr);
+    if (!proj) return;
+
+    auto* src        = proj->addSource("/fake/survey.xtf", "xtf");
+    auto* customized = proj->addLayer(src->id, "customized");
+    auto* untouched  = proj->addLayer(src->id, "untouched");
+    CHECK(customized != nullptr && untouched != nullptr);
+    if (!customized || !untouched) return;
+
+    injectIndexEntry(customized);
+    injectIndexEntry(untouched);
+
+    customized->nav_customized              = true;
+    customized->nav_state.smooth_enabled     = true;
+    customized->nav_state.smooth_window      = 9;
+    customized->nav_state.layback_enabled    = true;
+    customized->nav_state.layback_m          = 12.5f;
+    customized->nav_state.heading_offset_deg = 3.5f;
+    customized->nav_state.pitch_offset_deg   = -1.25f;
+    customized->nav_state.roll_offset_deg    = 0.75f;
+
+    CHECK(proj->save());
+
+    auto loaded = dolphin::app::Project::open(manifest);
+    CHECK(loaded != nullptr);
+    if (!loaded || loaded->layers().size() < 2) return;
+
+    const auto* lc = loaded->findLayer(customized->id);
+    const auto* lu = loaded->findLayer(untouched->id);
+    CHECK(lc != nullptr && lu != nullptr);
+    if (!lc || !lu) return;
+
+    CHECK(lc->nav_customized);
+    CHECK(lc->nav_state.smooth_enabled);
+    CHECK(lc->nav_state.smooth_window == 9);
+    CHECK(lc->nav_state.layback_enabled);
+    CHECK(std::fabs(lc->nav_state.layback_m - 12.5f) < 1e-4f);
+    CHECK(std::fabs(lc->nav_state.heading_offset_deg - 3.5f) < 1e-4f);
+    CHECK(std::fabs(lc->nav_state.pitch_offset_deg + 1.25f) < 1e-4f);
+    CHECK(std::fabs(lc->nav_state.roll_offset_deg - 0.75f) < 1e-4f);
+
+    // Untouched layer must reopen uncustomized with default params.
+    CHECK(!lu->nav_customized);
+    CHECK(!lu->nav_state.smooth_enabled);
+    CHECK(!lu->nav_state.layback_enabled);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 //  Entry point
 // ─────────────────────────────────────────────────────────────────────────────
@@ -391,6 +449,7 @@ int main(int argc, char** argv)
     testDpcacheFormatAccepted();
     testLayerRemoval();
     testDisplayStatePersistence();
+    testNavStatePersistence();
 
     std::printf("\n%d passed, %d failed\n", g_pass, g_fail);
     return (g_fail == 0) ? 0 : 1;

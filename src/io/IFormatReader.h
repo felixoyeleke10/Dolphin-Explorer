@@ -10,6 +10,11 @@
 
 namespace dolphin::io {
 
+// Role of a parsed-cache (.dlpd) artifact, stored in the file header so a store is
+// self-describing — a formal marker, not a filename heuristic.
+inline constexpr uint8_t kArtifactRoleOriginal = 0;  // raw indexed import (never overwrite — D-04)
+inline constexpr uint8_t kArtifactRoleSidecar  = 1;  // processed/corrected per-layer sidecar
+
 // Summary information extracted cheaply from the file header.
 struct FormatMeta {
     std::string format_name;
@@ -37,6 +42,11 @@ struct FormatMeta {
     // OR of all CorrectionFlag bits seen across artifact payload headers during buildIndex.
     // Non-zero means at least one artifact was written after a processing pipeline run.
     uint32_t    correction_flags_seen = 0;
+    // Role marker (kArtifactRole*): distinguishes an original indexed import from a
+    // processed per-layer sidecar. Read on open() from the file header; correction /
+    // processing services set it to kArtifactRoleSidecar when writing a sidecar so
+    // re-applies overwrite that sidecar in place and never the original.
+    uint8_t     artifact_role = kArtifactRoleOriginal;
 };
 
 // Progress callback: value in [0.0, 1.0]

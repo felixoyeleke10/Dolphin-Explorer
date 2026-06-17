@@ -6,9 +6,12 @@
 #include "ui/shell/ViewerWindow.h"
 #include "ui/mainwindow/MainStatusBar.h"
 #include "ui/mainwindow/rightpanel/RightPanelHost.h"
+// m_modal_host (ModalOnly RightPanelHost) owns all SBP and SSS panel modules.
 #include "ui/mainwindow/rightpanel/RightPanel.SbpGain.h"
 #include "ui/mainwindow/rightpanel/RightPanel.SbpSignal.h"
 #include "ui/mainwindow/panels/InspectorPanel.h"
+#include "ui/mainwindow/panels/NavInfoPanel.h"
+#include "ui/mainwindow/panels/HeadingInfoPanel.h"
 #include "ui/features/subbottom/SubBottomWindow.h"
 #include "ui/features/subbottom/SubBottomSettingsDialog.h"
 #include "ui/features/subbottom/SubBottomViewStyle.h"
@@ -44,6 +47,7 @@ void MainWindow::onSubBottomOpen()
 
     if (!m_sbp_win) {
         m_sbp_win = new SubBottomWindow(m_app_state, nullptr);
+        m_sbp_win->setOperationManager(m_op_mgr);  // owns load/process ops (keyed)
         m_window_registry->registerViewer(m_sbp_win, m_sbp_win);
         connect(m_sbp_win, &SubBottomWindow::newFileRequested,
                 this, &MainWindow::onImportFile);
@@ -85,8 +89,8 @@ void MainWindow::onSubBottomOpen()
                                 if (!m_sbp_win) return;
                                 m_sbp_win->applySettings(p, pw, ps, style);
                                 // Keep right panel in sync — it only syncs on window open otherwise.
-                                if (m_inspector)
-                                    m_inspector->rightPanelHost()->setSbpParams(m_sbp_win->displayParams());
+                                if (m_modal_host)
+                                    m_modal_host->setSbpParams(m_sbp_win->displayParams());
                                 // Persist per-layer SBP palette from settings dialog.
                                 if (!currentProject() || activeLayerId().empty()) return;
                                 auto* layer = currentProject()->findLayer(activeLayerId());
@@ -142,22 +146,16 @@ void MainWindow::onSubBottomOpen()
                     }
                     m_status_bar->setCursorDepth(depth_m);
                     if (lat != 0.0 || lon != 0.0)
-                        m_status_bar->setCursorPosition(lat, lon, is_projected);
+                        showCursorPosition(lat, lon, is_projected);
                 });
 
         connect(m_sbp_win, &SubBottomWindow::layerChangeRequested,
                 this, [this](const std::string& id) { onLayerSelected(id); });
+        // Busy-state → status-bar spinner. Cancellation is owned by
+        // OperationManager (the window's load/process ops are keyed), so no
+        // external-token registration is needed.
         connect(m_sbp_win, &SubBottomWindow::dataStateChanged,
-                this, [this](ViewerDataState s) {
-                    refreshLoadingIndicator();
-                    if (s == ViewerDataState::Loading) {
-                        m_op_mgr->registerExternal("sbp", m_sbp_win->loadToken());
-                    } else if (s == ViewerDataState::Processing) {
-                        m_op_mgr->registerExternal("sbp", m_sbp_win->procToken());
-                    } else {
-                        m_op_mgr->unregisterExternal("sbp");
-                    }
-                });
+                this, [this](ViewerDataState) { refreshLoadingIndicator(); });
 
         // Propagate global sound velocity so the depth axis stays correct
         // without requiring a full disk reload.
@@ -169,8 +167,8 @@ void MainWindow::onSubBottomOpen()
         }
 
         // Right-panel Display module → SubBottomWindow: push param changes live.
-        if (m_inspector) {
-            auto* host = m_inspector->rightPanelHost();
+        if (m_modal_host) {
+            auto* host = m_modal_host;
             connect(host, &RightPanelHost::sbpParamsChanged,
                     this, [this](SubBottomDisplayParams p) {
                         if (m_sbp_win) m_sbp_win->applyDisplayParams(p);
@@ -188,63 +186,68 @@ void MainWindow::onSubBottomOpen()
             if (auto* gain_mod = host->sbpGainModule()) {
                 connect(gain_mod, &SbpGainModule::applyToLineRequested,
                         this, [this](SbpGainParams p) {
-                            const std::string lid = m_sbp_win ? m_sbp_win->currentLayerId() : std::string{};
-                            if (lid.empty() || !currentProject() || !m_corr_op) return;
+                            // Display-state only (SeaView model): store on the active
+                            // layer and push live to the SBP window. No .dlpd bake —
+                            // committing to disk is Processing → "Bake Corrections".
+                            std::string lid = activeLayerId();
+                            if (lid.empty() && m_sbp_win) lid = m_sbp_win->currentLayerId();
+                            if (lid.empty() || !currentProject()) return;
                             auto* layer = currentProject()->findLayer(lid);
                             if (!layer) return;
                             layer->sbp_display_state.gain = p;
                             layer->sbp_display_state.gain_customized = true;
-                            const auto* src = currentProject()->findSource(layer->source_id);
-                            m_corr_op->applySBP(layer, src ? src->path : std::string{},
-                                                p, layer->sbp_display_state.signal);
+                            markProjectDirty();
+                            if (m_sbp_win && m_sbp_win->currentLayerId() == lid)
+                                m_sbp_win->applyGainParams(p);
                         });
                 connect(gain_mod, &SbpGainModule::applyToAllRequested,
                         this, [this](SbpGainParams p) {
-                            if (!currentProject() || !m_corr_op) return;
-                            const SbpSignalParams sig = (m_sbp_win && currentProject())
-                                ? [&]() -> SbpSignalParams {
-                                    auto* l = currentProject()->findLayer(m_sbp_win->currentLayerId());
-                                    return l ? l->sbp_display_state.signal : SbpSignalParams{};
-                                  }()
-                                : SbpSignalParams{};
+                            if (!currentProject()) return;
+                            // Display-state only: store on every SBP layer + refresh the
+                            // open window live. No .dlpd bake (see Bake Corrections).
                             for (const auto& l : currentProject()->layers())
                                 if (l && l->modality == app::Modality::SubBottom) {
                                     l->sbp_display_state.gain = p;
                                     l->sbp_display_state.gain_customized = true;
                                 }
-                            m_corr_op->applyAllSBP(*currentProject(), p, sig);
+                            markProjectDirty();
+                            if (m_sbp_win) m_sbp_win->applyGainParams(p);
                         });
             }
             if (auto* sig_mod = host->sbpSignalModule()) {
                 connect(sig_mod, &SbpSignalModule::applyToLineRequested,
                         this, [this](SbpSignalParams p) {
-                            const std::string lid = m_sbp_win ? m_sbp_win->currentLayerId() : std::string{};
-                            if (lid.empty() || !currentProject() || !m_corr_op) return;
+                            // Display-state only: store on the active layer + push live.
+                            std::string lid = activeLayerId();
+                            if (lid.empty() && m_sbp_win) lid = m_sbp_win->currentLayerId();
+                            if (lid.empty() || !currentProject()) return;
                             auto* layer = currentProject()->findLayer(lid);
                             if (!layer) return;
                             layer->sbp_display_state.signal = p;
                             layer->sbp_display_state.signal_customized = true;
-                            const auto* src = currentProject()->findSource(layer->source_id);
-                            m_corr_op->applySBP(layer, src ? src->path : std::string{},
-                                                layer->sbp_display_state.gain, p);
+                            markProjectDirty();
+                            if (m_sbp_win && m_sbp_win->currentLayerId() == lid)
+                                m_sbp_win->applySignalParams(p);
                         });
                 connect(sig_mod, &SbpSignalModule::applyToAllRequested,
                         this, [this](SbpSignalParams p) {
-                            if (!currentProject() || !m_corr_op) return;
-                            const SbpGainParams gain = (m_sbp_win && currentProject())
-                                ? [&]() -> SbpGainParams {
-                                    auto* l = currentProject()->findLayer(m_sbp_win->currentLayerId());
-                                    return l ? l->sbp_display_state.gain : SbpGainParams{};
-                                  }()
-                                : SbpGainParams{};
+                            if (!currentProject()) return;
+                            // Display-state only: store on every SBP layer + refresh the
+                            // open window live. No .dlpd bake (see Bake Corrections).
                             for (const auto& l : currentProject()->layers())
                                 if (l && l->modality == app::Modality::SubBottom) {
                                     l->sbp_display_state.signal = p;
                                     l->sbp_display_state.signal_customized = true;
                                 }
-                            m_corr_op->applyAllSBP(*currentProject(), gain, p);
+                            markProjectDirty();
+                            if (m_sbp_win) m_sbp_win->applySignalParams(p);
                         });
             }
+
+            // SBP Navigation / Geometry panels are wired once at construction (see
+            // MainWindow.MainArea.cpp) so Apply works from the main view even when
+            // this window is closed; the handlers store per-layer params, rebuild
+            // the map profile(s), and refresh this window only if it is open.
         }
     }
 
@@ -274,18 +277,17 @@ void MainWindow::onSubBottomOpen()
                 m_sbp_win->applyGainParams(layer->sbp_display_state.gain);
             if (layer->sbp_display_state.signal_customized)
                 m_sbp_win->applySignalParams(layer->sbp_display_state.signal);
-            if (m_inspector) {
-                auto* host = m_inspector->rightPanelHost();
+            applyStoredSbpNavParams(layer->id);  // stored nav corrections
+            if (m_modal_host) {
                 if (layer->sbp_display_state.display_customized)
-                    host->setSbpParams(layer->sbp_display_state.display);
-                if (auto* gm = host->sbpGainModule(); layer->sbp_display_state.gain_customized)
+                    m_modal_host->setSbpParams(layer->sbp_display_state.display);
+                if (auto* gm = m_modal_host->sbpGainModule(); layer->sbp_display_state.gain_customized)
                     gm->setParams(layer->sbp_display_state.gain);
-                if (auto* sm = host->sbpSignalModule(); layer->sbp_display_state.signal_customized)
+                if (auto* sm = m_modal_host->sbpSignalModule(); layer->sbp_display_state.signal_customized)
                     sm->setParams(layer->sbp_display_state.signal);
+                // Sync to SBP window's current display settings.
+                m_modal_host->setSbpParams(m_sbp_win->displayParams());
             }
-            // Sync right panel to reflect SBP window's current display settings.
-            if (m_inspector)
-                m_inspector->rightPanelHost()->setSbpParams(m_sbp_win->displayParams());
         }
     }
 

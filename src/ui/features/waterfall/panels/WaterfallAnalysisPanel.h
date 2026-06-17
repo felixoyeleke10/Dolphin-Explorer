@@ -1,5 +1,5 @@
 #pragma once
-#include "ui/features/waterfall/NavProcessingParams.h"
+#include "app/display/NavProcessingParams.h"
 #include "ui/features/waterfall/processing/SeabedAutoDetector.h"
 #include "ui/features/waterfall/WaterfallContact.h"
 #include "ui/features/waterfall/WaterfallParams.h"

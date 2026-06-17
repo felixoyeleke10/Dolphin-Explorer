@@ -90,6 +90,31 @@ void Project::removeLayer(const std::string& id)
         std::filesystem::remove(std::filesystem::path(store_path), ec);
     }
 
+    // Remove this layer's derived map-raster sidecars (".draster"); if the store
+    // itself is gone, remove all of its raster sidecars too. These are derived
+    // artifacts (rebuilt on next load); naming is "<store_file>.<layerId>.q<tier>
+    // .draster" — see ui/features/map/sidescan/SidescanRasterCache.
+    if (!store_path.empty()) {
+        namespace fs = std::filesystem;
+        std::error_code ec;
+        const fs::path store_p(store_path);
+        const std::string store_file = store_p.filename().string();
+        const std::string mine_prefix  = store_file + "." + id + ".";
+        const std::string store_prefix = store_file + ".";
+        for (const auto& entry : fs::directory_iterator(store_p.parent_path(), ec)) {
+            if (ec) break;
+            if (!entry.is_regular_file()) continue;
+            if (entry.path().extension() != ".draster") continue;
+            const std::string fn = entry.path().filename().string();
+            const bool mine        = fn.rfind(mine_prefix, 0) == 0;
+            const bool store_gone  = !store_still_used && fn.rfind(store_prefix, 0) == 0;
+            if (mine || store_gone) {
+                std::error_code rec;
+                fs::remove(entry.path(), rec);
+            }
+        }
+    }
+
     emit layerRemoved(id);
     emit modified();
 }
@@ -164,6 +189,24 @@ void Project::purgeOrphanedCaches()
                          entry.path().string().c_str(), ec.message().c_str());
                 ec.clear();
             }
+        }
+    }
+
+    // Delete orphaned map-raster sidecars (".draster") whose store is no longer
+    // referenced. A sidecar "<store>.<layerId>.q<tier>.draster" belongs to a store
+    // iff that store's normalized path + "." is a prefix of the sidecar's path.
+    for (const auto& entry : fs::directory_iterator(data_dir, ec)) {
+        if (!entry.is_regular_file()) continue;
+        if (entry.path().extension().string() != ".draster") continue;
+        const std::string norm =
+            detail::normalisePath(entry.path().string()).toStdString();
+        bool referenced_store = false;
+        for (const auto& ref : referenced) {
+            if (norm.rfind(ref + ".", 0) == 0) { referenced_store = true; break; }
+        }
+        if (!referenced_store) {
+            fs::remove(entry.path(), ec);
+            if (ec) ec.clear();
         }
     }
 }

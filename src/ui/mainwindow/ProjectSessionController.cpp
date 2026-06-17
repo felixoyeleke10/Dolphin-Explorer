@@ -16,6 +16,7 @@
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QMenu>
+#include <QElapsedTimer>
 #include <QMessageBox>
 #include <QSettings>
 #include <QTimer>
@@ -289,7 +290,9 @@ void ProjectSessionController::loadProjectPath(const std::string& path)
         return;
     }
 
+    QElapsedTimer open_timer; open_timer.start();
     m_project = app::Project::open(path);
+    const qint64 open_ms = open_timer.elapsed();
     if (!m_project) {
         const QString qpath = QString::fromStdString(path);
         if (m_diag_hub)
@@ -309,6 +312,8 @@ void ProjectSessionController::loadProjectPath(const std::string& path)
     emit projectChanged(m_project);
     emit jobMessage(QString("Opened: %1")
         .arg(QString::fromStdString(m_project->name())));
+    emit jobMessage(QString("[timing] Project::open (manifest + footer quickIndex) = %1 ms")
+        .arg(open_ms));
 
     // Defer layer pre-population to the next event-loop tick.
     // Calling activateLayer() synchronously triggers Win32 message processing
@@ -319,12 +324,22 @@ void ProjectSessionController::loadProjectPath(const std::string& path)
         if (!m_project || load_gen != m_project_load_gen) return;
 
         // Find the first indexed layer to return to MainWindow for selection.
+        // Also count footer hits vs. layers that will need a (slow) background rescan
+        // — this is the usual project-open bottleneck on older caches.
         std::string first_layer_id;
+        int indexed_from_footer = 0, need_rescan = 0;
         for (const auto& layer : m_project->layers()) {
-            if (!layer || !layer->index_built || layer->artifact_index.empty()) continue;
-            if (first_layer_id.empty())
-                first_layer_id = layer->id;
+            if (!layer) continue;
+            if (layer->index_built && !layer->artifact_index.empty()) {
+                ++indexed_from_footer;
+                if (first_layer_id.empty()) first_layer_id = layer->id;
+            } else if (!layer->artifact_store_path.empty()) {
+                ++need_rescan;
+            }
         }
+        emit jobMessage(QString("[timing] open: %1 layer(s) indexed from footer (fast), "
+                                "%2 need background rescan (slow)")
+                            .arg(indexed_from_footer).arg(need_rescan));
 
         // Background-reindex layers whose artifact index was not embedded in
         // the JSON manifest (deferred by fromJson for fast project-open).

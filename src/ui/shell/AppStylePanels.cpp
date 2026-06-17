@@ -167,20 +167,26 @@ QString qssPanels()
         "QToolButton#ctrlTab:checked { background: rgba(@accentRgb,0.15); color: @accentSoft; }"
         "QToolButton#ctrlTab:disabled { color: @textDisabled; }"
 
-        // Properties panel tab bar (Tools / Chats / History)
-        "QFrame#propsTabs {"
-        "  background: @bgEl; border-bottom: 1px solid @border; border: none;"
-        "}"
-        "QToolButton#propsPanelTab {"
+        // ---------------------------------------------------------------------
+        // Shared side-panel chrome — SidePanelShell + PanelTabBar
+        // The left File Explorer dock and the right Properties panel (both panes)
+        // share these rules so the two sides can never visually drift.
+        // ---------------------------------------------------------------------
+        "QFrame#sidePanelShell { background: @bgPanel; border: none; }"
+
+        "QWidget#panelTabBar { background: @bgEl; border-bottom: 1px solid @border; }"
+        "QToolButton#panelTab {"
         "  background: transparent; border: none; border-bottom: 2px solid transparent;"
         "  color: @textSubtle; font-family: @font; font-size: @fontSm; font-weight: 500;"
         "  padding: 0 4px; min-height: 36px;"
         "}"
-        "QToolButton#propsPanelTab:hover   { color: @textSecond; background: @overlayEl; }"
-        "QToolButton#propsPanelTab:checked {"
-        "  color: @textPrimary; border-bottom: 2px solid @accent;"
-        "}"
-        "QFrame#propsTabSep { background: @border; min-width: 1px; max-width: 1px; border: none; }"
+        "QToolButton#panelTab:hover    { color: @textSecond; background: @overlayEl; }"
+        "QToolButton#panelTab:checked  { color: @textPrimary; border-bottom: 2px solid @accent; }"
+        "QToolButton#panelTab:disabled { color: @textDisabled; border-bottom-color: transparent; }"
+        "QFrame#panelTabSep { background: @border; min-width: 1px; max-width: 1px; border: none; }"
+
+        "QSplitter#propsSplitter { background: @bg; }"
+        "QSplitter#propsSplitter::handle { background: @border; }"
 
         "QListWidget#propsHistoryList {"
         "  background: transparent; border: none;"

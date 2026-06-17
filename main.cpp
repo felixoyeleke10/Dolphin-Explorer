@@ -61,7 +61,14 @@ static void debugMessageHandler(QtMsgType type, const QMessageLogContext&, const
     }
     fprintf(stderr, "%s\n", ba.constData());
     fflush(stderr);
-    dolphin::ui::RuntimeLogBridge::publish(type, msg);
+
+    // Benign Qt Windows platform-plugin noise (transient monitor-handle / DPI
+    // fallback at startup, e.g. "monitorData: Unable to obtain handle for monitor
+    // '\\.\DISPLAY1', defaulting to 96 DPI"). Qt recovers once the window maps, so
+    // keep it in the debug log + stderr above but don't surface it in the in-app
+    // runtime log as a user-facing problem.
+    if (!msg.contains(QLatin1String("Unable to obtain handle for monitor")))
+        dolphin::ui::RuntimeLogBridge::publish(type, msg);
 
     // Q_ASSERT → qFatal calls this handler, then calls abort() from inside Qt's DLL.
     // The DLL's CRT has a different signal table so SIGABRT handlers on the exe side

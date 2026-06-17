@@ -1,5 +1,6 @@
 // MainWindow.WaterfallCoordinator.cpp — waterfall window lifecycle and state reflection.
 #include "ui/mainwindow/MainWindow.h"
+#include "ui/mainwindow/rightpanel/RightPanelHost.h"
 #include "ui/mainwindow/commands/LayerCommands.h"
 #include "ui/shell/ViewerWindow.h"
 #include "ui/mainwindow/MainStatusBar.h"
@@ -27,6 +28,7 @@
 
 #include <QMessageBox>
 
+#include <algorithm>
 #include <cmath>
 
 namespace dolphin::ui {
@@ -35,6 +37,7 @@ void MainWindow::onWaterfallOpen()
 {
     if (!m_waterfall_win) {
         m_waterfall_win = new WaterfallWindow(m_app_state, nullptr);
+        m_waterfall_win->setOperationManager(m_op_mgr);  // owns pipeline ops (keyed)
         m_window_registry->registerViewer(m_waterfall_win, m_waterfall_win);
         connect(m_waterfall_win, &WaterfallWindow::newFileRequested,
                 this, &MainWindow::onImportFile);
@@ -84,30 +87,20 @@ void MainWindow::onWaterfallOpen()
                     if (currentProject() && !isProjectDirty())
                         markProjectDirty();
                 });
+        // Busy-state → status-bar spinner. Cancellation is owned by
+        // OperationManager (the window's pipeline ops are keyed), so no
+        // external-token registration is needed.
         connect(m_waterfall_win, &WaterfallWindow::dataStateChanged,
-                this, [this](ViewerDataState s) {
-                    refreshLoadingIndicator();
-                    if (s == ViewerDataState::Loading || s == ViewerDataState::Processing) {
-                        m_op_mgr->registerExternal("waterfall", m_waterfall_win->loadToken());
-                    } else {
-                        m_op_mgr->unregisterExternal("waterfall");
-                    }
-                });
+                this, [this](ViewerDataState) { refreshLoadingIndicator(); });
         connect(m_waterfall_win, &WaterfallWindow::layerChangeRequested,
                 this, [this](const std::string& id) { onLayerSelected(id); });
 
         // -- Control panel wiring ------------------------------------------
-        // Nav correction panels push corrections to the waterfall
-        connect(m_nav_panel, &NavInfoPanel::applyToLineRequested,
-                m_waterfall_win, &WaterfallWindow::applyNavToLine);
-        connect(m_nav_panel, &NavInfoPanel::applyToAllRequested,
-                m_waterfall_win, &WaterfallWindow::applyNavToAll);
-
-        connect(m_heading_panel, &HeadingInfoPanel::applyToLineRequested,
-                m_waterfall_win, &WaterfallWindow::applyNavToLine);
-        connect(m_heading_panel, &HeadingInfoPanel::applyToAllRequested,
-                m_waterfall_win, &WaterfallWindow::applyNavToAll);
-
+        // Nav / Geometry panels are wired once at construction (see
+        // MainWindow.MainArea.cpp) so they work from the main/map view even when
+        // this window is closed; they route to model-owned MainWindow slots. The
+        // window's own analysis panel still persists via navProcessAllLinesRequested
+        // (connected above). Only the waterfall-display panels stay window-coupled:
         // Gain / imaging panels push params back to the waterfall
         connect(m_gain_panel,    &GainControlPanel::applyToLineRequested,
                 m_waterfall_win, &WaterfallWindow::applyExternalParams);
@@ -126,7 +119,18 @@ void MainWindow::onWaterfallOpen()
             const auto& p = m_waterfall_win->currentParams();
             m_gain_panel->setParams(p);
             m_imaging_panel->setParams(p);
-            if (m_sss_ctrl) m_sss_ctrl->setDisplayParams(p);
+            if (m_sss_ctrl) {
+                // Pass display params (palette, gain, contrast, threshold) to the
+                // map but strip the auto-stretch values.  The waterfall's
+                // display_low/high are calibrated to its in-session processed
+                // amplitudes (post-TVG/ARC/AGC); the map renders DLPD amplitudes
+                // which have a different numeric range.  Passing identity (0/1)
+                // lets the map fall back to its own data-calibrated stretch.
+                SonarDisplayParams map_dp = p;
+                map_dp.display_low  = 0.f;
+                map_dp.display_high = 1.f;
+                m_sss_ctrl->setDisplayParams(map_dp);
+            }
 
             if (currentProject()) {
                 // Use the layer the waterfall is actually showing, which may
@@ -145,6 +149,30 @@ void MainWindow::onWaterfallOpen()
                         if (m_sss_ctrl) m_sss_ctrl->reloadLayer(wf_id);
                         app::ProjectTransaction tx(currentProject());
                         tx.commit();
+                        // If the viewer holds detected bottom picks, persist them to
+                        // the DLPD so the map georeferencer can use them.  The async
+                        // bake will trigger a second SSS reload with the correct data.
+                        if (m_corr_op) {
+                            auto viewer_pings = m_waterfall_win->currentRawPings();
+                            const bool has_picks = std::any_of(
+                                viewer_pings.begin(), viewer_pings.end(),
+                                [](const core::SidescanPing& vp) {
+                                    return vp.bottom_pick.source > 0
+                                        && vp.bottom_pick.range_m > 0.f;
+                                });
+                            if (has_picks) {
+                                const auto* src2 = currentProject()->findSource(layer->source_id);
+                                // Persist ONLY the bottom picks (georef data the map
+                                // needs after an SRC toggle) — pass empty correction
+                                // params so this does NOT bake TVG/ARC/AGC. Amplitude
+                                // corrections stay live display state; committing them
+                                // is the explicit "Bake Corrections" command.
+                                m_corr_op->applySSS(layer,
+                                                    src2 ? src2->path : std::string{},
+                                                    app::SidescanCorrectionParams{},
+                                                    std::move(viewer_pings));
+                            }
+                        }
                     }
                 }
             }
@@ -163,34 +191,18 @@ void MainWindow::onWaterfallOpen()
             }
             if (m_sss_ctrl) m_sss_ctrl->reloadCurrentLayer();
             tx.commit();
-            // Bake amplitude corrections into every layer's .dlpd.
-            if (m_corr_op) m_corr_op->applyAllSSS(*currentProject(), toCorrectionParams(p));
+            // Display-state only — no .dlpd bake here. The waterfall renders the
+            // corrections live and the map shows gain/contrast live; committing the
+            // full corrections (incl. TVG/AGC/ARC) into .dlpd for the map mosaic and
+            // exports is the explicit Processing → "Bake Corrections into Data" command.
         });
 
-        // -- Bake-to-dlpd wiring -----------------------------------------------
-        // When the user explicitly applies gain/imaging corrections (Apply to
-        // Line / Apply to All buttons in the panel), also write the corrected
-        // amplitudes back into the .dlpd so exports and future sessions see the
-        // corrected data — not just the current session's display preview.
-        if (m_corr_op) {
-            auto bakeCurrentLine = [this](const WaterfallParams& p) {
-                if (!currentProject() || !m_waterfall_win) return;
-                const std::string wf_id = m_waterfall_win->currentLayerId();
-                if (wf_id.empty()) return;
-                auto* layer = currentProject()->findLayer(wf_id);
-                if (!layer) return;
-                const auto* src = currentProject()->findSource(layer->source_id);
-                m_corr_op->applySSS(layer, src ? src->path : std::string{},
-                                    toCorrectionParams(p));
-            };
-
-            connect(m_gain_panel,    &GainControlPanel::applyToLineRequested,
-                    this, bakeCurrentLine);
-            connect(m_imaging_panel, &ImagingControlPanel::applyToLineRequested,
-                    this, bakeCurrentLine);
-            // applyToAll baking is handled by the WaterfallWindow::applyToAllRequested
-            // lambda above which calls m_corr_op->applyAllSSS — no duplicate connection needed.
-        }
+        // Gain/imaging Apply (Line/All) is display-state only: the panels already
+        // push params to the waterfall live (applyExternalParams above) and the map
+        // shows gain/contrast live (paramsApplied → setDisplayParams). No .dlpd write
+        // happens on Apply. Committing the full corrections into .dlpd (for the map
+        // mosaic and exports) is the explicit Processing → "Bake Corrections into
+        // Data" command (onBakeCorrections).
     }
 
     // Populate the FILES list with every sidescan layer in the current project.
@@ -300,7 +312,7 @@ void MainWindow::onWaterfallCursorUpdated(float range_m, const QString& side,
     m_status_bar->setCursorRange(side, range_m);
 
     if (lat != 0.0 || lon != 0.0)
-        m_status_bar->setCursorPosition(lat, lon, is_projected);
+        showCursorPosition(lat, lon, is_projected);
     else
         m_status_bar->clearCursorPosition();
 }
@@ -468,23 +480,64 @@ void MainWindow::onWaterfallSetCrs(const std::string& from_layer_id)
         tr("Source CRS → %1").arg(QString::fromStdString(display)));
 }
 
+void MainWindow::onWaterfallNavProcessLine(NavProcessingParams params)
+{
+    // Target the actively selected layer — the panel reflects it. The waterfall's
+    // current line can be stale (the map/tree selection moved on, or the window is
+    // closed), so prefer the active layer and only fall back to the viewer when
+    // nothing is selected. Store + apply live (model-owned; persisted).
+    std::string lid = activeLayerId();
+    if (lid.empty() && m_waterfall_win) lid = m_waterfall_win->currentLayerId();
+    if (lid.empty() || !currentProject()) return;
+    auto* layer = currentProject()->findLayer(lid);
+    if (!layer || layer->modality != app::Modality::Sidescan) return;
+
+    layer->nav_state      = params;
+    layer->nav_customized = true;
+    markProjectDirty();
+    if (m_waterfall_win) m_waterfall_win->applyNavToLine(params);
+
+    // Rebuild the SSS map preview with the new nav — same correction the waterfall
+    // uses — but only if this layer is currently on the map (mirrors the SBP path).
+    if (m_sss_ctrl && m_map_view && m_map_view->layerData(lid))
+        m_sss_ctrl->reloadLayer(lid);
+
+    recordActivity(ActivityKind::NavCorrection,
+        tr("Nav corrections applied to %1")
+            .arg(QString::fromStdString(layer->label)));
+}
+
 void MainWindow::onWaterfallNavProcessAllLines(NavProcessingParams params)
 {
     if (!currentProject()) return;
 
-    auto old_state = m_layer_nav_params;
-    auto new_state = old_state;
+    // Snapshot per-layer nav_state before/after so undo restores layers that were
+    // uncustomized. The command's apply writes back into the model (the single
+    // source of truth) rather than a MainWindow-side map.
+    using ParamMap = std::unordered_map<std::string, NavProcessingParams>;
+    ParamMap old_state, new_state;
     int n = 0;
     for (const auto& layer : currentProject()->layers()) {
         if (!layer || layer->modality != app::Modality::Sidescan) continue;
+        if (layer->nav_customized) old_state[layer->id] = layer->nav_state;
         new_state[layer->id] = params;
         ++n;
     }
     if (n == 0) return;
 
-    auto apply = [this](const std::unordered_map<std::string, NavProcessingParams>& map) {
-        m_layer_nav_params = map;
-        
+    auto apply = [this](const ParamMap& map) {
+        if (!currentProject()) return;
+        for (const auto& l : currentProject()->layers()) {
+            if (!l || l->modality != app::Modality::Sidescan) continue;
+            const auto it = map.find(l->id);
+            l->nav_state      = (it != map.end()) ? it->second : NavProcessingParams{};
+            l->nav_customized = (it != map.end());
+        }
+        markProjectDirty();
+        if (m_waterfall_win)
+            applyStoredNavParams(m_waterfall_win->currentLayerId());
+        // Rebuild every loaded SSS layer's map preview with the new nav.
+        if (m_sss_ctrl) m_sss_ctrl->reloadCurrentLayer();
     };
     m_undo_stack->push(new SetNavParamsAllCommand(
         std::move(old_state), std::move(new_state), std::move(apply)));
@@ -496,10 +549,56 @@ void MainWindow::onWaterfallNavProcessAllLines(NavProcessingParams params)
 
 void MainWindow::applyStoredNavParams(const std::string& layer_id)
 {
-    if (!m_waterfall_win || layer_id.empty()) return;
-    const auto it = m_layer_nav_params.find(layer_id);
-    if (it == m_layer_nav_params.end()) return;
-    m_waterfall_win->applyNavToLine(it->second);
+    if (!m_waterfall_win || layer_id.empty() || !currentProject()) return;
+    // Apply the layer's nav state — defaults when uncustomized — so switching to a
+    // line without corrections clears any carried over from the previous line.
+    const auto* layer = currentProject()->findLayer(layer_id);
+    m_waterfall_win->applyNavToLine(layer ? layer->nav_state : NavProcessingParams{});
+}
+
+// Explicit "commit corrections to data" (SeaView-style mosaic bake). Ordinary
+// gain/imaging Apply is display-state only; this is the deliberate, confirmable
+// step that writes the corrected .dlpd sidecars (originals preserved) so the map
+// mosaic and exports reflect the full corrections. Covers SSS + SBP layers that
+// have applied corrections.
+void MainWindow::onBakeCorrections()
+{
+    if (!currentProject() || !m_corr_op) return;
+
+    int n = 0;
+    for (const auto& l : currentProject()->layers()) {
+        if (!l) continue;
+        if (l->modality == app::Modality::Sidescan && l->sss_display_state.customized)
+            ++n;
+        else if (l->modality == app::Modality::SubBottom
+                 && (l->sbp_display_state.gain_customized
+                     || l->sbp_display_state.signal_customized))
+            ++n;
+    }
+    if (n == 0) {
+        QMessageBox::information(this, tr("Bake Corrections"),
+            tr("No layers have applied gain/imaging corrections to bake.\n\n"
+               "Adjust gain/imaging and Apply first, then bake to write the corrected "
+               "data into the project's files."));
+        return;
+    }
+    if (QMessageBox::question(this, tr("Bake Corrections"),
+            tr("Write the applied gain/imaging corrections into the project's data "
+               "files (.dlpd) for %1 layer(s)?\n\n"
+               "This creates processed copies — the original parsed data is kept. Use "
+               "it to commit corrections for export and the high-quality map mosaic.").arg(n),
+            QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes)
+        return;
+
+    // Bake through the capped batch: one job per customized layer, each baking its
+    // own display state, dispatched ≤ kMaxConcurrent at a time so the heavy
+    // read+correct+write jobs honour D-14 (the per-layer applySSS/applySBP path
+    // fires immediately on the global pool and would flood the cap).
+    m_corr_op->bakeCustomized(*currentProject());
+    appendJobMessage(
+        tr("Baking corrections into %1 layer(s) — watch the bottom panel.").arg(n));
+    recordActivity(ActivityKind::NavCorrection,
+                   tr("Baked corrections into %1 layer(s)").arg(n));
 }
 
 void MainWindow::onChannelChanged(DisplayChannel ch)
@@ -534,8 +633,8 @@ void MainWindow::onPaletteChanged(int idx)
     // Sync the SBP window and keep the right panel in sync.
     if (m_sbp_win) {
         m_sbp_win->setPalette(idx);
-        if (m_inspector)
-            m_inspector->rightPanelHost()->setSbpParams(m_sbp_win->displayParams());
+        if (m_modal_host)
+            m_modal_host->setSbpParams(m_sbp_win->displayParams());
     }
 
     // Rebuild the map swath preview with the new palette.

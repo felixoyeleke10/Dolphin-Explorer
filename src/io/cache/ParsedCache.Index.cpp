@@ -1,5 +1,8 @@
 // ParsedCache.Index.cpp — ParsedCacheReader::buildIndex.
 #include "io/cache/ParsedCache_p.h"
+#ifdef _WIN32
+#include <share.h>   // _SH_DENYNO for shared _fsopen
+#endif
 
 namespace dolphin::io {
 
@@ -27,6 +30,18 @@ core::ArtifactIndex ParsedCacheReader::buildIndex(ProgressFn progress,
     if (tryReadIndexFooter(m_file, m_fileSize, m_meta.coordinate_ref, index, m_meta)) {
         if (!index.empty()) {
             index.source_id = m_path;
+            // tryReadIndexFooter restores the entries + correction/bottom-pick
+            // flags, but NOT the derived metadata counts/times. Recompute them from
+            // the (file-ordered) entries so the footer fast path yields the same
+            // metadata as a full scan — otherwise artifact_count / *_count /
+            // start_time / end_time stay zero on a cached reopen.
+            m_meta.artifact_count        = static_cast<uint32_t>(index.entries.size());
+            m_meta.sidescan_ping_count   = static_cast<uint32_t>(index.byType(core::ArtifactType::Sidescan).size());
+            m_meta.subbottom_trace_count = static_cast<uint32_t>(index.byType(core::ArtifactType::SubBottom).size());
+            m_meta.mag_sample_count      = static_cast<uint32_t>(index.byType(core::ArtifactType::Magnetometer).size());
+            m_meta.multibeam_ping_count  = static_cast<uint32_t>(index.byType(core::ArtifactType::Multibeam).size());
+            m_meta.start_time = index.entries.front().timestamp_us * 1e-6;
+            m_meta.end_time   = index.entries.back().timestamp_us  * 1e-6;
             m_cur_pos = UINT64_MAX;
             return index;
         }
@@ -38,6 +53,7 @@ core::ArtifactIndex ParsedCacheReader::buildIndex(ProgressFn progress,
     double first_ts = -1.0;
     double last_ts  = 0.0;
     bool valid = true;
+    int  last_pct = -1;   // throttle progress to whole-percent steps (avoid event flood)
     m_meta.bottom_pick_src_mask  = 0;
     m_meta.correction_flags_seen = 0;
 
@@ -49,8 +65,17 @@ core::ArtifactIndex ParsedCacheReader::buildIndex(ProgressFn progress,
         }
         if (offset >= m_fileSize) break;
 
-        if (progress && m_fileSize > 0)
-            progress(static_cast<float>(offset) / static_cast<float>(m_fileSize));
+        // Throttle to whole-percent changes: the previous per-record call posted
+        // ~one queued UI event per record (tens of thousands), flooding and freezing
+        // the main thread during a rebuild.
+        if (progress && m_fileSize > 0) {
+            const int pct = static_cast<int>(100.0 * static_cast<double>(offset)
+                                                   / static_cast<double>(m_fileSize));
+            if (pct != last_pct) {
+                last_pct = pct;
+                progress(static_cast<float>(pct) / 100.f);
+            }
+        }
 
         // Check for cancellation every 256 records (amortised overhead negligible).
         if (cancel_flag && (index.entries.size() & 0xFF) == 0
@@ -134,7 +159,9 @@ core::ArtifactIndex ParsedCacheReader::buildIndex(ProgressFn progress,
     if (!was_cancelled && !index.empty()) {
         FILE* wf = nullptr;
 #ifdef _WIN32
-        fopen_s(&wf, m_path.c_str(), "r+b");
+        // Shared so this append succeeds even though the read handle (m_file) for
+        // this same path is still open — otherwise the footer never persists.
+        wf = _fsopen(m_path.c_str(), "r+b", _SH_DENYNO);
 #else
         wf = std::fopen(m_path.c_str(), "r+b");
 #endif

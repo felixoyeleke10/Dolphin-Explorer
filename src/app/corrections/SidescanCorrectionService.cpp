@@ -11,6 +11,7 @@
 #include <QtConcurrent/QtConcurrent>
 #include <cctype>
 #include <filesystem>
+#include <unordered_map>
 
 namespace dolphin::app {
 
@@ -40,6 +41,9 @@ struct CorrectionRequest {
     std::string             source_path;
     core::ArtifactIndex     artifact_index;
     SidescanCorrectionParams params;
+    // Optional: bottom picks from the viewer to merge into the DLPD in the same
+    // write pass.  Matched by timestamp_us; source==0 picks are ignored.
+    std::vector<core::SidescanPing> viewer_pings;
 };
 
 struct CorrectionResult {
@@ -72,16 +76,26 @@ CorrectionResult execute(const CorrectionRequest& req, ImportService* svc)
             return result;
         }
         meta = reader->metadata();
-        // If this layer's index is a strict subset of the full store, write to a
-        // per-layer sidecar so sibling layers (mixed-modality OR same-modality
-        // split, e.g. dual-frequency) are never corrupted by this correction pass.
-        const auto full_index = reader->buildIndex();
-        if (req.artifact_index.entries.size() < full_index.entries.size()) {
-            namespace fs = std::filesystem;
-            const fs::path p(req.store_path);
-            write_path = (p.parent_path()
-                          / (p.stem().string() + "_" + req.layer_id + ".dlpd")).string();
-        }
+        // Always write corrections to a per-layer sidecar — never overwrite the
+        // original parsed store. The imported .dlpd is a durable project asset
+        // (D-04), and a single full-store layer's Apply must not replace it (this
+        // also protects sibling layers of a shared/dual-frequency store). A store is
+        // "already our sidecar" when its formal role marker says so (preferred), or —
+        // for stores written before the marker existed — when the filename carries the
+        // legacy "_<layerId>" suffix. Re-applies overwrite that sidecar in place
+        // rather than nesting another suffix.
+        namespace fs = std::filesystem;
+        const fs::path p(req.store_path);
+        const std::string suffix = "_" + req.layer_id;
+        const std::string stem   = p.stem().string();
+        const bool legacy_named = stem.size() > suffix.size()
+            && stem.compare(stem.size() - suffix.size(), suffix.size(), suffix) == 0;
+        const bool already_sidecar =
+            (meta.artifact_role == io::kArtifactRoleSidecar) || legacy_named;
+        write_path = already_sidecar
+            ? req.store_path
+            : (p.parent_path() / (stem + suffix + ".dlpd")).string();
+        meta.artifact_role = io::kArtifactRoleSidecar;  // formal marker on the output
     }
 
     auto pings = svc->loadAllSidescanPingsFromStore(
@@ -116,6 +130,29 @@ CorrectionResult execute(const CorrectionRequest& req, ImportService* svc)
         corrections::normalizeAmplitudes(pings, req.params.agc);
         for (auto& p : pings) p.correction_flags |= core::CorrectionFlag::GainNormalized;
         modified = true;
+    }
+
+    // Merge bottom picks from the viewer into the DLPD pings (same write pass).
+    // Picks are matched by timestamp_us; only source>0 (detected/user-edited) picks
+    // are applied so untracked pings keep their existing (or absent) picks.
+    if (!req.viewer_pings.empty()) {
+        std::unordered_map<uint64_t, const core::SidescanPing*> ts_map;
+        for (const auto& vp : req.viewer_pings)
+            if (vp.bottom_pick.source > 0 && vp.bottom_pick.range_m > 0.f)
+                ts_map[vp.timestamp_us] = &vp;
+
+        if (!ts_map.empty()) {
+            for (auto& ping : pings) {
+                const auto it = ts_map.find(ping.timestamp_us);
+                if (it == ts_map.end()) continue;
+                const auto& vbp = it->second->bottom_pick;
+                if (ping.bottom_pick.source  != vbp.source  ||
+                    ping.bottom_pick.range_m != vbp.range_m) {
+                    ping.bottom_pick = vbp;
+                    modified = true;
+                }
+            }
+        }
     }
 
     if (!modified) {
@@ -158,7 +195,8 @@ void SidescanCorrectionService::applyToLine(
     const std::string& store_format,
     const core::ArtifactIndex& artifact_index,
     const std::string& source_path,
-    const SidescanCorrectionParams& params)
+    const SidescanCorrectionParams& params,
+    std::vector<core::SidescanPing> viewer_pings)
 {
     CorrectionRequest req;
     req.layer_id       = layer_id;
@@ -167,6 +205,7 @@ void SidescanCorrectionService::applyToLine(
     req.source_path    = source_path;
     req.artifact_index = artifact_index;
     req.params         = params;
+    req.viewer_pings   = std::move(viewer_pings);
 
     ImportService* svc = m_import_service;
     auto* watcher = new QFutureWatcher<CorrectionResult>(this);

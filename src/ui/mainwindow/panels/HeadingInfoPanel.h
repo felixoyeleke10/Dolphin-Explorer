@@ -1,5 +1,5 @@
 #pragma once
-#include "ui/features/waterfall/NavProcessingParams.h"
+#include "app/display/NavProcessingParams.h"
 #include <QWidget>
 
 namespace dolphin::ui {

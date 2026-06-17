@@ -127,7 +127,11 @@ void MainWindow::updateContextInfo()
 {
     if (!m_status_bar) return;
 
-    if (!currentProject()) { m_status_bar->clearContext(); return; }
+    if (!currentProject()) {
+        m_status_bar->clearContext();
+        m_status_bar->setViewCrs({});
+        return;
+    }
 
     const QString project = QString::fromStdString(currentProject()->name());
     QString layer;
@@ -136,6 +140,18 @@ void MainWindow::updateContextInfo()
             layer = QString::fromStdString(l->label);
     }
     m_status_bar->setProjectContext(project, layer);
+
+    // Status-bar CRS shows the project's survey/working grid (the projected CRS
+    // the data is in) — not the map's internal WGS84 render ref — so it matches
+    // the per-layer "Source CRS" in the inspector instead of contradicting it.
+    // A project spanning multiple projected CRSes is flagged "(mixed)" so the
+    // single badge doesn't imply a uniform grid (the dominant CRS is shown).
+    const core::SpatialRef sr = currentProject()->workingCrs();
+    QString crs_text = sr.id.empty() ? QStringLiteral("WGS 84")
+                                     : QString::fromStdString(sr.id);
+    if (currentProject()->hasMixedProjectedSources())
+        crs_text += tr(" (mixed)");
+    m_status_bar->setViewCrs(crs_text);
 }
 
 void MainWindow::appendJobMessage(const QString& message)

@@ -8,6 +8,8 @@
 #include "ui/bottom/BottomDockPanel.h"
 #include "ui/features/import/ImportProgressDialog.h"
 #include "ui/shared/widgets/PanelResizeHandle.h"
+#include "ui/shared/widgets/PanelTabBar.h"
+#include "ui/shared/widgets/SidePanelShell.h"
 #include "ui/features/map/MapView.h"
 #include "ui/features/map/MapViewportHost.h"
 #include "ui/mainwindow/panels/InspectorPanel.h"
@@ -18,13 +20,15 @@
 #include "ui/mainwindow/panels/GainControlPanel.h"
 #include "ui/mainwindow/panels/ImagingControlPanel.h"
 
-#include <QButtonGroup>
+#include "app/layers/LayerUtils.h"
+#include "ui/mainwindow/rightpanel/RightPanelHost.h"
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QListWidget>
 #include <QPainter>
 #include <QScrollArea>
+#include <QSplitter>
 #include <QStackedWidget>
 #include <QStyledItemDelegate>
 #include <QStyle>
@@ -176,67 +180,47 @@ void MainWindow::buildPropertiesPanel(QWidget* parent)
     content->setObjectName("propsContent");
     auto* content_l = makeCompactLayout<QVBoxLayout>(content);
 
-    // -- Tab bar — Tools | Chats | History --------------------------------
-    auto* hdr = new QFrame(content);
-    hdr->setObjectName("propsTabs");
-    hdr->setFixedHeight(Theme::kPanelHdrH);
-    auto* hdr_l = makeCompactLayout<QHBoxLayout>(hdr);
+    // -- Vertical splitter: upper (generic) / lower (sensor-adaptive) ------
+    auto* splitter = new QSplitter(Qt::Vertical, content);
+    splitter->setHandleWidth(4);
+    splitter->setChildrenCollapsible(false);
+    splitter->setObjectName("propsSplitter");
 
-    auto* tab_group = new QButtonGroup(hdr);
-    tab_group->setExclusive(true);
+    // =====================================================================
+    // UPPER SHELL — Properties | Chats | History + generic content
+    // =====================================================================
+    auto* upper = new SidePanelShell(splitter);
 
-    auto makeTab = [&](const QString& label) {
-        auto* btn = new QToolButton(hdr);
-        btn->setText(label);
-        btn->setCheckable(true);
-        btn->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-        btn->setObjectName("propsPanelTab");
-        return btn;
-    };
-
-    m_props_tab_tools   = makeTab(tr("Properties"));
-    m_props_tab_chats   = makeTab(tr("Chats"));
-    m_props_tab_history = makeTab(tr("History"));
-
+    // -- Tab bar — Properties | Chats | History ---------------------------
+    auto* upper_tabs = new PanelTabBar(upper);
+    m_props_tab_tools   = upper_tabs->addTab(tr("Properties"), 0);
+    m_props_tab_chats   = upper_tabs->addTab(tr("Chats"),      1);
+    m_props_tab_history = upper_tabs->addTab(tr("History"),    2);
     m_props_tab_tools->setChecked(true);
-
-    tab_group->addButton(m_props_tab_tools,   0);
-    tab_group->addButton(m_props_tab_chats,   1);
-    tab_group->addButton(m_props_tab_history, 2);
-
-    auto* sep1 = new QFrame(hdr);
-    sep1->setObjectName("propsTabSep");
-    auto* sep2 = new QFrame(hdr);
-    sep2->setObjectName("propsTabSep");
-
-    hdr_l->addWidget(m_props_tab_tools);
-    hdr_l->addWidget(sep1);
-    hdr_l->addWidget(m_props_tab_chats);
-    hdr_l->addWidget(sep2);
-    hdr_l->addWidget(m_props_tab_history);
-    content_l->addWidget(hdr);
+    connect(upper_tabs, &PanelTabBar::tabChanged,
+            this, &MainWindow::onPropsTabChanged);
+    upper->setHeader(upper_tabs);
 
     // -- Stacked body — one page per tab ----------------------------------
-    m_props_stack = new QStackedWidget(content);
+    m_props_stack = new QStackedWidget(upper);
     m_props_stack->setObjectName("propsStack");
 
-    // Page 0 — Tools: scrollable inspector modules
+    // Page 0 — Properties: scrollable universal inspector modules
     m_props_scroll = new QScrollArea(m_props_stack);
     m_props_scroll->setObjectName("propsScroll");
     m_props_scroll->setWidgetResizable(true);
     m_props_scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     m_props_scroll->setFrameShape(QFrame::NoFrame);
-
-    auto* scroll_body = new QWidget();
-    scroll_body->setObjectName("propsScrollBody");
-    auto* scroll_l = makeCompactLayout<QVBoxLayout>(scroll_body);
-
-    m_inspector = new InspectorPanel(scroll_body);
-    m_inspector->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Minimum);
-    scroll_l->addWidget(m_inspector);
-    scroll_l->addStretch(1);
-
-    m_props_scroll->setWidget(scroll_body);
+    {
+        auto* scroll_body = new QWidget();
+        scroll_body->setObjectName("propsScrollBody");
+        auto* scroll_l = makeCompactLayout<QVBoxLayout>(scroll_body);
+        m_inspector = new InspectorPanel(scroll_body);
+        m_inspector->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Minimum);
+        scroll_l->addWidget(m_inspector);
+        scroll_l->addStretch(1);
+        m_props_scroll->setWidget(scroll_body);
+    }
     m_props_stack->addWidget(m_props_scroll);   // index 0
 
     // Page 1 — Chats: embedded AI conversation
@@ -251,14 +235,97 @@ void MainWindow::buildPropertiesPanel(QWidget* parent)
     m_props_history_list->setItemDelegate(new HistoryItemDelegate(m_props_history_list));
     m_props_stack->addWidget(m_props_history_list); // index 2
 
-    content_l->addWidget(m_props_stack, 1);
+    upper->setBody(m_props_stack);
+    splitter->addWidget(upper);
 
-    // Pull panel pointers from the host for waterfall signal wiring.
-    auto* host  = m_inspector->rightPanelHost();
-    m_nav_panel     = host->navPanel();
-    m_heading_panel = host->headingPanel();
-    m_gain_panel    = host->gainPanel();
-    m_imaging_panel = host->imagingPanel();
+    // =====================================================================
+    // LOWER SHELL — Sensor/modality tab bar + adaptive modal inspector
+    // =====================================================================
+    auto* lower = new SidePanelShell(splitter);
+
+    // Sensor tab bar — SSS | SBP | Map | MAG
+    auto* sensor_tabs = new PanelTabBar(lower);
+    m_sensor_bar = sensor_tabs;
+    m_tab_sss = sensor_tabs->addTab(tr("SSS"), 0);
+    m_tab_sbp = sensor_tabs->addTab(tr("SBP"), 1);
+    m_tab_map = sensor_tabs->addTab(tr("Map"), 2);
+    m_tab_mag = sensor_tabs->addTab(tr("MAG"), 3);
+
+    m_tab_map->setChecked(true);
+    m_tab_sss->setEnabled(false);
+    m_tab_sbp->setEnabled(false);
+    m_tab_mag->setEnabled(false);
+
+    using M = app::Modality;
+    static const M kTabModality[] = { M::Sidescan, M::SubBottom, M::Unknown, M::Magnetometer };
+    connect(sensor_tabs, &PanelTabBar::tabChanged, this, [this](int id) {
+        refreshSensorTab(kTabModality[id]);
+    });
+    lower->setHeader(sensor_tabs);
+
+    // Modal scroll area — holds modality-specific modules
+    auto* modal_scroll = new QScrollArea(lower);
+    modal_scroll->setObjectName("modalScroll");
+    modal_scroll->setWidgetResizable(true);
+    modal_scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    modal_scroll->setFrameShape(QFrame::NoFrame);
+    {
+        auto* modal_body = new QWidget();
+        modal_body->setObjectName("modalScrollBody");
+        auto* modal_l = makeCompactLayout<QVBoxLayout>(modal_body);
+        m_modal_host = new RightPanelHost(RightPanelHost::ShowMode::ModalOnly, modal_body);
+        m_modal_host->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Minimum);
+        modal_l->addWidget(m_modal_host);
+        modal_l->addStretch(1);
+        modal_scroll->setWidget(modal_body);
+    }
+    lower->setBody(modal_scroll);
+    splitter->addWidget(lower);
+
+    // Initial split: ~55% upper / ~45% lower (sizes are hints, user can drag)
+    splitter->setSizes({ 320, 260 });
+
+    content_l->addWidget(splitter, 1);
+
+    // -- Pull panel pointers for signal wiring ----------------------------
+    // Navigation / Geometry are now per-modality modal sections (SSS + SBP).
+    m_nav_panel         = m_modal_host->navPanel(app::Modality::Sidescan);
+    m_heading_panel     = m_modal_host->headingPanel(app::Modality::Sidescan);
+    m_sbp_nav_panel     = m_modal_host->navPanel(app::Modality::SubBottom);
+    m_sbp_heading_panel = m_modal_host->headingPanel(app::Modality::SubBottom);
+    m_gain_panel        = m_modal_host->gainPanel();      // modal (Sidescan)
+    m_imaging_panel     = m_modal_host->imagingPanel();   // modal (Sidescan)
+
+    // Wire the Navigation / Geometry Apply buttons at construction — NOT in
+    // onWaterfallOpen()/onSubBottomOpen() — so they work from the main/map view
+    // even when the viewer window is closed (root cause of "nav buttons do nothing
+    // in the map view"). They route to model-owned MainWindow slots that store on
+    // DataLayer::nav_state, mark the project dirty, rebuild the map, and refresh
+    // the viewer only if it is open.
+    if (m_nav_panel) {
+        connect(m_nav_panel, &NavInfoPanel::applyToLineRequested,
+                this, &MainWindow::onWaterfallNavProcessLine);
+        connect(m_nav_panel, &NavInfoPanel::applyToAllRequested,
+                this, &MainWindow::onWaterfallNavProcessAllLines);
+    }
+    if (m_heading_panel) {
+        connect(m_heading_panel, &HeadingInfoPanel::applyToLineRequested,
+                this, &MainWindow::onWaterfallNavProcessLine);
+        connect(m_heading_panel, &HeadingInfoPanel::applyToAllRequested,
+                this, &MainWindow::onWaterfallNavProcessAllLines);
+    }
+    if (m_sbp_nav_panel) {
+        connect(m_sbp_nav_panel, &NavInfoPanel::applyToLineRequested,
+                this, &MainWindow::applySbpNavToLine);
+        connect(m_sbp_nav_panel, &NavInfoPanel::applyToAllRequested,
+                this, &MainWindow::applySbpNavToAll);
+    }
+    if (m_sbp_heading_panel) {
+        connect(m_sbp_heading_panel, &HeadingInfoPanel::applyToLineRequested,
+                this, &MainWindow::applySbpNavToLine);
+        connect(m_sbp_heading_panel, &HeadingInfoPanel::applyToAllRequested,
+                this, &MainWindow::applySbpNavToAll);
+    }
 
     outer->addWidget(content, 1);
 }

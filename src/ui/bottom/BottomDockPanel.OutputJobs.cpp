@@ -13,6 +13,7 @@
 #include <QScrollBar>
 #include <QShortcut>
 #include <QStackedWidget>
+#include <QTimer>
 
 namespace dolphin::ui {
 
@@ -128,21 +129,34 @@ static int activeDisplayCount(const DiagnosticsHub* hub)
 {
     int n = hub->activeBatchCount();
     for (const auto& j : hub->jobs())
-        if (j.status == DiagnosticsHub::JobStatus::Running && j.batch_id == 0)
+        if ((j.status == DiagnosticsHub::JobStatus::Running
+             || j.status == DiagnosticsHub::JobStatus::Queued) && j.batch_id == 0)
             ++n;
     return n;
 }
 
 void BottomDockPanel::onJobChanged(uint32_t /*id*/)
 {
-    rebuildJobsTab();
-    updateBadge(2, activeDisplayCount(m_hub), false);
+    scheduleJobsRefresh();
 }
 
 void BottomDockPanel::onBatchChanged(uint32_t /*id*/)
 {
-    rebuildJobsTab();
-    updateBadge(2, activeDisplayCount(m_hub), false);
+    scheduleJobsRefresh();
+}
+
+void BottomDockPanel::scheduleJobsRefresh()
+{
+    // Collapse a burst of job/batch changes (e.g. 12 lines flipping queued→running→
+    // done, plus staged upgrades) into a single rebuild on the next tick, so the
+    // O(jobs) rebuild can't monopolise the UI thread and freeze the panel/dialog.
+    if (m_jobs_refresh_pending) return;
+    m_jobs_refresh_pending = true;
+    QTimer::singleShot(40, this, [this]() {
+        m_jobs_refresh_pending = false;
+        rebuildJobsTab();
+        updateBadge(2, activeDisplayCount(m_hub), false);
+    });
 }
 
 void BottomDockPanel::rebuildJobsTab()
@@ -190,11 +204,13 @@ void BottomDockPanel::rebuildJobsTab()
     // Individual jobs (standalone and batch children interleaved by insertion order).
     for (const auto& j : m_hub->jobs()) {
         const char* status_label =
+            (j.status == DiagnosticsHub::JobStatus::Queued)     ? "[QUEUED] "  :
             (j.status == DiagnosticsHub::JobStatus::Running)    ? "[RUNNING] " :
             (j.status == DiagnosticsHub::JobStatus::Completed)  ? "[DONE] "    :
             (j.status == DiagnosticsHub::JobStatus::Failed)     ? "[FAILED] "  :
                                                                    "[CANCELLED] ";
         const QColor status_col =
+            (j.status == DiagnosticsHub::JobStatus::Queued)     ? QColor(kTextMuted) :
             (j.status == DiagnosticsHub::JobStatus::Running)    ? QColor(kAccent)  :
             (j.status == DiagnosticsHub::JobStatus::Completed)  ? QColor(kSuccess) :
             (j.status == DiagnosticsHub::JobStatus::Failed)     ? QColor(kDanger)  :

@@ -226,17 +226,28 @@ void MapView::rebuildCombined()
         }
     };
 
+    int appended = 0, with_track = 0;
     if (m_project) {
         for (const auto& layer : m_project->layers()) {
             if (!layer) continue;
             const auto it = m_layer_data.find(layer->id);
             if (it == m_layer_data.end() || !it->second.visible) continue;
             appendLayerData(it->second);
+            ++appended;
+            if (it->second.show_nav_track && !it->second.nav_track.empty()) ++with_track;
         }
     } else {
-        for (const auto& [id, data] : m_layer_data)
-            if (data.visible) appendLayerData(data);
+        for (const auto& [id, data] : m_layer_data) {
+            if (!data.visible) continue;
+            appendLayerData(data);
+            ++appended;
+            if (data.show_nav_track && !data.nav_track.empty()) ++with_track;
+        }
     }
+    qInfo("[map] combined: %d layer(s) visible, %d with track, %zu nav pts; "
+          "bbox lon[%.3f..%.3f] lat[%.3f..%.3f]",
+          appended, with_track, m_nav_track.size(),
+          m_bbox_lon_min, m_bbox_lon_max, m_bbox_lat_min, m_bbox_lat_max);
 }
 
 // -- fitToData / fitToDataAndReset ---------------------------------------------
@@ -339,6 +350,7 @@ void MapView::fitToLayer(const std::string& layer_id)
     const double sc = bs * m_zoom;
     m_origin = QPointF(-cx * cos_ref * sc, cy * sc);
     m_user_interacted = true;
+    m_frame_survey_pending = false;  // explicit single-layer fit overrides survey framing
 
     update();
     emit viewportChanged(viewportMetresPerPixel(), m_rotation_deg);
@@ -364,6 +376,7 @@ void MapView::panByPixels(int dx, int dy)
 {
     m_origin += QPointF(dx, dy);
     m_user_interacted = true;
+    m_frame_survey_pending = false;
     update();
     emit viewportChanged(viewportMetresPerPixel(), m_rotation_deg);
 }
@@ -421,10 +434,12 @@ void MapView::setLayerMapData(const std::string& layer_id, LayerMapData data)
     LayerMapData& ld = it->second;
 
     m_combined_dirty = true;
-    // Only auto-fit for the first data arrival; once the user has panned or
-    // zoomed m_user_interacted is true and background layer arrivals do not
-    // yank the view.
-    if (!m_user_interacted && !ld.nav_track.empty())
+    // Auto-fit on data arrival. Normally suppressed once the user pans/zooms
+    // (m_user_interacted). During a project open, m_frame_survey_pending forces a
+    // re-fit to the combined extent for every arriving line — so the whole survey
+    // frames even though a programmatic viewport sync (setZoomFromMpp) may have set
+    // m_user_interacted. A genuine gesture clears m_frame_survey_pending.
+    if (!ld.nav_track.empty() && (m_frame_survey_pending || !m_user_interacted))
         fitToData();  // ensureCombined() called inside fitToData()
     update();
     emit layerDataUpdated(layer_id);

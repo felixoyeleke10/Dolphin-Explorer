@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include <QDateTime>
 #include <QMainWindow>
 #include <QMap>
@@ -14,7 +14,7 @@
 #include "core/SpatialRef.h"
 #include "ui/bottom/DiagnosticsHub.h"
 #include "ui/features/map/MapTypes.h"
-#include "ui/features/waterfall/NavProcessingParams.h"
+#include "app/display/NavProcessingParams.h"
 #include "ui/features/waterfall/WaterfallParams.h"
 #include "ui/features/subbottom/SbpGainParams.h"
 #include "ui/features/subbottom/SbpSignalParams.h"
@@ -22,13 +22,13 @@
 #include "ui/mainwindow/AppSettingsDialog.h"
 #include "ui/mainwindow/ProjectSessionController.h"
 #include "ui/mainwindow/LayerDisplayCoordinator.h"
-#include "ui/mainwindow/TaskProgressController.h"
 #include "ui/mainwindow/ActivityLog.h"
 #include "ui/systems/AppState.h"
 #include "ui/systems/WindowRegistry.h"
 #include "ui/systems/ProjectEventBus.h"
 
 class QAction;
+class QButtonGroup;
 class QDialog;
 class QFrame;
 class QLabel;
@@ -59,6 +59,7 @@ class ExecutionController;
 class ExecutionProgressDialog;
 class GeodesyPanel;
 class InspectorPanel;
+class RightPanelHost;
 class LayerPickerWidget;
 class LineListPanel;
 class MapView;
@@ -120,6 +121,7 @@ private slots:
     // Processing
     void onRunAllLayers();
     void onRunSelectedLayer();
+    void onBakeCorrections();   // explicit commit of gain/imaging corrections to .dlpd
     void onOpenProcessingWindow();
 
     // Tool stubs
@@ -149,6 +151,7 @@ private slots:
                                    int channel_idx);
     void onWaterfallParamsApplied();
     void onWaterfallSetCrs(const std::string& from_layer_id);
+    void onWaterfallNavProcessLine(dolphin::ui::NavProcessingParams params);
     void onWaterfallNavProcessAllLines(dolphin::ui::NavProcessingParams params);
 
     // Contact / layer stubs
@@ -248,6 +251,8 @@ private:
 
     void rebuildRecentMenu();
     void bindProjectUi();
+    // Set the active sensor/modality tab and apply the matching filter to the inspector.
+    void refreshSensorTab(app::Modality m);
     void showImportDialog(const QStringList& paths,
                           const std::vector<core::ArtifactType>& module_filter = {});
     bool ensureProjectForImport(const ImportDialogResult& res);
@@ -260,19 +265,24 @@ private:
     int  normalizePanelId(int panel_id) const;
     int  rightDockWidth() const;
     void updateContextInfo();
+    // Status-bar cursor readout, reprojected into the project working grid so the
+    // map, waterfall and sub-bottom viewers all report in the same survey CRS.
+    void showCursorPosition(double lat, double lon, bool is_projected);
     void appendJobMessage(const QString& message);
     void updateActionStates();
     void refreshInspectorModalities();
 
+    // SBP navigation corrections (Navigation / Geometry under the SBP sensor tab).
+    // applySbpNavTo* store params per layer, refresh the SBP window, and rebuild
+    // the affected map profile(s); buildSbpProfileMap is the shared rebuild.
+    void applySbpNavToLine(const dolphin::ui::NavProcessingParams& p);
+    void applySbpNavToAll (const dolphin::ui::NavProcessingParams& p);
+    void buildSbpProfileMap(app::DataLayer* layer);
+    // Re-apply (or clear) the stored nav corrections for a layer on SBP open.
+    void applyStoredSbpNavParams(const std::string& layer_id);
+
     QWidget* makeContextPlaceholder(const QString& title, const QString& body);
     void     refreshSidebarSections(const QStringList& paths);
-
-    // Thin delegates — state lives in m_task_ctrl.
-    void taskBegin(const QString& id, const QString& label);
-    void taskDone (const QString& id);
-    void taskFail (const QString& id, const QString& error = {});
-
-    TaskProgressController* m_task_ctrl = nullptr;
 
     DiagnosticsHub*   m_diag_hub     = nullptr;
     BottomDockPanel*  m_bottom_panel = nullptr;
@@ -370,15 +380,29 @@ private:
 
     // Inspector (lives in Properties overlay)
     InspectorPanel*    m_inspector     = nullptr;
+    // Modal host — sensor-specific modules (Display, Radiometry, SBP tools)
+    // Lives in the lower half of the properties panel, always visible.
+    RightPanelHost*    m_modal_host    = nullptr;
 
-    // Panel pointers sourced from RightPanelHost — used for waterfall signal wiring.
-    NavInfoPanel*        m_nav_panel     = nullptr;
-    HeadingInfoPanel*    m_heading_panel = nullptr;
-    GainControlPanel*    m_gain_panel    = nullptr;
-    ImagingControlPanel* m_imaging_panel = nullptr;
+    // Panel pointers sourced from RightPanelHost — used for viewer signal wiring.
+    // Navigation / Geometry are per-modality: SSS pair drives the waterfall,
+    // SBP pair drives the sub-bottom window.
+    NavInfoPanel*        m_nav_panel         = nullptr;  // SSS Navigation
+    HeadingInfoPanel*    m_heading_panel     = nullptr;  // SSS Geometry
+    NavInfoPanel*        m_sbp_nav_panel     = nullptr;  // SBP Navigation
+    HeadingInfoPanel*    m_sbp_heading_panel = nullptr;  // SBP Geometry
+    GainControlPanel*    m_gain_panel        = nullptr;
+    ImagingControlPanel* m_imaging_panel     = nullptr;
 
     QScrollArea*        m_props_scroll    = nullptr;
     PanelChatWidget*    m_chat_widget     = nullptr;
+
+    // Sensor/modality tab bar (bottom of Properties page, outside scroll area)
+    QWidget*     m_sensor_bar = nullptr;
+    QToolButton* m_tab_sss   = nullptr;
+    QToolButton* m_tab_sbp   = nullptr;
+    QToolButton* m_tab_map   = nullptr;
+    QToolButton* m_tab_mag   = nullptr;
 
     // Fixed left dock — project / files / layers / contacts tree
     LineListPanel*    m_line_list                = nullptr;
@@ -397,16 +421,13 @@ private:
     ProjectEventBus*     m_event_bus        = nullptr;
     // (task tracking absorbed by m_op_mgr — see OperationManager)
 
-    // Per-layer nav corrections applied by "Apply to All Lines".
-    // Keyed by layer ID; looked up whenever the waterfall opens a layer.
-    std::unordered_map<std::string, NavProcessingParams> m_layer_nav_params;
+    // Per-layer display + nav state live on the model (DataLayer::sss_display_state
+    // / sbp_display_state / nav_state) as the single source of truth, so
+    // MainWindow holds no per-layer state maps.
 
-    // Per-layer display params moved to DataLayer::sss_display_state /
-    // sbp_display_state — no separate MainWindow maps needed.
-
-    // Layer IDs with an in-flight SubBottom profile build. Guards onLayerSelected
-    // against spawning a second QFutureWatcher for the same layer.
-    std::unordered_set<std::string> m_pending_sbp_builds;
+    // SBP profile-map builds run through OperationManager keyed by
+    // "sbp_profile:<layer-id>", so supersession (not a MainWindow set) prevents
+    // duplicate in-flight builds for a layer.
 
     // App settings dialog (lazy-created on first open)
     QDialog*          m_app_settings_win = nullptr;

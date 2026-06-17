@@ -215,6 +215,11 @@ void MainWindow::buildProcessingMenu()
     connect(m_act_run_all, &QAction::triggered, this, &MainWindow::onRunAllLayers);
     m_act_run_all->setEnabled(false);
     proc->addAction(m_act_run_all);
+    // Explicit, confirmable "commit corrections to data" (SeaView-style mosaic bake).
+    // Ordinary gain/imaging Apply is display-state only; this writes the corrected
+    // .dlpd sidecars so the map mosaic and exports include the full corrections.
+    proc->addAction(tr("&Bake Corrections into Data…"),
+                    this, &MainWindow::onBakeCorrections);
     proc->addSeparator();
     proc->addAction(QIcon(":/icons/nav_editor.svg"),
         tr("&Navigation Processing…"), this, &MainWindow::onRenumberContacts);
@@ -273,7 +278,7 @@ void MainWindow::buildViewMenu()
 
     QSettings qs;
     const int saved_q = qs.value(SettingsDialog::kKeyMapSonarQuality,
-                                 static_cast<int>(MapSonarQuality::Low)).toInt();
+                                 static_cast<int>(MapSonarQuality::CoverageOnly)).toInt();
 
     for (const auto& e : kEntries) {
         auto* act = sonar_menu->addAction(tr(e.label));

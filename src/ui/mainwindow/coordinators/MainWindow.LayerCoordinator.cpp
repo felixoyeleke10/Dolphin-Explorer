@@ -5,6 +5,7 @@
 #include "ui/features/map/sidescan/SidescanViewController.h"
 #include "ui/features/map/track/TrackMapBuild.h"
 #include "ui/features/map/subbottom/SbpProfileBuild.h"
+#include "app/display/NavCorrection.h"
 #include "app/services/ImportService.h"
 #include "ui/features/map/subbottom/SubBottomMapDiagnostics.h"
 #include "ui/bottom/DiagnosticsHub.h"
@@ -41,6 +42,122 @@
 #include <algorithm>
 
 namespace dolphin::ui {
+
+// Build (or rebuild) the SBP profile map ribbon for one layer, applying any
+// nav corrections stored for it. Shared by layer selection and the SBP
+// Navigation / Geometry "Apply" actions. Always rebuilds; the caller decides
+// whether a rebuild is warranted.
+void MainWindow::buildSbpProfileMap(app::DataLayer* layer)
+{
+    if (!layer || !m_map_view || !m_import_service || !currentProject()) return;
+    if (!layer->index_built || layer->artifact_index.empty())           return;
+
+    core::SpatialRef source_crs = layer->source_spatial_ref;
+    if (source_crs.empty()) {
+        if (const auto* src = currentProject()->findSource(layer->source_id))
+            source_crs = src->source_spatial_ref;
+    }
+    const core::SpatialRef display_crs = currentProject()->displaySpatialRef();
+
+    // Capture by value — DataLayer must not be accessed on the bg thread.
+    const std::string store_path   = layer->artifact_store_path;
+    const std::string store_format = layer->artifact_store_format;
+    const core::ArtifactIndex index_copy = layer->artifact_index;
+    std::string source_path;
+    if (const auto* src = currentProject()->findSource(layer->source_id))
+        source_path = src->path;
+    const std::string lid = layer->id;
+    auto* svc = m_import_service;
+
+    // Display-time nav corrections — single source of truth on the layer.
+    const NavProcessingParams nav = layer->nav_state;
+
+    // Run through OperationManager: keyed so a newer build for this layer
+    // supersedes any in-flight one (replacing the old m_pending_sbp_builds guard),
+    // and tracked in DiagnosticsHub automatically via the operation→job bridge.
+    // NOT heavy: this is display rasterization of an already-imported layer, not
+    // an import/decode job, so it must not sit under the D-14 cap (2) — capping it
+    // throttled multi-line projects (parse→display felt slow). The global
+    // QThreadPool still bounds total concurrency.
+    m_op_mgr->run<LayerMapData>(
+        tr("Building sub-bottom profile map…"),
+        [svc, store_path, store_format, index_copy,
+         source_path, source_crs, display_crs, nav](app::CancellationToken) {
+            auto traces = svc->loadAllSubBottomTraces(
+                store_path, store_format, index_copy, source_path);
+            applySbpNavCorrections(traces, nav);   // display-time nav corrections
+            return buildSbpProfileMapData(traces, source_crs, display_crs);
+        },
+        [this, lid](LayerMapData result) {
+            if (!currentProject() || !currentProject()->findLayer(lid)) return;
+            if (m_map_view) {
+                result.track_stats.layer_visible = m_map_view->isLayerVisible(lid);
+                m_map_view->setLayerMapData(lid, result);
+            }
+            if (m_diag_hub)
+                postSubBottomMapDiagnostics(
+                    m_diag_hub, QString::fromStdString(lid), result.track_stats);
+        },
+        "sbp_profile:" + lid,
+        /*heavy=*/false);   // display build, not import/decode — see note above
+}
+
+void MainWindow::applySbpNavToLine(const NavProcessingParams& p)
+{
+    // Target the actively selected layer — the panel reflects it. The SBP window's
+    // current line can be stale (the map/tree selection moved on, or the window is
+    // closed), so prefer the active layer and only fall back to the viewer when
+    // nothing is selected.
+    std::string lid = activeLayerId();
+    if (lid.empty() && m_sbp_win) lid = m_sbp_win->currentLayerId();
+    if (lid.empty() || !currentProject()) return;
+    auto* layer = currentProject()->findLayer(lid);
+    if (!layer || layer->modality != app::Modality::SubBottom) return;
+
+    layer->nav_state      = p;
+    layer->nav_customized = true;
+    markProjectDirty();
+    if (m_sbp_win) m_sbp_win->applyNavToLine(p);   // refresh the open SBP window
+    buildSbpProfileMap(layer);                      // rebuild map ribbon with corrected nav
+
+    recordActivity(ActivityKind::NavCorrection,
+        tr("SBP nav corrections applied to %1")
+            .arg(QString::fromStdString(layer->label)));
+}
+
+void MainWindow::applyStoredSbpNavParams(const std::string& layer_id)
+{
+    if (!m_sbp_win || layer_id.empty() || !currentProject()) return;
+    // Apply the layer's nav state (default when uncustomized) so switching to a
+    // line without corrections clears any carried over from the previous line.
+    const auto* layer = currentProject()->findLayer(layer_id);
+    m_sbp_win->applyNavToLine(layer ? layer->nav_state : NavProcessingParams{});
+}
+
+void MainWindow::applySbpNavToAll(const NavProcessingParams& p)
+{
+    if (!currentProject()) return;
+    const std::string current = m_sbp_win ? m_sbp_win->currentLayerId() : std::string{};
+
+    int n = 0;
+    for (const auto& l : currentProject()->layers()) {
+        if (!l || l->modality != app::Modality::SubBottom) continue;
+        l->nav_state      = p;
+        l->nav_customized = true;
+        // Rebuild profiles already on the map now; others apply the stored
+        // params lazily the first time they are selected.
+        if (m_map_view && m_map_view->layerData(l->id))
+            buildSbpProfileMap(l.get());
+        ++n;
+    }
+    if (n == 0) return;
+    markProjectDirty();
+    if (m_sbp_win && !current.empty()) m_sbp_win->applyNavToLine(p);
+
+    appendJobMessage(tr("Nav corrections applied to %1 sub-bottom line(s)").arg(n));
+    recordActivity(ActivityKind::NavCorrection,
+        tr("SBP nav corrections applied to %1 line(s)").arg(n));
+}
 
 void MainWindow::onLayerSelected(const std::string& layer_id)
 {
@@ -96,66 +213,32 @@ void MainWindow::onLayerSelected(const std::string& layer_id)
         // Skipped if real map data (non-empty nav_track) is already present for
         // this layer — avoids redundant disk reads on re-selection.
         else if (m_map_view && mod == M::SubBottom && m_import_service) {
+            // Skip the rebuild if real map data is already present — avoids
+            // redundant disk reads on re-selection. buildSbpProfileMap applies
+            // any stored nav corrections for the layer.
             if (layer->index_built && !layer->artifact_index.empty()) {
                 const auto* existing = m_map_view->layerData(layer_id);
-                if ((!existing || existing->nav_track.empty())
-                        && !m_pending_sbp_builds.count(layer_id)) {
-                    core::SpatialRef source_crs = layer->source_spatial_ref;
-                    if (source_crs.empty()) {
-                        if (const auto* src = currentProject()->findSource(layer->source_id))
-                            source_crs = src->source_spatial_ref;
-                    }
-                    const core::SpatialRef display_crs = currentProject()->displaySpatialRef();
-
-                    // Capture fields by value — DataLayer must not be accessed on bg thread.
-                    const std::string store_path   = layer->artifact_store_path;
-                    const std::string store_format = layer->artifact_store_format;
-                    const core::ArtifactIndex index_copy = layer->artifact_index;
-                    std::string source_path;
-                    if (const auto* src = currentProject()->findSource(layer->source_id))
-                        source_path = src->path;
-                    const std::string lid = layer_id;
-                    auto* svc = m_import_service;
-
-                    m_pending_sbp_builds.insert(layer_id);
-                    taskBegin(QStringLiteral("sbp_profile:") + QString::fromStdString(layer_id),
-                              tr("Building sub-bottom profile map…"));
-                    auto* watcher = new QFutureWatcher<LayerMapData>(this);
-                    connect(watcher, &QFutureWatcher<LayerMapData>::finished, this,
-                            [this, watcher, lid]() {
-                                LayerMapData result = watcher->result();
-                                watcher->deleteLater();
-                                m_pending_sbp_builds.erase(lid);
-                                taskDone(QStringLiteral("sbp_profile:") + QString::fromStdString(lid));
-
-                                if (!currentProject() || !currentProject()->findLayer(lid)) return;
-
-                                if (m_map_view) {
-                                    result.track_stats.layer_visible =
-                                        m_map_view->isLayerVisible(lid);
-                                    m_map_view->setLayerMapData(lid, result);
-                                }
-
-                                if (m_diag_hub)
-                                    postSubBottomMapDiagnostics(
-                                        m_diag_hub,
-                                        QString::fromStdString(lid),
-                                        result.track_stats);
-                            });
-                    watcher->setFuture(QtConcurrent::run(
-                        [svc, store_path, store_format, index_copy,
-                         source_path, source_crs, display_crs]() {
-                            const auto traces = svc->loadAllSubBottomTraces(
-                                store_path, store_format, index_copy, source_path);
-                            return buildSbpProfileMapData(traces, source_crs, display_crs);
-                        }));
-                }
+                if (!existing || existing->nav_track.empty())
+                    buildSbpProfileMap(layer);
             }
         }
     }
 
     if (m_inspector)
         layer ? m_inspector->showLayer(layer) : m_inspector->showEmpty();
+
+    // Feed the modal host (lower panel) for modality-specific tools.
+    if (m_modal_host)
+        layer ? m_modal_host->setLayer(layer) : m_modal_host->clearLayer();
+
+    // Auto-switch the sensor tab to match the selected layer's modality.
+    if (layer) {
+        using M = app::Modality;
+        auto tab = layer->modality;
+        if (tab != M::Sidescan && tab != M::SubBottom && tab != M::Magnetometer)
+            tab = M::Unknown;  // Map tab for Multibeam, Raster, etc.
+        refreshSensorTab(tab);
+    }
 
     // Always bring the Properties tab into view when a layer is selected.
     if (layer && m_props_stack && m_props_stack->currentIndex() != 0) {
@@ -204,13 +287,13 @@ void MainWindow::onLayerSelected(const std::string& layer_id)
                     m_sbp_win->applyGainParams(layer->sbp_display_state.gain);
                 if (layer->sbp_display_state.signal_customized)
                     m_sbp_win->applySignalParams(layer->sbp_display_state.signal);
-                if (m_inspector) {
-                    auto* host = m_inspector->rightPanelHost();
+                applyStoredSbpNavParams(layer->id);  // stored nav corrections
+                if (m_modal_host) {
                     if (layer->sbp_display_state.display_customized)
-                        host->setSbpParams(layer->sbp_display_state.display);
-                    if (auto* gm = host->sbpGainModule(); layer->sbp_display_state.gain_customized)
+                        m_modal_host->setSbpParams(layer->sbp_display_state.display);
+                    if (auto* gm = m_modal_host->sbpGainModule(); layer->sbp_display_state.gain_customized)
                         gm->setParams(layer->sbp_display_state.gain);
-                    if (auto* sm = host->sbpSignalModule(); layer->sbp_display_state.signal_customized)
+                    if (auto* sm = m_modal_host->sbpSignalModule(); layer->sbp_display_state.signal_customized)
                         sm->setParams(layer->sbp_display_state.signal);
                 }
             }
@@ -249,18 +332,20 @@ void MainWindow::onRemoveLayer(const std::string& layer_id)
 
     const QString name = QString::fromStdString(layer->label);
     if (QMessageBox::question(this, tr("Remove Layer"),
-            tr("Remove \"%1\" from the project?\nThe source file will not be deleted.").arg(name),
+            tr("Remove \"%1\" from the project?\n\n"
+               "The original source file is kept. The project's parsed cache (.dlpd) "
+               "for this layer is also removed, unless another layer still uses it.").arg(name),
             QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes)
         return;
 
-    m_pending_sbp_builds.erase(layer_id);
-    m_layer_nav_params.erase(layer_id);
+    if (m_op_mgr) m_op_mgr->cancelByKey("sbp_profile:" + layer_id);
     if (m_sss_ctrl) m_sss_ctrl->unloadLayer(layer_id);
     if (m_viewport_host) m_viewport_host->onLayerRemoved(layer_id);
     else if (m_map_view) m_map_view->removeLayerData(layer_id);
     if (activeLayerId() == layer_id) {
         m_layer_ctrl->clearActiveLayer();
-        if (m_inspector) m_inspector->showEmpty();
+        if (m_inspector)    m_inspector->showEmpty();
+        if (m_modal_host)   m_modal_host->clearLayer();
         updateControlsForModality(nullptr);
         updateActionStates();
         updateContextInfo();
@@ -277,8 +362,9 @@ void MainWindow::onRemoveLayers(const std::vector<std::string>& layer_ids)
 
     const int n = static_cast<int>(layer_ids.size());
     if (QMessageBox::question(this, tr("Remove Layers"),
-            tr("Remove %1 layer(s) from the project?\n"
-               "Source files will not be deleted.").arg(n),
+            tr("Remove %1 layer(s) from the project?\n\n"
+               "Original source files are kept. Each layer's parsed cache (.dlpd) is "
+               "also removed, unless still used by another layer.").arg(n),
             QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes)
         return;
 
@@ -286,8 +372,7 @@ void MainWindow::onRemoveLayers(const std::vector<std::string>& layer_ids)
         layer_ids.begin(), layer_ids.end(), activeLayerId()) != layer_ids.end();
 
     for (const auto& id : layer_ids) {
-        m_pending_sbp_builds.erase(id);
-        m_layer_nav_params.erase(id);
+        if (m_op_mgr) m_op_mgr->cancelByKey("sbp_profile:" + id);
         if (m_sss_ctrl) m_sss_ctrl->unloadLayer(id);
         if (m_viewport_host) m_viewport_host->onLayerRemoved(id);
         else if (m_map_view) m_map_view->removeLayerData(id);
@@ -295,7 +380,8 @@ void MainWindow::onRemoveLayers(const std::vector<std::string>& layer_ids)
     }
     if (active_removed) {
         m_layer_ctrl->clearActiveLayer();
-        if (m_inspector) m_inspector->showEmpty();
+        if (m_inspector)    m_inspector->showEmpty();
+        if (m_modal_host)   m_modal_host->clearLayer();
         updateControlsForModality(nullptr);
         updateActionStates();
         updateContextInfo();
@@ -385,13 +471,52 @@ void MainWindow::onRunSelectedLayer()
     }
 }
 
+void MainWindow::refreshSensorTab(app::Modality m)
+{
+    using M = app::Modality;
+    for (auto* btn : { m_tab_sss, m_tab_sbp, m_tab_map, m_tab_mag })
+        if (btn) btn->blockSignals(true);
+
+    if (m_tab_sss) m_tab_sss->setChecked(m == M::Sidescan);
+    if (m_tab_sbp) m_tab_sbp->setChecked(m == M::SubBottom);
+    if (m_tab_map) m_tab_map->setChecked(m == M::Unknown);
+    if (m_tab_mag) m_tab_mag->setChecked(m == M::Magnetometer);
+
+    for (auto* btn : { m_tab_sss, m_tab_sbp, m_tab_map, m_tab_mag })
+        if (btn) btn->blockSignals(false);
+
+    if (m_modal_host)
+        m_modal_host->setModalityFilter(m);
+}
+
 void MainWindow::refreshInspectorModalities()
 {
-    if (!m_inspector || !currentProject()) return;
-    QSet<app::Modality> mods;
-    for (const auto& l : currentProject()->layers())
-        mods.insert(l->modality);
-    m_inspector->setAvailableModalities(mods);
+    if (!m_inspector) return;
+
+    using M = app::Modality;
+    QSet<M> mods;
+    if (currentProject()) {
+        for (const auto& l : currentProject()->layers())
+            mods.insert(l->modality);
+    }
+    if (m_modal_host) m_modal_host->setAvailableModalities(mods);
+
+    const bool has_sss = mods.contains(M::Sidescan);
+    const bool has_sbp = mods.contains(M::SubBottom);
+    const bool has_mag = mods.contains(M::Magnetometer);
+
+    if (m_tab_sss) m_tab_sss->setEnabled(has_sss);
+    if (m_tab_sbp) m_tab_sbp->setEnabled(has_sbp);
+    if (m_tab_mag) m_tab_mag->setEnabled(has_mag);
+    // m_tab_map is always enabled — universal tools apply to any project
+
+    // If the active tab is now disabled (its modality was removed), fall back to Map.
+    const bool active_disabled =
+        (m_tab_sss && m_tab_sss->isChecked() && !has_sss) ||
+        (m_tab_sbp && m_tab_sbp->isChecked() && !has_sbp) ||
+        (m_tab_mag && m_tab_mag->isChecked() && !has_mag);
+    if (active_disabled)
+        refreshSensorTab(M::Unknown);
 }
 
 } // namespace dolphin::ui

@@ -6,8 +6,7 @@
 #include "ui/features/waterfall/processing/WaterfallProcessingAlgorithms.h"
 #include "ui/features/waterfall/processing/WaterfallPingAssembler.h"
 #include "ui/features/waterfall/processing/SeabedAutoDetector.h"
-#include "pipeline/nodes/correction/NavSmoothNode.h"
-#include "pipeline/nodes/correction/GeoCorrectNode.h"
+#include "app/display/NavCorrection.h"
 
 #include <vector>
 
@@ -19,43 +18,9 @@ std::vector<core::SidescanPing>
 WaterfallView::runNavCorrections(std::vector<core::SidescanPing> pings,
                                   const NavProcessingParams& params)
 {
-    pipeline::ArtifactBuffer buf;
-    buf.reserve(pings.size());
-    for (const auto& ping : pings)
-        buf.emplace_back(ping);
-
-    if (params.layback_enabled && params.layback_m > 0.f) {
-        pipeline::GeoCorrectNode node;
-        pipeline::NodeParams     np;
-        np["layback_m"] = params.layback_m;
-        buf = node.process(buf, np);
-    }
-
-    if (params.smooth_enabled && params.smooth_window > 1) {
-        pipeline::NavSmoothNode node;
-        pipeline::NodeParams    np;
-        np["window_pings"] = params.smooth_window;
-        buf = node.process(buf, np);
-    }
-
-    pings.clear();
-    pings.reserve(buf.size());
-    for (auto& a : buf)
-        if (auto* p = std::get_if<core::SidescanPing>(&a))
-            pings.push_back(std::move(*p));
-
-    const bool has_hdg   = params.heading_offset_deg != 0.f;
-    const bool has_pitch = params.pitch_offset_deg   != 0.f;
-    const bool has_roll  = params.roll_offset_deg    != 0.f;
-    if (has_hdg || has_pitch || has_roll) {
-        for (auto& ping : pings) {
-            if (has_hdg)   ping.nav.heading_deg += params.heading_offset_deg;
-            if (has_pitch) ping.nav.pitch_deg   += params.pitch_offset_deg;
-            if (has_roll)  ping.nav.roll_deg    += params.roll_offset_deg;
-        }
-    }
-
-    return pings;
+    // Single source of truth: the same correction the SSS map applies, so the
+    // waterfall and the map always agree (see app/display/NavCorrection).
+    return applySidescanNavCorrections(std::move(pings), params);
 }
 
 // -- runPipeline — background-safe full display pipeline -----------------------

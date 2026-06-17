@@ -5,6 +5,7 @@
 //   SidescanMapDiagnostics.cpp — setGeorefParams, reloadCurrentLayer,
 //                                setPaletteIndex, unloadLayer, deactivate
 #include "ui/features/map/sidescan/SidescanViewController.h"
+#include "ui/features/map/MapView.h"
 #include "ui/shared/dialogs/SettingsDialog.h"
 #include "render/sonar/SSSPalette.h"
 
@@ -38,6 +39,19 @@ SidescanViewController::SidescanViewController(MapView*            map_view,
             qs.value(SettingsDialog::kKeyDefaultPalette,
                      QStringLiteral("Gray")).toString());
     }
+
+    // Staged-load upgrade: when a heavy tier (High/Full) was requested, activateLayer
+    // paints a fast Medium preview, then prebuilds the full tier in the background.
+    // When it lands, swap it in — but only if the user hasn't switched quality since
+    // and the layer is still on the map.
+    connect(this, &SidescanViewController::prebuildTierComplete, this,
+            [this](const std::string& layer_id, MapSonarQuality quality) {
+                if (quality != m_quality) return;
+                if (!m_loaded_layers.count(layer_id)) return;
+                if (applyCachedTier(layer_id, quality) && m_map_view
+                        && layer_id == m_active_layer_id)
+                    m_map_view->setActiveLayer(layer_id);
+            });
 }
 
 

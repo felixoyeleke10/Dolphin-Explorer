@@ -62,6 +62,11 @@ public:
     void fitToData();
     void fitToDataAndReset();  // fit + clear user-interaction flag so new layers auto-fit
     void fitToLayer(const std::string& layer_id);
+    // Frame the whole survey as layers arrive during a project open: each incoming
+    // layer re-fits to the combined extent — overriding a stale interaction flag set
+    // by a programmatic viewport sync (setZoomFromMpp) — until the user actually
+    // pans/zooms. Cleared by any genuine gesture.
+    void requestFrameSurvey() { m_frame_survey_pending = true; }
     // Pre-fit to a known bounding box (e.g. from ArtifactIndex::navExtent) before
     // layer data is available.  No-op if the user has already interacted.
     void fitToExtent(double lon_min, double lon_max,
@@ -167,6 +172,7 @@ private:
     bool         m_is_projected    = false;
     bool         m_needs_fit       = false;
     bool         m_user_interacted = false;  // suppresses auto-fit after user pans/zooms
+    bool         m_frame_survey_pending = false;  // open: re-fit to whole survey as layers arrive
     MapInputMode m_input_mode      = ModePan;
     bool         m_rubberbanding   = false;
     QPoint       m_rubberband_end;

@@ -3,7 +3,7 @@
 // nodes and no Qt.  Layback and smoothing are node-dependent and tested
 // implicitly via integration.
 #include "ui/features/waterfall/WaterfallView.h"
-#include "ui/features/waterfall/NavProcessingParams.h"
+#include "app/display/NavProcessingParams.h"
 #include "core/SidescanPing.h"
 #include <cassert>
 #include <cmath>

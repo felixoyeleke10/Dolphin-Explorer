@@ -7,6 +7,7 @@
 #include "ui/features/subbottom/panels/SubBottomDisplayPanel.h"
 #include "app/layers/DataLayer.h"
 #include "app/services/ImportService.h"
+#include "app/tasks/OperationManager.h"
 #include "core/SubBottomTrace.h"
 #include "geo/GeoUtils.h"
 
@@ -47,24 +48,20 @@ void SubBottomWindow::setLayer(app::DataLayer*     layer,
 
     if (m_status_left) m_status_left->setText(tr("⋯"));
     startProgress();
-
-    m_load_cancel.cancel();
-    m_load_cancel.reset();
-    auto cancel = m_load_cancel;
-
-    const int gen = ++m_load_gen;
     setDataState(ViewerDataState::Loading);
+
+    if (!m_op_mgr) return;   // injected by the coordinator before any load
+
+    // Supersede the prior layer's processing op so it can't paint stale traces
+    // while this layer loads (the load op self-supersedes via its own key).
+    m_op_mgr->cancelByKey("sbpwin:proc");
 
     // Snapshot fields — DataLayer must not be accessed on the bg thread.
     const std::string store_path   = layer->artifact_store_path;
     const std::string store_format = layer->artifact_store_format;
     const core::ArtifactIndex idx  = layer->artifact_index;
     auto* svc                      = import_service;
-
-    // Snapshot the layer ID so the watcher lambda never dereferences m_layer
-    // directly (m_layer may be cleared or point to freed memory if the layer
-    // is deleted while the background load is in flight).
-    const std::string lid = layer->id;
+    const std::string lid          = layer->id;
 
     struct LoadResult {
         std::vector<core::SubBottomTrace> traces;
@@ -72,71 +69,73 @@ void SubBottomWindow::setLayer(app::DataLayer*     layer,
         float freq_hz    = 0.f;
         float dur_s      = 0.f;
         float line_len_m = 0.f;
+        bool  ok         = false;
     };
 
-    auto* watcher = new QFutureWatcher<LoadResult>(this);
-    connect(watcher, &QFutureWatcher<LoadResult>::finished,
-            this, [this, watcher, gen, lid]() {
-                watcher->deleteLater();
-                if (gen != m_load_gen) return;
-
-                finishProgress();
-
-                LoadResult res;
-                try {
-                    res = watcher->result();
-                } catch (...) {
-                    setDataState(ViewerDataState::Failed);
-                    if (m_status_left)
-                        m_status_left->setText(tr("Failed to load sub-bottom data."));
-                    return;
-                }
-
-                if (m_status_left) m_status_left->clear();
-
-                m_total_traces = static_cast<int>(res.traces.size());
-                m_traces_raw   = std::make_shared<const std::vector<core::SubBottomTrace>>(
-                    std::move(res.traces));
-                scheduleProcessing();
-
-                if (m_inspector && m_layer && m_layer->id == lid) {
-                    const float spd = m_display
-                        ? m_display->currentParams().sound_speed_ms : 1500.f;
-                    m_inspector->refresh(m_layer, m_source_path, m_source_size_bytes,
-                                         m_total_traces, res.n_samples, res.dur_s,
-                                         res.line_len_m, res.freq_hz, spd);
-                }
-            });
-
-    watcher->setFuture(QtConcurrent::run(
-        [svc, store_path, store_format, idx, source_path = m_source_path, cancel]() -> LoadResult {
+    // Keyed so a newer load supersedes an in-flight one (replaces the generation
+    // guard); heavy so it respects the D-14 cap; auto-tracked in DiagnosticsHub.
+    // The bg fn catches internally and reports via `ok` so on_done always runs and
+    // can set Failed — a skipped on_done would leave the busy state stuck.
+    m_op_mgr->run<LoadResult>(
+        tr("Loading sub-bottom data"),
+        [svc, store_path, store_format, idx, source_path = m_source_path]
+        (app::CancellationToken cancel) -> LoadResult {
             LoadResult res;
-            res.traces = svc->loadAllSubBottomTraces(store_path, store_format, idx, source_path);
-            if (cancel.isCancelled()) return {};
+            try {
+                res.traces = svc->loadAllSubBottomTraces(store_path, store_format, idx, source_path);
+                if (cancel.isCancelled()) return res;   // superseded; on_done is skipped
 
-            const int n = static_cast<int>(res.traces.size());
-            res.n_samples = n > 0 ? static_cast<int>(res.traces.front().samples.size()) : 0;
-            res.freq_hz   = n > 0 ? res.traces.front().frequency_hz : 0.f;
-            if (n >= 2)
-                res.dur_s = static_cast<float>(
-                    (res.traces.back().timestamp_us - res.traces.front().timestamp_us) * 1e-6);
-
-            for (int i = 1; i < n; ++i) {
-                const auto& a = res.traces[i - 1].nav;
-                const auto& b = res.traces[i].nav;
-                if (a.valid && b.valid)
-                    res.line_len_m += static_cast<float>(geo::navDistanceMetres(a, b));
+                const int n = static_cast<int>(res.traces.size());
+                res.n_samples = n > 0 ? static_cast<int>(res.traces.front().samples.size()) : 0;
+                res.freq_hz   = n > 0 ? res.traces.front().frequency_hz : 0.f;
+                if (n >= 2)
+                    res.dur_s = static_cast<float>(
+                        (res.traces.back().timestamp_us - res.traces.front().timestamp_us) * 1e-6);
+                for (int i = 1; i < n; ++i) {
+                    const auto& a = res.traces[i - 1].nav;
+                    const auto& b = res.traces[i].nav;
+                    if (a.valid && b.valid)
+                        res.line_len_m += static_cast<float>(geo::navDistanceMetres(a, b));
+                }
+                res.ok = true;
+            } catch (...) {
+                res.ok = false;
             }
             return res;
-        }));
+        },
+        [this, lid](LoadResult res) {
+            finishProgress();
+            if (!res.ok) {
+                setDataState(ViewerDataState::Failed);
+                if (m_status_left)
+                    m_status_left->setText(tr("Failed to load sub-bottom data."));
+                return;
+            }
+            if (m_status_left) m_status_left->clear();
+
+            m_total_traces = static_cast<int>(res.traces.size());
+            m_traces_raw   = std::make_shared<const std::vector<core::SubBottomTrace>>(
+                std::move(res.traces));
+            scheduleProcessing();
+
+            if (m_inspector && m_layer && m_layer->id == lid) {
+                const float spd = m_display
+                    ? m_display->currentParams().sound_speed_ms : 1500.f;
+                m_inspector->refresh(m_layer, m_source_path, m_source_size_bytes,
+                                     m_total_traces, res.n_samples, res.dur_s,
+                                     res.line_len_m, res.freq_hz, spd);
+            }
+        },
+        "sbpwin:load",
+        /*heavy=*/true);
 }
 
 void SubBottomWindow::clearLayer()
 {
-    m_load_cancel.cancel();
-    m_proc_cancel.cancel();
-    m_load_gen++;
-    m_proc_gen++;
+    if (m_op_mgr) {
+        m_op_mgr->cancelByKey("sbpwin:load");
+        m_op_mgr->cancelByKey("sbpwin:proc");
+    }
     setDataState(ViewerDataState::Idle);
     m_layer             = nullptr;
     m_import_service    = nullptr;

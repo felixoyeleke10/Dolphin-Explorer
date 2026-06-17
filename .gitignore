@@ -15,6 +15,9 @@
 *.pdb
 *.ilk
 *.log
+# Captured build output (local only — `cmake --build > build_out.txt`)
+/build_out.txt
+/build_output.txt
 
 # Local IDE/editor state
 /.vscode/

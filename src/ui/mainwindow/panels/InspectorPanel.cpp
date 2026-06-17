@@ -25,7 +25,7 @@ InspectorPanel::InspectorPanel(QWidget* parent)
     lbl->setWordWrap(true);
     el->addStretch(); el->addWidget(lbl); el->addStretch();
 
-    m_layer   = new RightPanelHost(this);
+    m_layer   = new RightPanelHost(RightPanelHost::ShowMode::UniversalOnly, this);
     m_contact = new ContactInspectorPage(this);
 
     m_stack->addWidget(m_empty);
@@ -78,6 +78,11 @@ void InspectorPanel::setChannel(DisplayChannel ch)
 void InspectorPanel::setAvailableModalities(const QSet<app::Modality>& modalities)
 {
     if (m_layer) m_layer->setAvailableModalities(modalities);
+}
+
+void InspectorPanel::setModalityFilter(app::Modality filter)
+{
+    if (m_layer) m_layer->setModalityFilter(filter);
 }
 
 

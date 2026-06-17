@@ -6,6 +6,7 @@
 #include "ui/shell/Theme.h"
 #include "ui/shared/panels/LineListPanel.h"
 #include "ui/shared/widgets/CollapsibleSection.h"
+#include "ui/shared/widgets/SidePanelShell.h"
 
 #include <QDesktopServices>
 #include <QFileInfo>
@@ -30,8 +31,7 @@ void MainWindow::buildContextPanel(QWidget* parent)
     m_context_stack->setObjectName("contextPanel");
     m_context_stack->setFixedWidth(Theme::kContextPanelW);
 
-    auto* page   = new QWidget(m_context_stack);
-    auto* layout = makeCompactLayout<QVBoxLayout>(page);
+    auto* page = new SidePanelShell(m_context_stack);
 
     // -- Panel header ----------------------------------------------------------
     auto* hdr   = new QFrame(page);
@@ -48,14 +48,18 @@ void MainWindow::buildContextPanel(QWidget* parent)
     m_context_title = new QLabel(tr("File Explorer"), hdr);
     m_context_title->setObjectName("panelTitle");
     hdr_l->addWidget(m_context_title, 1);
-    layout->addWidget(hdr);
+    page->setHeader(hdr);
+
+    // -- Body — project tree + collapsible sections ---------------------------
+    auto* body   = new QWidget(page);
+    auto* layout = makeCompactLayout<QVBoxLayout>(body);
 
     // -- Project tree ----------------------------------------------------------
-    m_line_list = new LineListPanel(page, LineListPanel::ContentMode::Explorer);
+    m_line_list = new LineListPanel(body, LineListPanel::ContentMode::Explorer);
     layout->addWidget(m_line_list, 1);
 
     // -- Recent Projects section -----------------------------------------------
-    auto* recent_sec = new CollapsibleSection(tr("Recent Projects"), page);
+    auto* recent_sec = new CollapsibleSection(tr("Recent Projects"), body);
     recent_sec->setIcon(QStringLiteral(":/icons/recent_projects.svg"));
     m_sidebar_recent_list = new QListWidget(recent_sec);
     m_sidebar_recent_list->setObjectName("emptyStateRecentList");
@@ -117,7 +121,7 @@ void MainWindow::buildContextPanel(QWidget* parent)
     layout->addWidget(recent_sec);
 
     // -- Recycle Bin section ---------------------------------------------------
-    auto* recycle_sec = new CollapsibleSection(tr("Recycle Bin"), page);
+    auto* recycle_sec = new CollapsibleSection(tr("Recycle Bin"), body);
     recycle_sec->setIcon(QStringLiteral(":/icons/recycle_bin.svg"));
     recycle_sec->setExpanded(false);
     auto* recycle_empty = new QLabel(tr("No deleted items."), recycle_sec);
@@ -125,6 +129,8 @@ void MainWindow::buildContextPanel(QWidget* parent)
     recycle_empty->setAlignment(Qt::AlignCenter);
     recycle_sec->setContent(recycle_empty);
     layout->addWidget(recycle_sec);
+
+    page->setBody(body);
 
     m_context_stack->addWidget(page);  // index 0 — File Explorer
     m_context_stack->setCurrentIndex(0);

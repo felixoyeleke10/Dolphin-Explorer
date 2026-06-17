@@ -63,6 +63,8 @@ add_library(dolphin-ui-shared STATIC
     shared/widgets/CommandBar.cpp
     shared/widgets/ViewerToolbar.cpp
     shared/widgets/LayerPickerWidget.cpp
+    shared/widgets/PanelTabBar.cpp
+    shared/widgets/SidePanelShell.cpp
     shared/dialogs/CommandPaletteDialog.cpp
     shared/dialogs/CommandPaletteDelegate.cpp
     shared/dialogs/CrsPickerDialog.cpp
@@ -158,6 +160,7 @@ add_library(dolphin-ui-map STATIC
     features/map/sidescan/SssNavTrackBuild.cpp
     features/map/sidescan/SssPreviewRasterBuild.cpp
     features/map/sidescan/SidescanViewController.cpp
+    features/map/sidescan/SidescanRasterCache.cpp
     features/map/sidescan/SidescanMapQuality.cpp
     features/map/sidescan/SidescanMapLoadTask.cpp
     features/map/sidescan/SidescanMapDiagnostics.cpp
@@ -356,7 +359,6 @@ add_library(dolphin-ui-mainwindow STATIC
     mainwindow/MainWindow.Geodesy.cpp
     mainwindow/ProjectSessionController.cpp
     mainwindow/LayerDisplayCoordinator.cpp
-    mainwindow/TaskProgressController.cpp
     mainwindow/MainWindow.Project.cpp
     mainwindow/MainWindow.Events.cpp
     mainwindow/MainWindow.ProjectBinding.cpp
@@ -375,8 +377,6 @@ add_library(dolphin-ui-mainwindow STATIC
     mainwindow/MainWindow.MapContextMenu.cpp
     mainwindow/MainStatusBar.cpp
     mainwindow/MainWindow.AppSettings.cpp
-    mainwindow/MainWindow.Processing.cpp
-    mainwindow/ProcessingDialog.cpp
     mainwindow/AppSettingsDialog.cpp
     mainwindow/AppSettingsDialog.Pages.cpp
     mainwindow/NewProjectDialog.cpp

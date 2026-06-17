@@ -64,15 +64,23 @@ SbpCorrectionResult execute(const SbpCorrectionRequest& req, ImportService* svc)
             return result;
         }
         meta = reader.metadata();
-        // If this layer's index is a strict subset of the full store, write to a
-        // per-layer sidecar so sibling layers are never corrupted.
-        const auto full_index = reader.buildIndex();
-        if (req.artifact_index.entries.size() < full_index.entries.size()) {
-            namespace fs = std::filesystem;
-            const fs::path p(req.store_path);
-            write_path = (p.parent_path()
-                          / (p.stem().string() + "_" + req.layer_id + ".dlpd")).string();
-        }
+        // Always write corrections to a per-layer sidecar — never overwrite the
+        // original parsed store (D-04: the imported .dlpd is a durable asset; a
+        // full-store Apply must not replace it). "Already our sidecar" = formal role
+        // marker (preferred) or the legacy "_<layerId>" filename suffix; re-applies
+        // overwrite that sidecar in place rather than nesting another suffix.
+        namespace fs = std::filesystem;
+        const fs::path p(req.store_path);
+        const std::string suffix = "_" + req.layer_id;
+        const std::string stem   = p.stem().string();
+        const bool legacy_named = stem.size() > suffix.size()
+            && stem.compare(stem.size() - suffix.size(), suffix.size(), suffix) == 0;
+        const bool already_sidecar =
+            (meta.artifact_role == io::kArtifactRoleSidecar) || legacy_named;
+        write_path = already_sidecar
+            ? req.store_path
+            : (p.parent_path() / (stem + suffix + ".dlpd")).string();
+        meta.artifact_role = io::kArtifactRoleSidecar;  // formal marker on the output
     }
 
     auto traces = svc->loadAllSubBottomTraces(

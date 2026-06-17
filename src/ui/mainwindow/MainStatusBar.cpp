@@ -312,6 +312,10 @@ void MainStatusBar::setViewCrs(const QString& crs_name)
     const QString label = crs_name.isEmpty() ? QStringLiteral("--") : crs_name;
     m_vp_crs->setText(label);
     m_vp_crs->setEnabled(!crs_name.isEmpty());  // grey out until a project sets a CRS
+    m_vp_crs->setToolTip(crs_name.isEmpty()
+        ? QString()
+        : tr("Project working CRS (survey grid). The per-layer source CRS is "
+             "shown in the inspector."));
 }
 
 // -- AI indicator --------------------------------------------------------------

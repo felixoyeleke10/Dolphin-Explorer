@@ -71,7 +71,7 @@ public:
     const Batch* findBatch(uint32_t id) const;
 
     // -- Jobs ------------------------------------------------------------------
-    enum class JobStatus { Running, Completed, Failed, Cancelled };
+    enum class JobStatus { Queued, Running, Completed, Failed, Cancelled };
 
     struct Job {
         uint32_t  id           = 0;
@@ -91,7 +91,10 @@ public:
                       const QString& layer_id     = {},
                       uint32_t       batch_id     = 0,
                       const QString& format_badge = {},
-                      float          size_mb      = 0.f);
+                      float          size_mb      = 0.f,
+                      JobStatus      initial       = JobStatus::Running);
+    // Transition a Queued job to Running (no-op if it is not Queued).
+    void     startJob(uint32_t id);
     void     updateJob(uint32_t id, const QString& detail, float progress = -1.f);
     void     endJob(uint32_t id, const QString& summary = {});
     void     failJob(uint32_t id, const QString& error = {});
@@ -110,8 +113,12 @@ signals:
 private:
     Job*   findJob  (uint32_t id);
     Batch* findBatchMut(uint32_t id);
+    // Drop oldest finished jobs so the history (and the panel's O(jobs) rebuild) stays
+    // bounded over a long session; Running/Queued jobs are always kept.
+    void   pruneJobs();
 
     static constexpr int kMaxOutputEntries = 2000;
+    static constexpr int kMaxJobs          = 200;
 
     QList<Problem>     m_problems;
     QList<OutputEntry> m_output;

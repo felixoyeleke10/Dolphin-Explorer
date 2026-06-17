@@ -4,6 +4,7 @@
 #include "ui/features/subbottom/SubBottomViewStyle.h"
 #include "ui/features/subbottom/SbpGainParams.h"
 #include "ui/features/subbottom/SbpSignalParams.h"
+#include "app/display/NavProcessingParams.h"
 #include "ui/shared/dialogs/CommandPaletteDialog.h"
 #include "ui/shared/widgets/ViewerToolbar.h"
 #include "ui/shell/ViewerWindow.h"
@@ -26,6 +27,7 @@ class QToolButton;
 namespace dolphin::app {
 class DataLayer;
 class ImportService;
+class OperationManager;
 }
 
 namespace dolphin::ui {
@@ -97,19 +99,21 @@ public:
     // m_traces_raw — no disk I/O.  No-op if no raw traces are held.
     void invalidateProcessedCache();
 
-    // Returns a copy of the current load-cancellation token so external
-    // holders (e.g. TaskRegistry) can cancel an in-flight load.
-    app::CancellationToken loadToken() const { return m_load_cancel; }
-
-    // Returns a copy of the current processing-cancellation token.
-    // Distinct from loadToken(): loading and DSP processing run as separate
-    // background tasks with separate tokens.
-    app::CancellationToken procToken() const { return m_proc_cancel; }
+    // Inject the shared OperationManager (owns this window's load/process ops,
+    // keyed so they supersede prior runs and respect the heavy-job cap). Set once,
+    // after construction, by the owning coordinator.
+    void setOperationManager(app::OperationManager* m) { m_op_mgr = m; }
 
     // Apply signal-processing params from the right-panel Gain / Signal modules.
     // Re-runs the processing pipeline on the in-memory raw trace copy; no disk I/O.
     void applyGainParams  (const SbpGainParams&   p);
     void applySignalParams(const SbpSignalParams&  p);
+
+    // Apply navigation corrections (GPS smoothing / towfish layback / heading
+    // offset) to this window's traces and re-process. The main-window coordinator
+    // owns orchestration (per-layer storage + map-profile rebuilds); this only
+    // refreshes the currently displayed line.
+    void applyNavToLine(const dolphin::ui::NavProcessingParams& p);
 
 protected:
     void closeEvent(QCloseEvent* e) override;
@@ -167,11 +171,8 @@ private:
     app::ImportService* m_import_service    = nullptr;
     std::string         m_source_path;
     uint64_t            m_source_size_bytes = 0;
-    int                    m_load_gen    = 0;
-    int                    m_proc_gen    = 0;
     int                    m_total_traces = 0;
-    app::CancellationToken m_load_cancel;
-    app::CancellationToken m_proc_cancel;
+    app::OperationManager* m_op_mgr      = nullptr;  // owns load/process ops (keyed)
     ViewerDataState        m_data_state  = ViewerDataState::Idle;
 
     // Unprocessed traces — shared_ptr so scheduleProcessing() captures a pointer
@@ -180,6 +181,7 @@ private:
     std::shared_ptr<const std::vector<core::SubBottomTrace>> m_traces_raw;
     SbpGainParams                     m_gain_params;
     SbpSignalParams                   m_signal_params;
+    NavProcessingParams               m_nav_params;   // display-time nav corrections
 
     AppState*           m_app_state         = nullptr;
 

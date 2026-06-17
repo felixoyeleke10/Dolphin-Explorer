@@ -12,6 +12,7 @@
 #include "ui/features/geodesy/GeodesyPanel.h"
 #include "ui/shared/panels/LineListPanel.h"
 #include "ui/mainwindow/panels/InspectorPanel.h"
+#include "ui/mainwindow/rightpanel/RightPanelHost.h"
 #include "ui/shared/widgets/LayerPickerWidget.h"
 #include "ui/features/map/MapView.h"
 #include "ui/features/map/MapViewportHost.h"
@@ -29,8 +30,9 @@ namespace dolphin::ui {
 
 void MainWindow::bindProjectUi()
 {
-    m_pending_sbp_builds.clear();
-    m_layer_nav_params.clear();
+    // Abandon any background ops from the previous project (SBP profile builds,
+    // etc.) so their completion handlers no-op against the new project.
+    if (m_op_mgr) m_op_mgr->cancelAll();
     if (m_undo_stack) m_undo_stack->clear();
     updateActionStates();
     // Window title is maintained by PSC; no setWindowTitle call needed here.
@@ -51,17 +53,8 @@ void MainWindow::bindProjectUi()
     if (m_map_view)
         m_map_view->setProject(raw);
 
-    if (m_status_bar) {
-        if (raw) {
-            const auto& sr = raw->displaySpatialRef();
-            const QString crs = sr.id.empty()
-                ? QStringLiteral("WGS 84")
-                : QString::fromStdString(sr.id);
-            m_status_bar->setViewCrs(crs);
-        } else {
-            m_status_bar->setViewCrs({});
-        }
-    }
+    // Status-bar CRS is set by updateContextInfo() at the end of this method
+    // (it shows the project's working/survey CRS, refreshed on every layer change).
 
     if (m_viewport_host && !raw)
         m_viewport_host->clearScene();
@@ -72,8 +65,8 @@ void MainWindow::bindProjectUi()
     // broadcast(ProjectReplaced) above already calls deactivate(true) on the
     // SSS controller via onViewerRefresh — no explicit deactivate needed here.
 
-    if (m_inspector)
-        m_inspector->showEmpty();
+    if (m_inspector)    m_inspector->showEmpty();
+    if (m_modal_host)   m_modal_host->clearLayer();
     refreshInspectorModalities();
 
     const auto proj_ptr = currentProjectPtr();

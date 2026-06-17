@@ -8,6 +8,7 @@
 #include "render/sonar/SSSAmplitudeProcessor.h"
 #include "render/sonar/SSSPalette.h"
 #include "render/sonar/SonarDisplayParams.h"
+#include "app/tasks/OperationManager.h"
 #include "ui/shared/dialogs/SettingsDialog.h"
 
 #include <QFutureWatcher>
@@ -99,11 +100,13 @@ QImage SidescanViewController::colorizeIntensityCache(
 {
     if (!cache.valid()) return {};
 
-    // When dp is nullopt (no params have been explicitly set), fall back to the
-    // per-layer auto-stretch computed at rasterization time.  When dp has a value,
-    // honor it as-is — even if display_low/high are 0/1 (identity stretch).
+    // When dp is absent OR when display_low/high are at identity defaults (0/1),
+    // use the per-layer auto-stretch computed from the data at rasterization time.
+    // This lets gain/contrast/palette be applied globally without requiring callers
+    // to know the per-layer amplitude range.
     SonarDisplayParams params = dp.value_or(SonarDisplayParams{});
-    if (!dp.has_value()) {
+    if (!dp.has_value() ||
+        (params.display_low == 0.f && params.display_high == 1.f)) {
         params.display_low  = cache.disp_low;
         params.display_high = cache.disp_high;
     }
@@ -169,66 +172,59 @@ void SidescanViewController::repaletteAllLayers()
             continue;
         }
 
-        auto& layer_cancel = m_layer_cancel_flags[layer_id];
-        if (layer_cancel) layer_cancel->store(true, std::memory_order_relaxed);
-        layer_cancel = std::make_shared<std::atomic_bool>(false);
-        const uint64_t    gen        = ++m_layer_generations[layer_id];
-        auto              cancel     = layer_cancel;
-        const int         palette_idx = m_palette_idx;
-        const SssGeorefParams georef  = m_georef_params;
-
+        if (!m_op_mgr) continue;
+        const int             palette_idx = m_palette_idx;
+        const SssGeorefParams georef      = m_georef_params;
         const std::vector<core::SidescanPing> pings = cache_it->second;
 
-        auto* watcher = new QFutureWatcher<PaletteRebuildResult>(this);
-        connect(watcher, &QFutureWatcher<PaletteRebuildResult>::finished, this,
-            [this, watcher, layer_id]() {
-                watcher->deleteLater();
-                PaletteRebuildResult res;
-                try { res = watcher->result(); } catch (...) { return; }
-                const auto it = m_layer_generations.find(res.layer_id);
-                if (it == m_layer_generations.end() || res.generation != it->second)
-                    return;
-                if (m_map_view) {
-                    // Extract intensity cache from the rebuild result.
-                    IntensityCache ic;
-                    ic.pixels    = std::move(res.layer_data.intensity_cache);
-                    ic.w         = res.layer_data.intensity_w;
-                    ic.h         = res.layer_data.intensity_h;
-                    ic.disp_low  = res.layer_data.intensity_disp_low;
-                    ic.disp_high = res.layer_data.intensity_disp_high;
-                    if (ic.valid()) {
-                        m_layer_intensity_cache[res.layer_id] = std::move(ic);
-                        // Re-colorize with current display params: the background
-                        // build used defaults; setDisplayParams may have been called
-                        // while the task was in flight.
-                        res.layer_data.preview_image = colorizeIntensityCache(
-                            m_layer_intensity_cache[res.layer_id],
-                            m_display_params, m_palette_idx);
-                    }
-
-                    m_map_view->setLayerMapData(res.layer_id, std::move(res.layer_data));
-                    if (res.layer_id == m_active_layer_id)
-                        m_map_view->setActiveLayer(res.layer_id);
-                }
-            });
-
-        QFuture<PaletteRebuildResult> future = QtConcurrent::run(
-            [pings, layer_id, gen, cancel, palette_idx, georef, max_img_dim]()
-            -> PaletteRebuildResult
-            {
+        // Intentional shared key (same as activateLayer) — safe and load-bearing,
+        // NOT a collision risk:
+        //  • This fallback only runs for already-loaded layers; an initial load
+        //    runs for a not-yet-loaded layer, so the two never race on one layer.
+        //  • A reload removes the layer from m_loaded_layers first, so if a
+        //    recolour is in flight the reload supersedes it (newest wins — correct).
+        //  • unloadLayer / deactivate cancel by this key / "sss:load:" prefix, so
+        //    they also cancel an in-flight recolour; a distinct key would let this
+        //    on_done write map data after the layer was removed.
+        //  • No on_finally here, so supersession never imbalances m_active_builds.
+        // Light (no disk I/O), so not heavy.
+        m_op_mgr->run<PaletteRebuildResult>(
+            tr("Recolouring sidescan map — %1").arg(QString::fromStdString(layer_id)),
+            [pings, layer_id, palette_idx, georef, max_img_dim]
+            (app::CancellationToken cancel) -> PaletteRebuildResult {
                 PaletteRebuildResult result;
-                result.layer_id   = layer_id;
-                result.generation = gen;
+                result.layer_id = layer_id;
                 for (const auto& p : pings)
                     if (p.nav.valid) { result.layer_data.is_projected = p.nav.is_projected; break; }
                 buildSwathNavTrack(pings, result.layer_data);
                 buildSwathCoverage(pings, result.layer_data, georef);
-                if (!cancel->load(std::memory_order_relaxed))
+                if (!cancel.isCancelled())
                     buildSwathPreviewImage(pings, result.layer_data,
-                        max_img_dim, palette_idx, *cancel, georef, 0.0, 0, false);
+                        max_img_dim, palette_idx, *cancel.flag(), georef, 0.0, 0, false);
                 return result;
-            });
-        watcher->setFuture(future);
+            },
+            [this](PaletteRebuildResult res) {
+                if (!m_map_view) return;
+                IntensityCache ic;
+                ic.pixels    = std::move(res.layer_data.intensity_cache);
+                ic.w         = res.layer_data.intensity_w;
+                ic.h         = res.layer_data.intensity_h;
+                ic.disp_low  = res.layer_data.intensity_disp_low;
+                ic.disp_high = res.layer_data.intensity_disp_high;
+                if (ic.valid()) {
+                    m_layer_intensity_cache[res.layer_id] = std::move(ic);
+                    // Re-colorize with current display params (the bg build used
+                    // defaults; setDisplayParams may have run while it was in flight).
+                    res.layer_data.preview_image = colorizeIntensityCache(
+                        m_layer_intensity_cache[res.layer_id],
+                        m_display_params, m_palette_idx);
+                }
+                m_map_view->setLayerMapData(res.layer_id, std::move(res.layer_data));
+                if (res.layer_id == m_active_layer_id)
+                    m_map_view->setActiveLayer(res.layer_id);
+            },
+            "sss:load:" + layer_id,
+            /*heavy=*/false);
     }
 }
 
@@ -241,27 +237,24 @@ void SidescanViewController::unloadLayer(const std::string& layer_id)
     m_loaded_layers.erase(layer_id);
     m_layer_pings_cache.erase(layer_id);
     m_layer_intensity_cache.erase(layer_id);
-    // Cancel any in-flight task and erase its generation so the completion
-    // handler sees a stale gen and skips writing map data (closes the window
-    // between removeLayerData and the next activateLayer increment).
-    if (auto it = m_layer_cancel_flags.find(layer_id); it != m_layer_cancel_flags.end()) {
-        if (it->second) it->second->store(true, std::memory_order_relaxed);
-        m_layer_cancel_flags.erase(it);
-    }
-    m_layer_generations.erase(layer_id);
+    // Cancel any in-flight build/recolour for this layer; its on_done is then
+    // skipped (cancelled) so it can't write map data after removeLayerData.
+    if (m_op_mgr) m_op_mgr->cancelByKey("sss:load:" + layer_id);
     if (m_active_layer_id == layer_id)
         m_active_layer_id.clear();
 }
 
 void SidescanViewController::deactivate(bool clear_map)
 {
-    for (auto& [id, flag] : m_layer_cancel_flags)
-        if (flag) flag->store(true, std::memory_order_relaxed);
-    m_layer_cancel_flags.clear();
-    m_layer_generations.clear();
+    // Cancel all in-flight per-layer builds/recolours; their on_finally still
+    // fires (balancing m_active_builds), then reset state explicitly below.
+    if (m_op_mgr) m_op_mgr->cancelByPrefix("sss:load:");
     m_layer_pings_cache.clear();
     m_layer_intensity_cache.clear();
     m_quality_tier_cache.clear();
+
+    m_active_builds = 0;
+    m_data_state    = ViewerDataState::Idle;
 
     m_active_layer_id.clear();
     m_project = nullptr;

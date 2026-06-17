@@ -63,7 +63,7 @@ InfoModule::InfoModule(QWidget* parent)
     makeRow(vl, tr("Date"),      m_date_val);
     makeRow(vl, tr("Survey"),    m_survey_val);
     makeRow(vl, tr("Vessel"),    m_vessel_val);
-    makeRow(vl, tr("CRS"),       m_crs_val);
+    makeRow(vl, tr("Source CRS"), m_crs_val);
     vl->addStretch(1);
 }
 
