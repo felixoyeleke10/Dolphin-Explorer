@@ -11,7 +11,9 @@
 #include <QString>
 #include <vector>
 
+class QCheckBox;
 class QFrame;
+class QHBoxLayout;
 class QLabel;
 class QLineEdit;
 class QPushButton;
@@ -78,9 +80,12 @@ private:
         QString          file_name;
         bool             probing           = false;
         bool             done              = false;
-        bool             modality_mismatch = false; // probe result doesn't match wizard sensor filter
+        bool             modality_mismatch = false; // true = nothing selected/importable
         io::ProbeResult  result;
-        std::vector<core::ArtifactType> module_filter;  // empty = all sensors
+        // The modalities the user has chosen to import from this file (detect-then-
+        // confirm): seeded from the probe's detected families and edited per-file via
+        // the checkboxes below. Empty = nothing to import (file skipped).
+        std::vector<core::ArtifactType> module_filter;
         QFutureWatcher<io::ProbeResult>* watcher = nullptr;
         // Set after probe completes — drives the status badge.
         FileImportAction::Kind classify_kind = FileImportAction::Kind::ImportNew;
@@ -89,11 +94,22 @@ private:
         QLabel* name_label   = nullptr;
         QLabel* detail_label = nullptr;
         QLabel* status_label = nullptr;
+        // Per-file modality checkboxes (one per detected family), built after probe.
+        QWidget*     modality_box    = nullptr;
+        QHBoxLayout* modality_layout = nullptr;
+        std::vector<std::pair<core::ArtifactType, QCheckBox*>> modality_checks;
     };
 
     void startProbe(int idx);
     void onProbeFinished(int idx);
     void updateFileRow(int idx);
+    // Detect-then-confirm: the modality families the probe found in this file.
+    std::vector<core::ArtifactType> detectedTypes(const io::ProbeResult& r) const;
+    // Build the per-file modality checkboxes once the probe is done; seeds the
+    // initial selection from the menu preset (m_module_filter) or all detected.
+    void buildModalityChecks(int idx);
+    // Recompute one file's module_filter from its checkbox state + refresh.
+    void onModalityToggled(int idx);
     bool fileMatchesSensorFilter(const io::ProbeResult& r) const;
     void updateSensorHeader();
     void rebuildSummaryTab();

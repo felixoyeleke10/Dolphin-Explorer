@@ -255,6 +255,9 @@ private:
     void refreshSensorTab(app::Modality m);
     void showImportDialog(const QStringList& paths,
                           const std::vector<core::ArtifactType>& module_filter = {});
+    // Detect-then-confirm import. `preset` pre-checks a modality (from a modality-
+    // specific menu command); empty = pre-check everything each file contains.
+    void importFilesWithPreset(const std::vector<core::ArtifactType>& preset);
     bool ensureProjectForImport(const ImportDialogResult& res);
     QList<CommandPaletteItem> buildCommandItems();
     void applyWorkspaceState(int panel_id, bool props_open, bool toolbar_visible);

@@ -99,22 +99,29 @@ void MainWindow::buildFileMenu()
     QMenu* imp = file->addMenu(
         QIcon(QString::fromUtf8(appCommand(CommandId::ImportFile).icon)), tr("&Import"));
 
+    // Each modality submenu preselects that family in the import wizard; the wizard
+    // still detects what each file actually contains and lets the user confirm.
+    using AT = core::ArtifactType;
+    const auto importAs = [this](std::vector<AT> preset) {
+        return [this, preset] { importFilesWithPreset(preset); };
+    };
+
     QMenu* sss = imp->addMenu(tr("Sidescan Sonar"));
-    sss->addAction(tr("XTF\u2026"),                  this, &MainWindow::onImportFile);
-    sss->addAction(tr("JSF\u2026"),                  this, &MainWindow::onImportFile);
-    sss->addAction(tr("Humminbird SON\u2026"),        this, &MainWindow::onImportFile);
-    sss->addAction(tr("Lowrance SL2 / SL3\u2026"),   this, &MainWindow::onImportFile);
-    sss->addAction(tr("Dolphin Cache (DLPD)\u2026"),  this, &MainWindow::onImportFile);
+    sss->addAction(tr("XTF\u2026"),                  this, importAs({AT::Sidescan}));
+    sss->addAction(tr("JSF\u2026"),                  this, importAs({AT::Sidescan}));
+    sss->addAction(tr("Humminbird SON\u2026"),        this, importAs({AT::Sidescan}));
+    sss->addAction(tr("Lowrance SL2 / SL3\u2026"),   this, importAs({AT::Sidescan}));
+    sss->addAction(tr("Dolphin Cache (DLPD)\u2026"),  this, importAs({AT::Sidescan}));
 
     QMenu* sbp = imp->addMenu(tr("Sub Bottom Profiler"));
-    sbp->addAction(tr("SEG-Y\u2026"),                this, &MainWindow::onImportFile);
+    sbp->addAction(tr("SEG-Y\u2026"),                this, importAs({AT::SubBottom}));
 
     QMenu* mag = imp->addMenu(tr("Magnetometer"));
-    mag->addAction(tr("CSV / Text\u2026"),           this, &MainWindow::onImportFile);
+    mag->addAction(tr("CSV / Text\u2026"),           this, importAs({AT::Magnetometer}));
 
     QMenu* bathy = imp->addMenu(tr("Bathymetry"));
-    bathy->addAction(tr("Kongsberg ALL / KMALL\u2026"), this, &MainWindow::onImportFile);
-    bathy->addAction(tr("Reson S7K\u2026"),          this, &MainWindow::onImportFile);
+    bathy->addAction(tr("Kongsberg ALL / KMALL\u2026"), this, importAs({AT::Multibeam}));
+    bathy->addAction(tr("Reson S7K\u2026"),          this, importAs({AT::Multibeam}));
 
     imp->addSeparator();
     imp->addAction(tr("Browse All Formats\u2026"),   this, &MainWindow::onImportFile);

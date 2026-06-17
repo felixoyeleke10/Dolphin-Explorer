@@ -3,8 +3,8 @@
 #include "ui/shell/AppInfo.h"
 #include "ui/shell/Features.h"
 #include "ui/features/import/ImportReviewWizard.h"
-#include "ui/features/import/ImportSetupDialog.h"
 #include "app/import/ImportClassifier.h"
+#include "app/layers/LayerUtils.h"     // kModuleArtifactTypes (menu presets)
 #include "app/project/Project.h"
 
 #include <QDateTime>
@@ -130,15 +130,18 @@ bool MainWindow::ensureProjectForImport(const ImportDialogResult& res)
 
 void MainWindow::onImportFile()
 {
-    // Step 1 — sensor type selection.
-    ImportSetupDialog setup(this);
-    if (setup.exec() != QDialog::Accepted) return;
-    const auto module_filter = setup.moduleFilter();
+    importFilesWithPreset({});
+}
 
-    // Step 2 — review wizard (seeded with last-used CRS + sensor filter).
+// Detect-then-confirm import. No blind "what are you importing?" step: the wizard
+// probes each file, shows the modalities it actually contains, and lets the user
+// confirm which to import per file. `preset` (from a modality-specific menu command)
+// pre-checks that family; empty = pre-check everything detected.
+void MainWindow::importFilesWithPreset(const std::vector<core::ArtifactType>& preset)
+{
     auto* wizard = new ImportReviewWizard(currentProject(), m_session_ctrl->pendingCrs(), this);
     wizard->setAttribute(Qt::WA_DeleteOnClose);
-    wizard->setModuleFilter(module_filter);
+    if (!preset.empty()) wizard->setModuleFilter(preset);
 
     connect(wizard, &ImportReviewWizard::importConfirmed,
             this, [this](ImportDialogResult res) {

@@ -2,9 +2,13 @@
 #include "ui/features/import/ImportReviewWizard.h"
 #include "ui/shared/UiUtils.h"
 #include "app/import/ImportClassifier.h"
+#include "app/layers/LayerUtils.h"
 #include "ui/shell/Theme.h"
 #include "io/ProbeDispatch.h"
 
+#include <algorithm>
+
+#include <QCheckBox>
 #include <QDir>
 #include <QDragEnterEvent>
 #include <QDropEvent>
@@ -254,8 +258,15 @@ void ImportReviewWizard::addFiles(const QStringList& paths,
         entry.status_label = new QLabel(tr("Scanning..."), row);
         entry.status_label->setObjectName("importFileStatus");
 
+        // Container for the per-file modality checkboxes (populated after probe).
+        entry.modality_box = new QWidget(row);
+        entry.modality_layout = new QHBoxLayout(entry.modality_box);
+        entry.modality_layout->setContentsMargins(0, 0, 0, 0);
+        entry.modality_layout->setSpacing(Theme::kSpacing3);
+
         hl->addWidget(entry.name_label);
         hl->addWidget(entry.detail_label, 1);
+        hl->addWidget(entry.modality_box);
         hl->addWidget(entry.status_label);
 
         // Insert before stretch
@@ -298,15 +309,74 @@ void ImportReviewWizard::startProbe(int idx)
     }));
 }
 
+std::vector<core::ArtifactType>
+ImportReviewWizard::detectedTypes(const io::ProbeResult& r) const
+{
+    std::vector<core::ArtifactType> out;
+    if (r.has_sidescan)     out.push_back(core::ArtifactType::Sidescan);
+    if (r.has_subbottom)    out.push_back(core::ArtifactType::SubBottom);
+    if (r.has_magnetometer) out.push_back(core::ArtifactType::Magnetometer);
+    if (r.has_multibeam)    out.push_back(core::ArtifactType::Multibeam);
+    return out;
+}
+
+void ImportReviewWizard::buildModalityChecks(int idx)
+{
+    FileEntry& e = m_entries[idx];
+    if (!e.modality_layout || !e.modality_checks.empty()) return;  // build once
+
+    const auto detected = detectedTypes(e.result);
+    const auto in = [](const std::vector<core::ArtifactType>& v, core::ArtifactType t) {
+        return std::find(v.begin(), v.end(), t) != v.end();
+    };
+
+    // Seed: if a menu preset is active, pre-check the detected families it names;
+    // otherwise (or if none overlap) pre-check everything the file contains.
+    std::vector<core::ArtifactType> initial;
+    if (!m_module_filter.empty())
+        for (auto t : detected) if (in(m_module_filter, t)) initial.push_back(t);
+    if (initial.empty()) initial = detected;
+    e.module_filter = initial;
+
+    for (auto t : detected) {
+        auto* cb = new QCheckBox(
+            QString::fromStdString(app::modalityLabel(app::modalityForType(t))),
+            e.modality_box);
+        cb->setChecked(in(initial, t));
+        // A single detected family is always imported — no point letting the user
+        // uncheck the only thing in the file.
+        if (detected.size() == 1) cb->setEnabled(false);
+        connect(cb, &QCheckBox::toggled, this, [this, idx]() { onModalityToggled(idx); });
+        e.modality_layout->addWidget(cb);
+        e.modality_checks.emplace_back(t, cb);
+    }
+}
+
+void ImportReviewWizard::onModalityToggled(int idx)
+{
+    FileEntry& e = m_entries[idx];
+    e.module_filter.clear();
+    for (auto& [t, cb] : e.modality_checks)
+        if (cb->isChecked()) e.module_filter.push_back(t);
+    e.modality_mismatch = e.module_filter.empty();  // nothing selected → skip in tabs
+    e.classify_kind =
+        app::classifyImportAction(e.path, m_current_project, e.module_filter).kind;
+    updateFileRow(idx);
+    updateImportButton();
+    rebuildSummaryTab();
+}
+
 void ImportReviewWizard::onProbeFinished(int idx)
 {
     FileEntry& e = m_entries[idx];
 
     if (e.done && e.result.success) {
-        // Classify against the current project (Reuse / Rebuild / ImportNew).
-        e.classify_kind = app::classifyImportAction(e.path, m_current_project).kind;
-        // Check whether the file's modality matches the wizard's sensor filter.
-        e.modality_mismatch = !fileMatchesSensorFilter(e.result);
+        buildModalityChecks(idx);   // seeds e.module_filter from detection + preset
+        // Modality-aware classification using the seeded per-file selection.
+        e.classify_kind =
+            app::classifyImportAction(e.path, m_current_project, e.module_filter).kind;
+        // "Mismatch" now means the file has no importable/selected modality.
+        e.modality_mismatch = e.module_filter.empty();
     }
     updateFileRow(idx);
     updateImportButton();
@@ -344,14 +414,19 @@ void ImportReviewWizard::updateFileRow(int idx)
         return;
     }
 
-    // Detail: "SEG-Y · Sub-Bottom"
-    e.detail_label->setText(
-        QString::fromStdString(r.format_name) + "  \xC2\xB7  " + modalityString(r));
+    // Detail shows the format; the modalities are the checkboxes beside it.
+    e.detail_label->setText(QString::fromStdString(r.format_name));
 
-    // Reject files whose modality doesn't match the selected sensor type.
-    if (e.modality_mismatch) {
-        e.status_label->setText(tr("Wrong sensor type"));
+    // No recognised sonar family in the file → nothing to import.
+    if (detectedTypes(r).empty()) {
+        e.status_label->setText(tr("No sonar data"));
         applyFileStatus(e.status_label, "error");
+        return;
+    }
+    // The file has data but the user unchecked every modality.
+    if (e.module_filter.empty()) {
+        e.status_label->setText(tr("Select a type"));
+        applyFileStatus(e.status_label, "caution");
         return;
     }
 
@@ -397,6 +472,9 @@ void ImportReviewWizard::onAccept()
     // Build per-file actions — classifier decides Reuse/Rebuild/ImportNew.
     for (const FileEntry& e : m_entries) {
         if (!e.done || !e.result.success) continue;
+        // Detect-then-confirm: skip files with no modality selected (none detected,
+        // or the user unchecked them all).
+        if (e.module_filter.empty()) continue;
 
         // Base action from the classifier (kind + existing ids already set).
         // Pass the chosen module(s) so reuse is modality-aware: importing a new
