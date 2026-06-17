@@ -26,9 +26,9 @@ namespace {
 int maxImageDimForQuality(MapSonarQuality q)
 {
     switch (q) {
-    case MapSonarQuality::Medium: return 1024;
-    case MapSonarQuality::High:   return 2048;
-    case MapSonarQuality::Full:   return 4096;
+    case MapSonarQuality::Low:    return 1024;
+    case MapSonarQuality::Medium: return 2048;
+    case MapSonarQuality::High:   return 4096;
     default:                      return 0;
     }
 }

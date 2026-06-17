@@ -203,7 +203,7 @@ void SidescanViewController::prebuildTier(const std::string& layer_id,
 
             size_t effective_cap = qp.max_ping_groups;
             if (effective_cap == 0 && total_groups > detail::kFullSafeLimit)
-                effective_cap = detail::paramsForQuality(MapSonarQuality::High).max_ping_groups;
+                effective_cap = detail::paramsForQuality(MapSonarQuality::Medium).max_ping_groups;
 
             if (effective_cap > 0) {
                 auto thin = thinSidescanEntriesForMap(map_idx, effective_cap);

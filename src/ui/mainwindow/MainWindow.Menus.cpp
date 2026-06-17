@@ -278,9 +278,9 @@ void MainWindow::buildViewMenu()
     static constexpr QualityEntry kEntries[] = {
         { MapSonarQuality::Off,          "Off"                 },
         { MapSonarQuality::CoverageOnly, "Coverage Only"       },
+        { MapSonarQuality::Low,          "Low"                 },
         { MapSonarQuality::Medium,       "Medium"              },
         { MapSonarQuality::High,         "High"                },
-        { MapSonarQuality::Full,         "Full / Best Available"},
     };
 
     QSettings qs;

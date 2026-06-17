@@ -172,9 +172,9 @@ void MainWindow::onMapDiagnosticsReady(const QString& layer_id, const NavStats& 
         switch (q) {
         case MapSonarQuality::Off:          return QLatin1StringView("Off");
         case MapSonarQuality::CoverageOnly: return QLatin1StringView("CoverageOnly");
+        case MapSonarQuality::Low:          return QLatin1StringView("Low");
         case MapSonarQuality::Medium:       return QLatin1StringView("Medium");
         case MapSonarQuality::High:         return QLatin1StringView("High");
-        case MapSonarQuality::Full:         return QLatin1StringView("Full");
         }
         return QLatin1StringView("?");
     };

@@ -103,14 +103,14 @@ void SidescanViewController::activateLayer(const std::string& layer_id,
     const core::SpatialRef display_ref =
         project ? project->displaySpatialRef() : core::SpatialRef{};
 
-    // Progressive load: the heavy tiers (High/Full) paint a fast Medium preview
+    // Progressive load: the heavy tiers (Medium/High) paint a fast Low preview
     // first, then upgrade to the requested tier in the background (prebuildTier →
-    // prebuildTierComplete swap). CoverageOnly/Low/Medium build directly, so the
-    // common default path is unchanged — only the slow tiers stage.
+    // prebuildTierComplete swap). CoverageOnly/Low build directly, so the common
+    // default path is unchanged — only the slow tiers stage.
     MapSonarQuality build_quality = m_quality;
     bool            stage_upgrade = false;
-    if (m_quality == MapSonarQuality::High || m_quality == MapSonarQuality::Full) {
-        build_quality = MapSonarQuality::Medium;
+    if (m_quality == MapSonarQuality::Medium || m_quality == MapSonarQuality::High) {
+        build_quality = MapSonarQuality::Low;
         stage_upgrade = true;
     }
     const QualityParams qp = paramsForQuality(build_quality);
@@ -375,12 +375,12 @@ void SidescanViewController::activateLayer(const std::string& layer_id,
             const size_t total_groups = result.total_ssc_entries / 2;
 
             // Thin to the quality-determined ping group cap.
-            // max_ping_groups == 0 (Full quality) means "use all pings", but
-            // if the file exceeds kFullSafeLimit we fall back to High params.
+            // max_ping_groups == 0 (High quality) means "use all pings", but
+            // if the file exceeds kFullSafeLimit we fall back to Medium params.
             size_t effective_cap = qp.max_ping_groups;
             if (effective_cap == 0) {
                 if (total_groups > kFullSafeLimit) {
-                    effective_cap = paramsForQuality(MapSonarQuality::High).max_ping_groups;
+                    effective_cap = paramsForQuality(MapSonarQuality::Medium).max_ping_groups;
                     result.quality_reduced = true;
                 }
                 // else: effective_cap stays 0 → no thinning below
@@ -454,7 +454,7 @@ void SidescanViewController::activateLayer(const std::string& layer_id,
             }
             // -- Build / CRS fields for diagnostics ---------------------------
             result.layer_data.nav_stats.quality_used    =
-                result.quality_reduced ? MapSonarQuality::High : current_quality;
+                result.quality_reduced ? MapSonarQuality::Medium : current_quality;
             result.layer_data.nav_stats.pings_available = total_groups;
             result.layer_data.nav_stats.memory_reduced  = result.quality_reduced;
 

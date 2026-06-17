@@ -15,34 +15,36 @@ namespace dolphin::ui {
 //
 // Off          — nav track only; no coverage, no image
 // CoverageOnly — ribbon swath footprints + nav track; no amplitude raster
-// Medium       — balanced       (1024 px, 10 000 ping groups,  512 samples)
-// High         — detailed       (2048 px, 16 000 ping groups, 1024 samples)
-// Full         — best available (4096 px, unlimited pings/samples)
+// Low          — balanced       (1024 px, 10 000 ping groups,  512 samples)
+// Medium       — detailed       (2048 px, 16 000 ping groups, 1024 samples)
+// High         — best available (4096 px, unlimited pings/samples)
 //
-// Value 2 — the former "Low" tier — is retired; persisted settings holding it are
-// migrated to Medium by mapSonarQualityFromInt(). The remaining enumerators keep
-// their original numbers so saved Medium/High/Full values still load correctly.
+// The three image tiers keep their original enum NUMBERS (3/4/5) — they were once
+// labelled Medium/High/Full, renamed to Low/Medium/High — so persisted settings keep
+// the same actual resolution, just under a new name. Value 2 (a still-earlier "Low")
+// is retired; mapSonarQualityFromInt() migrates any stale value to the lowest image
+// tier (Low).
 enum class MapSonarQuality : int {
     Off          = 0,
     CoverageOnly = 1,
-    Medium       = 3,
-    High         = 4,
-    Full         = 5,
+    Low          = 3,   // formerly "Medium"
+    Medium       = 4,   // formerly "High"
+    High         = 5,   // formerly "Full / Best Available"
 };
 
-// Map a persisted quality int to a current value. Valid values pass through; the
-// retired Low tier (2) and any unknown value migrate to Medium.
+// Map a persisted quality int to a current value. Valid values pass through; any
+// retired/unknown value migrates to the lowest image tier (Low).
 inline MapSonarQuality mapSonarQualityFromInt(int v)
 {
     switch (static_cast<MapSonarQuality>(v)) {
         case MapSonarQuality::Off:
         case MapSonarQuality::CoverageOnly:
+        case MapSonarQuality::Low:
         case MapSonarQuality::Medium:
         case MapSonarQuality::High:
-        case MapSonarQuality::Full:
             return static_cast<MapSonarQuality>(v);
         default:
-            return MapSonarQuality::Medium;
+            return MapSonarQuality::Low;
     }
 }
 
@@ -121,7 +123,7 @@ struct NavStats {
     int    image_height  = 0;
 
     // -- Build parameters (set by SidescanViewController in background task) -----
-    MapSonarQuality quality_used    = MapSonarQuality::Medium;
+    MapSonarQuality quality_used    = MapSonarQuality::Low;
     size_t          pings_available = 0;    // total ping groups in store (before thinning)
     bool            memory_reduced  = false; // true if Full quality was auto-downgraded
     std::string     crs_label;              // e.g. "EPSG:32632 projected exact"
