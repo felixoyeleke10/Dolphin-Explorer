@@ -186,6 +186,11 @@ ImportSetupDialog::ImportSetupDialog(QWidget* parent)
             card->style()->polish(card);
         }
     }
+
+    // Open at the content's natural size so the platform window is never created
+    // smaller than its minimum (avoids the QWindowsWindow::setGeometry "unable to
+    // set geometry" warning when Qt would otherwise create it title-bar-height first).
+    adjustSize();
 }
 
 bool ImportSetupDialog::eventFilter(QObject* obj, QEvent* ev)
