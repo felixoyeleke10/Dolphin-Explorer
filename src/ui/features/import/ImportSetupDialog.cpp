@@ -42,16 +42,19 @@ static constexpr SensorEntry kSensors[4] = {
 
 } // namespace
 
-static constexpr int kMinW = 440;
-
 ImportSetupDialog::ImportSetupDialog(QWidget* parent)
     : QDialog(parent, Qt::Dialog)
 {
     setWindowTitle(tr("Import Survey Files"));
     setModal(true);
-    setMinimumWidth(kMinW);
 
     auto* root = makeCompactLayout<QVBoxLayout>(this);
+    // Derive the dialog's minimum size from its content: the layout's minimum
+    // becomes the window's minimum, so it always opens at its natural size and is
+    // never created smaller than its content. This replaces a hard-coded minimum
+    // width (which didn't match the cards' real width) and avoids the
+    // QWindowsWindow::setGeometry clamp warning at the source.
+    root->setSizeConstraint(QLayout::SetMinimumSize);
 
     // -- Header ----------------------------------------------------------------
     {
@@ -186,11 +189,6 @@ ImportSetupDialog::ImportSetupDialog(QWidget* parent)
             card->style()->polish(card);
         }
     }
-
-    // Open at the content's natural size so the platform window is never created
-    // smaller than its minimum (avoids the QWindowsWindow::setGeometry "unable to
-    // set geometry" warning when Qt would otherwise create it title-bar-height first).
-    adjustSize();
 }
 
 bool ImportSetupDialog::eventFilter(QObject* obj, QEvent* ev)
