@@ -23,6 +23,24 @@ static std::string lowerExt(const std::string& path)
 
 } // namespace
 
+std::string fileFilterForArtifactType(core::ArtifactType type)
+{
+    // Only the formats the probe actually supports per family (+ DLPD cache, which
+    // can carry any modality). Keep in sync with probeFile()'s extension switch.
+    switch (type) {
+        case core::ArtifactType::Sidescan:
+            return "Sidescan Files (*.xtf *.jsf *.dlpd *.dpcache);;All Files (*)";
+        case core::ArtifactType::SubBottom:
+            return "Sub-Bottom Files (*.segy *.sgy *.dlpd *.dpcache);;All Files (*)";
+        case core::ArtifactType::Magnetometer:
+            return "Magnetometer Files (*.xtf *.dlpd *.dpcache);;All Files (*)";
+        case core::ArtifactType::Multibeam:
+            return "Bathymetry Files (*.dlpd *.dpcache);;All Files (*)";
+        default:
+            return std::string(kSupportedFileFilter);
+    }
+}
+
 ProbeResult probeFile(const std::string& path)
 {
     const std::string ext = lowerExt(path);

@@ -172,7 +172,11 @@ void ImportReviewWizard::dropEvent(QDropEvent* e)
 
 void ImportReviewWizard::onAddFiles()
 {
-    const QString filter = QString::fromLatin1(io::kSupportedFileFilter);
+    // Scope the open dialog to the preset modality's formats (from a modality-specific
+    // import command); otherwise offer all supported survey formats.
+    const QString filter = m_module_filter.empty()
+        ? QString::fromLatin1(io::kSupportedFileFilter)
+        : QString::fromStdString(io::fileFilterForArtifactType(m_module_filter.front()));
     const QStringList paths = QFileDialog::getOpenFileNames(
         this, tr("Add Survey Files"), QDir::homePath(), filter);
     if (!paths.isEmpty())
