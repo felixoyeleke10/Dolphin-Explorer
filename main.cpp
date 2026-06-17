@@ -62,12 +62,24 @@ static void debugMessageHandler(QtMsgType type, const QMessageLogContext&, const
     fprintf(stderr, "%s\n", ba.constData());
     fflush(stderr);
 
-    // Benign Qt Windows platform-plugin noise (transient monitor-handle / DPI
-    // fallback at startup, e.g. "monitorData: Unable to obtain handle for monitor
-    // '\\.\DISPLAY1', defaulting to 96 DPI"). Qt recovers once the window maps, so
-    // keep it in the debug log + stderr above but don't surface it in the in-app
-    // runtime log as a user-facing problem.
-    if (!msg.contains(QLatin1String("Unable to obtain handle for monitor")))
+    // Benign Qt Windows platform-plugin noise — Qt auto-corrects these and the UI is
+    // unaffected, so keep them in the debug log + stderr above but don't surface them
+    // in the in-app runtime log as user-facing problems:
+    //   - "Unable to obtain handle for monitor … defaulting to 96 DPI" — transient
+    //     monitor-handle / DPI fallback while a window maps.
+    //   - "QWindowsWindow::setGeometry: Unable to set geometry …" — the platform
+    //     plugin's initial geometry request for a dialog is below its minimum, so Qt
+    //     clamps it up to the correct size (the "Resulting geometry" in the message).
+    //     This fires for built-in dialogs too (QInputDialog/QMessageBox), so it can't
+    //     be fixed per-dialog; the windows still display correctly.
+    static const char* kBenignPlatformNoise[] = {
+        "Unable to obtain handle for monitor",
+        "Unable to set geometry",
+    };
+    bool benign = false;
+    for (const char* needle : kBenignPlatformNoise)
+        if (msg.contains(QLatin1String(needle))) { benign = true; break; }
+    if (!benign)
         dolphin::ui::RuntimeLogBridge::publish(type, msg);
 
     // Q_ASSERT → qFatal calls this handler, then calls abort() from inside Qt's DLL.
