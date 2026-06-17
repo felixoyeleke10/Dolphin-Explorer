@@ -75,9 +75,13 @@ MainStatusBar::MainStatusBar(QWidget* parent)
     // Fusion style required for indeterminate animation on Windows (native style ignores QSS).
     m_progress->setStyle(QStyleFactory::create("Fusion"));
 
-    // -- Context label (project · active layer) --------------------------------
+    // -- Context label (project name) ------------------------------------------
     m_context = new QLabel(tr("No project"), this);
     m_context->setObjectName("statusChrome");
+    // Ignored horizontal policy: the label accepts whatever width the bar gives it
+    // (down to 0) and clips, rather than forcing its full width and overlapping the
+    // permanent fields on the right when the window is narrow.
+    m_context->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
 
     // -- Transient job message -------------------------------------------------
     m_job = new QLabel(this);

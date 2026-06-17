@@ -133,13 +133,10 @@ void MainWindow::updateContextInfo()
         return;
     }
 
+    // Status bar shows only the project name — the active line is already visible in
+    // the tree (selected) and on the map, so repeating it here was just noise.
     const QString project = QString::fromStdString(currentProject()->name());
-    QString layer;
-    if (!activeLayerId().empty()) {
-        if (auto* l = currentProject()->findLayer(activeLayerId()))
-            layer = QString::fromStdString(l->label);
-    }
-    m_status_bar->setProjectContext(project, layer);
+    m_status_bar->setProjectContext(project);
 
     // Status-bar CRS shows the project's survey/working grid (the projected CRS
     // the data is in) — not the map's internal WGS84 render ref — so it matches
