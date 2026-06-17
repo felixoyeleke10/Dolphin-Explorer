@@ -462,8 +462,6 @@ bool ImportService::startRebuild(const std::string& layer_id,
 
         const Result r = watcher->result();
         if (r.cancelled) return;  // project switched mid-scan; discard silently
-        qInfo("[timing] rebuildCacheIndex %s: full .dlpd scan = %lld ms (%zu entries)",
-              layer_id.c_str(), static_cast<long long>(r.scan_ms), r.index.entries.size());
 
         if (!r.error.empty()) {
             emit indexingFailed(layer_id, r.error);

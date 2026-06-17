@@ -226,28 +226,17 @@ void MapView::rebuildCombined()
         }
     };
 
-    int appended = 0, with_track = 0;
     if (m_project) {
         for (const auto& layer : m_project->layers()) {
             if (!layer) continue;
             const auto it = m_layer_data.find(layer->id);
             if (it == m_layer_data.end() || !it->second.visible) continue;
             appendLayerData(it->second);
-            ++appended;
-            if (it->second.show_nav_track && !it->second.nav_track.empty()) ++with_track;
         }
     } else {
-        for (const auto& [id, data] : m_layer_data) {
-            if (!data.visible) continue;
-            appendLayerData(data);
-            ++appended;
-            if (data.show_nav_track && !data.nav_track.empty()) ++with_track;
-        }
+        for (const auto& [id, data] : m_layer_data)
+            if (data.visible) appendLayerData(data);
     }
-    qInfo("[map] combined: %d layer(s) visible, %d with track, %zu nav pts; "
-          "bbox lon[%.3f..%.3f] lat[%.3f..%.3f]",
-          appended, with_track, m_nav_track.size(),
-          m_bbox_lon_min, m_bbox_lon_max, m_bbox_lat_min, m_bbox_lat_max);
 }
 
 // -- fitToData / fitToDataAndReset ---------------------------------------------

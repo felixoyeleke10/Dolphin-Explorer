@@ -437,13 +437,21 @@ void ExecutionProgressDialog::updateStages()
 {
     if (m_stage_lbls.empty()) return;
 
-    const int total = static_cast<int>(m_rows.size());
+    // Total = the whole batch (queued + dispatched), not just the rows visible so
+    // far. With the D-14 import cap (2 concurrent), only 2 of N rows exist while the
+    // rest are queued; using m_rows.size() here under-reported the total ("of 2" for
+    // a 3-line import) and let reading_done flip true before the queued lines were
+    // even added. Mirror updateHeader().
+    const int rows  = static_cast<int>(m_rows.size());
+    const int total = std::max(m_queue_total, rows);
     int done = 0, failed = 0;
-    for (int i = 0; i < total; ++i) {
+    for (int i = 0; i < rows; ++i) {
         if      (m_rows[i].state == FileRow::State::Done)   ++done;
         else if (m_rows[i].state == FileRow::State::Failed) ++failed;
     }
     const int  parsed       = done + failed;
+    // Reading is only "done" once every batch line has produced a finished row —
+    // not when the first 2 dispatched lines finish ahead of the queued remainder.
     const bool reading_done = total > 0 && (parsed == total);
 
     // st: 0 = pending · 1 = active · 2 = done

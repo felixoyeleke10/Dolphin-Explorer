@@ -258,19 +258,31 @@ Why:
 - this prevents throwaway one-off harnesses
 - it gives Stage 02 and later stages a stable test foundation
 
-## D-14: First-Pass Heavy-Work Concurrency Limit
+## D-14: Heavy-Work Concurrency Limit
 
-Status: `Locked`
+Status: `Locked` (revised 2026-06-17 at owner direction)
 
 Decision:
 
-- until Stage 03 benchmark evidence justifies a different value, the first-pass default limit for simultaneous heavy import/decode jobs is `2`
-- heavy work beyond that limit should queue visibly rather than launch unbounded background tasks
+- simultaneous heavy import/decode jobs scale to the machine's logical CPU count
+  (`std::thread::hardware_concurrency()`, floor 2) — a large batch uses the whole
+  machine rather than an artificial fixed limit
+- heavy work beyond that limit still queues visibly rather than launching unbounded
+  background tasks (the queue dispatches the remainder as slots free up)
 
 Why:
 
-- this gives the multi-file workflow a concrete first-pass queueing rule
-- it prioritizes responsiveness over uncontrolled background throughput
+- owner directive: professional tooling should handle as many datasets as the hardware
+  allows, not throttle to a fixed 2
+- scaling to cores (not unbounded) is the safe form of "as many as possible": parsing is
+  CPU-bound, so concurrency past the core count only adds disk/scheduler thrash, and an
+  unbounded launch risks memory blowup on big batches
+- the visible-queue rule is retained, so responsiveness and honest progress are preserved
+
+History:
+
+- original (Stage 02): fixed first-pass default of `2` simultaneous heavy jobs, pending
+  Stage 03 benchmark evidence. Superseded by the core-scaled limit above.
 
 ## Change Control
 

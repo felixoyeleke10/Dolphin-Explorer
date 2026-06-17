@@ -359,9 +359,6 @@ void SidescanViewController::activateLayer(const std::string& layer_id,
                             SidescanViewController::colorizeIntensityCache(
                                 ic, std::nullopt, palette_idx);
                     }
-                    qInfo("[raster] %s: loaded from cache (%dx%d) — no ping decode",
-                          layer_id.c_str(), result.layer_data.intensity_w,
-                          result.layer_data.intensity_h);
                     return result;
                 }
             }
@@ -526,11 +523,7 @@ void SidescanViewController::activateLayer(const std::string& layer_id,
                 sum.total_ssc_entries  = result.total_ssc_entries;
                 sum.preview_port_count = result.preview_port_count;
                 sum.quality_reduced    = result.quality_reduced;
-                const bool wrote = rastercache::save(cache_path, cache_meta, sum,
-                                                     result.layer_data);
-                qInfo("[raster] %s: built from pings + %s (%dx%d)",
-                      layer_id.c_str(), wrote ? "cached" : "CACHE WRITE FAILED",
-                      result.layer_data.intensity_w, result.layer_data.intensity_h);
+                rastercache::save(cache_path, cache_meta, sum, result.layer_data);
             }
 
             // Keep normalized pings so a palette change can re-rasterize without
@@ -624,19 +617,11 @@ void SidescanViewController::showNavTrackFromIndex(const std::string& layer_id,
         ld.lat_min = std::min(ld.lat_min, out.lat);
         ld.lat_max = std::max(ld.lat_max, out.lat);
     }
-    if (ld.nav_track.empty()) {
-        qInfo("[nav] %s: 0 track points from %zu index entries (reproject failed?)",
-              layer_id.c_str(), entries.size());
-        return;
-    }
-    const size_t pts = ld.nav_track.size();
-    const double lo0 = ld.lon_min, lo1 = ld.lon_max, la0 = ld.lat_min, la1 = ld.lat_max;
+    if (ld.nav_track.empty()) return;
     m_map_view->setLayerMapData(layer_id, std::move(ld));
     // setLayerMapData() preserves an existing layer's show_nav_track, so force it on
     // (mirrors the SBP/MAG path) — otherwise the track is built but never rendered.
     m_map_view->setNavTrackVisible(layer_id, true);
-    qInfo("[nav] %s: %zu pts  lon[%.3f..%.3f] lat[%.3f..%.3f]",
-          layer_id.c_str(), pts, lo0, lo1, la0, la1);
 }
 
 } // namespace dolphin::ui

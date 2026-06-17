@@ -1,4 +1,4 @@
-// ImportJobManager.cpp — concurrent import queue, up to kMaxConcurrent (2) jobs.
+// ImportJobManager.cpp — concurrent import queue; parallelism scales to CPU cores.
 #include "app/import/ImportJobManager.h"
 #include "app/services/ImportService.h"
 #include "app/project/Project.h"
@@ -6,8 +6,20 @@
 #include <QMetaObject>
 #include <QSet>
 #include <QString>
+#include <algorithm>
+#include <thread>
 
 namespace dolphin::app {
+
+int ImportJobManager::maxConcurrentJobs()
+{
+    // Use every logical core (floor 2). Parsing/decoding is CPU-bound, so this is
+    // the practical ceiling — more parallelism than cores only thrashes the disk
+    // and scheduler. The queue dispatches the rest as slots free up, so any number
+    // of files can be imported in one batch without an artificial limit.
+    const unsigned hc = std::thread::hardware_concurrency();
+    return static_cast<int>(std::max(2u, hc));
+}
 
 ImportJobManager::ImportJobManager(ImportService* service, QObject* parent)
     : QObject(parent)
@@ -79,7 +91,7 @@ void ImportJobManager::importBatch(const QList<FileImportAction>& actions)
     }
 
     if (new_jobs > 0) {
-        dispatchNext();  // fills up to kMaxConcurrent slots
+        dispatchNext();  // fills up to maxConcurrentJobs() slots
     } else if (m_active_count == 0) {
         // All actions were reuse/skip and nothing is running — batch is done.
         m_log.record(makeEntry(ImportLogEntry::Event::BatchDone));
@@ -141,7 +153,8 @@ void ImportJobManager::cancelQueue(const QString& reason)
 
 void ImportJobManager::dispatchNext()
 {
-    while (m_active_count < kMaxConcurrent && !m_queue.empty()) {
+    const int cap = maxConcurrentJobs();
+    while (m_active_count < cap && !m_queue.empty()) {
         QueuedJob job = m_queue.front();
         m_queue.pop_front();
 

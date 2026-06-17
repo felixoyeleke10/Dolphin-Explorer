@@ -14,7 +14,7 @@ class ImportService;
 class Project;
 
 // Owns the import job queue and dispatch loop.
-// Up to kMaxConcurrent jobs run in parallel; each is driven by ImportService
+// Up to maxConcurrentJobs() jobs run in parallel; each is driven by ImportService
 // signals.  UI consumers connect to the signals below and drive their own widgets.
 class ImportJobManager : public QObject {
     Q_OBJECT
@@ -27,7 +27,12 @@ public:
         int failed   = 0;   // jobs that failed or whose source was not found
     };
 
-    static constexpr int kMaxConcurrent = 2;   // D-14: max heavy import jobs
+    // Max heavy import/decode jobs run in parallel. Scaled to the machine's logical
+    // CPU count so a large batch uses the whole machine instead of an artificial
+    // limit (D-14 revised 2026-06-17 at owner direction: was a hard cap of 2).
+    // Floor of 2 on single/low-core hosts. Parsing is CPU-bound, so going past the
+    // core count just adds scheduler/disk thrash — the queue holds the remainder.
+    static int maxConcurrentJobs();
 
     explicit ImportJobManager(ImportService* service, QObject* parent = nullptr);
     ~ImportJobManager() override;
