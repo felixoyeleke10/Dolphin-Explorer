@@ -482,7 +482,8 @@ MainWindow::MainWindow(QWidget* parent)
         QSettings qs;
         const int saved = qs.value(SettingsDialog::kKeyMapSonarQuality,
                                    static_cast<int>(MapSonarQuality::CoverageOnly)).toInt();
-        m_sss_ctrl->setMapSonarQuality(static_cast<MapSonarQuality>(saved));
+        // mapSonarQualityFromInt migrates the retired "Low" tier to Medium.
+        m_sss_ctrl->setMapSonarQuality(mapSonarQualityFromInt(saved));
     }
     if constexpr (Features::kImport) {
         m_import_job_mgr = new app::ImportJobManager(m_import_service, this);

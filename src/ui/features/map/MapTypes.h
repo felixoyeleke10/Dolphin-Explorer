@@ -15,18 +15,36 @@ namespace dolphin::ui {
 //
 // Off          — nav track only; no coverage, no image
 // CoverageOnly — ribbon swath footprints + nav track; no amplitude raster
-// Low          — fast preview  ( 512 px max,  5 000 ping groups,  256 samples)
-// Medium       — balanced      (1024 px,    10 000 ping groups,  512 samples)
-// High         — detailed      (2048 px,    25 000 ping groups, 1024 samples)
-// Full         — best available (4096 px,   unlimited pings/samples)
+// Medium       — balanced       (1024 px, 10 000 ping groups,  512 samples)
+// High         — detailed       (2048 px, 16 000 ping groups, 1024 samples)
+// Full         — best available (4096 px, unlimited pings/samples)
+//
+// Value 2 — the former "Low" tier — is retired; persisted settings holding it are
+// migrated to Medium by mapSonarQualityFromInt(). The remaining enumerators keep
+// their original numbers so saved Medium/High/Full values still load correctly.
 enum class MapSonarQuality : int {
     Off          = 0,
     CoverageOnly = 1,
-    Low          = 2,
     Medium       = 3,
     High         = 4,
     Full         = 5,
 };
+
+// Map a persisted quality int to a current value. Valid values pass through; the
+// retired Low tier (2) and any unknown value migrate to Medium.
+inline MapSonarQuality mapSonarQualityFromInt(int v)
+{
+    switch (static_cast<MapSonarQuality>(v)) {
+        case MapSonarQuality::Off:
+        case MapSonarQuality::CoverageOnly:
+        case MapSonarQuality::Medium:
+        case MapSonarQuality::High:
+        case MapSonarQuality::Full:
+            return static_cast<MapSonarQuality>(v);
+        default:
+            return MapSonarQuality::Medium;
+    }
+}
 
 // -- Coverage display (always built for CoverageOnly+, fast, no amplitude) -----
 struct SwathCoverage {
@@ -103,7 +121,7 @@ struct NavStats {
     int    image_height  = 0;
 
     // -- Build parameters (set by SidescanViewController in background task) -----
-    MapSonarQuality quality_used    = MapSonarQuality::Low;
+    MapSonarQuality quality_used    = MapSonarQuality::Medium;
     size_t          pings_available = 0;    // total ping groups in store (before thinning)
     bool            memory_reduced  = false; // true if Full quality was auto-downgraded
     std::string     crs_label;              // e.g. "EPSG:32632 projected exact"

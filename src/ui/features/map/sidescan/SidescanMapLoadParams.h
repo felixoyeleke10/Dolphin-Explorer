@@ -49,7 +49,6 @@ inline QualityParams paramsForQuality(MapSonarQuality q)
     switch (q) {
     case MapSonarQuality::Off:
     case MapSonarQuality::CoverageOnly: return {5000,   16,    0, 0.0, 0};
-    case MapSonarQuality::Low:          return {5000,  256,  512, 0.0, 0};
     case MapSonarQuality::Medium:       return {10000, 512, 1024, 0.0, 0};
     case MapSonarQuality::High:         return {16000, 1024, 2048, 0.0, 0};
     case MapSonarQuality::Full:         return {0,       0, 4096, 0.0, 0};

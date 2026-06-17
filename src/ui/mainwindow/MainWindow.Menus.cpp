@@ -278,15 +278,15 @@ void MainWindow::buildViewMenu()
     static constexpr QualityEntry kEntries[] = {
         { MapSonarQuality::Off,          "Off"                 },
         { MapSonarQuality::CoverageOnly, "Coverage Only"       },
-        { MapSonarQuality::Low,          "Low"                 },
         { MapSonarQuality::Medium,       "Medium"              },
         { MapSonarQuality::High,         "High"                },
         { MapSonarQuality::Full,         "Full / Best Available"},
     };
 
     QSettings qs;
-    const int saved_q = qs.value(SettingsDialog::kKeyMapSonarQuality,
-                                 static_cast<int>(MapSonarQuality::CoverageOnly)).toInt();
+    const int saved_q = static_cast<int>(mapSonarQualityFromInt(
+        qs.value(SettingsDialog::kKeyMapSonarQuality,
+                 static_cast<int>(MapSonarQuality::CoverageOnly)).toInt()));
 
     for (const auto& e : kEntries) {
         auto* act = sonar_menu->addAction(tr(e.label));
@@ -311,8 +311,9 @@ void MainWindow::buildViewMenu()
 
         // Sync quality checkmarks with current QSettings in case changed elsewhere.
         QSettings qs2;
-        const int cur = qs2.value(SettingsDialog::kKeyMapSonarQuality,
-                                  static_cast<int>(MapSonarQuality::Low)).toInt();
+        const int cur = static_cast<int>(mapSonarQualityFromInt(
+            qs2.value(SettingsDialog::kKeyMapSonarQuality,
+                      static_cast<int>(MapSonarQuality::CoverageOnly)).toInt()));
         for (int i = 0; i < static_cast<int>(m_act_map_quality.size()); ++i)
             if (m_act_map_quality[i])
                 m_act_map_quality[i]->setChecked(i == cur);
