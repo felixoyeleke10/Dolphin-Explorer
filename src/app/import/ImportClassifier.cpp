@@ -1,8 +1,10 @@
 #include "app/import/ImportClassifier.h"
 #include "app/project/Project.h"
 #include "app/layers/DataLayer.h"
+#include "app/layers/LayerUtils.h"
 #include "io/cache/ParsedCache.h"
 #include <QString>
+#include <algorithm>
 
 namespace dolphin::app {
 
@@ -42,7 +44,9 @@ const DataLayer* bestLayer(const std::vector<DataLayer*>& layers)
 
 } // namespace
 
-FileImportAction classifyImportAction(const QString& path, const Project* project)
+FileImportAction classifyImportAction(
+    const QString& path, const Project* project,
+    const std::vector<core::ArtifactType>& requested_modules)
 {
     FileImportAction action;
     action.path = path;
@@ -56,7 +60,31 @@ FileImportAction classifyImportAction(const QString& path, const Project* projec
     const auto layers = project->findLayersBySource(source->id);
     if (layers.empty()) return action;
 
-    // Check each layer for a valid DLPD cache.
+    // Modality-aware reuse: a requested family is only "already imported" if a layer
+    // for that modality exists. Importing a new modality from a mixed source that was
+    // previously imported as a different modality must create the missing layer, not
+    // report the source as fully reused. (requested_modules empty = legacy whole-file
+    // import: treat as "all present", i.e. fall through to the source-level decision.)
+    bool missing_requested_modality = false;
+    if (!requested_modules.empty()) {
+        for (core::ArtifactType t : requested_modules) {
+            const Modality want = modalityForType(t);
+            const bool have = std::any_of(layers.begin(), layers.end(),
+                [&](const DataLayer* l) { return l && l->modality == want; });
+            if (!have) { missing_requested_modality = true; break; }
+        }
+    }
+
+    if (missing_requested_modality) {
+        // Create the missing modality layer(s). ImportNew reuses the existing source
+        // and (when unchanged) the cached decode via buildArtifactStore; module
+        // routing in completeImport carves the requested families into new layers.
+        action.kind               = FileImportAction::Kind::ImportNew;
+        action.existing_source_id = source->id;
+        return action;
+    }
+
+    // Every requested modality already has a layer — decide on cache validity.
     std::vector<DataLayer*> valid_cache_layers;
     for (auto* l : layers) {
         if (cacheIsValid(l)) valid_cache_layers.push_back(l);

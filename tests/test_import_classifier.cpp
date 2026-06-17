@@ -15,8 +15,10 @@
 #include "app/services/ImportService.h"
 #include "app/project/Project.h"
 #include "app/layers/DataLayer.h"
+#include "app/layers/LayerUtils.h"
 #include "io/cache/ParsedCache.h"
 #include "io/IFormatReader.h"
+#include "core/Artifact.h"
 #include "core/ArtifactIndex.h"
 #include "core/SpatialRef.h"
 
@@ -249,7 +251,56 @@ static void testClassifyBestLayerPrefersPipelined()
 }
 
 // ---------------------------------------------------------------------------
-// 6 — ImportJobManager: batch deduplication
+// 6 — modality-aware reuse: mixed source imported as SSS, now requesting SBP
+//     must NOT report ReuseExisting (the SBP layer doesn't exist yet).
+// ---------------------------------------------------------------------------
+
+static void testClassifyModalityAware()
+{
+    QTemporaryDir tmp;
+    if (!tmp.isValid()) { ++g_fail; return; }
+
+    TempFile dlpd;
+    if (!writeDummyDlpd(dlpd.path)) { ++g_fail; return; }
+
+    const std::string manifest = (tmp.path() + "/proj.dlp").toStdString();
+    auto proj = dolphin::app::Project::create("TestProj", manifest);
+    if (!proj) { ++g_fail; return; }
+
+    const std::string src_path = "/survey/mixed.xtf";
+    auto* src = proj->addSource(src_path, "xtf");
+    auto* sss = proj->addLayer(src->id, "Mixed [SSS]");
+    if (!sss) { ++g_fail; return; }
+    sss->artifact_store_path   = dlpd.path;
+    sss->artifact_store_format = "dlpd";
+    sss->index_built           = true;
+    sss->modality              = dolphin::app::Modality::Sidescan;
+    proj->commitLayer(sss->id);
+
+    using Kind = dolphin::app::FileImportAction::Kind;
+    using AT   = dolphin::core::ArtifactType;
+
+    // Requesting SBP from a source that has only an SSS layer (valid cache) must
+    // create the SBP layer — i.e. ImportNew, NOT ReuseExisting.
+    const auto sbp = dolphin::app::classifyImportAction(
+        QString::fromStdString(src_path), proj.get(), { AT::SubBottom });
+    CHECK(sbp.kind == Kind::ImportNew);
+    CHECK(sbp.existing_source_id == src->id);
+
+    // Requesting the modality that already exists (SSS, valid cache) still reuses.
+    const auto sss_again = dolphin::app::classifyImportAction(
+        QString::fromStdString(src_path), proj.get(), { AT::Sidescan });
+    CHECK(sss_again.kind == Kind::ReuseExisting);
+    CHECK(sss_again.existing_layer_id == sss->id);
+
+    // Legacy whole-file request (no module filter) keeps source-level reuse.
+    const auto legacy = dolphin::app::classifyImportAction(
+        QString::fromStdString(src_path), proj.get());
+    CHECK(legacy.kind == Kind::ReuseExisting);
+}
+
+// ---------------------------------------------------------------------------
+// 7 — ImportJobManager: batch deduplication
 // ---------------------------------------------------------------------------
 
 static void testBatchDedup()
@@ -294,6 +345,7 @@ int main(int argc, char** argv)
     testClassifyReuseExisting();
     testClassifyRebuildExisting();
     testClassifyBestLayerPrefersPipelined();
+    testClassifyModalityAware();
     testBatchDedup();
 
     std::printf("\n%d passed, %d failed\n", g_pass, g_fail);

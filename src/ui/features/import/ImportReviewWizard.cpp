@@ -399,7 +399,11 @@ void ImportReviewWizard::onAccept()
         if (!e.done || !e.result.success) continue;
 
         // Base action from the classifier (kind + existing ids already set).
-        FileImportAction action = app::classifyImportAction(e.path, m_current_project);
+        // Pass the chosen module(s) so reuse is modality-aware: importing a new
+        // modality from a source already imported as another modality must create
+        // the missing layer instead of reporting the source as fully reused.
+        FileImportAction action =
+            app::classifyImportAction(e.path, m_current_project, e.module_filter);
 
         // Source CRS: project-level selection takes priority (confirmed by the user
         // in the CRS tab), then the exact declared CRS from the probe (e.g. EPSG:4326

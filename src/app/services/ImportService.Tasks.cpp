@@ -44,6 +44,7 @@ ImportTaskResult buildArtifactStore(const ProjectSource& source,
             result.artifact_index = cache_reader.buildIndex(progress);
             if (!result.artifact_index.empty()) {
                 copyImportMetadata(cache_reader.metadata(), result);
+                result.cache_rebuilt = false;  // reused the existing cache; no decode
                 if (progress) progress(1.0f);
                 return result;
             }
@@ -79,6 +80,7 @@ ImportTaskResult buildArtifactStore(const ProjectSource& source,
         result.artifact_index       = std::move(cache_index);
         result.artifact_store_path   = cache_path;
         result.artifact_store_format = "dlpd";
+        result.cache_rebuilt         = true;   // decoded source + rewrote the cache
         return result;
     }
 
@@ -131,6 +133,15 @@ void completeImport(ImportService*                   svc,
     std::vector<std::string> extra_layer_ids;
     if (dl->modality == Modality::Mixed) {
         const std::string base = dl->label;
+        // A family already represented by another layer of this source must not be
+        // recreated. This makes import idempotent and lets a later modality be added
+        // to an existing source (e.g. import SBP after SSS) without duplicating the
+        // modality already present.
+        auto modalityAlreadyLayered = [&](Modality m) {
+            for (auto* l : project->findLayersBySource(source_id))
+                if (l && l->id != dl->id && l->modality == m) return true;
+            return false;
+        };
         bool first = true;
         for (auto fam_type : kModuleArtifactTypes) {
             // Skip if the user excluded this module via the import dialog.
@@ -138,6 +149,7 @@ void completeImport(ImportService*                   svc,
                 && std::find(wanted_modules.begin(), wanted_modules.end(), fam_type)
                    == wanted_modules.end())
                 continue;
+            if (modalityAlreadyLayered(modalityForType(fam_type))) continue;
             auto filtered = filteredByType(result.artifact_index, fam_type);
             if (filtered.empty()) continue;
             if (first) {
@@ -200,6 +212,29 @@ void completeImport(ImportService*                   svc,
         }
     }
 
+    // When the cache was rebuilt (source changed), existing sibling layers of this
+    // source hold indices into the OLD cache — refresh them from the new index so
+    // their offsets stay valid. Raw layers only: processed/sidecar layers point at a
+    // different artifact store and keep their own index. (No-op on the common path
+    // where the cache was reused unchanged.)
+    std::vector<std::string> refreshed_sibling_ids;
+    if (result.cache_rebuilt) {
+        for (auto* sib : project->findLayersBySource(source_id)) {
+            if (!sib || sib->id == layer_id || sib->id == lf_layer_id) continue;
+            if (std::find(extra_layer_ids.begin(), extra_layer_ids.end(), sib->id)
+                != extra_layer_ids.end())
+                continue;  // freshly created above
+            if (sib->artifact_store_path != result.artifact_store_path) continue;
+            const Modality m = sib->modality;
+            if (m != Modality::Sidescan && m != Modality::SubBottom
+                && m != Modality::Magnetometer && m != Modality::Multibeam)
+                continue;
+            sib->artifact_index =
+                filteredByType(result.artifact_index, artifactTypeForModality(m));
+            refreshed_sibling_ids.push_back(sib->id);
+        }
+    }
+
     if (auto* src = project->findSource(source_id))
         applyImportResultToSource(*src, result);
 
@@ -223,6 +258,9 @@ void completeImport(ImportService*                   svc,
     if (!lf_layer_id.empty())
         emit svc->indexingComplete(lf_layer_id);
     for (const auto& id : extra_layer_ids)
+        emit svc->indexingComplete(id);
+    // Notify for siblings whose index we refreshed so their viewers reload.
+    for (const auto& id : refreshed_sibling_ids)
         emit svc->indexingComplete(id);
 }
 

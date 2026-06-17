@@ -27,6 +27,11 @@ struct ImportTaskResult {
     float               frequency_hz     = 0.0f;
     float               low_frequency_hz = 0.0f;
     BottomTrackKind     bottom_track_kind = BottomTrackKind::Unknown;
+    // True when buildArtifactStore re-decoded the source and rewrote the cache (vs.
+    // reusing a fingerprint-matched cache). Lets completeImport refresh sibling
+    // layers' indices when a modality is added to an existing source whose cache
+    // had to be rebuilt — otherwise their offsets would point into the old cache.
+    bool                cache_rebuilt = false;
 };
 
 struct SourceFingerprint {
