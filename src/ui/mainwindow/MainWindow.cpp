@@ -53,6 +53,25 @@ MainWindow::MainWindow(QWidget* parent)
     m_app_state = new AppState(this);
     m_window_registry = new WindowRegistry(this);
     m_event_bus = new ProjectEventBus(this);
+
+    // Display-state authority — owns per-view state (map preview quality, …),
+    // bridges global defaults from AppState, and is the single bus for per-layer
+    // display changes via displayStateChanged(layer_id, aspect).
+    m_display_state = new DisplayStateManager(m_app_state, this);
+    m_display_state->loadPersistentState();
+    connect(m_display_state, &DisplayStateManager::displayStateChanged, this,
+            [this](const QString& layer_id, DisplayAspect aspect) {
+        if (aspect == DisplayAspect::MapQuality) {
+            if (m_sss_ctrl) m_sss_ctrl->setMapSonarQuality(m_display_state->mapQuality());
+            const int cur = static_cast<int>(m_display_state->mapQuality());
+            for (int i = 0; i < static_cast<int>(m_act_map_quality.size()); ++i)
+                if (m_act_map_quality[i]) m_act_map_quality[i]->setChecked(i == cur);
+        }
+        // A per-layer display change (palette/gain/visibility/nav) means the project
+        // look differs from disk — mark it dirty so it's saved.
+        if (!layer_id.isEmpty())
+            markProjectDirty();
+    });
     connect(m_app_state, &AppState::settingsChanged,
             this, &MainWindow::applyLiveSettings);
     // Sound velocity change: reload the waterfall so the pipeline picks up
@@ -266,6 +285,7 @@ MainWindow::MainWindow(QWidget* parent)
     });
     connect(m_session_ctrl, &ProjectSessionController::projectChanged,
             this, [this](std::shared_ptr<app::Project>) {
+        if (m_display_state) m_display_state->setProject(currentProject());
         bindProjectUi();
         // For close/failed-open: re-enable viewport immediately.
         // For successful open: firstLayerReady() re-enables after next tick.
@@ -488,14 +508,10 @@ MainWindow::MainWindow(QWidget* parent)
             });
 
     {
-        // Apply the persisted map sonar quality (default: CoverageOnly — a new
-        // project shows coverage + nav instantly and pays no raster cost until the
-        // user picks a higher tier).
-        QSettings qs;
-        const int saved = qs.value(SettingsDialog::kKeyMapSonarQuality,
-                                   static_cast<int>(MapSonarQuality::CoverageOnly)).toInt();
-        // mapSonarQualityFromInt migrates the retired "Low" tier to Medium.
-        m_sss_ctrl->setMapSonarQuality(mapSonarQualityFromInt(saved));
+        // Apply the persisted map sonar quality from the display-state authority
+        // (loaded in the ctor; default CoverageOnly — coverage + nav instantly, no
+        // raster cost until the user picks a higher tier).
+        m_sss_ctrl->setMapSonarQuality(m_display_state->mapQuality());
     }
     if constexpr (Features::kImport) {
         m_import_job_mgr = new app::ImportJobManager(m_import_service, this);

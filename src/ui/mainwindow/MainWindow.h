@@ -24,6 +24,7 @@
 #include "ui/mainwindow/LayerDisplayCoordinator.h"
 #include "ui/mainwindow/ActivityLog.h"
 #include "ui/systems/AppState.h"
+#include "ui/systems/DisplayStateManager.h"
 #include "ui/systems/WindowRegistry.h"
 #include "ui/systems/ProjectEventBus.h"
 
@@ -424,6 +425,7 @@ private:
 
     // Core systems — single instances owned by MainWindow.
     AppState*            m_app_state        = nullptr;
+    DisplayStateManager* m_display_state    = nullptr;
     WindowRegistry*      m_window_registry  = nullptr;
     ProjectEventBus*     m_event_bus        = nullptr;
     // (task tracking absorbed by m_op_mgr — see OperationManager)

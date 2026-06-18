@@ -283,10 +283,9 @@ void MainWindow::buildViewMenu()
         { MapSonarQuality::High,         "High"                },
     };
 
-    QSettings qs;
-    const int saved_q = static_cast<int>(mapSonarQualityFromInt(
-        qs.value(SettingsDialog::kKeyMapSonarQuality,
-                 static_cast<int>(MapSonarQuality::CoverageOnly)).toInt()));
+    const int saved_q = m_display_state
+        ? static_cast<int>(m_display_state->mapQuality())
+        : static_cast<int>(MapSonarQuality::CoverageOnly);
 
     for (const auto& e : kEntries) {
         auto* act = sonar_menu->addAction(tr(e.label));
@@ -309,11 +308,10 @@ void MainWindow::buildViewMenu()
         act_toolbar->setChecked(rightToolBarVisible());
         act_props->setChecked(m_props_open);
 
-        // Sync quality checkmarks with current QSettings in case changed elsewhere.
-        QSettings qs2;
-        const int cur = static_cast<int>(mapSonarQualityFromInt(
-            qs2.value(SettingsDialog::kKeyMapSonarQuality,
-                      static_cast<int>(MapSonarQuality::CoverageOnly)).toInt()));
+        // Sync quality checkmarks with the display-state authority.
+        const int cur = m_display_state
+            ? static_cast<int>(m_display_state->mapQuality())
+            : static_cast<int>(MapSonarQuality::CoverageOnly);
         for (int i = 0; i < static_cast<int>(m_act_map_quality.size()); ++i)
             if (m_act_map_quality[i])
                 m_act_map_quality[i]->setChecked(i == cur);
@@ -334,10 +332,10 @@ void MainWindow::buildViewMenu()
 
 void MainWindow::onMapSonarQuality(MapSonarQuality q)
 {
-    QSettings s;
-    s.setValue(SettingsDialog::kKeyMapSonarQuality, static_cast<int>(q));
-    if (m_sss_ctrl)
-        m_sss_ctrl->setMapSonarQuality(q);
+    // Route through the display-state authority: it persists the choice and emits
+    // displayStateChanged(MapQuality); our handler applies it to the controller and
+    // syncs the menu check-marks. Single source of truth.
+    if (m_display_state) m_display_state->setMapQuality(q);
 }
 
 void MainWindow::buildNodeMenu()

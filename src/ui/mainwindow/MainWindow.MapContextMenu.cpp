@@ -190,8 +190,9 @@ void MainWindow::onMapContextMenu(QPoint globalPos)
         { MapSonarQuality::High,         "High"                 },
     };
 
-    const int cur_q = m_sss_ctrl ? static_cast<int>(m_sss_ctrl->mapSonarQuality())
-                                 : static_cast<int>(MapSonarQuality::CoverageOnly);
+    const int cur_q = m_display_state
+        ? static_cast<int>(m_display_state->mapQuality())
+        : static_cast<int>(MapSonarQuality::CoverageOnly);
     for (const auto& e : kEntries) {
         auto* act = quality_menu->addAction(tr(e.label));
         act->setCheckable(true);

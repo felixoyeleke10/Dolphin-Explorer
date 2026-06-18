@@ -325,6 +325,7 @@ target_link_libraries(dolphin-ui-metadata
 #  Lives below mainwindow so feature targets can depend on it without circular refs.
 add_library(dolphin-ui-systems STATIC
     systems/AppState.cpp
+    systems/DisplayStateManager.cpp
     systems/ProjectEventBus.cpp
     systems/WindowRegistry.cpp
 )
