@@ -92,13 +92,6 @@ MainStatusBar::MainStatusBar(QWidget* parent)
     m_job_timer->setInterval(8000);
     connect(m_job_timer, &QTimer::timeout, this, [this]() { m_job->clear(); });
 
-    // -- Sidescan / sonar cursor data (shown only when instrument is active) ----
-    m_range = new QLabel(this);
-    m_range->setObjectName("statusChrome");
-
-    m_depth = new QLabel(this);
-    m_depth->setObjectName("statusChrome");
-
     // -- Field label + value box pairs -----------------------------------------
     auto makeFieldLabel = [this](const char* text) {
         auto* lbl = new QLabel(tr(text), this);
@@ -238,26 +231,6 @@ void MainStatusBar::showJobMessage(const QString& msg, int timeout_ms)
 
 // -- Cursor data ---------------------------------------------------------------
 
-void MainStatusBar::setCursorRange(const QString& side_label, float metres)
-{
-    m_range->setText(QString("%1  %2 m").arg(side_label).arg(metres, 0, 'f', 1));
-}
-
-void MainStatusBar::clearCursorRange()
-{
-    m_range->clear();
-}
-
-void MainStatusBar::setCursorDepth(float metres)
-{
-    m_depth->setText(QString("~%1 m depth").arg(metres, 0, 'f', 0));
-}
-
-void MainStatusBar::clearCursorDepth()
-{
-    m_depth->clear();
-}
-
 void MainStatusBar::setCursorPosition(double lat_or_y, double lon_or_x, bool is_projected)
 {
     m_pos->setText(formatPosition(lat_or_y, lon_or_x, is_projected));
@@ -270,8 +243,6 @@ void MainStatusBar::clearCursorPosition()
 
 void MainStatusBar::clearCursorData()
 {
-    m_range->clear();
-    m_depth->clear();
     m_pos->setText(QStringLiteral("--"));
 }
 

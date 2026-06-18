@@ -299,17 +299,16 @@ void MainWindow::onWaterfallNextLine(const std::string& from_layer_id)
     appendJobMessage("Already on the last survey line.");
 }
 
-void MainWindow::onWaterfallCursorUpdated(float range_m, const QString& side,
+void MainWindow::onWaterfallCursorUpdated(float range_m, const QString& /*side*/,
                                           double lat, double lon, bool is_projected)
 {
     if (!m_status_bar) return;
+    // Only the live coordinate is shown in the status bar; the sidescan range readout
+    // was removed (it floated over the project name).
     if (range_m <= 0.f) {
-        m_status_bar->clearCursorRange();
         m_status_bar->clearCursorPosition();
         return;
     }
-
-    m_status_bar->setCursorRange(side, range_m);
 
     if (lat != 0.0 || lon != 0.0)
         showCursorPosition(lat, lon, is_projected);

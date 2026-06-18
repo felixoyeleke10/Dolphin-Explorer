@@ -234,12 +234,8 @@ void MainWindow::setupCentralWidget()
 
     connect(m_viewport_host, &MapViewportHost::cursorMoved,
             this, [this](double lon, double lat) {
-        if (std::isnan(lon)) {
-            // Cursor left the viewport — freeze coordinate at last known position,
-            // only clear the instrument-specific depth reading.
-            m_status_bar->clearCursorDepth();
-            return;
-        }
+        if (std::isnan(lon))
+            return;  // cursor left the viewport — freeze the last coordinate
         // Map renders in WGS84; report the readout in the project working grid.
         showCursorPosition(lat, lon, /*is_projected=*/false);
     });

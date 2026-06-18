@@ -417,9 +417,12 @@ MainWindow::MainWindow(QWidget* parent)
             });
     // ---------------------------------------------------------------------
 
+    // Only the live coordinate (posLabel) is shown in the status bar. The old
+    // ping/track-length and cursor-depth readouts were noise (and floated, overlapping
+    // the project name), so they're gone — pass nullptr; the controller null-checks both.
     m_sss_ctrl = new SidescanViewController(
         m_map_view, m_import_service,
-        m_status_bar->pingLabel(), m_status_bar->posLabel(), m_status_bar->depthLabel(), this);
+        /*status_ping=*/nullptr, m_status_bar->posLabel(), /*status_depth=*/nullptr, this);
     m_sss_ctrl->setOperationManager(m_op_mgr);  // owns per-layer map-build ops (keyed)
     connect(m_sss_ctrl, &SidescanViewController::contactPicked,
             this, &MainWindow::onContactPicked);

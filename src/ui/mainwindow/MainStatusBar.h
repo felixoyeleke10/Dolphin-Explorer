@@ -29,21 +29,17 @@ class MainStatusBar : public QStatusBar {
 public:
     explicit MainStatusBar(QWidget* parent = nullptr);
 
-    // -- Context (project · active layer) ---------------------------------
+    // -- Context (project name) -------------------------------------------
     void setProjectContext(const QString& project, const QString& layer = {});
     void clearContext();
 
     // -- Transient job messages (auto-clear after timeout) -----------------
     void showJobMessage(const QString& msg, int timeout_ms = 8000);
 
-    // -- Cursor data — set by whichever instrument view is active ----------
-    void setCursorRange(const QString& side_label, float metres); // sidescan
-    void clearCursorRange();
-    void setCursorDepth(float metres);        // altitude / subbottom depth
-    void clearCursorDepth();
+    // -- Cursor position — the live coordinate field (right side) ----------
     void setCursorPosition(double lat_or_y, double lon_or_x, bool is_projected);
     void clearCursorPosition();
-    void clearCursorData();                   // clears all three fields
+    void clearCursorData();                   // clears the coordinate field
 
     // -- Progress bar ------------------------------------------------------
     void setProgressIndeterminate();          // spinner / unknown duration
@@ -62,10 +58,7 @@ public:
     void setAiProvider(AiProvider provider);
     void setAiStatus(AiStatus status);
 
-    // -- Backward-compat accessors for SidescanViewController -------------
-    //    Prefer the typed setters above for all MainWindow-side code.
-    QLabel*       pingLabel()  const { return m_range; }
-    QLabel*       depthLabel() const { return m_depth; }
+    // -- Accessor for SidescanViewController's live coordinate readout -----
     QLabel*       posLabel()   const { return m_pos;   }
 
 signals:
@@ -83,9 +76,6 @@ private:
     QTimer*       m_job_timer = nullptr;
 
     // Right-side permanent widgets — [field label][value box] pairs
-    QLabel*  m_range      = nullptr;   // cursor range or subbottom depth (sidescan)
-    QLabel*  m_depth      = nullptr;   // map-hover depth / altitude reading
-
     QLabel*  m_lbl_coord  = nullptr;   // "Coordinate"
     QLabel*  m_pos        = nullptr;   // lat/lon display (QLabel for SidescanViewController compat)
 

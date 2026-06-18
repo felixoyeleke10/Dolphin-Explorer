@@ -139,12 +139,12 @@ void MainWindow::onSubBottomOpen()
         connect(m_sbp_win, &SubBottomWindow::cursorUpdated,
                 this, [this](float depth_m, double lat, double lon, bool is_projected) {
                     if (!m_status_bar) return;
+                    // Only the live coordinate is shown; the cursor-depth readout was
+                    // removed (it floated over the project name).
                     if (depth_m < 0.f) {
-                        m_status_bar->clearCursorDepth();
                         m_status_bar->clearCursorPosition();
                         return;
                     }
-                    m_status_bar->setCursorDepth(depth_m);
                     if (lat != 0.0 || lon != 0.0)
                         showCursorPosition(lat, lon, is_projected);
                 });
