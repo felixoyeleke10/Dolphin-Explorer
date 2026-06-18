@@ -70,14 +70,13 @@ void MainWindow::onWaterfallOpen()
                 this, &MainWindow::onWaterfallNavProcessAllLines);
         connect(m_waterfall_win, &WaterfallWindow::paletteChanged,
                 this, [this](int idx) {
-                    onPaletteChanged(idx);
-                    // Persist per-layer SSS palette so it survives project close/reopen.
-                    if (!currentProject() || activeLayerId().empty()) return;
-                    auto* layer = currentProject()->findLayer(activeLayerId());
-                    if (layer && layer->sss_palette != idx) {
-                        layer->sss_palette = idx;
-                        markProjectDirty();
-                    }
+                    onPaletteChanged(idx);   // global map palette apply (unchanged)
+                    // Per-layer SSS palette override → through the display-state
+                    // manager: it writes the layer field and emits
+                    // displayStateChanged(layer, Palette); MainWindow marks the project
+                    // dirty on that bus signal, so it persists and other views can react.
+                    if (m_display_state && !activeLayerId().empty())
+                        m_display_state->setLayerSssPalette(activeLayerId(), idx);
                 });
         connect(m_waterfall_win, &WaterfallWindow::qcViewedFractionChanged,
                 this, [this](const std::string& /*layer_id*/, float /*fraction*/) {
