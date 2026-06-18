@@ -246,6 +246,8 @@ void SidescanViewController::activateLayer(const std::string& layer_id,
                 m_loaded_layers.insert(layer_id);
                 m_layer_pings_cache[res.layer_id] = std::move(res.map_pings_cache);
 
+                if (as_active) emit loadingProgress(100);   // data placed → complete
+
                 // Populate stage-2/3 diagnostics from the now-live map view.
                 stats.layer_visible  = m_map_view->isLayerVisible(layer_id);
                 stats.layer_active   = (layer_id == m_active_layer_id);
@@ -318,7 +320,7 @@ void SidescanViewController::activateLayer(const std::string& layer_id,
     // on_finally balances the busy counter + loadingFinished on every outcome.
     m_op_mgr->run<SidescanLoadResult>(
         tr("Loading sidescan map — %1").arg(QString::fromStdString(layer_id)),
-        [svc, store_path, store_format, idx, source_path,
+        [this, as_active, svc, store_path, store_format, idx, source_path,
          layer_src_ref, apply_layer_crs, display_ref, layer_id,
          layer_freq_hz, layer_low_freq_hz, qp, palette_idx,
          georef_params, current_quality, nav_params,
@@ -328,6 +330,15 @@ void SidescanViewController::activateLayer(const std::string& layer_id,
             try {
             SidescanLoadResult result;
             result.layer_id   = layer_id;
+
+            // Report 0–100 progress for the ACTIVE layer's build to the status bar
+            // (marshalled to the main thread). Non-active overview loads stay silent.
+            auto report = [this, as_active](int pct) {
+                if (!as_active) return;
+                QMetaObject::invokeMethod(this, [this, pct]() {
+                    emit loadingProgress(pct);
+                }, Qt::QueuedConnection);
+            };
 
             // -- Raster fast path: load the persisted raster, skip ping decode --
             // If a fresh cached raster exists, reconstruct the map data straight
@@ -359,9 +370,11 @@ void SidescanViewController::activateLayer(const std::string& layer_id,
                             SidescanViewController::colorizeIntensityCache(
                                 ic, std::nullopt, palette_idx);
                     }
+                    report(100);   // cache hit: instant
                     return result;
                 }
             }
+            report(4);   // beginning the full build (cache miss)
 
             // -- Build bounded preview index -----------------------------------
             core::ArtifactIndex map_idx = idx;
@@ -402,9 +415,11 @@ void SidescanViewController::activateLayer(const std::string& layer_id,
                 result.load_failed = true; return result;
             }
 
+            // Reading pings is the bulk of the work — map its 0..1 fraction to 5–60%.
             auto raw = svc->loadAllSidescanPingsFromStore(
                 store_path, store_format, map_idx, source_path,
-                qp.max_samples_per_ping);
+                qp.max_samples_per_ping,
+                [&report](float f) { report(5 + static_cast<int>(f * 55.f)); });
 
             result.raw_count = raw.size();
             if (raw.empty()) {
@@ -428,6 +443,7 @@ void SidescanViewController::activateLayer(const std::string& layer_id,
             // waterfall agree. No-op when the layer has none; applied to the source
             // nav before normalize/reprojection.
             raw = applySidescanNavCorrections(std::move(raw), nav_params);
+            report(66);   // pings read + nav-corrected; reprojecting next
 
             auto map_pings = geo::normalizeSidescanPingsForMap(
                 std::move(raw), display_ref, &result.unresolved_crs);
@@ -443,6 +459,7 @@ void SidescanViewController::activateLayer(const std::string& layer_id,
 
             buildSwathNavTrack(map_pings, result.layer_data);
             buildSwathCoverage(map_pings, result.layer_data, georef_params);
+            report(80);   // coverage + nav track built; rasterizing next
 
             // -- Sonar preview image (quality >= Low) --------------------------
             if (qp.max_image_dim > 0 && !cancel.isCancelled()) {
@@ -452,6 +469,7 @@ void SidescanViewController::activateLayer(const std::string& layer_id,
                     georef_params, qp.min_strip_cos, qp.cell_budget_div);
                 result.quality_reduced = built && result.layer_data.preview_reduced;
             }
+            report(98);   // raster done; placing on the map
             // -- Build / CRS fields for diagnostics ---------------------------
             result.layer_data.nav_stats.quality_used    =
                 result.quality_reduced ? MapSonarQuality::Medium : current_quality;

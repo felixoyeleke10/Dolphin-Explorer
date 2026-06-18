@@ -87,10 +87,16 @@ void MainWindow::applyLiveSettings(const AppSettingsDialog::Settings& s)
 void MainWindow::refreshLoadingIndicator()
 {
     if (!m_status_bar) return;
-    if (m_window_registry && m_window_registry->anyViewerBusy())
-        m_status_bar->setProgressIndeterminate();
-    else
+    const bool busy = m_window_registry && m_window_registry->anyViewerBusy();
+    if (!busy) {
+        m_map_progress_active = false;
         m_status_bar->hideProgress();
+        return;
+    }
+    // Busy: if the active map build is reporting real 0→100 progress, leave its
+    // determinate bar alone; otherwise (waterfall/sub-bottom load) show the spinner.
+    if (!m_map_progress_active)
+        m_status_bar->setProgressIndeterminate();
 }
 
 void MainWindow::onAppSettings()

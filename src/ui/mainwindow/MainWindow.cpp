@@ -438,6 +438,12 @@ MainWindow::MainWindow(QWidget* parent)
         if (m_import_ctrl)
             m_import_ctrl->onMapLoadDone();
     });
+    // Determinate progress for the active layer's map build (0→100): fills the
+    // status-bar bar from start to end instead of the indeterminate bounce.
+    connect(m_sss_ctrl, &SidescanViewController::loadingProgress, this, [this](int pct) {
+        m_map_progress_active = true;
+        if (m_status_bar) m_status_bar->setProgress(pct, true);
+    });
     connect(m_sss_ctrl, &SidescanViewController::mapDiagnosticsReady,
             this, &MainWindow::onMapDiagnosticsReady);
 

@@ -2,6 +2,7 @@
 #include <QObject>
 #include <deque>
 #include <memory>
+#include <functional>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -84,12 +85,15 @@ public:
 
     // Thread-safe overload — takes pre-copied field values instead of a DataLayer*.
     // Safe to call from QtConcurrent::run() without holding the layer pointer.
+    // progress (optional): called on the calling thread with a 0..1 fraction as the
+    // ping entries are read, so a caller can drive a determinate progress bar.
     std::vector<core::SidescanPing> loadAllSidescanPingsFromStore(
         const std::string& store_path,
         const std::string& store_format,
         const core::ArtifactIndex& artifact_index,
         const std::string& source_path,
-        int max_samples_per_ping = 0) const;
+        int max_samples_per_ping = 0,
+        const std::function<void(float)>& progress = {}) const;
 
     // Load all sub-bottom traces from an artifact store.
     // Thread-safe: takes pre-copied store/index values — do not pass DataLayer* directly.

@@ -357,6 +357,10 @@ private:
     bool                m_panel_open     = false;
     QPropertyAnimation* m_panel_anim     = nullptr;
 
+    // True while the active layer's map build is driving the determinate status-bar
+    // progress bar (so refreshLoadingIndicator doesn't override it with the spinner).
+    bool                m_map_progress_active = false;
+
     // Properties panel (right-side dock)
     bool                m_props_open      = true;
     bool                m_props_collapsed = false;

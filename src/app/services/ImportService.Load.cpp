@@ -224,7 +224,8 @@ ImportService::loadAllSidescanPingsFromStore(
     const std::string& store_format,
     const core::ArtifactIndex& artifact_index,
     const std::string& source_path,
-    int max_samples_per_ping) const
+    int max_samples_per_ping,
+    const std::function<void(float)>& progress) const
 {
     std::vector<core::SidescanPing> result;
     if (artifact_index.empty()) return result;
@@ -248,14 +249,19 @@ ImportService::loadAllSidescanPingsFromStore(
     copySidescanEntries(session.artifact_index, sidescan_entries);
 
     result.reserve(sidescan_entries.size());
-    for (const auto& entry : sidescan_entries) {
-        auto artifact = session.reader->readArtifact(entry);
+    const size_t total = sidescan_entries.size();
+    for (size_t i = 0; i < total; ++i) {
+        // Report progress periodically (not every entry — keeps overhead negligible).
+        if (progress && (i & 0x7F) == 0)
+            progress(static_cast<float>(i) / static_cast<float>(total));
+        auto artifact = session.reader->readArtifact(sidescan_entries[i]);
         if (!artifact || !std::holds_alternative<core::SidescanPing>(*artifact))
             continue;
         auto ping = std::get<core::SidescanPing>(std::move(*artifact));
         compactSidescanSamples(ping, max_samples_per_ping);
         result.push_back(std::move(ping));
     }
+    if (progress) progress(1.0f);
     return result;
 }
 

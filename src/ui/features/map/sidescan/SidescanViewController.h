@@ -147,6 +147,9 @@ signals:
     void contactPicked(double lat, double lon, uint64_t artifact_id, uint32_t sample_idx);
     void loadingStarted();   // emitted when a background map-build task kicks off
     void loadingFinished();  // emitted when the task completes (success, failure, or cancel)
+    // 0–100 progress for the ACTIVE layer's map build (drives the status-bar bar).
+    // Marshalled to the main thread from the background task.
+    void loadingProgress(int percent);
     // Emitted after a successful map build with the per-build diagnostics stats.
     void mapDiagnosticsReady(const QString& layer_id, const dolphin::ui::NavStats& stats);
     // Emitted by prebuildTier() when the background build for one tier completes.
