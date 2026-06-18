@@ -427,8 +427,11 @@ MainWindow::MainWindow(QWidget* parent)
     connect(m_sss_ctrl, &SidescanViewController::contactPicked,
             this, &MainWindow::onContactPicked);
     connect(m_sss_ctrl, &SidescanViewController::loadingStarted, this, [this]() {
-        // The controller has already flagged itself Loading; let the shared
-        // indicator reflect the aggregate busy state of all viewers.
+        // A sidescan map build reports real 0→100 progress (loadingProgress), so mark
+        // it progress-driven up front — otherwise refreshLoadingIndicator would flash
+        // the indeterminate spinner before the first progress tick (the whole show on
+        // a fast/cached load). The determinate bar appears with the first tick.
+        m_map_progress_active = true;
         refreshLoadingIndicator();
     });
     connect(m_sss_ctrl, &SidescanViewController::loadingFinished, this, [this]() {
