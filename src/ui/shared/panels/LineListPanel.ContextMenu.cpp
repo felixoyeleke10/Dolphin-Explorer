@@ -237,8 +237,17 @@ void LineListPanel::onContextMenuRequested(const QPoint& pos)
 
         menu.addSeparator();
 
-        // -- Export (not yet implemented — disabled per D-05) -----------------
-        menu.addMenu(tr("Export"))->setEnabled(false);
+        // -- Export ------------------------------------------------------------
+        // Raster layers can export to GeoTIFF (GDAL); other modalities' export is
+        // not implemented yet, so it stays disabled per D-05.
+        if (static_cast<app::Modality>(item->data(0, kRoleModality).toInt())
+                == app::Modality::Raster) {
+            menu.addAction(tr("Export GeoTIFF…"), this, [this, ids] {
+                emit exportLayersRequested(ids, QStringLiteral("geotiff"));
+            });
+        } else {
+            menu.addMenu(tr("Export"))->setEnabled(false);
+        }
 
         menu.addAction(tr("Merge Lines…"))->setEnabled(false);
 

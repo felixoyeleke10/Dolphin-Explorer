@@ -25,7 +25,17 @@ add_library(dolphin-io STATIC
     segy/SegyReader.Index.cpp
     segy/SegyReader.Decode.cpp
     segy/SegyReader.Probe.cpp
+
+    # Raster reader/writer (GeoTIFF, image + world file) via GDAL
+    raster/RasterReader.cpp
+    raster/RasterWriter.cpp
 )
 
 target_include_directories(dolphin-io PUBLIC ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(dolphin-io PUBLIC dolphin-core)
+
+# GDAL — industry-standard geospatial raster I/O (GeoTIFF read/write, CRS, world
+# files). Provided by vcpkg; see build_mingw.bat (CMAKE_PREFIX_PATH). PRIVATE: it
+# is an implementation detail of the raster reader/writer, not exposed in headers.
+find_package(GDAL CONFIG REQUIRED)
+target_link_libraries(dolphin-io PRIVATE GDAL::GDAL)

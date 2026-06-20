@@ -1,6 +1,7 @@
 #pragma once
 #include "ui/features/map/MapTypes.h"
 #include "ui/systems/AppState.h"   // for ToolMode
+#include "core/RasterGrid.h"
 #include <QColor>
 #include <QImage>
 #include <QString>
@@ -47,6 +48,9 @@ public:
     void onLayerDataLoaded(const std::string& layer_id,
                        const LayerMapData& data,
                        QColor color = QColor(0, 180, 255));
+
+    // Load a depth/bathy raster grid as a 3D terrain mesh (ensures the 3D view).
+    void loadRasterTerrain(const std::string& layer_id, const core::RasterGrid& grid);
 
     // Call when a layer is removed.
     void onLayerRemoved(const std::string& layer_id);

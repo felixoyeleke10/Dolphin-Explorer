@@ -20,6 +20,7 @@
 #include "ui/features/subbottom/SubBottomWindow.h"
 #include "ui/features/map/MapView.h"
 #include "ui/features/map/MapViewportHost.h"
+#include "io/raster/RasterReader.h"
 #include "ui/features/nodegraph/NodeGraphWindow.h"
 #include "app/project/Project.h"
 #include "app/layers/CapabilitySet.h"
@@ -40,6 +41,9 @@
 #include <QtConcurrent>
 
 #include <algorithm>
+#include <cmath>
+#include <QImage>
+#include <QColor>
 
 namespace dolphin::ui {
 
@@ -204,6 +208,10 @@ void MainWindow::onLayerSelected(const std::string& layer_id)
         else if (m_map_view && (mod == M::Magnetometer || mod == M::Multibeam))
             m_map_view->setNavTrackVisible(layer_id, true);
 
+        // Raster: depth -> 3D terrain mesh (+ 2D overlay); visual -> 2D overlay.
+        else if (mod == M::Raster)
+            displayRaster(layer);
+
         // SubBottom: loads full trace data then builds a Profile LayerMapData
         // (nav track + per-trace bottom-depth scalar for the colored map ribbon).
         // Skipped if real map data (non-empty nav_track) is already present for
@@ -315,6 +323,114 @@ void MainWindow::updateControlsForModality(const app::DataLayer* layer)
     // Enable/disable the per-layer processing action based on capability.
     // m_act_run_all is project-level and controlled by updateActionStates.
     if (m_act_run_layer) m_act_run_layer->setEnabled(caps.has_processing);
+}
+
+namespace {
+
+// Set the 2D overlay's geographic bounds from a (north-up, WGS84-warped) geo-transform.
+void setRasterGeoBounds(LayerMapData& ld, const double gt[6], uint32_t cols, uint32_t rows)
+{
+    const double x0 = gt[0],                  y0 = gt[3];
+    const double x1 = gt[0] + cols * gt[1],   y1 = gt[3] + rows * gt[5];   // gt[5] < 0
+    ld.lon_min = std::min(x0, x1);  ld.lon_max = std::max(x0, x1);
+    ld.lat_min = std::min(y0, y1);  ld.lat_max = std::max(y0, y1);
+    ld.is_projected = false;        // warped to WGS84 geographic
+    ld.visible      = true;
+    ld.kind         = LayerMapKind::Swath;   // any kind with a preview_image renders the image
+}
+
+// Colourise a depth/bathy grid into an RGBA image (no-data → transparent).
+// Bathymetric ramp: deep = dark blue → shallow = warm. Depth is positive-down.
+QImage colorizeDepthGrid(const core::RasterGrid& g)
+{
+    QImage img(static_cast<int>(g.cols), static_cast<int>(g.rows), QImage::Format_RGBA8888);
+    img.fill(Qt::transparent);
+
+    float zmin = 1e30f, zmax = -1e30f;
+    for (float v : g.data)
+        if (std::isfinite(v) && v != g.no_data_value) { zmin = std::min(zmin, v); zmax = std::max(zmax, v); }
+    if (!(zmax > zmin)) zmax = zmin + 1.f;
+    const float inv = 1.f / (zmax - zmin);
+
+    struct Stop { float p; int r, g, b; };
+    static const Stop ramp[] = {
+        {0.00f,   8,  24,  80}, {0.25f,  16,  78, 160}, {0.50f,  30, 160, 176},
+        {0.75f, 120, 200,  90}, {1.00f, 240, 230, 140},
+    };
+    auto shade = [&](float t) -> QRgb {
+        t = std::clamp(t, 0.f, 1.f);
+        for (int i = 1; i < 5; ++i)
+            if (t <= ramp[i].p) {
+                const float f = (t - ramp[i-1].p) / (ramp[i].p - ramp[i-1].p);
+                return qRgb(int(ramp[i-1].r + f * (ramp[i].r - ramp[i-1].r)),
+                            int(ramp[i-1].g + f * (ramp[i].g - ramp[i-1].g)),
+                            int(ramp[i-1].b + f * (ramp[i].b - ramp[i-1].b)));
+            }
+        return qRgb(ramp[4].r, ramp[4].g, ramp[4].b);
+    };
+
+    for (uint32_t r = 0; r < g.rows; ++r) {
+        auto* line = reinterpret_cast<QRgb*>(img.scanLine(static_cast<int>(r)));
+        for (uint32_t c = 0; c < g.cols; ++c) {
+            const float v = g.data[static_cast<size_t>(r) * g.cols + c];
+            if (!std::isfinite(v) || v == g.no_data_value) { line[c] = qRgba(0,0,0,0); continue; }
+            const float t = 1.f - (v - zmin) * inv;   // shallow (small depth) → warm
+            const QRgb s = shade(t);
+            line[c] = qRgba(qRed(s), qGreen(s), qBlue(s), 255);
+        }
+    }
+    return img;
+}
+
+} // namespace
+
+// Display a raster layer. Depth rasters render as a 3D terrain mesh AND a coloured
+// 2D overlay; visual rasters render as a 2D image overlay. The 2D overlay is warped
+// to WGS84 (the display CRS) for correct placement; the 3D mesh uses native coords.
+void MainWindow::displayRaster(app::DataLayer* layer)
+{
+    if (!layer || !layer->raster.valid) return;
+    const std::string path = layer->artifact_store_path;
+
+    // 3D terrain (depth only) — native grid; CRS-agnostic local-metre projection.
+    // Read decimated (the mesh decimates to <=512/axis anyway) so a huge GeoTIFF
+    // never loads at full resolution.
+    if (layer->raster.is_depth && m_viewport_host) {
+        core::RasterGrid grid;
+        std::string err;
+        if (io::readElevationRaster(path, grid, &err, /*max_dim*/ 1024))
+            m_viewport_host->loadRasterTerrain(layer->id, grid);
+        else
+            appendJobMessage(tr("Raster 3D load failed — %1").arg(QString::fromStdString(err)));
+    }
+
+    // 2D overlay — warp to WGS84 geographic for correct placement on the map.
+    if (!m_map_view) return;
+    LayerMapData ld;
+    bool ok = false;
+    if (layer->raster.is_depth) {
+        core::RasterGrid g;
+        std::string err;
+        if (io::readElevationRasterWgs84(path, g, &err, /*max_dim*/ 2048) && g.cols && g.rows) {
+            ld.preview_image = colorizeDepthGrid(g);
+            setRasterGeoBounds(ld, g.geo_transform, g.cols, g.rows);
+            ok = true;
+        }
+    } else {
+        io::RasterImage im;
+        std::string err;
+        if (io::readImageRasterWgs84(path, im, &err, /*max_dim*/ 4096) && im.width && im.height) {
+            QImage qi(im.rgba.data(), static_cast<int>(im.width), static_cast<int>(im.height),
+                      QImage::Format_RGBA8888);
+            ld.preview_image = qi.copy();   // own the pixels
+            setRasterGeoBounds(ld, im.geo_transform, im.width, im.height);
+            ok = true;
+        }
+    }
+    if (ok) {
+        m_map_view->setLayerMapData(layer->id, std::move(ld));
+        appendJobMessage(tr("Raster on map — %1").arg(QString::fromStdString(layer->label)));
+    }
 }
 
 void MainWindow::onRemoveLayer(const std::string& layer_id)

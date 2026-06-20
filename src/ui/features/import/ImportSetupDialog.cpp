@@ -25,7 +25,7 @@ struct SensorEntry {
     const char* formats;
 };
 
-static constexpr SensorEntry kSensors[4] = {
+static constexpr SensorEntry kSensors[5] = {
     { QT_TR_NOOP("Sidescan Sonar"),
       QT_TR_NOOP("Acoustic images of the seabed"),
       "XTF · JSF · DLPD" },
@@ -38,6 +38,9 @@ static constexpr SensorEntry kSensors[4] = {
     { QT_TR_NOOP("Multibeam Bathymetry"),
       QT_TR_NOOP("3D seabed depth point cloud"),
       "DLPD" },
+    { QT_TR_NOOP("Raster"),
+      QT_TR_NOOP("Bathymetry grids & georeferenced imagery"),
+      "GeoTIFF · PNG/JPG + world" },
 };
 
 } // namespace

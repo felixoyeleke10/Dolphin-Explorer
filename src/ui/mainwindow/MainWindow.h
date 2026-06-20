@@ -190,10 +190,12 @@ private slots:
     void onRenameLayer(const std::string& layer_id);
     void onRunLayers(const std::vector<std::string>& layer_ids);
     void onExportLayers(const std::vector<std::string>& layer_ids, const QString& format);
+    bool exportRasterLayer(app::DataLayer* layer, const QString& path);   // raster -> GeoTIFF
     void onMergeLayers(const std::vector<std::string>& layer_ids);
     void onRemoveContact(uint64_t contact_id);
     void onRevealSource(const std::string& source_id);
     void updateControlsForModality(const app::DataLayer* layer);
+    void displayRaster(app::DataLayer* layer);   // depth -> 3D terrain; visual/2D -> overlay
     void onContactSelected(uint64_t contact_id);
     void onContactPicked(double lat, double lon, uint64_t artifact_id, uint32_t sample_idx);
     void onAbout();
@@ -268,6 +270,8 @@ private:
     // Detect-then-confirm import. `preset` pre-checks a modality (from a modality-
     // specific menu command); empty = pre-check everything each file contains.
     void importFilesWithPreset(const std::vector<core::ArtifactType>& preset);
+    void importRasterFiles();              // dedicated GDAL raster import path
+    void createSessionProject();           // open a temp session project if none is current
     bool ensureProjectForImport(const ImportDialogResult& res);
     QList<CommandPaletteItem> buildCommandItems();
     void applyWorkspaceState(int panel_id, bool props_open, bool toolbar_visible);

@@ -1,4 +1,5 @@
 #include <QApplication>
+#include <QFileInfo>
 #include <QScreen>
 #include <QSettings>
 #include <QSurfaceFormat>
@@ -168,6 +169,20 @@ int main(int argc, char* argv[])
     QApplication::setAttribute(Qt::AA_ShareOpenGLContexts, true);
 
     QApplication app(argc, argv);
+
+    // Point GDAL/PROJ at the CRS + driver data bundled next to the exe (deployed
+    // from vcpkg). Set before any GDAL call (raster import lazily registers GDAL).
+    {
+        const QString appDir = QCoreApplication::applicationDirPath();
+        const QString gdalData = appDir + "/gdal-data";
+        const QString projData = appDir + "/proj-data";
+        if (QFileInfo::exists(gdalData)) qputenv("GDAL_DATA", gdalData.toLocal8Bit());
+        if (QFileInfo::exists(projData)) {
+            qputenv("PROJ_LIB",  projData.toLocal8Bit());
+            qputenv("PROJ_DATA", projData.toLocal8Bit());
+        }
+    }
+
     app.setApplicationName(AppInfo::kSettingsApp);
     app.setApplicationVersion(AppInfo::kVersion);
     app.setOrganizationName(AppInfo::kOrgName);

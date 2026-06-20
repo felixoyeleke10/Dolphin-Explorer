@@ -172,6 +172,24 @@ bool Project::fromJson(const std::string& json)
         layer->sss_palette = jl.has("sss_palette") ? jl.get("sss_palette").asInt() : -1;
         layer->sbp_palette = jl.has("sbp_palette") ? jl.get("sbp_palette").asInt() : -1;
 
+        if (jl.has("raster")) {
+            const auto& jr = jl.get("raster");
+            auto& r = layer->raster;
+            r.valid    = true;
+            r.is_depth = jr.get("is_depth").asBool();
+            r.cols     = static_cast<std::uint32_t>(jr.get("cols").asInt());
+            r.rows     = static_cast<std::uint32_t>(jr.get("rows").asInt());
+            r.geo_transform[0] = jr.get("gt0").asDouble();
+            r.geo_transform[1] = jr.get("gt1").asDouble();
+            r.geo_transform[2] = jr.get("gt2").asDouble();
+            r.geo_transform[3] = jr.get("gt3").asDouble();
+            r.geo_transform[4] = jr.get("gt4").asDouble();
+            r.geo_transform[5] = jr.get("gt5").asDouble();
+            r.crs_wkt = jr.get("crs_wkt").asString();
+            r.min_x = jr.get("min_x").asDouble();  r.min_y = jr.get("min_y").asDouble();
+            r.max_x = jr.get("max_x").asDouble();  r.max_y = jr.get("max_y").asDouble();
+        }
+
         if (jl.has("sss_display")) {
             const auto& jd = jl.get("sss_display");
             auto& p = layer->sss_display_state.params;
@@ -342,7 +360,10 @@ bool Project::fromJson(const std::string& json)
             layer->artifact_store_format.clear();
         }
 
-        if (version >= 5 && (layer->index_built || !layer->artifact_index.empty())) {
+        // Raster layers are not backed by a .dlpd ping cache — their store is the
+        // GeoTIFF/image file itself, so skip the parsed-cache validation entirely.
+        if (version >= 5 && layer->modality != Modality::Raster
+                && (layer->index_built || !layer->artifact_index.empty())) {
             const std::string store_format = normaliseFormat(layer->artifact_store_format);
             const bool missing_store = (store_format != "dlpd" && store_format != "dpcache")
                 || layer->artifact_store_path.empty()
@@ -375,7 +396,8 @@ bool Project::fromJson(const std::string& json)
             layer->index_built = true;
         // If entries are still empty after the footer read (pre-footer .dlpd,
         // corrupt footer, or no store), fall back to background rebuildCacheIndex.
-        if (layer->artifact_index.empty() && !layer->artifact_store_path.empty())
+        if (layer->artifact_index.empty() && !layer->artifact_store_path.empty()
+                && layer->modality != Modality::Raster)
             layer->index_built = false;
         if (layer->modality == Modality::Unknown && !layer->artifact_index.empty())
             layer->modality = inferModality(layer->artifact_index);

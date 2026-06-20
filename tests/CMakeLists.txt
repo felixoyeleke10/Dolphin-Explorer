@@ -42,6 +42,44 @@ set_target_properties(test_project_storage PROPERTIES
 
 add_test(NAME ProjectStorage COMMAND test_project_storage)
 
+# -- Contact model: monotonic labels, recycle bin, serialization round-trip ----
+add_executable(test_contacts
+    test_contacts.cpp
+)
+target_include_directories(test_contacts PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_contacts PRIVATE
+    dolphin-app
+    Qt6::Core
+)
+set_target_properties(test_contacts PROPERTIES
+    CXX_STANDARD 20
+    AUTOMOC OFF
+)
+add_test(NAME Contacts COMMAND test_contacts)
+
+# -- ZipWriter: structural ZIP validity (backs .docx export) --------------------
+add_executable(test_zip_writer
+    test_zip_writer.cpp
+)
+target_include_directories(test_zip_writer PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_zip_writer PRIVATE dolphin-util)
+set_target_properties(test_zip_writer PROPERTIES CXX_STANDARD 20 AUTOMOC OFF)
+add_test(NAME ZipWriter COMMAND test_zip_writer)
+
+# -- Raster reader/writer round-trip (GDAL) ------------------------------------
+find_package(GDAL CONFIG REQUIRED)   # makes GDAL::GDAL visible in this scope
+add_executable(test_raster_io
+    test_raster_io.cpp
+)
+target_include_directories(test_raster_io PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_raster_io PRIVATE dolphin-io)
+set_target_properties(test_raster_io PROPERTIES CXX_STANDARD 20 AUTOMOC OFF)
+add_test(NAME RasterIO COMMAND test_raster_io)
+# GDAL + its deps live in the vcpkg bin dir alongside gdal.dll — put it on PATH so
+# the test resolves them at runtime (config-correct: debug/bin for Debug builds).
+set_tests_properties(RasterIO PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:GDAL::GDAL>")
+
 add_executable(test_sidescan_georef
     test_sidescan_georef.cpp
 )

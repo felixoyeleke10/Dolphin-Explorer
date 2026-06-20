@@ -21,5 +21,17 @@ copy /Y "%MINGW%\libstdc++-6.dll"     "%BUILD%\" >nul
 copy /Y "%MINGW%\libgcc_s_seh-1.dll"  "%BUILD%\" >nul
 copy /Y "%MINGW%\libwinpthread-1.dll" "%BUILD%\" >nul
 
+rem Ensure GDAL (+ PROJ, libtiff, …) DLLs and CRS/driver data are present (Debug).
+set "GDAL_VCPKG=%USERPROFILE%\vcpkg\installed\x64-windows"
+if exist "%GDAL_VCPKG%\debug\bin" copy /Y "%GDAL_VCPKG%\debug\bin\*.dll" "%BUILD%\" >nul
+if exist "%GDAL_VCPKG%\share\gdal" (
+    if not exist "%BUILD%\gdal-data" mkdir "%BUILD%\gdal-data"
+    xcopy /Y /E /Q "%GDAL_VCPKG%\share\gdal\*" "%BUILD%\gdal-data\" >nul
+)
+if exist "%GDAL_VCPKG%\share\proj" (
+    if not exist "%BUILD%\proj-data" mkdir "%BUILD%\proj-data"
+    xcopy /Y /E /Q "%GDAL_VCPKG%\share\proj\*" "%BUILD%\proj-data\" >nul
+)
+
 rem Launch from the build directory
 start "" /D "%BUILD%" "%BUILD%\%EXE%"

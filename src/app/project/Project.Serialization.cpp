@@ -121,6 +121,28 @@ std::string Project::toJson() const
         jl["sss_palette"] = util::JsonValue(l->sss_palette);
         jl["sbp_palette"] = util::JsonValue(l->sbp_palette);
 
+        // Raster layers — the GeoTIFF/image source is the durable store, so persist
+        // its metadata (kind, size, geo-transform, CRS, extent) for reopen.
+        if (l->raster.valid) {
+            const auto& r = l->raster;
+            util::JsonValue jr = util::JsonValue::object();
+            jr["is_depth"] = util::JsonValue(r.is_depth);
+            jr["cols"]     = util::JsonValue(static_cast<int>(r.cols));
+            jr["rows"]     = util::JsonValue(static_cast<int>(r.rows));
+            jr["gt0"] = util::JsonValue(r.geo_transform[0]);
+            jr["gt1"] = util::JsonValue(r.geo_transform[1]);
+            jr["gt2"] = util::JsonValue(r.geo_transform[2]);
+            jr["gt3"] = util::JsonValue(r.geo_transform[3]);
+            jr["gt4"] = util::JsonValue(r.geo_transform[4]);
+            jr["gt5"] = util::JsonValue(r.geo_transform[5]);
+            jr["crs_wkt"] = util::JsonValue(r.crs_wkt);
+            jr["min_x"] = util::JsonValue(r.min_x);
+            jr["min_y"] = util::JsonValue(r.min_y);
+            jr["max_x"] = util::JsonValue(r.max_x);
+            jr["max_y"] = util::JsonValue(r.max_y);
+            jl["raster"] = jr;
+        }
+
         // Per-layer SSS display state — only written when the user has applied params.
         if (l->sss_display_state.customized) {
             const auto& p = l->sss_display_state.params;

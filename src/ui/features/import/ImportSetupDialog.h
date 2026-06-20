@@ -21,7 +21,7 @@ protected:
     bool eventFilter(QObject* obj, QEvent* ev) override;
 
 private:
-    static constexpr int kModuleCount = 4;
+    static constexpr int kModuleCount = 5;
     QRadioButton* m_radios[kModuleCount] = {};
 };
 

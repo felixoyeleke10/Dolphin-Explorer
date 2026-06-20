@@ -37,6 +37,8 @@ std::string fileFilterForArtifactType(core::ArtifactType type)
             return "Magnetometer Files (*.xtf *.dlpd *.dpcache)";
         case core::ArtifactType::Multibeam:
             return "Bathymetry Files (*.dlpd *.dpcache)";
+        case core::ArtifactType::Raster:
+            return "Raster Files (*.tif *.tiff *.png *.jpg *.jpeg)";
         default:
             return std::string(kSupportedFileFilter);
     }

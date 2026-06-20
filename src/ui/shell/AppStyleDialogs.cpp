@@ -15,15 +15,18 @@ QString qssDialogs()
         "QWidget#settingsSidebar {"
         "  background: @bgEl; border-right: 1px solid @border;"
         "}"
+        // Idle is flat/transparent (no accent tint) — only hover/selected react,
+        // matching the app's nav pattern (panelTab, sidebar lists). Accent fill is
+        // reserved for the active page.
         "QToolButton#settingsNavBtn {"
-        "  background: rgba(@accentRgb,0.08); border: 1px solid rgba(@accentRgb,0.20);"
-        "  border-radius: 6px; color: @textPrimary;"
+        "  background: transparent; border: 1px solid transparent;"
+        "  border-radius: 6px; color: @textSecond;"
         "  font-family: @font; font-size: @fontBase;"
         "  text-align: left; padding: 8px 10px 8px 12px;"
         "}"
-        "QToolButton#settingsNavBtn:hover   { background: rgba(@accentRgb,0.18); border-color: rgba(@accentRgb,0.45); color: @white; }"
-        "QToolButton#settingsNavBtn:checked { background: rgba(@accentRgb,0.25); border-color: rgba(@accentRgb,0.55); color: @white; }"
-        "QToolButton#settingsNavBtn:pressed { background: rgba(@accentRgb,0.30); }"
+        "QToolButton#settingsNavBtn:hover   { background: @overlayEl; color: @textPrimary; }"
+        "QToolButton#settingsNavBtn:checked { background: rgba(@accentRgb,0.18); border-color: rgba(@accentRgb,0.40); color: @white; }"
+        "QToolButton#settingsNavBtn:pressed { background: @overlayMut; }"
         "QToolButton#settingsNavBtn::menu-indicator { image: none; }"
 
         "QWidget#settingsPage { background: @bg; }"

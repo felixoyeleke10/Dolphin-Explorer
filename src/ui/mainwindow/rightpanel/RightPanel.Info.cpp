@@ -110,8 +110,14 @@ void InfoModule::setLayer(app::DataLayer* layer)
         return;
     }
 
-    // Record count — label and value both depend on modality
-    {
+    // Record count — label and value both depend on modality. Rasters have no ping
+    // count; show the grid size (cols × rows) instead.
+    if (layer->modality == app::Modality::Raster && layer->raster.valid) {
+        if (m_pings_key) m_pings_key->setText(tr("Size"));
+        m_pings_val->setText(QStringLiteral("%1 × %2")
+            .arg(QLocale().toString(static_cast<int>(layer->raster.cols)))
+            .arg(QLocale().toString(static_cast<int>(layer->raster.rows))));
+    } else {
         using Mod = app::Modality;
         int count = 0;
         QString key;

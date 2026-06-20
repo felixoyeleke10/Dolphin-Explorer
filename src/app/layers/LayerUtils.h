@@ -53,6 +53,7 @@ inline constexpr core::ArtifactType kModuleArtifactTypes[] = {
     core::ArtifactType::SubBottom,
     core::ArtifactType::Magnetometer,
     core::ArtifactType::Multibeam,
+    core::ArtifactType::Raster,
 };
 
 } // namespace dolphin::app

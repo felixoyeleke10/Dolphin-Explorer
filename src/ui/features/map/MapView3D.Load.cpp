@@ -246,6 +246,119 @@ static TerrainBuildResult buildTerrainFromFile(
 //  loadTerrainFile — public API, dispatches background parse + GL upload
 // -----------------------------------------------------------------------------
 
+// buildTerrainFromGrid — pure function, runs on a background thread.
+// A depth raster is already a regular grid, so it triangulates directly (no
+// resampling). Decimated to <= ~512 nodes/axis so a large GeoTIFF still yields a
+// manageable mesh. No-data / non-finite cells are skipped (holes in the mesh).
+static TerrainBuildResult buildTerrainFromGrid(
+    const core::RasterGrid& grid,
+    bool   has_origin,
+    double origin_x, double origin_y,
+    bool   is_projected,
+    bool   z_is_depth)
+{
+    TerrainBuildResult result;
+    const uint32_t cols = grid.cols, rows = grid.rows;
+    if (cols < 2 || rows < 2 ||
+        grid.data.size() != static_cast<size_t>(cols) * rows) {
+        result.error = QStringLiteral("Raster grid is empty or malformed.");
+        return result;
+    }
+
+    const double* gt = grid.geo_transform;
+    auto worldX = [&](double c, double r) { return gt[0] + c * gt[1] + r * gt[2]; };
+    auto worldY = [&](double c, double r) { return gt[3] + c * gt[4] + r * gt[5]; };
+
+    // World extent from the four corners.
+    const double cx[4] = { worldX(0,0), worldX(cols-1,0), worldX(0,rows-1), worldX(cols-1,rows-1) };
+    const double cy[4] = { worldY(0,0), worldY(cols-1,0), worldY(0,rows-1), worldY(cols-1,rows-1) };
+    double wxmin = cx[0], wxmax = cx[0], wymin = cy[0], wymax = cy[0];
+    for (int i = 1; i < 4; ++i) {
+        wxmin = std::min(wxmin, cx[i]); wxmax = std::max(wxmax, cx[i]);
+        wymin = std::min(wymin, cy[i]); wymax = std::max(wymax, cy[i]);
+    }
+
+    if (!has_origin) {
+        origin_x = (wxmin + wxmax) * 0.5;
+        origin_y = (wymin + wymax) * 0.5;
+        is_projected = !(wxmin >= -180.0 && wxmax <= 180.0 &&
+                         wymin >=  -90.0 && wymax <=  90.0);
+        result.auto_origin_x   = origin_x;
+        result.auto_origin_y   = origin_y;
+        result.is_projected    = is_projected;
+        result.has_auto_origin = true;
+    }
+
+    static constexpr double kMPD = 111320.0;
+    const double cos_lat = std::cos(origin_y * M_PI / 180.0);
+    auto toLocal = [&](double wx, double wy, float& lx, float& ly) {
+        if (is_projected) { lx = float(wx - origin_x); ly = float(wy - origin_y); }
+        else { lx = float((wx - origin_x) * cos_lat * kMPD);
+               ly = float((wy - origin_y)            * kMPD); }
+    };
+
+    const float nodata = grid.no_data_value;
+
+    // Build a decimated triangle mesh at the given step; valid cells only.
+    auto buildMesh = [&](uint32_t sx, uint32_t sy, std::vector<float>& out) {
+        const uint32_t NX = (cols - 1) / sx + 1;
+        const uint32_t NY = (rows - 1) / sy + 1;
+        std::vector<float> lx(static_cast<size_t>(NX) * NY);
+        std::vector<float> ly(static_cast<size_t>(NX) * NY);
+        std::vector<float> lz(static_cast<size_t>(NX) * NY);
+        std::vector<char>  ok(static_cast<size_t>(NX) * NY, 0);
+
+        for (uint32_t j = 0; j < NY; ++j)
+            for (uint32_t i = 0; i < NX; ++i) {
+                const uint32_t c = std::min(i * sx, cols - 1);
+                const uint32_t r = std::min(j * sy, rows - 1);
+                const float z = grid.data[static_cast<size_t>(r) * cols + c];
+                const size_t k = static_cast<size_t>(j) * NX + i;
+                if (std::isfinite(z) && z != nodata) {
+                    toLocal(worldX(c, r), worldY(c, r), lx[k], ly[k]);
+                    lz[k] = z_is_depth ? -z : z;
+                    ok[k] = 1;
+                }
+            }
+
+        out.reserve(static_cast<size_t>(NX - 1) * (NY - 1) * 6 * 3);
+        for (uint32_t j = 0; j < NY - 1; ++j)
+            for (uint32_t i = 0; i < NX - 1; ++i) {
+                const size_t a = static_cast<size_t>(j) * NX + i;
+                const size_t b = a + 1, c2 = a + NX, d = c2 + 1;
+                if (ok[a] && ok[b] && ok[c2])
+                    out.insert(out.end(), { lx[a],ly[a],lz[a], lx[b],ly[b],lz[b], lx[c2],ly[c2],lz[c2] });
+                if (ok[b] && ok[d] && ok[c2])
+                    out.insert(out.end(), { lx[b],ly[b],lz[b], lx[d],ly[d],lz[d], lx[c2],ly[c2],lz[c2] });
+            }
+    };
+
+    constexpr uint32_t kTarget = 512;
+    const uint32_t sx = std::max<uint32_t>(1, (cols + kTarget - 1) / kTarget);
+    const uint32_t sy = std::max<uint32_t>(1, (rows + kTarget - 1) / kTarget);
+
+    buildMesh(sx, sy, result.vertices);
+    if (result.vertices.empty()) return result;   // all no-data → applyTerrainResult reports it
+
+    buildMesh(sx * 2, sy * 2, result.lod_vertices);
+
+    // Bounding box + z range from the emitted vertices (xyz triples).
+    float xmin = result.vertices[0], xmax = result.vertices[0];
+    float ymin = result.vertices[1], ymax = result.vertices[1];
+    result.z_min = result.vertices[2]; result.z_max = result.vertices[2];
+    for (size_t i = 0; i < result.vertices.size(); i += 3) {
+        xmin = std::min(xmin, result.vertices[i]);     xmax = std::max(xmax, result.vertices[i]);
+        ymin = std::min(ymin, result.vertices[i+1]);   ymax = std::max(ymax, result.vertices[i+1]);
+        result.z_min = std::min(result.z_min, result.vertices[i+2]);
+        result.z_max = std::max(result.z_max, result.vertices[i+2]);
+    }
+    const float span_x = xmax - xmin, span_y = ymax - ymin;
+    result.radius      = 0.5f * std::sqrt(span_x * span_x + span_y * span_y);
+    result.x_min_local = xmin;  result.x_max_local = xmax;
+    result.y_min_local = ymin;  result.y_max_local = ymax;
+    return result;
+}
+
 void MapView3D::loadTerrainFile(const std::string& layer_id,
                                  const QString& path,
                                  bool z_is_depth)
@@ -261,50 +374,79 @@ void MapView3D::loadTerrainFile(const std::string& layer_id,
             [this, watcher, layer_id]() {
                 TerrainBuildResult res = watcher->result();
                 watcher->deleteLater();
-
-                if (!res.error.isEmpty()) {
-                    emit terrainLoadFinished(layer_id, false, res.error);
-                    return;
-                }
-
-                if (res.vertices.empty()) {
-                    emit terrainLoadFinished(layer_id, false,
-                        tr("No triangles built — data may be too sparse or flat."));
-                    return;
-                }
-
-                // Adopt auto-detected origin if we had none.
-                if (res.has_auto_origin && !m_has_origin)
-                    setSceneOrigin(res.auto_origin_x, res.auto_origin_y, res.is_projected);
-
-                auto it = std::find_if(m_terrain_layers.begin(), m_terrain_layers.end(),
-                    [&](const TerrainMesh3D& T){ return T.id == layer_id; });
-                if (it == m_terrain_layers.end()) {
-                    m_terrain_layers.push_back(TerrainMesh3D{});
-                    it = m_terrain_layers.end() - 1;
-                    it->id = layer_id;
-                }
-                it->cpu_verts     = std::move(res.vertices);
-                it->lod_cpu_verts = std::move(res.lod_vertices);
-                it->z_min         = res.z_min;
-                it->z_max         = res.z_max;
-                it->bbox_xmin  = res.x_min_local;  it->bbox_xmax = res.x_max_local;
-                it->bbox_ymin  = res.y_min_local;  it->bbox_ymax = res.y_max_local;
-                it->dirty      = true;
-                m_terrain_dirty = true;
-                m_survey_dirty  = true;
-
-                if (res.radius > m_scene_radius) {
-                    m_scene_radius = res.radius;
-                    if (!m_camera_user_moved) fitToScene();
-                }
-                update();
-                emit terrainLoadFinished(layer_id, true, {});
+                applyTerrainResult(layer_id, std::move(res));
             });
 
     watcher->setFuture(QtConcurrent::run(
         [path, has_orig, ox, oy, is_proj, z_is_depth]() {
             return buildTerrainFromFile(path, has_orig, ox, oy, is_proj, z_is_depth);
+        }));
+}
+
+// Shared apply path for both the file and grid terrain loaders.
+void MapView3D::applyTerrainResult(const std::string& layer_id, TerrainBuildResult&& res)
+{
+    if (!res.error.isEmpty()) {
+        emit terrainLoadFinished(layer_id, false, res.error);
+        return;
+    }
+    if (res.vertices.empty()) {
+        emit terrainLoadFinished(layer_id, false,
+            tr("No triangles built — data may be too sparse or flat."));
+        return;
+    }
+
+    // Adopt auto-detected origin if we had none.
+    if (res.has_auto_origin && !m_has_origin)
+        setSceneOrigin(res.auto_origin_x, res.auto_origin_y, res.is_projected);
+
+    auto it = std::find_if(m_terrain_layers.begin(), m_terrain_layers.end(),
+        [&](const TerrainMesh3D& T){ return T.id == layer_id; });
+    if (it == m_terrain_layers.end()) {
+        m_terrain_layers.push_back(TerrainMesh3D{});
+        it = m_terrain_layers.end() - 1;
+        it->id = layer_id;
+    }
+    it->cpu_verts     = std::move(res.vertices);
+    it->lod_cpu_verts = std::move(res.lod_vertices);
+    it->z_min         = res.z_min;
+    it->z_max         = res.z_max;
+    it->bbox_xmin  = res.x_min_local;  it->bbox_xmax = res.x_max_local;
+    it->bbox_ymin  = res.y_min_local;  it->bbox_ymax = res.y_max_local;
+    it->dirty      = true;
+    m_terrain_dirty = true;
+    m_survey_dirty  = true;
+
+    if (res.radius > m_scene_radius) {
+        m_scene_radius = res.radius;
+        if (!m_camera_user_moved) fitToScene();
+    }
+    update();
+    emit terrainLoadFinished(layer_id, true, {});
+}
+
+void MapView3D::loadTerrainGrid(const std::string& layer_id,
+                                const core::RasterGrid& grid,
+                                bool z_is_depth)
+{
+    const bool   has_orig = m_has_origin;
+    const double ox       = m_origin_x;
+    const double oy       = m_origin_y;
+    const bool   is_proj  = m_is_projected;
+
+    auto* watcher = new QFutureWatcher<TerrainBuildResult>(this);
+    connect(watcher, &QFutureWatcher<TerrainBuildResult>::finished, this,
+            [this, watcher, layer_id]() {
+                TerrainBuildResult res = watcher->result();
+                watcher->deleteLater();
+                applyTerrainResult(layer_id, std::move(res));
+            });
+
+    // Copy the grid by value into the task — the background thread must not race
+    // the caller's RasterGrid lifetime.
+    watcher->setFuture(QtConcurrent::run(
+        [grid, has_orig, ox, oy, is_proj, z_is_depth]() {
+            return buildTerrainFromGrid(grid, has_orig, ox, oy, is_proj, z_is_depth);
         }));
 }
 

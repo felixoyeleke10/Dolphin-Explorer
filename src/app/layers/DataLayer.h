@@ -30,6 +30,20 @@ enum class BottomTrackKind : uint8_t {
     Mixed   = 4,  // both algorithm and user-edited picks present
 };
 
+// Raster layer metadata (modality == Raster). A raster has no ping ArtifactIndex —
+// the source file (GeoTIFF / image) IS the durable store, read via GDAL on demand.
+// This describes it for the tree, framing, display, and serialization.
+struct RasterMeta {
+    bool        valid    = false;
+    bool        is_depth = false;          // true = elevation/bathy grid; false = visual image
+    std::uint32_t cols   = 0;
+    std::uint32_t rows   = 0;
+    double      geo_transform[6] = {0, 1, 0, 0, 0, 1};   // GDAL convention (source CRS)
+    std::string crs_wkt;                   // OGC WKT of the raster's CRS (empty = none)
+    // Cached extent in source-CRS units (derived from geo_transform + size).
+    double      min_x = 0, min_y = 0, max_x = 0, max_y = 0;
+};
+
 // A DataLayer represents one imported source file or derived product.
 // It holds a seek table (ArtifactIndex), processing graph, and modality tag.
 class DataLayer : public QObject {
@@ -67,6 +81,9 @@ public:
     // applied on layer open by the waterfall / sub-bottom coordinators.
     dolphin::ui::NavProcessingParams nav_state;
     bool                             nav_customized = false;
+
+    // Raster layers (modality == Raster): describes the GeoTIFF/image source.
+    RasterMeta raster;
 
     // Tagging and grouping
     std::vector<std::string> tags;

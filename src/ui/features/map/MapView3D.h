@@ -2,6 +2,7 @@
 #include "ui/features/map/Camera3D.h"
 #include "ui/features/map/MapTypes.h"
 #include "ui/shell/Theme.h"
+#include "core/RasterGrid.h"
 
 #include <QColor>
 #include <QImage>
@@ -21,6 +22,8 @@
 class QOpenGLTexture;
 
 namespace dolphin::ui {
+
+struct TerrainBuildResult;   // defined in MapView3D.Load.cpp
 
 // -----------------------------------------------------------------------------
 //  MapView3D — true OpenGL 3D map renderer (Phase 1 + 2 + 3).
@@ -62,6 +65,11 @@ public:
     // z_is_depth: true → raw Z = positive depth → stored as negative altitude.
     // Does NOT require hasOrigin() — auto-detects origin from the data centre.
     void loadTerrainFile(const std::string& layer_id, const QString& path,
+                         bool z_is_depth = true);
+    // Build a terrain mesh directly from an in-memory depth/bathy raster grid
+    // (imported GeoTIFF, etc.). Decimated to a manageable mesh resolution on a
+    // background thread; auto-detects origin like loadTerrainFile.
+    void loadTerrainGrid(const std::string& layer_id, const core::RasterGrid& grid,
                          bool z_is_depth = true);
     void removeTerrainLayer(const std::string& layer_id);
     int  terrainLayerCount() const { return static_cast<int>(m_terrain_layers.size()); }
@@ -231,6 +239,8 @@ private:
     void rebuildAllCurtainVbos();
     void buildTerrainVbo(TerrainMesh3D& tm);
     void rebuildAllTerrainVbos();
+    // Apply a completed background terrain build (shared by file + grid loaders).
+    void applyTerrainResult(const std::string& layer_id, TerrainBuildResult&& res);
     void uploadPendingDrapes();               // creates QOpenGLTexture + quad VBO in GL ctx
     void buildDrapeQuad(SonarDrape3D& d);    // flat z=0 quad covering drape bbox
     void buildDrapeHullVbo(SonarDrape3D& d); // swath polygon outline VBO from pending_hull

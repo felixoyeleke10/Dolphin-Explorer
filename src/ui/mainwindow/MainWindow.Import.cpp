@@ -4,15 +4,22 @@
 #include "ui/shell/Features.h"
 #include "ui/features/import/ImportReviewWizard.h"
 #include "ui/features/import/ImportSetupDialog.h"
+#include "ui/shared/panels/LineListPanel.h"
 #include "app/import/ImportClassifier.h"
 #include "app/layers/LayerUtils.h"     // kModuleArtifactTypes (menu presets)
+#include "app/layers/DataLayer.h"
 #include "app/project/Project.h"
+#include "io/ProbeDispatch.h"          // fileFilterForArtifactType
+#include "io/raster/RasterReader.h"
 
 #include <QDateTime>
 #include <QDir>
+#include <QFileDialog>
 #include <QFileInfo>
 #include <QMessageBox>
 #include <QStandardPaths>
+
+#include <algorithm>
 
 namespace dolphin::ui {
 
@@ -113,20 +120,27 @@ bool MainWindow::ensureProjectForImport(const ImportDialogResult& res)
         }
 
         // No existing managed project — create a new session project.
-        const QString ts = QDateTime::currentDateTime().toString("yyyy-MM-dd_HH-mm-ss");
-        const QString session_name = "Session_" + ts;
-        const QString root_dir =
-            QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation)
-            + "/projects/" + session_name;
-        QDir().mkpath(root_dir);
-        const QString proj_path = root_dir + "/" + session_name + ".dlp";
-        auto sess_proj = app::Project::create(
-            session_name.toStdString(), proj_path.toStdString());
-        if (sess_proj) sess_proj->setTempProject(true);
-        m_session_ctrl->adoptNewProject(std::move(sess_proj));
-        bindProjectUi();
+        createSessionProject();
     }
     return true;
+}
+
+// Create + adopt a temporary session project (used when importing without an open
+// project). Shared by the sonar import flow and the raster import path.
+void MainWindow::createSessionProject()
+{
+    const QString ts = QDateTime::currentDateTime().toString("yyyy-MM-dd_HH-mm-ss");
+    const QString session_name = "Session_" + ts;
+    const QString root_dir =
+        QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation)
+        + "/projects/" + session_name;
+    QDir().mkpath(root_dir);
+    const QString proj_path = root_dir + "/" + session_name + ".dlp";
+    auto sess_proj = app::Project::create(
+        session_name.toStdString(), proj_path.toStdString());
+    if (sess_proj) sess_proj->setTempProject(true);
+    m_session_ctrl->adoptNewProject(std::move(sess_proj));
+    bindProjectUi();
 }
 
 void MainWindow::onImportFile()
@@ -135,7 +149,14 @@ void MainWindow::onImportFile()
     // then detects each file's contents and lets the user confirm/adjust per file.
     ImportSetupDialog setup(this);
     if (setup.exec() != QDialog::Accepted) return;
-    importFilesWithPreset(setup.moduleFilter());
+    const auto preset = setup.moduleFilter();
+    // Rasters are georeferenced grids/images, not ping streams — they take a
+    // dedicated GDAL path, not the sonar detect-then-confirm wizard.
+    if (preset.size() == 1 && preset.front() == core::ArtifactType::Raster) {
+        importRasterFiles();
+        return;
+    }
+    importFilesWithPreset(preset);
 }
 
 // Detect-then-confirm import. No blind "what are you importing?" step: the wizard
@@ -159,6 +180,74 @@ void MainWindow::importFilesWithPreset(const std::vector<core::ArtifactType>& pr
     });
 
     wizard->show();
+}
+
+// Dedicated raster import: probe each file with GDAL, classify depth vs visual,
+// and create a first-class Raster layer (the source file IS the durable store —
+// read on activation). Bypasses the sonar ping pipeline entirely.
+void MainWindow::importRasterFiles()
+{
+    const QString filter = QString::fromStdString(
+        io::fileFilterForArtifactType(core::ArtifactType::Raster));
+    const QStringList paths = QFileDialog::getOpenFileNames(
+        this, tr("Import Raster"), QString(), filter);
+    if (paths.isEmpty()) return;
+
+    if (!currentProject()) createSessionProject();
+    if (!currentProject()) return;
+
+    int added = 0;
+    std::string last_id;
+    for (const QString& qpath : paths) {
+        const std::string path = qpath.toStdString();
+        const auto info = io::probeRaster(path);
+        if (!info) {
+            appendJobMessage(tr("Raster import failed (unreadable): %1")
+                                 .arg(QFileInfo(qpath).fileName()));
+            continue;
+        }
+
+        auto* src = currentProject()->addSource(path, "geotiff");
+        if (!src) continue;
+        auto* layer = currentProject()->addLayer(
+            src->id, QFileInfo(qpath).completeBaseName().toStdString());
+        if (!layer) continue;
+
+        layer->modality             = app::Modality::Raster;
+        layer->artifact_store_path  = path;
+        layer->artifact_store_format = "geotiff";
+        layer->index_built          = true;
+
+        auto& rm = layer->raster;
+        rm.valid    = true;
+        rm.is_depth = (info->kind == io::RasterKind::Elevation);
+        rm.cols     = info->cols;
+        rm.rows     = info->rows;
+        rm.crs_wkt  = info->crs_wkt;
+        for (int i = 0; i < 6; ++i) rm.geo_transform[i] = info->geo_transform[i];
+        // Extent from the four geo-transform corners (source CRS units).
+        const double* g = rm.geo_transform;
+        auto wx = [&](double c, double r){ return g[0] + c*g[1] + r*g[2]; };
+        auto wy = [&](double c, double r){ return g[3] + c*g[4] + r*g[5]; };
+        const double xs[4] = { wx(0,0), wx(rm.cols,0), wx(0,rm.rows), wx(rm.cols,rm.rows) };
+        const double ys[4] = { wy(0,0), wy(rm.cols,0), wy(0,rm.rows), wy(rm.cols,rm.rows) };
+        rm.min_x = *std::min_element(xs, xs+4); rm.max_x = *std::max_element(xs, xs+4);
+        rm.min_y = *std::min_element(ys, ys+4); rm.max_y = *std::max_element(ys, ys+4);
+
+        currentProject()->commitLayer(layer->id);   // state → Ready, announces it
+        last_id = layer->id;
+        ++added;
+        recordActivity(ActivityKind::Import,
+            tr("Imported raster: %1 (%2)")
+                .arg(QString::fromStdString(layer->label),
+                     rm.is_depth ? tr("depth") : tr("image")));
+    }
+
+    if (added == 0) return;
+    if (m_line_list) m_line_list->refresh();
+    refreshInspectorModalities();
+    if (!last_id.empty()) onLayerSelected(last_id);
+    appendJobMessage(tr("Imported %n raster layer(s)", nullptr, added));
 }
 
 void MainWindow::showImportDialog(const QStringList& paths,

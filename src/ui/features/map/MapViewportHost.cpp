@@ -444,6 +444,13 @@ void MapViewportHost::onLayerDataLoaded(const std::string& layer_id,
     }
 }
 
+void MapViewportHost::loadRasterTerrain(const std::string& layer_id,
+                                        const core::RasterGrid& grid)
+{
+    ensureView3D();
+    if (m_view3d) m_view3d->loadTerrainGrid(layer_id, grid, /*z_is_depth=*/true);
+}
+
 void MapViewportHost::onLayerRemoved(const std::string& layer_id)
 {
     m_layer_visibility.erase(layer_id);
@@ -451,6 +458,7 @@ void MapViewportHost::onLayerRemoved(const std::string& layer_id)
     m_view3d->removeLayer(layer_id);
     m_view3d->removeProfileCurtain(layer_id);
     m_view3d->removeSonarDrape(layer_id);
+    m_view3d->removeTerrainLayer(layer_id);
 }
 
 void MapViewportHost::clearScene()

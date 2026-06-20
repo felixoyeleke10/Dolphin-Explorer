@@ -10,6 +10,8 @@
 #include "ui/features/map/sidescan/SidescanCorrectionDialog.h"
 #include "app/project/Project.h"
 #include "app/layers/DataLayer.h"
+#include "io/raster/RasterReader.h"
+#include "io/raster/RasterWriter.h"
 #include "core/Contact.h"
 #include "ui/shared/panels/LineListPanel.h"
 #include "ui/shared/widgets/LayerPickerWidget.h"
@@ -260,11 +262,64 @@ void MainWindow::onExportScreenshot()
         tr("Screenshot → %1").arg(QFileInfo(path).fileName()));
 }
 
+bool MainWindow::exportRasterLayer(app::DataLayer* layer, const QString& path)
+{
+    if (!layer || !layer->raster.valid) return false;
+    std::string err;
+    bool ok = false;
+    if (layer->raster.is_depth) {
+        core::RasterGrid g;
+        if (io::readElevationRaster(layer->artifact_store_path, g, &err))
+            ok = io::writeElevationGeoTiff(path.toStdString(), g, &err);
+    } else {
+        io::RasterImage im;
+        if (io::readImageRaster(layer->artifact_store_path, im, &err))
+            ok = io::writeImageGeoTiff(path.toStdString(), im.width, im.height, im.rgba,
+                                       im.geo_transform, im.crs_wkt, /*alpha*/ true, &err);
+    }
+    if (ok) {
+        appendJobMessage(tr("Exported GeoTIFF: %1").arg(path));
+        recordActivity(ActivityKind::Export,
+            tr("Exported raster %1").arg(QFileInfo(path).fileName()));
+    } else {
+        appendJobMessage(tr("Raster export failed — %1").arg(QString::fromStdString(err)));
+    }
+    return ok;
+}
+
 void MainWindow::onExportLayers(const std::vector<std::string>& layer_ids,
                                 const QString& format)
 {
-    appendJobMessage(tr("Export as %1 is not yet available in this version.")
-        .arg(format.toUpper()));
+    if (!currentProject() || layer_ids.empty()) return;
+
+    // Raster layers export to GeoTIFF via GDAL (RasterWriter).
+    std::vector<app::DataLayer*> rasters;
+    for (const auto& id : layer_ids)
+        if (auto* l = currentProject()->findLayer(id);
+            l && l->modality == app::Modality::Raster && l->raster.valid)
+            rasters.push_back(l);
+
+    if (rasters.empty()) {
+        appendJobMessage(tr("Export as %1 is not yet available for these layers.")
+            .arg(format.toUpper()));
+        return;
+    }
+
+    if (rasters.size() == 1) {
+        const QString def = QString::fromStdString(rasters.front()->label) + ".tif";
+        const QString path = QFileDialog::getSaveFileName(
+            this, tr("Export GeoTIFF"), def, tr("GeoTIFF (*.tif *.tiff)"));
+        if (path.isEmpty()) return;
+        exportRasterLayer(rasters.front(), path);
+    } else {
+        const QString dir = QFileDialog::getExistingDirectory(
+            this, tr("Export GeoTIFFs to Folder"));
+        if (dir.isEmpty()) return;
+        int n = 0;
+        for (auto* l : rasters)
+            if (exportRasterLayer(l, dir + "/" + QString::fromStdString(l->label) + ".tif")) ++n;
+        appendJobMessage(tr("Exported %n GeoTIFF(s)", nullptr, n));
+    }
 }
 
 void MainWindow::onMergeLayers(const std::vector<std::string>& layer_ids)
