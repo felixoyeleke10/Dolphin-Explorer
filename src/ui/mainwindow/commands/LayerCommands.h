@@ -96,6 +96,11 @@ public:
             m_assigned_id = it->id;
         if (m_assigned_id == 0 && !after.empty())
             m_assigned_id = after.back().id;
+        // Capture the project-assigned default label so a redo after undo keeps the
+        // same name (the contact was created with an empty label).
+        if (m_contact.label.empty())
+            for (const auto& ct : after)
+                if (ct.id == m_assigned_id) { m_contact.label = ct.label; break; }
         if (m_on_applied) m_on_applied();
     }
 
@@ -104,6 +109,9 @@ public:
         if (m_on_applied) m_on_applied();
     }
 
+    // The id the project assigned on the first redo() (0 before then).
+    uint64_t assignedId() const { return m_assigned_id; }
+
 private:
     app::Project*         m_project;
     core::Contact         m_contact;
@@ -111,79 +119,105 @@ private:
     std::function<void()> m_on_applied;
 };
 
-// Undoable contact deletion.  Stores the full contact so it can be re-added on undo.
-// The id will be re-assigned by the project on each re-add — callers must not cache
-// the original id across an undo/redo cycle.
-class RemoveContactCommand final : public QUndoCommand {
+// Undoable soft-delete: moves a contact to the project recycle bin (redo) and
+// restores it (undo). The contact id is stable across recycle/restore, so only
+// the id is stored. Permanent removal ("Delete Forever") is a separate purge.
+class RecycleContactCommand final : public QUndoCommand {
 public:
-    RemoveContactCommand(app::Project*         project,
-                         core::Contact         contact,
-                         std::function<void()> on_applied)
-        : QUndoCommand(QStringLiteral("Remove Contact"))
+    RecycleContactCommand(app::Project* project, uint64_t id)
+        : QUndoCommand(QStringLiteral("Delete Contact"))
         , m_project(project)
-        , m_contact(std::move(contact))
-        , m_on_applied(std::move(on_applied))
+        , m_id(id)
     {}
 
-    void redo() override {
-        m_project->removeContact(m_contact.id);
-        if (m_on_applied) m_on_applied();
+    void redo() override { m_project->recycleContact(m_id); }
+    void undo() override { m_project->restoreContact(m_id); }
+
+private:
+    app::Project* m_project;
+    uint64_t      m_id;
+};
+
+// Undoable edit of a single contact's fields (rename, favourite tag, group
+// assignment — all of which are Project::updateContact). Stores the full before
+// and after so redo/undo just re-apply the matching snapshot. The id is stable.
+class UpdateContactCommand final : public QUndoCommand {
+public:
+    UpdateContactCommand(app::Project* project, core::Contact before, core::Contact after)
+        : QUndoCommand(QStringLiteral("Edit Contact"))
+        , m_project(project)
+        , m_before(std::move(before))
+        , m_after(std::move(after))
+    {}
+
+    void redo() override { m_project->updateContact(m_after); }
+    void undo() override { m_project->updateContact(m_before); }
+
+private:
+    app::Project* m_project;
+    core::Contact m_before;
+    core::Contact m_after;
+};
+
+// Undoable contact-group creation. Exposes the new id so a "create + assign"
+// macro can attach contacts to the just-made group.
+class AddContactGroupCommand final : public QUndoCommand {
+public:
+    AddContactGroupCommand(app::Project* project, std::string name)
+        : QUndoCommand(QStringLiteral("New Group")), m_project(project), m_name(std::move(name)) {}
+
+    void redo() override { if (auto* g = m_project->addContactGroup(m_name)) m_id = g->id; }
+    void undo() override { if (!m_id.empty()) m_project->removeContactGroup(m_id); }
+    const std::string& groupId() const { return m_id; }
+
+private:
+    app::Project* m_project;
+    std::string   m_name;
+    std::string   m_id;
+};
+
+// Undoable contact-group rename (id stable).
+class RenameContactGroupCommand final : public QUndoCommand {
+public:
+    RenameContactGroupCommand(app::Project* project, std::string id,
+                              std::string old_name, std::string new_name)
+        : QUndoCommand(QStringLiteral("Rename Group"))
+        , m_project(project), m_id(std::move(id))
+        , m_old(std::move(old_name)), m_new(std::move(new_name)) {}
+
+    void redo() override { m_project->renameContactGroup(m_id, m_new); }
+    void undo() override { m_project->renameContactGroup(m_id, m_old); }
+
+private:
+    app::Project* m_project;
+    std::string   m_id, m_old, m_new;
+};
+
+// Undoable contact-group deletion. Snapshots the group name + member contact ids
+// (captured before redo); undo re-creates the group and re-assigns its members.
+// The re-created group gets a fresh id, which is kept for any subsequent redo.
+class RemoveContactGroupCommand final : public QUndoCommand {
+public:
+    RemoveContactGroupCommand(app::Project* project, std::string id)
+        : QUndoCommand(QStringLiteral("Delete Group")), m_project(project), m_id(std::move(id))
+    {
+        if (auto* g = m_project->findContactGroup(m_id)) m_name = g->name;
+        for (const auto& c : m_project->contacts())
+            if (c.group_id == m_id) m_members.push_back(c.id);
     }
 
+    void redo() override { m_project->removeContactGroup(m_id); }
     void undo() override {
-        const size_t prev_sz = m_project->contacts().size();
-        m_project->addContact(m_contact);
-        const auto& after = m_project->contacts();
-        for (auto it = after.begin() + static_cast<ptrdiff_t>(prev_sz); it != after.end(); ++it)
-            m_contact.id = it->id;
-        if (m_contact.id == 0 && !after.empty())
-            m_contact.id = after.back().id;
-        if (m_on_applied) m_on_applied();
+        if (auto* g = m_project->addContactGroup(m_name)) {
+            m_id = g->id;
+            for (uint64_t cid : m_members) m_project->setContactGroup(cid, m_id);
+        }
     }
 
 private:
     app::Project*         m_project;
-    core::Contact         m_contact;
-    std::function<void()> m_on_applied;
-};
-
-// Undoable bulk contact clear.  Stores all contacts before removal so they can
-// be restored on undo.  Note: ids are re-assigned by the project on each re-add,
-// so m_contacts is updated in-place after each undo to keep redo ids consistent.
-class ClearContactsCommand final : public QUndoCommand {
-public:
-    ClearContactsCommand(app::Project*               project,
-                         std::vector<core::Contact>  contacts,
-                         std::function<void()>       on_applied)
-        : QUndoCommand(QStringLiteral("Clear Contacts"))
-        , m_project(project)
-        , m_contacts(std::move(contacts))
-        , m_on_applied(std::move(on_applied))
-    {}
-
-    void redo() override {
-        for (const auto& c : m_contacts)
-            m_project->removeContact(c.id);
-        if (m_on_applied) m_on_applied();
-    }
-
-    void undo() override {
-        for (auto& c : m_contacts) {
-            const size_t prev_sz = m_project->contacts().size();
-            m_project->addContact(c);
-            const auto& after = m_project->contacts();
-            for (auto it = after.begin() + static_cast<ptrdiff_t>(prev_sz); it != after.end(); ++it)
-                c.id = it->id;
-            if (c.id == 0 && !after.empty())
-                c.id = after.back().id;
-        }
-        if (m_on_applied) m_on_applied();
-    }
-
-private:
-    app::Project*              m_project;
-    std::vector<core::Contact> m_contacts;
-    std::function<void()>      m_on_applied;
+    std::string           m_id, m_name;
+    std::vector<uint64_t> m_members;
 };
 
 // Undoable source CRS assignment.  The on_apply callback receives the SpatialRef to

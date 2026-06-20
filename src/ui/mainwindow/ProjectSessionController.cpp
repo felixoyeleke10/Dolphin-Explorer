@@ -13,11 +13,14 @@
 #include <QApplication>
 #include <QDesktopServices>
 #include <QDir>
+#include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QMenu>
 #include <QMessageBox>
+#include <QRegularExpression>
 #include <QSettings>
+#include <QSet>
 #include <QTimer>
 #include <QUndoStack>
 #include <QUrl>
@@ -25,6 +28,36 @@
 namespace {
 constexpr int kMaxRecent = 8;
 constexpr const char* kRecentKey = "recentProjects";
+
+void addExistingPath(QStringList& paths, QSet<QString>& seen, const QString& path)
+{
+    if (path.isEmpty()) return;
+    const QFileInfo info(path);
+    if (!info.exists()) return;
+    const QString clean = QDir::cleanPath(info.absoluteFilePath());
+#ifdef _WIN32
+    const QString key = clean.toCaseFolded();
+#else
+    const QString key = clean;
+#endif
+    if (seen.contains(key)) return;
+    seen.insert(key);
+    paths.push_back(clean);
+}
+
+QStringList projectTrashPaths(const dolphin::app::Project& project)
+{
+    QStringList paths;
+    QSet<QString> seen;
+
+    addExistingPath(paths, seen, QString::fromStdString(project.manifestPath()));
+    for (const auto& layer : project.layers()) {
+        if (!layer) continue;
+        addExistingPath(paths, seen, QString::fromStdString(layer->artifact_store_path));
+    }
+
+    return paths;
+}
 } // namespace
 
 namespace dolphin::ui {
@@ -238,6 +271,90 @@ void ProjectSessionController::closeProject()
     emit jobMessage("Project closed.");
 }
 
+void ProjectSessionController::deleteProject()
+{
+    if (!m_project) return;
+
+    const QString manifest = QString::fromStdString(m_project->manifestPath());
+    if (manifest.isEmpty()) {
+        QMessageBox::information(m_dialog_parent, tr("Delete Project"),
+                                 tr("This unsaved project has no project file to move to the Recycle Bin."));
+        return;
+    }
+
+    const QStringList paths = projectTrashPaths(*m_project);
+    if (paths.isEmpty()) {
+        QMessageBox::warning(m_dialog_parent, tr("Delete Project"),
+                             tr("No project files were found on disk."));
+        return;
+    }
+
+    const QString project_name = QString::fromStdString(m_project->name());
+    const int artifact_count = std::max(0, static_cast<int>(paths.size()) - 1);
+    QString message = tr("Move \"%1\" to the Recycle Bin?").arg(project_name);
+    message += "\n\n";
+    message += tr("This moves the project file and %n project-owned artifact file(s).",
+                  nullptr, artifact_count);
+    message += "\n";
+    message += tr("Original source survey files are not deleted.");
+    if (m_project_dirty) {
+        message += "\n\n";
+        message += tr("Unsaved project changes will be discarded.");
+    }
+
+    const auto reply = QMessageBox::question(
+        m_dialog_parent,
+        tr("Delete Project"),
+        message,
+        QMessageBox::Yes | QMessageBox::Cancel,
+        QMessageBox::Cancel);
+    if (reply != QMessageBox::Yes) return;
+
+    m_op_mgr->cancelAll();
+    if (m_import_service) m_import_service->cancelPendingRebuild();
+
+    QStringList failed;
+    for (const QString& path : paths) {
+        QString path_in_trash;
+        if (!QFile::moveToTrash(path, &path_in_trash))
+            failed.push_back(path);
+    }
+
+    if (!failed.isEmpty()) {
+        QMessageBox::warning(
+            m_dialog_parent,
+            tr("Delete Project"),
+            tr("Some project files could not be moved to the Recycle Bin:\n%1")
+                .arg(failed.join('\n')));
+        if (m_diag_hub) {
+            m_diag_hub->postProblem(
+                tr("Project delete incomplete: %1 file(s) could not be moved to the Recycle Bin.")
+                    .arg(failed.size()),
+                DiagnosticsHub::Severity::Warning,
+                "project");
+        }
+    }
+
+    emit projectAboutToChange();
+
+    m_project_load_gen++;
+    m_undo_stack->clear();
+    m_project.reset();
+    m_project_dirty = false;
+
+    QSettings s(AppInfo::kOrgName, AppInfo::kSettingsApp);
+    QStringList recent = s.value(kRecentKey).toStringList();
+    recent.removeAll(manifest);
+    s.setValue(kRecentKey, recent);
+    emit recentProjectsChanged(recent);
+
+    emitWindowTitle();
+    emit projectChanged(nullptr);
+    emit jobMessage(failed.isEmpty()
+        ? tr("Project moved to Recycle Bin.")
+        : tr("Project closed; delete was incomplete."));
+}
+
 void ProjectSessionController::autoSave()
 {
     if (!m_project || !m_project_dirty) return;
@@ -347,6 +464,54 @@ void ProjectSessionController::loadProjectPath(const std::string& path)
 
         emit firstLayerReady(first_layer_id);
     });
+}
+
+void ProjectSessionController::renameProject(const QString& new_name)
+{
+    if (!m_project) return;
+    const QString trimmed = new_name.trimmed();
+    if (trimmed.isEmpty() || trimmed.toStdString() == m_project->name()) return;
+
+    m_project->setName(trimmed.toStdString());
+
+    bool file_renamed = false;
+    if (!m_project->isTempProject() && !m_project->manifestPath().empty()) {
+        const QString  old_path = QString::fromStdString(m_project->manifestPath());
+        const QFileInfo fi(old_path);
+        QString stem = trimmed;
+        stem.replace(QRegularExpression(R"([\\/:*?"<>|])"), QStringLiteral("_"));  // filename-safe
+        const QString suffix   = fi.suffix().isEmpty() ? QStringLiteral("dlp") : fi.suffix();
+        const QString new_path = fi.absoluteDir().absoluteFilePath(stem + QLatin1Char('.') + suffix);
+
+        if (QFileInfo(new_path) != fi) {
+            if (QFileInfo::exists(new_path)) {
+                QMessageBox::warning(m_dialog_parent, tr("Rename Project"),
+                    tr("A project file named \"%1\" already exists in this folder.\n"
+                       "The display name was changed, but the file was not renamed.")
+                        .arg(QFileInfo(new_path).fileName()));
+            } else if (m_project->renameOnDisk(new_path.toStdString())) {
+                // renameOnDisk moved the files and saved under the new path.
+                m_project_dirty = false;
+                QSettings s(AppInfo::kOrgName, AppInfo::kSettingsApp);
+                QStringList list = s.value(kRecentKey).toStringList();
+                list.removeAll(old_path);
+                list.removeAll(QDir::cleanPath(old_path));
+                list.prepend(QDir::cleanPath(new_path));
+                if (list.size() > kMaxRecent) list.resize(kMaxRecent);
+                s.setValue(kRecentKey, list);
+                emit recentProjectsChanged(list);
+                file_renamed = true;
+            } else {
+                QMessageBox::warning(m_dialog_parent, tr("Rename Project"),
+                    tr("Could not rename the project file on disk.\n"
+                       "The display name was changed in this session only."));
+            }
+        }
+    }
+
+    if (!file_renamed) m_project_dirty = true;   // name-only change is unsaved
+    emitWindowTitle();
+    emit jobMessage(tr("Project renamed to %1").arg(trimmed));
 }
 
 void ProjectSessionController::addToRecentProjects(const QString& path)

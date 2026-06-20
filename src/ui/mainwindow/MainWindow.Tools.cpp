@@ -2,6 +2,8 @@
 #include "ui/mainwindow/MainWindow.h"
 #include "ui/mainwindow/commands/LayerCommands.h"
 #include "ui/mainwindow/AppSettingsDialog.h"
+#include "ui/features/export/ExportManagerWindow.h"
+#include "ui/features/contacts/ContactReport.h"
 #include "ui/features/map/MapView.h"
 #include "ui/features/map/MapViewportHost.h"
 #include "ui/features/map/sidescan/SidescanViewController.h"
@@ -149,6 +151,54 @@ void MainWindow::onExportPdf()
         tr("PDF files (*.pdf);;All files (*)"));
     if (path.isEmpty()) return;
     appendJobMessage(tr("PDF report export is not yet available in this version."));
+}
+
+void MainWindow::onExportManagerOpen()
+{
+    if (!m_export_win) {
+        auto* win = new ExportManagerWindow(nullptr);
+        win->setAttribute(Qt::WA_DeleteOnClose);
+        m_export_win = win;
+        connect(win, &ExportManagerWindow::exportContactsCsvRequested,
+                this, &MainWindow::onExportCsv);
+        connect(win, &ExportManagerWindow::exportContactsPdfRequested,
+                this, [this]() { exportContactsReport(/*docx=*/false); });
+        connect(win, &ExportManagerWindow::exportContactsWordRequested,
+                this, [this]() { exportContactsReport(/*docx=*/true); });
+        connect(win, &ExportManagerWindow::exportScreenshotRequested,
+                this, &MainWindow::onExportScreenshot);
+    }
+    m_export_win->show();
+    m_export_win->raise();
+    m_export_win->activateWindow();
+}
+
+void MainWindow::exportContactsReport(bool docx)
+{
+    if (!currentProject()) { appendJobMessage(tr("Open a project before exporting.")); return; }
+    const auto& contacts = currentProject()->contacts();
+    if (contacts.empty()) { appendJobMessage(tr("No contacts to export.")); return; }
+
+    const QString filter = docx ? tr("Word Document (*.docx)") : tr("PDF Document (*.pdf)");
+    const QString ext    = docx ? QStringLiteral(".docx") : QStringLiteral(".pdf");
+    QString path = QFileDialog::getSaveFileName(
+        this, tr("Export Contact Report"), exportStartDir(), filter);
+    if (path.isEmpty()) return;
+    if (!path.endsWith(ext, Qt::CaseInsensitive)) path += ext;
+
+    const QString title = tr("Contact Report — %1")
+        .arg(QString::fromStdString(currentProject()->name()));
+    const std::vector<core::Contact> rows(contacts.begin(), contacts.end());
+    const bool ok = docx ? ContactReport::writeDocx(path, title, rows, currentProject())
+                         : ContactReport::writePdf(path, title, rows, currentProject());
+    if (ok) {
+        appendJobMessage(tr("Exported %1 contact(s) → %2")
+            .arg(static_cast<int>(rows.size())).arg(QFileInfo(path).fileName()));
+        recordActivity(ActivityKind::Export,
+            tr("Exported contact report → %1").arg(QFileInfo(path).fileName()));
+    } else {
+        QMessageBox::warning(this, tr("Export Failed"), tr("Could not write the report file."));
+    }
 }
 
 void MainWindow::onExportScreenshot()
@@ -315,17 +365,21 @@ void MainWindow::onContactPickedOnMap(double lon, double lat)
     c.lat = lat;
     c.lon = lon;
     c.spatial_ref = currentProject()->displaySpatialRef();
-    const int n = static_cast<int>(currentProject()->contacts().size()) + 1;
-    c.label = "C" + QString::number(n).rightJustified(3, '0').toStdString();
-    m_undo_stack->push(new AddContactCommand(
-        currentProject(), c,
-        [this]() {  }));
+    // Leave the label empty: the project assigns a stable, monotonic "Cnnn" from the
+    // contact id, so removals never cause a later pick to reuse a surviving number.
+    auto* cmd = new AddContactCommand(currentProject(), c, [this]() {  });
+    m_undo_stack->push(cmd);
+
+    QString label;
+    for (const auto& ct : currentProject()->contacts())
+        if (ct.id == cmd->assignedId()) { label = QString::fromStdString(ct.label); break; }
+
     appendJobMessage(tr("Contact %1 placed at %2, %3")
-        .arg(QString::fromStdString(c.label))
+        .arg(label)
         .arg(lat, 0, 'f', 6)
         .arg(lon, 0, 'f', 6));
     recordActivity(ActivityKind::ContactPick,
-        tr("Contact %1 placed").arg(QString::fromStdString(c.label)));
+        tr("Contact %1 placed").arg(label));
 }
 
 void MainWindow::onRenumberContacts()
@@ -421,13 +475,17 @@ void MainWindow::onClearContacts()
     const auto& contacts = currentProject()->contacts();
     if (contacts.empty()) return;
     if (QMessageBox::question(this, tr("Clear Contacts"),
-            tr("Remove all contacts from this project?"),
+            tr("Move all contacts to the Recycle Bin?"),
             QMessageBox::Yes | QMessageBox::No) != QMessageBox::Yes)
         return;
-    m_undo_stack->push(new ClearContactsCommand(
-        currentProject(),
-        std::vector<core::Contact>(contacts.begin(), contacts.end()),
-        [this]() {  }));
+    // Snapshot ids first (recycling mutates the list), then one undoable macro.
+    std::vector<uint64_t> ids;
+    ids.reserve(contacts.size());
+    for (const auto& c : contacts) ids.push_back(c.id);
+    m_undo_stack->beginMacro(tr("Clear Contacts"));
+    for (uint64_t id : ids)
+        m_undo_stack->push(new RecycleContactCommand(currentProject(), id));
+    m_undo_stack->endMacro();
 }
 
 void MainWindow::onAbout()

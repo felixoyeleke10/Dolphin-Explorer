@@ -163,6 +163,8 @@ void MainWindow::onToggleContextPanel()
 
     if (m_context_stack)
         m_context_stack->setVisible(!m_context_collapsed);
+    if (m_context_divider)
+        m_context_divider->setVisible(!m_context_collapsed);
 
     // \u2039 = panel open (click to collapse); \u203a = panel hidden (click to expand)
     if (m_context_collapse_btn)
@@ -203,7 +205,7 @@ void MainWindow::rebuildHistoryList()
             tr("No activity yet.\nImport a file, run processing, or adjust display settings."),
             m_props_history_list);
         hint->setFlags(Qt::NoItemFlags);
-        hint->setData(Qt::UserRole + 2, true);
+        hint->setData(Qt::UserRole + 4, true);   // empty-state hint (not a section header)
         return;
     }
 

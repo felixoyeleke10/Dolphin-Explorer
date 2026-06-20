@@ -6,9 +6,9 @@
 #include "ui/features/waterfall/WaterfallView.h"
 #include "ui/features/waterfall/panels/WaterfallInspectorPanel.h"
 #include "ui/features/waterfall/panels/WaterfallAnalysisPanel.h"
-#include "ui/systems/AppState.h"
 
 #include <QFutureWatcher>
+#include <QSettings>
 #include <QTimer>
 #include <QtConcurrent/QtConcurrent>
 
@@ -139,11 +139,12 @@ void WaterfallWindow::onViewerRefresh(ViewerRefreshReason reason,
             reloadCurrentLayer();
         break;
     case ViewerRefreshReason::DisplaySettingsChanged:
-        // Sync palette to AppState's authoritative value, then push all visual
-        // params to the view. No disk I/O — sound velocity is handled separately
-        // via AppState::soundVelocityChanged → full reload.
-        if (m_app_state && m_inspector)
-            m_inspector->setPalette(m_app_state->current().default_palette);
+        // Sync palette to the global SSS palette, then push all visual params to
+        // the view. No disk I/O — sound velocity is handled separately via
+        // AppState::soundVelocityChanged → full reload.
+        if (m_inspector)
+            m_inspector->setPalette(QSettings().value(QStringLiteral("sss/paletteIdx"),
+                                                      PaletteIndex::Greyscale).toInt());
         pushParams();
         break;
     case ViewerRefreshReason::ProjectReplaced:

@@ -1,6 +1,7 @@
 #include <QApplication>
 #include <QScreen>
 #include <QSettings>
+#include <QSurfaceFormat>
 #include <QStyleFactory>
 #include <QDebug>
 #include <cstdio>
@@ -149,6 +150,22 @@ int main(int argc, char* argv[])
 
     // Register all built-in processing nodes before any graph is loaded/created
     dolphin::pipeline::registerBuiltinNodes();
+
+    // OpenGL setup MUST happen before QApplication so the top-level window is
+    // GL-capable from its first show. Otherwise, introducing the 3D QOpenGLWidget
+    // later (first 2D→3D switch) forces Windows to recreate the native top-level
+    // window — the whole app visibly disappears and reappears. A shared global
+    // context + a default format matching MapView3D (3.3 core) initialises the GL
+    // compositor up front, so no window recreation occurs on the first switch.
+    {
+        QSurfaceFormat fmt;
+        fmt.setVersion(3, 3);
+        fmt.setProfile(QSurfaceFormat::CoreProfile);
+        fmt.setDepthBufferSize(24);
+        fmt.setSwapBehavior(QSurfaceFormat::DoubleBuffer);
+        QSurfaceFormat::setDefaultFormat(fmt);
+    }
+    QApplication::setAttribute(Qt::AA_ShareOpenGLContexts, true);
 
     QApplication app(argc, argv);
     app.setApplicationName(AppInfo::kSettingsApp);

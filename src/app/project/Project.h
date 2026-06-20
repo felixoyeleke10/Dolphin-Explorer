@@ -41,6 +41,11 @@ public:
 
     bool save();
     bool saveAs(const std::string& new_path);
+    // Rename the on-disk project: moves the .dlp manifest and its cache folder to
+    // `new_path` (a filesystem move, not a copy), remaps layer cache paths, and
+    // saves. Caller sets the display name first. Returns false (and rolls back) if
+    // the target exists or any filesystem step fails.
+    bool renameOnDisk(const std::string& new_path);
 
     // Sources
     ProjectSource* addSource(const std::string& path, const std::string& format);
@@ -78,6 +83,13 @@ public:
     void           removeContact(uint64_t id);
     const std::vector<core::Contact>& contacts() const { return m_contacts; }
 
+    // Recycle bin — soft-deleted contacts, persisted in the project.
+    void           recycleContact(uint64_t id);    // active → bin (soft delete)
+    void           restoreContact(uint64_t id);    // bin → active
+    void           purgeContact(uint64_t id);      // bin → gone (permanent)
+    void           emptyRecycleBin();              // purge everything in the bin
+    const std::vector<core::Contact>& recycledContacts() const { return m_recycled_contacts; }
+
     // Layer groups
     ItemGroup*     addLayerGroup(const std::string& name);
     void           removeLayerGroup(const std::string& id);
@@ -85,6 +97,7 @@ public:
     ItemGroup*     findLayerGroup(const std::string& id);
     const std::vector<ItemGroup>& layerGroups() const { return m_layer_groups; }
     void           setLayerGroup(const std::string& layer_id, const std::string& group_id);
+    void           setLayerGroups(const std::vector<std::string>& layer_ids, const std::string& group_id);
     void           setLayerTags(const std::string& layer_id, std::vector<std::string> tags);
 
     // Contact groups
@@ -98,6 +111,7 @@ public:
 
     // Metadata
     const std::string& name()         const { return m_name; }
+    void               setName(const std::string& name);
     const std::string& manifestPath() const { return m_manifest_path; }
     std::string        dataPath()     const;   // project/data/ directory
     const std::string& crs()          const { return m_display_spatial_ref.id; }
@@ -132,6 +146,8 @@ signals:
     void layersReordered();
     void contactAdded(const core::Contact& c);
     void contactRemoved(uint64_t id);
+    void contactUpdated(uint64_t id);   // an existing contact's fields/group changed
+    void recycleBinChanged();           // a contact entered/left/was purged from the bin
     void layerGroupsChanged();
     void contactGroupsChanged();
     void modified();
@@ -147,6 +163,7 @@ private:
     contracts::ContractStore              m_contract_store;
     execution::ExecutionHistory       m_execution_history;
     std::vector<core::Contact>            m_contacts;
+    std::vector<core::Contact>            m_recycled_contacts;   // soft-deleted
     uint64_t                              m_next_contact_id = 1;
     std::vector<ItemGroup>                m_layer_groups;
     std::vector<ItemGroup>                m_contact_groups;

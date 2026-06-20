@@ -8,6 +8,7 @@
 #include "ui/features/waterfall/panels/WaterfallAnalysisPanel.h"
 
 #include <QFutureWatcher>
+#include <QSettings>
 #include <QtConcurrent/QtConcurrent>
 
 namespace dolphin::ui {
@@ -127,26 +128,34 @@ void WaterfallWindow::applyWfSettings(const WaterfallSettingsDialog::Settings& s
 void WaterfallWindow::applyExternalParams(const WaterfallParams& p)
 {
     if (!m_view) return;
-    if (m_analysis) m_analysis->setParams(p);
+
+    WaterfallParams applied = p;
+    // Waterfall palette is global. Stored per-layer WaterfallParams may carry an
+    // older palette value, so normalize it before touching UI/render state.
+    applied.palette = QSettings().value(QStringLiteral("sss/paletteIdx"),
+                                        PaletteIndex::Greyscale).toInt();
+    if (m_inspector)
+        m_inspector->setPalette(applied.palette);
+    if (m_analysis) m_analysis->setParams(applied);
 
     // Params that affect the processing pipeline (TVG/ARC/AGC/ARN/destripe/
     // beam-pattern/ML) must run off the UI thread.  Display-only changes
     // (palette, gain, contrast, SRC flag, display channel) are fast-path.
     const WaterfallParams& cur = m_view->params();
     const bool needs_repipe = !m_view->rawPings().empty()
-        && ((p.agc          != cur.agc)
-         || (p.tvg          != cur.tvg)
-         || (p.arn          != cur.arn)
-         || (p.destripe     != cur.destripe)
-         || (p.beam_pattern != cur.beam_pattern)
-         || (p.arc          != cur.arc)
-         || (p.ml_enhance   != cur.ml_enhance));
+        && ((applied.agc          != cur.agc)
+         || (applied.tvg          != cur.tvg)
+         || (applied.arn          != cur.arn)
+         || (applied.destripe     != cur.destripe)
+         || (applied.beam_pattern != cur.beam_pattern)
+         || (applied.arc          != cur.arc)
+         || (applied.ml_enhance   != cur.ml_enhance));
 
     if (needs_repipe) {
-        m_view->setParamsNoRebuild(p);   // commit new params; skip sync rebuild
+        m_view->setParamsNoRebuild(applied);   // commit new params; skip sync rebuild
         invalidateProcessedCache();      // schedule async re-pipeline
     } else {
-        m_view->setParams(p);
+        m_view->setParams(applied);
     }
     flashProgress();
     emit paramsApplied();

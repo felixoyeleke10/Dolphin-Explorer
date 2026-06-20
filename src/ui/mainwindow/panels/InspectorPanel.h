@@ -1,9 +1,7 @@
 #pragma once
 #include "app/layers/DataLayer.h"
 #include "app/layers/LayerUtils.h"
-#include "app/display/WaterfallParams.h"  // DisplayChannel
 #include "core/Contact.h"
-#include <QSet>
 #include <QWidget>
 
 class QStackedWidget;
@@ -24,18 +22,13 @@ public:
     void showContact(const core::Contact* contact);
     void showEmpty  ();
 
-    void setAvailableModalities(const QSet<app::Modality>& modalities);
-    void setModalityFilter(app::Modality filter);
-
     RightPanelHost* rightPanelHost() const { return m_layer; }
 
     int  currentPaletteIndex() const;
     void setPalette(int idx);
-    void setChannel(DisplayChannel ch);
 
 signals:
     void paletteChanged(int idx);
-    void channelChanged(DisplayChannel ch);
 
 private:
     QStackedWidget*       m_stack   = nullptr;

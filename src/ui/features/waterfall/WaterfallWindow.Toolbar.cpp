@@ -58,6 +58,11 @@ void WaterfallWindow::buildToolbar()
            "Click the waterfall on a target, shadow, cable, pipeline, debris, or anomaly to place a point contact."));
     m_btn_contact->setCheckable(true);
 
+    auto* btn_contact_mgr = m_toolbar->addButton(":/icons/contacts.svg",
+        tr("Open the Contact Manager to review, group, and export all contacts."));
+    connect(btn_contact_mgr, &QToolButton::clicked,
+            this, &WaterfallWindow::contactManagerRequested);
+
     qobject_cast<QVBoxLayout*>(layout())->insertWidget(0, m_toolbar);
 }
 
@@ -96,6 +101,8 @@ QList<CommandPaletteItem> WaterfallWindow::buildCommandItems()
         has_layer, [this] {
             if (m_btn_contact) m_btn_contact->setChecked(!m_btn_contact->isChecked());
         });
+    add("Tools", tr("Contact Manager"), "", "contacts manager review group export",
+        true, [this] { emit contactManagerRequested(); });
 
     add("Analysis", tr("Apply Display Params"),   "", "apply params gain",
         has_layer, [this] { pushParams(); flashProgress(); });

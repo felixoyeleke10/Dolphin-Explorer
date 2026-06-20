@@ -110,6 +110,46 @@ static QMenu* buildGroupMenu(QWidget* parent,
     return menu;
 }
 
+static QMenu* buildBulkLayerGroupMenu(QWidget* parent,
+                                      const std::vector<app::ItemGroup>& groups,
+                                      int layer_count,
+                                      std::function<void(std::string)> apply_group,
+                                      std::function<app::ItemGroup*(const std::string&)> create_group)
+{
+    auto* menu = new QMenu(QObject::tr("Group"), parent);
+
+    menu->addAction(QObject::tr("New Group from Selection..."), parent,
+                    [parent, layer_count, apply_group, create_group]() {
+        bool ok = false;
+        const QString name = QInputDialog::getText(
+            parent, QObject::tr("New Group"),
+            QObject::tr("Group name:"), QLineEdit::Normal,
+            QObject::tr("%n selected lines", nullptr, layer_count), &ok).trimmed();
+        if (!ok || name.isEmpty()) return;
+        auto* grp = create_group(name.toStdString());
+        if (grp) apply_group(grp->id);
+    });
+
+    menu->addSeparator();
+
+    if (groups.empty()) {
+        menu->addAction(QObject::tr("No existing groups"))->setEnabled(false);
+    } else {
+        for (const auto& g : groups) {
+            menu->addAction(QString::fromStdString(g.name),
+                            parent, [gid = g.id, apply_group]() {
+                apply_group(gid);
+            });
+        }
+    }
+
+    menu->addSeparator();
+    menu->addAction(QObject::tr("Remove from Group"), parent,
+                    [apply_group]() { apply_group({}); });
+
+    return menu;
+}
+
 // -- Main context menu handler -------------------------------------------------
 
 void LineListPanel::onContextMenuRequested(const QPoint& pos)
@@ -120,8 +160,37 @@ void LineListPanel::onContextMenuRequested(const QPoint& pos)
     const auto   type = itemTypeOf(item);
     const QPoint gpos = m_tree->viewport()->mapToGlobal(pos);
 
+    // -- Project root item ----------------------------------------------------
+    if (type == ItemType::Project) {
+        QMenu menu(this);
+
+        menu.addAction(tr("Rename Project..."), this, [this] {
+            emit renameProjectRequested();
+        });
+        menu.addSeparator();
+        menu.addAction(tr("Save Project"), this, [this] {
+            emit saveProjectRequested();
+        });
+        menu.addAction(tr("Save Project As..."), this, [this] {
+            emit saveProjectAsRequested();
+        });
+        menu.addSeparator();
+        auto* open_folder = menu.addAction(tr("Open Project Folder"), this, [this] {
+            emit openProjectFolderRequested();
+        });
+        open_folder->setEnabled(m_project && !m_project->manifestPath().empty());
+        menu.addSeparator();
+        menu.addAction(tr("Close Project"), this, [this] {
+            emit closeProjectRequested();
+        });
+        menu.addAction(tr("Delete Project..."), this, [this] {
+            emit deleteProjectRequested();
+        })->setEnabled(m_project && !m_project->manifestPath().empty());
+
+        menu.exec(gpos);
+
     // -- Layer item ------------------------------------------------------------
-    if (type == ItemType::Layer) {
+    } else if (type == ItemType::Layer) {
         const std::string clicked_id = item->data(0, kRoleId).toString().toStdString();
 
         std::vector<std::string> ids;
@@ -246,7 +315,31 @@ void LineListPanel::onContextMenuRequested(const QPoint& pos)
                 emit removeLayerRequested(clicked_id);
             });
         } else {
-            // -- Multi-layer tags (bulk clear only) ----------------------------
+            // -- Multi-layer organisation --------------------------------------
+            menu.addSeparator();
+            menu.addMenu(buildBulkLayerGroupMenu(this,
+                m_project->layerGroups(),
+                n,
+                [this, ids, n](std::string gid) {
+                    m_project->setLayerGroups(ids, gid);
+                    refresh();
+                    if (gid.empty()) {
+                        emit activityLogged(
+                            tr("%n layers removed from group", nullptr, n), 8);
+                    } else {
+                        const auto* g = m_project->findLayerGroup(gid);
+                        const QString gnm = g ? QString::fromStdString(g->name) : tr("group");
+                        emit activityLogged(
+                            tr("%n layers moved to \"%1\"", nullptr, n).arg(gnm), 8);
+                    }
+                },
+                [this](const std::string& name) -> app::ItemGroup* {
+                    auto* grp = m_project->addLayerGroup(name);
+                    if (grp) emit activityLogged(
+                        tr("Group \"%1\" created").arg(QString::fromStdString(name)), 8);
+                    return grp;
+                }));
+
             menu.addSeparator();
             menu.addAction(tr("Remove %1 Layers…").arg(n), this, [this, ids] {
                 emit removeLayersRequested(ids);

@@ -97,6 +97,10 @@ public:
 
     MapSonarQuality mapSonarQuality() const { return m_quality; }
 
+    // Current global map palette index (the controller computes the initial value from
+    // settings; DisplayStateManager owns it thereafter). Used to seed the manager.
+    int paletteIndex() const { return m_palette_idx; }
+
     // Update heading georef parameters and immediately rebuild the map display.
     void setGeorefParams(const SssGeorefParams& p);
 

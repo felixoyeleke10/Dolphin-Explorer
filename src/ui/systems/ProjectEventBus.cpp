@@ -27,6 +27,12 @@ void ProjectEventBus::setProject(app::Project* project)
                 this, &ProjectEventBus::contactAdded);
         connect(m_project, &app::Project::contactRemoved,
                 this, &ProjectEventBus::contactRemoved);
+        connect(m_project, &app::Project::contactUpdated,
+                this, &ProjectEventBus::contactUpdated);
+        connect(m_project, &app::Project::contactGroupsChanged,
+                this, &ProjectEventBus::contactGroupsChanged);
+        connect(m_project, &app::Project::recycleBinChanged,
+                this, &ProjectEventBus::recycleBinChanged);
         connect(m_project, &app::Project::modified,
                 this, &ProjectEventBus::projectModified);
     }

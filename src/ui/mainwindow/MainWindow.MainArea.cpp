@@ -46,6 +46,7 @@ namespace {
 static constexpr int kHRoleTime = Qt::UserRole + 1;
 static constexpr int kHRoleSect = Qt::UserRole + 2;
 static constexpr int kHRoleKind = Qt::UserRole + 3;
+static constexpr int kHRoleHint = Qt::UserRole + 4;   // empty-state message row
 
 // Color per ActivityKind int value (Import=0 … GroupChange=8)
 static QColor activityKindColor(int kind)
@@ -73,6 +74,7 @@ public:
     QSize sizeHint(const QStyleOptionViewItem&,
                    const QModelIndex& idx) const override
     {
+        if (idx.data(kHRoleHint).toBool()) return QSize(0, 80);
         return idx.data(kHRoleSect).toBool() ? QSize(0, 26) : QSize(0, 52);
     }
 
@@ -82,7 +84,16 @@ public:
         p->save();
         p->setRenderHint(QPainter::Antialiasing);
 
-        if (idx.data(kHRoleSect).toBool()) {
+        if (idx.data(kHRoleHint).toBool()) {
+            // -- Empty-state message (centred, wrapped, muted) ------------
+            QFont f = opt.font;
+            f.setPixelSize(11);
+            p->setFont(f);
+            p->setPen(QColor("#8E8E93"));
+            p->drawText(opt.rect.adjusted(16, 0, -16, 0),
+                        Qt::AlignCenter | Qt::TextWordWrap,
+                        idx.data(Qt::DisplayRole).toString());
+        } else if (idx.data(kHRoleSect).toBool()) {
             // -- Section header (Today / Yesterday / …) -------------------
             QFont f = opt.font;
             f.setPixelSize(9);

@@ -177,8 +177,10 @@ signals:
     void pingClicked(int ping_idx, core::SidescanChannel channel, float range_m);
     // Contact placed by the user with the contact pick tool.
     // lat/lon are 0.0 when nav is unavailable for that row.
+    // snapshot is a square grab of the waterfall around the pick (may be null).
     void contactPicked(int row_idx, core::SidescanChannel ch,
-                       float range_m, double lat, double lon, bool is_projected);
+                       float range_m, double lat, double lon, bool is_projected,
+                       const QPixmap& snapshot);
     // Scroll position changed — drives the external QScrollBar
     void scrollChanged(int scroll_row, int total_rows, int visible_rows);
     // Scroll attempt past data boundary; direction = -1 (top) or +1 (bottom)

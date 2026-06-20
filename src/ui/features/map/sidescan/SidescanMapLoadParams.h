@@ -1,13 +1,22 @@
 #pragma once
 // Quality-based load parameters and background task result type.
-// Shared between SidescanMapLoadTask.cpp and any future load-finish split.
+// Shared between SidescanMapLoadTask.cpp (main-thread orchestration) and
+// SidescanMapLoadTask.Build.cpp (the off-thread raster build).
 #include "ui/features/map/MapTypes.h"
+#include "ui/features/map/sidescan/SssGeorefParams.h"
+#include "ui/features/map/sidescan/SidescanRasterCache.h"
+#include "core/ArtifactIndex.h"
 #include "core/SidescanPing.h"
 #include "core/SpatialRef.h"
+#include "app/display/NavProcessingParams.h"
+#include "app/tasks/CancellationToken.h"
 
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <vector>
+
+namespace dolphin::app { class ImportService; }
 
 namespace dolphin::ui {
 namespace detail {
@@ -86,6 +95,39 @@ struct SidescanLoadResult {
     // Normalized pings kept for palette-only re-rasterization (no disk I/O).
     std::vector<core::SidescanPing> map_pings_cache;
 };
+
+// Immutable snapshot of everything the off-thread build needs — gathered on the
+// main thread in activateLayer(), then consumed by buildSidescanLoadResult()
+// with no access back to the controller or the model.
+struct SssLoadInputs {
+    app::ImportService* svc = nullptr;
+    std::string         store_path;
+    std::string         store_format;
+    core::ArtifactIndex idx;
+    std::string         source_path;
+    core::SpatialRef    layer_src_ref;
+    bool                apply_layer_crs = false;
+    core::SpatialRef    display_ref;
+    std::string         layer_id;
+    float               layer_freq_hz     = 0.f;
+    float               layer_low_freq_hz = 0.f;
+    QualityParams       qp{};
+    int                 palette_idx = 0;
+    SssGeorefParams     georef_params;
+    MapSonarQuality     current_quality = MapSonarQuality::Low;
+    NavProcessingParams nav_params;
+    std::string         cache_path;
+    rastercache::Meta   cache_meta;
+};
+
+// The full off-thread sidescan map build: raster fast-path, bounded preview
+// index, ping load + nav correction + reprojection, coverage/track/raster build,
+// status pre-compute, and raster persistence. Pure w.r.t. the controller — all
+// inputs arrive via `in`; progress is reported through `report` (0–100);
+// cancellation via `cancel`. Defined in SidescanMapLoadTask.Build.cpp.
+SidescanLoadResult buildSidescanLoadResult(const SssLoadInputs&            in,
+                                           const std::function<void(int)>& report,
+                                           app::CancellationToken          cancel);
 
 } // namespace detail
 } // namespace dolphin::ui

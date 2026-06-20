@@ -93,12 +93,27 @@ target_link_libraries(dolphin-ui-geodesy
 
 # -- 5. Contacts feature -------------------------------------------------------
 add_library(dolphin-ui-contacts STATIC
-    features/contacts/ContactListPanel.cpp
+    features/contacts/ContactManagerWindow.cpp
+    features/contacts/ContactManagerWindow.Layout.cpp
+    features/contacts/ContactManagerWindow.View.cpp
+    features/contacts/ContactManagerWindow.Commands.cpp
+    features/contacts/ContactVisuals.cpp
+    features/contacts/ContactReport.cpp
 )
 target_include_directories(dolphin-ui-contacts PUBLIC ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(dolphin-ui-contacts
     PRIVATE dolphin-app
+            dolphin-util
             dolphin-ui-shared
+    PUBLIC  Qt6::Widgets
+)
+
+# -- 5b. Export Manager --------------------------------------------------------
+add_library(dolphin-ui-export STATIC
+    features/export/ExportManagerWindow.cpp
+)
+target_include_directories(dolphin-ui-export PUBLIC ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(dolphin-ui-export
     PUBLIC  Qt6::Widgets
 )
 
@@ -120,6 +135,7 @@ add_library(dolphin-ui-import STATIC
     features/import/ImportController.cpp
     features/import/ImportPanel.cpp
     features/import/ImportProgressDialog.cpp
+    features/import/ImportProgressDialog.Jobs.cpp
     features/import/ImportReviewWizard.cpp
     features/import/ImportReviewWizard.Layout.cpp
     features/import/ImportReviewWizard.Tabs.cpp
@@ -163,6 +179,7 @@ add_library(dolphin-ui-map STATIC
     features/map/sidescan/SidescanRasterCache.cpp
     features/map/sidescan/SidescanMapQuality.cpp
     features/map/sidescan/SidescanMapLoadTask.cpp
+    features/map/sidescan/SidescanMapLoadTask.Build.cpp
     features/map/sidescan/SidescanMapDiagnostics.cpp
     features/map/sidescan/SidescanEntryFilter.cpp
     features/map/sidescan/SidescanCorrectionDialog.cpp
@@ -343,6 +360,7 @@ add_library(dolphin-ui-mainwindow STATIC
     mainwindow/panels/InspectorPanel.cpp
     mainwindow/rightpanel/RightPanelHost.cpp
     mainwindow/rightpanel/PanelChatWidget.cpp
+    mainwindow/rightpanel/PanelChatWidget.Ollama.cpp
     mainwindow/rightpanel/RightPanel.Info.cpp
     mainwindow/rightpanel/RightPanel.Display.cpp
     mainwindow/rightpanel/RightPanel.SubBottomDisplay.cpp
@@ -368,6 +386,8 @@ add_library(dolphin-ui-mainwindow STATIC
     mainwindow/MainWindow.Layout.cpp
     mainwindow/coordinators/MainWindow.LayerCoordinator.cpp
     mainwindow/coordinators/MainWindow.WaterfallCoordinator.cpp
+    mainwindow/coordinators/MainWindow.WaterfallCoordinator.Processing.cpp
+    mainwindow/coordinators/MainWindow.ContactCoordinator.cpp
     mainwindow/coordinators/MainWindow.SubBottomCoordinator.cpp
     mainwindow/coordinators/MainWindow.NodeGraphCoordinator.cpp
     mainwindow/coordinators/MainWindow.ProcessingCoordinator.cpp
@@ -403,6 +423,7 @@ target_link_libraries(dolphin-ui-mainwindow
             dolphin-ui-metadata
             dolphin-ui-geodesy
             dolphin-ui-contacts
+            dolphin-ui-export
             dolphin-ui-datalibrary
             Qt6::Concurrent
             Qt6::Network
@@ -429,5 +450,6 @@ target_link_libraries(dolphin-ui INTERFACE
     dolphin-ui-metadata
     dolphin-ui-geodesy
     dolphin-ui-contacts
+    dolphin-ui-export
     dolphin-ui-datalibrary
 )

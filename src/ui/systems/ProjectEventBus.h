@@ -29,6 +29,9 @@ signals:
     void layersReordered();
     void contactAdded(const core::Contact& c);
     void contactRemoved(uint64_t id);
+    void contactUpdated(uint64_t id);
+    void contactGroupsChanged();
+    void recycleBinChanged();
     void projectModified();
     void layerDataChanged(const std::string& layer_id);
 

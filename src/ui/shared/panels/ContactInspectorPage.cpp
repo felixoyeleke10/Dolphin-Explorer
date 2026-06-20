@@ -1,22 +1,21 @@
-﻿#include "ui/shared/panels/ContactInspectorPage.h"
+#include "ui/shared/panels/ContactInspectorPage.h"
 #include "ui/shell/Theme.h"
 #include "ui/shared/CoordFormat.h"
-#include <QComboBox>
-#include <QFormLayout>
+#include "ui/shared/widgets/ElidingLabel.h"
+#include "ui/shared/widgets/CollapsibleSection.h"
 #include <QLabel>
-#include <QLineEdit>
-#include <QTextEdit>
 #include <QVBoxLayout>
+#include <QHBoxLayout>
 
 namespace dolphin::ui {
 
 namespace {
-int confidenceIndex(core::Confidence c)
+QString confidenceText(core::Confidence c)
 {
     switch (c) {
-    case core::Confidence::Probable: return 1;
-    case core::Confidence::Certain:  return 2;
-    default:                         return 0;
+    case core::Confidence::Probable: return QObject::tr("Probable");
+    case core::Confidence::Certain:  return QObject::tr("Certain");
+    default:                         return QObject::tr("Possible");
     }
 }
 } // namespace
@@ -29,68 +28,84 @@ ContactInspectorPage::ContactInspectorPage(QWidget* parent)
 
 void ContactInspectorPage::build()
 {
-    auto* layout = new QVBoxLayout(this);
-    layout->setContentsMargins(Theme::kSpacing2, Theme::kSpacing2, Theme::kSpacing2, Theme::kSpacing2);
+    auto* outer = new QVBoxLayout(this);
+    outer->setContentsMargins(0, 0, 0, 0);
+    outer->setSpacing(0);
 
-    auto* hdr = new QLabel(tr("Contact"), this);
-    hdr->setObjectName("inspectorTitle");
-    layout->addWidget(hdr);
-    layout->addSpacing(8);
+    // Collapsible "Info" section — same framing as the layer inspector.
+    auto* section = new CollapsibleSection(tr("Info"), this);
+    section->setIcon(QStringLiteral(":/icons/panel_info.svg"));
 
-    auto* form = new QFormLayout();
-    form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+    auto* body = new QWidget(section);
+    auto* vl   = new QVBoxLayout(body);
+    vl->setContentsMargins(0, 2, 0, Theme::kSpacing2);
+    vl->setSpacing(0);
 
-    m_label = new QLineEdit(this); m_label->setReadOnly(true);
-    m_lat   = new QLineEdit(this); m_lat->setReadOnly(true);
-    m_lon   = new QLineEdit(this); m_lon->setReadOnly(true);
-    m_depth = new QLineEdit(this); m_depth->setReadOnly(true);
-    m_range = new QLineEdit(this); m_range->setReadOnly(true);
-    m_width = new QLineEdit(this); m_width->setReadOnly(true);
+    makeRow(vl, tr("Label"),      m_label);
+    makeRow(vl, tr("Class"),      m_class);
+    makeRow(vl, tr("Confidence"), m_conf);
+    makeRow(vl, tr("Lat"),        m_lat);
+    makeRow(vl, tr("Lon"),        m_lon);
+    m_depth_row = makeRow(vl, tr("Depth"), m_depth);
+    m_range_row = makeRow(vl, tr("Range"), m_range);
+    m_width_row = makeRow(vl, tr("Width"), m_width);
+    m_notes_row = makeRow(vl, tr("Notes"), m_notes);
+    m_notes->setWordWrap(true);   // notes are free text — allow wrapping over elide
 
-    form->addRow(tr("Label:"),    m_label);
-    form->addRow(tr("Lat:"),      m_lat);
-    form->addRow(tr("Lon:"),      m_lon);
-    form->addRow(tr("Depth (m):"), m_depth);
-    form->addRow(tr("Range (m):"), m_range);
-    form->addRow(tr("Width (m):"), m_width);
+    section->setContent(body);
+    outer->addWidget(section);
+    outer->addStretch(1);
+}
 
-    m_class = new QComboBox(this);
-    m_class->addItems({tr("Boulder"), tr("Debris"), tr("Cable"),
-                       tr("Pipeline"), tr("Anomaly"), tr("Unknown")});
-    m_class->setEnabled(false);
-    form->addRow(tr("Class:"), m_class);
+QWidget* ContactInspectorPage::makeRow(QVBoxLayout* vl, const QString& key, ElidingLabel*& val_out)
+{
+    auto* row = new QWidget(this);
+    auto* rl  = new QHBoxLayout(row);
+    rl->setContentsMargins(Theme::kSpacing4, 3, Theme::kSpacing4, 3);
+    rl->setSpacing(Theme::kSpacing3);
 
-    m_conf = new QComboBox(this);
-    m_conf->addItems({tr("Possible"), tr("Probable"), tr("Certain")});
-    m_conf->setEnabled(false);
-    form->addRow(tr("Confidence:"), m_conf);
+    auto* k = new QLabel(key, this);
+    k->setObjectName("inspMetaKey");
+    k->setFixedWidth(Theme::kKeyLabelW);
+    k->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
 
-    layout->addLayout(form);
-    layout->addSpacing(8);
+    val_out = new ElidingLabel(QStringLiteral("—"), this);
+    val_out->setObjectName("inspMetaVal");
+    val_out->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
 
-    auto* notes_lbl = new QLabel(tr("Notes:"), this);
-    layout->addWidget(notes_lbl);
-    m_notes = new QTextEdit(this);
-    m_notes->setReadOnly(true);
-    m_notes->setMaximumHeight(80);
-    layout->addWidget(m_notes);
-    layout->addStretch();
+    rl->addWidget(k);
+    rl->addWidget(val_out, 1);
+    vl->addWidget(row);
+    return row;
+}
+
+void ContactInspectorPage::setOptionalRow(QWidget* row, ElidingLabel* val, const QString& value)
+{
+    if (!row || !val) return;
+    const QString trimmed = value.trimmed();
+    row->setVisible(!trimmed.isEmpty());
+    val->setText(trimmed);
 }
 
 void ContactInspectorPage::refresh(const core::Contact* c)
 {
     if (!c) return;
-    m_label->setText(QString::fromStdString(c->label));
     const bool proj = core::spatialRefIsProjected(c->spatial_ref);
+
+    m_label->setText(QString::fromStdString(c->label));
+    m_class->setText(c->classification.empty() ? tr("—")
+                                               : QString::fromStdString(c->classification));
+    m_conf->setText(confidenceText(c->confidence));
     m_lat->setText(formatCoord(c->lat, proj, 'N', 'S'));
     m_lon->setText(formatCoord(c->lon, proj, 'E', 'W'));
-    m_depth->setText(QString::number(c->depth_m, 'f', 2));
-    m_range->setText(QString::number(c->range_m, 'f', 2));
-    m_width->setText(QString::number(c->width_m, 'f', 2));
-    const int ci = m_class->findText(QString::fromStdString(c->classification));
-    m_class->setCurrentIndex(ci >= 0 ? ci : 0);
-    m_conf->setCurrentIndex(confidenceIndex(c->confidence));
-    m_notes->setPlainText(QString::fromStdString(c->notes));
+
+    setOptionalRow(m_depth_row, m_depth,
+                   c->depth_m > 0.f ? tr("%1 m").arg(c->depth_m, 0, 'f', 2) : QString());
+    setOptionalRow(m_range_row, m_range,
+                   c->range_m > 0.f ? tr("%1 m").arg(c->range_m, 0, 'f', 2) : QString());
+    setOptionalRow(m_width_row, m_width,
+                   c->width_m > 0.f ? tr("%1 m").arg(c->width_m, 0, 'f', 2) : QString());
+    setOptionalRow(m_notes_row, m_notes, QString::fromStdString(c->notes));
 }
 
 } // namespace dolphin::ui

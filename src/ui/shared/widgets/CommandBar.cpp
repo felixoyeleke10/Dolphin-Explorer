@@ -27,8 +27,10 @@ void CommandBar::setAnchorWidget(QWidget* anchor)
 
 void CommandBar::open()
 {
-    if (!m_palette)
+    if (!m_palette) {
         m_palette = new CommandPaletteDialog(window());
+        m_palette->installEventFilter(this);
+    }
 
     if (m_palette->isVisible()) return;
 
@@ -37,6 +39,7 @@ void CommandBar::open()
 
     // Anchor to the override widget if set, otherwise to this bar itself.
     // The palette drops directly below the anchor and matches its width.
+    setActive(true);
     m_palette->popup(m_anchor ? m_anchor : this);
 }
 
@@ -47,6 +50,20 @@ bool CommandBar::event(QEvent* ev)
         return true;
     }
     return QLineEdit::event(ev);
+}
+
+bool CommandBar::eventFilter(QObject* watched, QEvent* ev)
+{
+    if (watched == m_palette && (ev->type() == QEvent::Hide || ev->type() == QEvent::Close))
+        setActive(false);
+    return QLineEdit::eventFilter(watched, ev);
+}
+
+void CommandBar::setActive(bool active)
+{
+    if (m_active == active) return;
+    m_active = active;
+    emit activeChanged(active);
 }
 
 } // namespace dolphin::ui

@@ -79,7 +79,15 @@ void MainWindow::setupCentralWidget()
     left_strip_l->addWidget(m_context_collapse_btn);
     left_strip_l->addStretch(1);
 
+    // 1px divider at the panel's right edge. A QSS border-right on the QStackedWidget
+    // (#contextPanel) is unreliable — its page paints over it — so use a real widget,
+    // mirroring the right panel's QFrame border-left which renders dependably.
+    m_context_divider = new QWidget(root);
+    m_context_divider->setObjectName("shellDivider");
+    m_context_divider->setFixedWidth(1);
+
     root_layout->addWidget(m_context_stack);
+    root_layout->addWidget(m_context_divider);
     root_layout->addWidget(m_left_edge_strip);
     root_layout->addWidget(buildMainArea(root), 1);
 
@@ -159,6 +167,18 @@ void MainWindow::setupCentralWidget()
             this, &MainWindow::onRevealSource);
     connect(m_line_list, &LineListPanel::renameLayerRequested,
             this, &MainWindow::onRenameLayer);
+    connect(m_line_list, &LineListPanel::renameProjectRequested,
+            this, &MainWindow::onRenameProject);
+    connect(m_line_list, &LineListPanel::saveProjectRequested,
+            this, &MainWindow::onSaveProject);
+    connect(m_line_list, &LineListPanel::saveProjectAsRequested,
+            this, &MainWindow::onSaveProjectAs);
+    connect(m_line_list, &LineListPanel::openProjectFolderRequested,
+            this, &MainWindow::onOpenProjectFolder);
+    connect(m_line_list, &LineListPanel::closeProjectRequested,
+            this, &MainWindow::onCloseProject);
+    connect(m_line_list, &LineListPanel::deleteProjectRequested,
+            this, &MainWindow::onDeleteProject);
     connect(m_line_list, &LineListPanel::removeLayersRequested,
             this, &MainWindow::onRemoveLayers);
     connect(m_line_list, &LineListPanel::runLayersRequested,
@@ -195,8 +215,6 @@ void MainWindow::setupCentralWidget()
 
     connect(m_modal_host, &RightPanelHost::paletteChanged,
             this,         &MainWindow::onPaletteChanged);
-    connect(m_modal_host, &RightPanelHost::channelChanged,
-            this,         &MainWindow::onChannelChanged);
 
     // Properties panel tab bar — handled by PanelTabBar::tabChanged, wired in
     // buildPropertiesPanel().

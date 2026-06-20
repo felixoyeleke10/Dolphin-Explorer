@@ -39,6 +39,9 @@ QString qssAcousticViews()
         "QLineEdit#avCommandBar:focus {"
         "  border-color: rgba(@accentRgb,0.5); background: rgba(255,255,255,0.09);"
         "}"
+        "QLineEdit#avCommandBar[commandActive=\"true\"] {"
+        "  border-color: rgba(@accentRgb,0.6); background: rgba(255,255,255,0.09);"
+        "}"
 
         "#av_inspector, #av_analysis { background: @bgPanel; }"
         "#av_divider                 { background: @border; }"

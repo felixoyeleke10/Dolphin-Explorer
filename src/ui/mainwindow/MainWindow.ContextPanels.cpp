@@ -1,6 +1,7 @@
 // MainWindow.ContextPanels.cpp — buildContextPanel, makeContextPlaceholder,
 //   refreshSidebarSections.
 #include "ui/mainwindow/MainWindow.h"
+#include "app/project/Project.h"
 #include "ui/shared/UiUtils.h"
 #include "ui/shell/AppInfo.h"
 #include "ui/shell/Theme.h"
@@ -121,14 +122,46 @@ void MainWindow::buildContextPanel(QWidget* parent)
     layout->addWidget(recent_sec);
 
     // -- Recycle Bin section ---------------------------------------------------
+    // Soft-deleted contacts (the same project recycle bin the Contact Manager
+    // shows). Right-click to Restore / Delete Forever; double-click to restore.
     auto* recycle_sec = new CollapsibleSection(tr("Recycle Bin"), body);
     recycle_sec->setIcon(QStringLiteral(":/icons/recycle_bin.svg"));
     recycle_sec->setExpanded(false);
-    auto* recycle_empty = new QLabel(tr("No deleted items."), recycle_sec);
-    recycle_empty->setObjectName("ctrlEmptyHint");
-    recycle_empty->setAlignment(Qt::AlignCenter);
-    recycle_sec->setContent(recycle_empty);
+    m_recycle_list = new QListWidget(recycle_sec);
+    m_recycle_list->setObjectName("propsHistoryList");
+    m_recycle_list->setFrameShape(QFrame::NoFrame);
+    m_recycle_list->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(m_recycle_list, &QListWidget::itemDoubleClicked, this,
+            [this](QListWidgetItem* it) {
+                if (currentProject() && it)
+                    currentProject()->restoreContact(it->data(Qt::UserRole).toULongLong());
+            });
+    connect(m_recycle_list, &QListWidget::customContextMenuRequested, this,
+            [this](const QPoint& pos) {
+                if (!currentProject()) return;
+                auto* it = m_recycle_list->itemAt(pos);
+                QMenu menu(m_recycle_list);
+                auto* restore = menu.addAction(tr("Restore"));
+                restore->setEnabled(it != nullptr);
+                connect(restore, &QAction::triggered, this, [this, it]() {
+                    if (it) currentProject()->restoreContact(it->data(Qt::UserRole).toULongLong());
+                });
+                auto* purge = menu.addAction(tr("Delete Forever"));
+                purge->setEnabled(it != nullptr);
+                connect(purge, &QAction::triggered, this, [this, it]() {
+                    if (it) currentProject()->purgeContact(it->data(Qt::UserRole).toULongLong());
+                });
+                menu.addSeparator();
+                auto* empty = menu.addAction(tr("Empty Recycle Bin"));
+                empty->setEnabled(!currentProject()->recycledContacts().empty());
+                connect(empty, &QAction::triggered, this, [this]() {
+                    currentProject()->emptyRecycleBin();
+                });
+                menu.exec(m_recycle_list->viewport()->mapToGlobal(pos));
+            });
+    recycle_sec->setContent(m_recycle_list);
     layout->addWidget(recycle_sec);
+    refreshRecycleBin();
 
     page->setBody(body);
 
@@ -144,9 +177,26 @@ void MainWindow::refreshSidebarSections(const QStringList& paths)
     if (!m_sidebar_recent_list) return;
     m_sidebar_recent_list->clear();
     for (const QString& path : paths) {
-        auto* item = new QListWidgetItem(QFileInfo(path).baseName(), m_sidebar_recent_list);
+        auto* item = new QListWidgetItem(recentDisplayName(path), m_sidebar_recent_list);
         item->setData(Qt::UserRole, path);
         item->setToolTip(path);
+    }
+}
+
+void MainWindow::refreshRecycleBin()
+{
+    if (!m_recycle_list) return;
+    m_recycle_list->clear();
+    if (!currentProject()) return;
+    for (const auto& c : currentProject()->recycledContacts()) {
+        const QString label = c.label.empty()
+            ? (c.line_id.empty() ? tr("(contact)") : QString::fromStdString(c.line_id))
+            : QString::fromStdString(c.label);
+        auto* item = new QListWidgetItem(label, m_recycle_list);
+        item->setData(Qt::UserRole, static_cast<qulonglong>(c.id));
+        QString tip = label;
+        if (!c.classification.empty()) tip += QStringLiteral(" · ") + QString::fromStdString(c.classification);
+        item->setToolTip(tip);
     }
 }
 

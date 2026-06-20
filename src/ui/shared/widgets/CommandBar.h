@@ -40,11 +40,18 @@ public:
 
 protected:
     bool event(QEvent* ev) override;
+    bool eventFilter(QObject* watched, QEvent* ev) override;
+
+signals:
+    void activeChanged(bool active);
 
 private:
+    void setActive(bool active);
+
     CommandPaletteDialog*                      m_palette  = nullptr;
     std::function<QList<CommandPaletteItem>()> m_provider;
     QWidget*                                   m_anchor   = nullptr;
+    bool                                       m_active   = false;
 };
 
 } // namespace dolphin::ui

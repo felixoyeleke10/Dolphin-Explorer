@@ -3,10 +3,13 @@
 #include "ui/features/waterfall/WaterfallView.h"
 
 #include <QContextMenuEvent>
+#include <QImage>
 #include <QMouseEvent>
+#include <QPixmap>
 #include <QResizeEvent>
 #include <QWheelEvent>
 
+#include <algorithm>
 #include <cmath>
 
 namespace dolphin::ui {
@@ -77,7 +80,27 @@ void WaterfallView::mousePressEvent(QMouseEvent* ev)
                     contact_lon = nav_lon + ground_range * std::sin(bearing_rad);
                 }
             }
-            emit contactPicked(row, ch, range_m, contact_lat, contact_lon, proj);
+            // Square grab of the waterfall around the pick, used as the contact's
+            // thumbnail in the Contact Manager. Grabbed now, before update()
+            // repaints, so the new marker dot is not baked into the snapshot.
+            QPixmap snapshot;
+            {
+                const QImage fb = grabFramebuffer();
+                if (!fb.isNull()) {
+                    const qreal dpr  = devicePixelRatioF();
+                    const int   side = std::max(1, static_cast<int>(160 * dpr));
+                    const int   cx   = static_cast<int>(ev->pos().x() * dpr);
+                    const int   cy   = static_cast<int>(ev->pos().y() * dpr);
+                    const int   w    = std::min(side, fb.width());
+                    const int   h    = std::min(side, fb.height());
+                    const int   x    = std::clamp(cx - w / 2, 0, fb.width()  - w);
+                    const int   y    = std::clamp(cy - h / 2, 0, fb.height() - h);
+                    snapshot = QPixmap::fromImage(fb.copy(QRect(x, y, w, h)));
+                    snapshot.setDevicePixelRatio(dpr);
+                }
+            }
+            emit contactPicked(row, ch, range_m, contact_lat, contact_lon, proj,
+                               snapshot);
 
             m_dirty = true;
             update();

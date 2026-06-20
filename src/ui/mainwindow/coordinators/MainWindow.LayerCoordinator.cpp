@@ -114,9 +114,7 @@ void MainWindow::applySbpNavToLine(const NavProcessingParams& p)
     auto* layer = currentProject()->findLayer(lid);
     if (!layer || layer->modality != app::Modality::SubBottom) return;
 
-    layer->nav_state      = p;
-    layer->nav_customized = true;
-    markProjectDirty();
+    if (m_display_state) m_display_state->setLayerNav(lid, p);  // mutate + notify (marks dirty)
     if (m_sbp_win) m_sbp_win->applyNavToLine(p);   // refresh the open SBP window
     buildSbpProfileMap(layer);                      // rebuild map ribbon with corrected nav
 
@@ -142,8 +140,7 @@ void MainWindow::applySbpNavToAll(const NavProcessingParams& p)
     int n = 0;
     for (const auto& l : currentProject()->layers()) {
         if (!l || l->modality != app::Modality::SubBottom) continue;
-        l->nav_state      = p;
-        l->nav_customized = true;
+        if (m_display_state) m_display_state->setLayerNav(l->id, p);  // mutate + notify (marks dirty)
         // Rebuild profiles already on the map now; others apply the stored
         // params lazily the first time they are selected.
         if (m_map_view && m_map_view->layerData(l->id))
@@ -151,7 +148,6 @@ void MainWindow::applySbpNavToAll(const NavProcessingParams& p)
         ++n;
     }
     if (n == 0) return;
-    markProjectDirty();
     if (m_sbp_win && !current.empty()) m_sbp_win->applyNavToLine(p);
 
     appendJobMessage(tr("Nav corrections applied to %1 sub-bottom line(s)").arg(n));
@@ -256,13 +252,10 @@ void MainWindow::onLayerSelected(const std::string& layer_id)
             applyStoredNavParams(layer->id);
             if (layer->sss_display_state.customized)
                 m_waterfall_win->applyExternalParams(layer->sss_display_state.params);
-            // Restore per-layer palette — takes priority over any palette baked
-            // into the cached params (which may have been captured before the
-            // per-layer palette was last changed).
-            if (layer->sss_palette >= 0)
-                m_waterfall_win->setPalette(layer->sss_palette);
-            else if (m_inspector)
-                m_waterfall_win->setPalette(m_inspector->currentPaletteIndex());
+            // Waterfall display palette is global; keep the current display-state
+            // palette when switching lines instead of restoring per-layer UI state.
+            if (m_display_state)
+                m_waterfall_win->setPalette(m_display_state->mapPalette());
             // Restore per-layer channel selection.
             m_waterfall_win->setDisplayChannel(
                 layer->sss_display_state.params.display_channel);
@@ -499,24 +492,54 @@ void MainWindow::refreshInspectorModalities()
         for (const auto& l : currentProject()->layers())
             mods.insert(l->modality);
     }
-    if (m_modal_host) m_modal_host->setAvailableModalities(mods);
 
     const bool has_sss = mods.contains(M::Sidescan);
     const bool has_sbp = mods.contains(M::SubBottom);
     const bool has_mag = mods.contains(M::Magnetometer);
+    const bool has_any = !mods.isEmpty();   // any layer → there's a map to show
 
-    if (m_tab_sss) m_tab_sss->setEnabled(has_sss);
-    if (m_tab_sbp) m_tab_sbp->setEnabled(has_sbp);
-    if (m_tab_mag) m_tab_mag->setEnabled(has_mag);
-    // m_tab_map is always enabled — universal tools apply to any project
+    // Show a sensor tab only when the project actually contains that modality, and
+    // the Map tab only when there's at least one layer on the map. No point dangling
+    // unusable tabs — an empty project shows no sensor tabs at all. A visible tab must
+    // also be enabled (the tabs start disabled at construction), or it cannot take the
+    // checked state and the Map tab stays selected while its sections show greyed.
+    auto setTab = [](QToolButton* b, bool on) { if (b) { b->setVisible(on); b->setEnabled(on); } };
+    setTab(m_tab_sss, has_sss);
+    setTab(m_tab_sbp, has_sbp);
+    setTab(m_tab_mag, has_mag);
+    setTab(m_tab_map, has_any);
 
-    // If the active tab is now disabled (its modality was removed), fall back to Map.
-    const bool active_disabled =
-        (m_tab_sss && m_tab_sss->isChecked() && !has_sss) ||
-        (m_tab_sbp && m_tab_sbp->isChecked() && !has_sbp) ||
-        (m_tab_mag && m_tab_mag->isChecked() && !has_mag);
-    if (active_disabled)
-        refreshSensorTab(M::Unknown);
+    // The tab that should be active for the current selection: the active layer's
+    // sensor when it has one, else Map. (The Map tab has no sections of its own — it
+    // would otherwise show every available sensor, so leaving it selected while an
+    // SSS layer is active makes the SSS sections appear under the wrong tab and read
+    // as unusable.)
+    M want = M::Unknown;
+    if (currentProject() && !activeLayerId().empty()) {
+        if (const auto* l = currentProject()->findLayer(activeLayerId())) {
+            const M lm = l->modality;
+            if      (lm == M::Sidescan     && has_sss) want = M::Sidescan;
+            else if (lm == M::SubBottom    && has_sbp) want = M::SubBottom;
+            else if (lm == M::Magnetometer && has_mag) want = M::Magnetometer;
+        }
+    }
+
+    // Which tab is currently checked?
+    M cur = M::Unknown;
+    if      (m_tab_sss && m_tab_sss->isChecked()) cur = M::Sidescan;
+    else if (m_tab_sbp && m_tab_sbp->isChecked()) cur = M::SubBottom;
+    else if (m_tab_mag && m_tab_mag->isChecked()) cur = M::Magnetometer;
+
+    const bool cur_visible =
+        (cur == M::Sidescan     && has_sss) ||
+        (cur == M::SubBottom    && has_sbp) ||
+        (cur == M::Magnetometer && has_mag) ||
+        (cur == M::Unknown      && has_any);
+
+    // Retarget when the current tab is no longer usable, or when Map is selected
+    // while a sensor layer is active. A still-valid manual sensor choice is left be.
+    if (!cur_visible || (cur == M::Unknown && want != M::Unknown))
+        refreshSensorTab(want);
 }
 
 } // namespace dolphin::ui

@@ -63,6 +63,11 @@ public slots:
     void saveProjectAs();
     void openProjectFolder();
     void closeProject();
+    void deleteProject();
+    // Rename the open project: sets the display name and, for a saved project,
+    // renames the .dlp file + its cache folder to match, then updates the Recent
+    // list, window title, and dirty state. Propagates everywhere via signals.
+    void renameProject(const QString& new_name);
     void autoSave();
 
 signals:

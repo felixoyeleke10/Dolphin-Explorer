@@ -248,6 +248,8 @@ void MainWindow::setupToolBar()
         "Available only when a project is open."));
     m_export_btn->setEnabled(false);
     auto* exp_menu = new QMenu(m_export_btn);
+    exp_menu->addAction(tr("Export Manager…"), this, &MainWindow::onExportManagerOpen);
+    exp_menu->addSeparator();
     for (auto [id, slot] : {
             std::pair{CommandId::ExportCsv,     &MainWindow::onExportCsv    },
             std::pair{CommandId::ExportGeotiff, &MainWindow::onExportGeotiff},
@@ -271,6 +273,16 @@ void MainWindow::setupToolBar()
         btn_db->setToolButtonStyle(Qt::ToolButtonIconOnly);
         connect(btn_db, &QToolButton::clicked, this, &MainWindow::onDataLibraryOpen);
         tb->addWidget(btn_db);
+    }
+
+    if constexpr (Features::kContacts) {
+        auto* btn_contacts = new QToolButton(tb);
+        btn_contacts->setIcon(QIcon(":/icons/contacts.svg"));
+        btn_contacts->setToolTip(tr("Contact Manager — all contacts across SSS / SBP / MAG / MBES.\n"
+                                    "Filter by sensor, search, navigate, remove, and export."));
+        btn_contacts->setToolButtonStyle(Qt::ToolButtonIconOnly);
+        connect(btn_contacts, &QToolButton::clicked, this, &MainWindow::onContactManagerOpen);
+        tb->addWidget(btn_contacts);
     }
 
     tb->addSeparator();

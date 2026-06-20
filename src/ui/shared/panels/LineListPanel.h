@@ -67,6 +67,14 @@ signals:
     void layerVisibilityChanged     (const std::string& layer_id, bool visible);
     void navTrackVisibilityChanged  (const std::string& layer_id, bool visible);
 
+    // Context menu — project root actions
+    void renameProjectRequested      ();
+    void saveProjectRequested        ();
+    void saveProjectAsRequested      ();
+    void openProjectFolderRequested  ();
+    void closeProjectRequested       ();
+    void deleteProjectRequested      ();
+
     // Context menu — single-layer actions
     void openInWaterfallRequested   (const std::string& layer_id);
     void openInSubBottomRequested   (const std::string& layer_id);
@@ -95,6 +103,7 @@ signals:
 
 private slots:
     void onItemClicked          (QTreeWidgetItem* item, int column);
+    void onItemDoubleClicked    (QTreeWidgetItem* item, int column);
     void onItemChanged          (QTreeWidgetItem* item, int column);
     void onSelectionChanged     ();
     void onContextMenuRequested (const QPoint& pos);

@@ -1,7 +1,6 @@
 #pragma once
 #include "ui/mainwindow/rightpanel/IRightPanelModule.h"
 #include "app/layers/DataLayer.h"
-#include "app/display/WaterfallParams.h"  // DisplayChannel
 #include <QWidget>
 
 class QComboBox;
@@ -26,15 +25,12 @@ public:
 
     int  currentPaletteIndex() const;
     void setPalette(int idx);
-    void setChannel(DisplayChannel ch);
 
 signals:
     void paletteChanged(int idx);
-    void channelChanged(DisplayChannel ch);
 
 private:
     QComboBox* m_palette  = nullptr;
-    QComboBox* m_channel  = nullptr;
 };
 
 } // namespace dolphin::ui

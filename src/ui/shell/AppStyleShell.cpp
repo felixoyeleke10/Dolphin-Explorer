@@ -43,11 +43,14 @@ QString qssShell()
         "  background: @border; margin: 4px 8px; max-height: 1px; border: none;"
         "}"
 
-        // Context panel (left overlay)
+        // Context panel (left overlay). The right-edge divider is a dedicated
+        // #shellDivider widget (a QSS border on this QStackedWidget is unreliable —
+        // its page paints over it).
         "#contextPanel {"
         "  background: @bgPanel;"
-        "  border-right: 1px solid @border;"
         "}"
+        // 1px panel divider line (left File Explorer right edge).
+        "#shellDivider { background: @border; }"
         "#panelHdr {"
         "  background: @bgEl;"
         "  border-bottom: 1px solid @border;"
@@ -330,6 +333,10 @@ QString qssShell()
         "QFrame#uniBar:hover {"
         "  background: @overlayHov;"
         "  border-color: rgba(255,255,255,0.13);"
+        "}"
+        "QFrame#uniBar[commandActive=\"true\"] {"
+        "  background: @overlayHov;"
+        "  border-color: rgba(@accentRgb,0.6);"
         "}"
         // Search field inside the pill — transparent, no own border
         "QFrame#uniBar QLineEdit#titleSearch {"

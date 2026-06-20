@@ -41,6 +41,14 @@ void DisplayStateManager::setMapQuality(MapSonarQuality q)
     emit displayStateChanged({}, DisplayAspect::MapQuality);
 }
 
+void DisplayStateManager::setMapPalette(int idx)
+{
+    if (idx == m_map_palette) return;
+    m_map_palette = idx;
+    QSettings().setValue(QStringLiteral("sss/paletteIdx"), idx);
+    emit displayStateChanged({}, DisplayAspect::Palette);
+}
+
 void DisplayStateManager::loadPersistentState()
 {
     const int v = QSettings().value(kKeyMapSonarQuality,
@@ -91,6 +99,88 @@ bool DisplayStateManager::setLayerSbpPalette(const std::string& layer_id, int pa
     if (!l || l->sbp_palette == palette_idx) return l != nullptr;
     l->sbp_palette = palette_idx;
     emit displayStateChanged(QString::fromStdString(layer_id), DisplayAspect::Palette);
+    return true;
+}
+
+bool DisplayStateManager::setLayerSbpGain(const std::string& layer_id,
+                                          const app::SbpGainParams& gain)
+{
+    auto* l = layerById(layer_id);
+    if (!l) return false;
+    l->sbp_display_state.gain            = gain;
+    l->sbp_display_state.gain_customized = true;
+    emit displayStateChanged(QString::fromStdString(layer_id), DisplayAspect::Gain);
+    return true;
+}
+
+bool DisplayStateManager::setLayerSbpSignal(const std::string& layer_id,
+                                            const app::SbpSignalParams& sig)
+{
+    auto* l = layerById(layer_id);
+    if (!l) return false;
+    l->sbp_display_state.signal            = sig;
+    l->sbp_display_state.signal_customized = true;
+    emit displayStateChanged(QString::fromStdString(layer_id), DisplayAspect::Gain);
+    return true;
+}
+
+bool DisplayStateManager::setLayerSbpDisplay(const std::string& layer_id,
+                                             const SubBottomDisplayParams& disp)
+{
+    auto* l = layerById(layer_id);
+    if (!l) return false;
+    l->sbp_display_state.display            = disp;
+    l->sbp_display_state.display_customized = true;
+    l->sbp_palette                         = disp.palette_index;
+    emit displayStateChanged(QString::fromStdString(layer_id), DisplayAspect::Palette);
+    return true;
+}
+
+void DisplayStateManager::setAllSbpGain(const app::SbpGainParams& gain)
+{
+    if (!m_project) return;
+    for (const auto& l : m_project->layers())
+        if (l && l->modality == app::Modality::SubBottom)
+            setLayerSbpGain(l->id, gain);
+}
+
+void DisplayStateManager::setAllSbpSignal(const app::SbpSignalParams& sig)
+{
+    if (!m_project) return;
+    for (const auto& l : m_project->layers())
+        if (l && l->modality == app::Modality::SubBottom)
+            setLayerSbpSignal(l->id, sig);
+}
+
+bool DisplayStateManager::setLayerSssDisplay(const std::string& layer_id,
+                                             const WaterfallParams& params)
+{
+    auto* l = layerById(layer_id);
+    if (!l) return false;
+    l->sss_display_state.params     = params;
+    l->sss_display_state.customized = true;
+    emit displayStateChanged(QString::fromStdString(layer_id), DisplayAspect::Gain);
+    return true;
+}
+
+bool DisplayStateManager::setLayerNav(const std::string& layer_id,
+                                      const NavProcessingParams& nav)
+{
+    auto* l = layerById(layer_id);
+    if (!l) return false;
+    l->nav_state      = nav;
+    l->nav_customized = true;
+    emit displayStateChanged(QString::fromStdString(layer_id), DisplayAspect::NavOverlay);
+    return true;
+}
+
+bool DisplayStateManager::clearLayerNav(const std::string& layer_id)
+{
+    auto* l = layerById(layer_id);
+    if (!l) return false;
+    l->nav_state      = NavProcessingParams{};
+    l->nav_customized = false;
+    emit displayStateChanged(QString::fromStdString(layer_id), DisplayAspect::NavOverlay);
     return true;
 }
 

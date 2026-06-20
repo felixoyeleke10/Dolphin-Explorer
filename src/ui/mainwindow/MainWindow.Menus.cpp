@@ -129,6 +129,8 @@ void MainWindow::buildFileMenu()
 
     file->addSeparator();
     QMenu* exp = file->addMenu(QIcon(":/icons/export.svg"), tr("E&xport"));
+    exp->addAction(tr("Export &Manager…"), this, &MainWindow::onExportManagerOpen);
+    exp->addSeparator();
     // Export formats are Phase 2 — listed for discoverability but not yet active.
     for (auto [id, slot] : {
             std::pair{CommandId::ExportCsv,     &MainWindow::onExportCsv    },
@@ -186,6 +188,10 @@ void MainWindow::buildProjectMenu()
     if constexpr (Features::kContacts) {
         proj->addSeparator();
         QMenu* contacts = proj->addMenu(tr("&Contacts"));
+
+        contacts->addAction(tr("Contact &Manager…"),
+                            this, &MainWindow::onContactManagerOpen);
+        contacts->addSeparator();
 
         auto* act_add = makeAction(CommandId::AddContact, this);
         act_add->setText(tr("&Add Contact"));

@@ -91,13 +91,12 @@ void MainWindow::onSubBottomOpen()
                                 // Keep right panel in sync — it only syncs on window open otherwise.
                                 if (m_modal_host)
                                     m_modal_host->setSbpParams(m_sbp_win->displayParams());
-                                // Persist per-layer SBP palette from settings dialog.
+                                // Persist per-layer SBP palette from settings dialog
+                                // through the display-state authority (marks dirty on the bus).
                                 if (!currentProject() || activeLayerId().empty()) return;
-                                auto* layer = currentProject()->findLayer(activeLayerId());
-                                if (layer && layer->sbp_palette != p.palette_index) {
-                                    layer->sbp_palette = p.palette_index;
-                                    
-                                }
+                                if (m_display_state)
+                                    m_display_state->setLayerSbpPalette(activeLayerId(),
+                                                                        p.palette_index);
                             });
                     dlg->show();
                 });
@@ -172,15 +171,11 @@ void MainWindow::onSubBottomOpen()
             connect(host, &RightPanelHost::sbpParamsChanged,
                     this, [this](SubBottomDisplayParams p) {
                         if (m_sbp_win) m_sbp_win->applyDisplayParams(p);
-                        // Persist per-layer SBP display params so they survive project reload.
+                        // Persist per-layer SBP display params through the display-state
+                        // authority (writes the model + palette, emits, marks dirty).
                         if (!currentProject() || activeLayerId().empty()) return;
-                        auto* layer = currentProject()->findLayer(activeLayerId());
-                        if (!layer) return;
-                        layer->sbp_display_state.display = p;
-                        layer->sbp_display_state.display_customized = true;
-                        if (layer->sbp_palette != p.palette_index)
-                            layer->sbp_palette = p.palette_index;
-                        markProjectDirty();
+                        if (m_display_state)
+                            m_display_state->setLayerSbpDisplay(activeLayerId(), p);
                     });
 
             if (auto* gain_mod = host->sbpGainModule()) {
@@ -192,11 +187,8 @@ void MainWindow::onSubBottomOpen()
                             std::string lid = activeLayerId();
                             if (lid.empty() && m_sbp_win) lid = m_sbp_win->currentLayerId();
                             if (lid.empty() || !currentProject()) return;
-                            auto* layer = currentProject()->findLayer(lid);
-                            if (!layer) return;
-                            layer->sbp_display_state.gain = p;
-                            layer->sbp_display_state.gain_customized = true;
-                            markProjectDirty();
+                            if (m_display_state)
+                                m_display_state->setLayerSbpGain(lid, p);
                             if (m_sbp_win && m_sbp_win->currentLayerId() == lid)
                                 m_sbp_win->applyGainParams(p);
                         });
@@ -205,12 +197,7 @@ void MainWindow::onSubBottomOpen()
                             if (!currentProject()) return;
                             // Display-state only: store on every SBP layer + refresh the
                             // open window live. No .dlpd bake (see Bake Corrections).
-                            for (const auto& l : currentProject()->layers())
-                                if (l && l->modality == app::Modality::SubBottom) {
-                                    l->sbp_display_state.gain = p;
-                                    l->sbp_display_state.gain_customized = true;
-                                }
-                            markProjectDirty();
+                            if (m_display_state) m_display_state->setAllSbpGain(p);
                             if (m_sbp_win) m_sbp_win->applyGainParams(p);
                         });
             }
@@ -221,11 +208,8 @@ void MainWindow::onSubBottomOpen()
                             std::string lid = activeLayerId();
                             if (lid.empty() && m_sbp_win) lid = m_sbp_win->currentLayerId();
                             if (lid.empty() || !currentProject()) return;
-                            auto* layer = currentProject()->findLayer(lid);
-                            if (!layer) return;
-                            layer->sbp_display_state.signal = p;
-                            layer->sbp_display_state.signal_customized = true;
-                            markProjectDirty();
+                            if (m_display_state)
+                                m_display_state->setLayerSbpSignal(lid, p);
                             if (m_sbp_win && m_sbp_win->currentLayerId() == lid)
                                 m_sbp_win->applySignalParams(p);
                         });
@@ -234,12 +218,7 @@ void MainWindow::onSubBottomOpen()
                             if (!currentProject()) return;
                             // Display-state only: store on every SBP layer + refresh the
                             // open window live. No .dlpd bake (see Bake Corrections).
-                            for (const auto& l : currentProject()->layers())
-                                if (l && l->modality == app::Modality::SubBottom) {
-                                    l->sbp_display_state.signal = p;
-                                    l->sbp_display_state.signal_customized = true;
-                                }
-                            markProjectDirty();
+                            if (m_display_state) m_display_state->setAllSbpSignal(p);
                             if (m_sbp_win) m_sbp_win->applySignalParams(p);
                         });
             }

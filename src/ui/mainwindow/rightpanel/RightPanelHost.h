@@ -1,8 +1,6 @@
 #pragma once
 #include "ui/features/subbottom/panels/SubBottomDisplayPanel.h"  // SubBottomDisplayParams
 #include "app/layers/LayerUtils.h"
-#include "app/display/WaterfallParams.h"  // DisplayChannel
-#include <QSet>
 #include <QVector>
 #include <QWidget>
 #include <memory>
@@ -44,12 +42,9 @@ public:
     void setLayer(app::DataLayer* layer);
     void clearLayer();
 
-    // Called whenever the project's layer list changes so the panel knows
-    // which modality-specific sections to show vs. hide entirely.
-    void setAvailableModalities(const QSet<app::Modality>& modalities);
-
-    // Restricts visible sections to Universal (Unknown) + the given modality.
-    // Pass Unknown to show only universal modules (Map tab behaviour).
+    // Restricts visible sections to the given sensor's modules. Pass Unknown
+    // (the Map tab) to show only universal modules — the modal host has none,
+    // so the Map tab shows no tools.
     void setModalityFilter(app::Modality filter);
 
     // Panel accessors — used by the waterfall / sub-bottom coordinators for
@@ -60,10 +55,9 @@ public:
     GainControlPanel*    gainPanel()     const;
     ImagingControlPanel* imagingPanel()  const;
 
-    // Palette and channel forwarding from DisplayModule (SSS).
+    // Palette forwarding from DisplayModule (SSS).
     int  currentPaletteIndex() const;
     void setPalette(int idx);
-    void setChannel(DisplayChannel ch);
 
     // SBP display params forwarding.
     void setSbpParams(const SubBottomDisplayParams& p);
@@ -74,7 +68,6 @@ public:
 
 signals:
     void paletteChanged(int idx);
-    void channelChanged(DisplayChannel ch);
     void sbpParamsChanged(SubBottomDisplayParams params);
 
 private:
@@ -106,8 +99,6 @@ private:
     // Parallel lists for generic setLayer / clearLayer iteration.
     QVector<IRightPanelModule*>  m_modules;
     QVector<CollapsibleSection*> m_sections;
-
-    QSet<app::Modality> m_available_modalities;
 };
 
 } // namespace dolphin::ui

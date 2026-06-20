@@ -14,6 +14,7 @@
 #include "ui/mainwindow/coordinators/CorrectionBatchOperator.h"
 #include "ui/mainwindow/coordinators/ProjectOperationCoordinator.h"
 #include "ui/mainwindow/coordinators/ViewportCoordinator.h"
+#include "ui/mainwindow/rightpanel/RightPanelHost.h"
 #include "ui/features/import/ImportProgressDialog.h"
 #include "ui/features/waterfall/WaterfallWindow.h"
 #include "ui/features/subbottom/SubBottomWindow.h"
@@ -66,6 +67,14 @@ MainWindow::MainWindow(QWidget* parent)
             const int cur = static_cast<int>(m_display_state->mapQuality());
             for (int i = 0; i < static_cast<int>(m_act_map_quality.size()); ++i)
                 if (m_act_map_quality[i]) m_act_map_quality[i]->setChecked(i == cur);
+        }
+        // Global SSS palette change (empty layer_id): keep every visible control
+        // and renderer on the same palette name/look.
+        if (aspect == DisplayAspect::Palette && layer_id.isEmpty()) {
+            const int pal = m_display_state->mapPalette();
+            if (m_modal_host)    m_modal_host->setPalette(pal);
+            if (m_waterfall_win) m_waterfall_win->setPalette(pal);
+            if (m_sss_ctrl)      m_sss_ctrl->setPaletteIndex(pal);
         }
         // A per-layer display change (palette/gain/visibility/nav) means the project
         // look differs from disk — mark it dirty so it's saved.
@@ -398,6 +407,11 @@ MainWindow::MainWindow(QWidget* parent)
             this, [this](app::DataLayer*) { refreshInspectorModalities(); });
     connect(m_event_bus, &ProjectEventBus::layerRemoved,
             this, [this](const std::string&) { refreshInspectorModalities(); });
+    // Sidebar Recycle Bin section mirrors the project recycle bin.
+    connect(m_event_bus, &ProjectEventBus::recycleBinChanged,
+            this, [this]() { refreshRecycleBin(); });
+    connect(m_event_bus, &ProjectEventBus::projectReplaced,
+            this, [this](app::Project*) { refreshRecycleBin(); });
     // Waterfall contact overlay — window may not exist yet.
     connect(m_event_bus, &ProjectEventBus::contactAdded,
             this, [this](const core::Contact&) {
@@ -512,6 +526,10 @@ MainWindow::MainWindow(QWidget* parent)
         // (loaded in the ctor; default CoverageOnly — coverage + nav instantly, no
         // raster cost until the user picks a higher tier).
         m_sss_ctrl->setMapSonarQuality(m_display_state->mapQuality());
+        // Seed the manager's global map palette from the controller's computed initial
+        // (the controller keeps the app-default-name fallback for a fresh install); the
+        // manager owns it from here on.
+        m_display_state->initMapPalette(m_sss_ctrl->paletteIndex());
     }
     if constexpr (Features::kImport) {
         m_import_job_mgr = new app::ImportJobManager(m_import_service, this);

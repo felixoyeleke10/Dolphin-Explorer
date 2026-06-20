@@ -58,6 +58,22 @@ void Project::setLayerGroup(const std::string& layer_id, const std::string& grou
     emit modified();
 }
 
+void Project::setLayerGroups(const std::vector<std::string>& layer_ids,
+                             const std::string& group_id)
+{
+    bool changed = false;
+    for (const auto& layer_id : layer_ids) {
+        auto* layer = findLayer(layer_id);
+        if (!layer || layer->group_id == group_id) continue;
+        layer->group_id = group_id;
+        changed = true;
+    }
+    if (!changed) return;
+
+    emit layerGroupsChanged();
+    emit modified();
+}
+
 void Project::setLayerTags(const std::string& layer_id, std::vector<std::string> tags)
 {
     auto* layer = findLayer(layer_id);
@@ -82,6 +98,8 @@ ItemGroup* Project::addContactGroup(const std::string& name)
 void Project::removeContactGroup(const std::string& id)
 {
     for (auto& c : m_contacts)
+        if (c.group_id == id) c.group_id.clear();
+    for (auto& c : m_recycled_contacts)   // also un-reference recycled contacts
         if (c.group_id == id) c.group_id.clear();
 
     const auto before = m_contact_groups.size();
@@ -117,6 +135,7 @@ void Project::setContactGroup(uint64_t contact_id, const std::string& group_id)
         if (c.id != contact_id) continue;
         if (c.group_id == group_id) return;
         c.group_id = group_id;
+        emit contactUpdated(contact_id);
         emit contactGroupsChanged();
         emit modified();
         return;

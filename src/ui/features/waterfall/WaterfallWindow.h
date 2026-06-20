@@ -9,6 +9,7 @@
 #include "core/Contact.h"
 #include "core/SidescanPing.h"
 #include <QCloseEvent>
+#include <QPixmap>
 #include <QWidget>
 #include <string>
 #include <utility>
@@ -91,14 +92,18 @@ signals:
                        double lat, double lon, bool is_projected);
 
     // Fired when the user places a point contact pick.  MainWindow creates the
-    // core::Contact in the project and refreshes the ContactListPanel.
+    // core::Contact in the project; consumers refresh from the project signals.
     // abs_row: absolute ping row in the full survey (window_first_row + local row).
     // channel_idx: 0 = Port, 1 = Starboard.
     void contactCreated(float range_m, double lat, double lon, bool is_projected,
                         const QString& classification,
                         const QString& line_id,
                         uint64_t abs_row,
-                        int channel_idx);
+                        int channel_idx,
+                        const QPixmap& snapshot);
+
+    // Fired when the user clicks the Contact Manager button in the toolbar.
+    void contactManagerRequested();
 
     // Fired whenever display params are applied (palette, SRC, gain, …).
     // MainWindow uses this to mark the project as having unsaved changes.

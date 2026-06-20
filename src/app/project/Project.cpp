@@ -78,6 +78,13 @@ bool copyProjectOwnedCaches(const std::string& old_manifest,
 
 Project::Project(QObject* parent) : QObject(parent) {}
 
+void Project::setName(const std::string& name)
+{
+    if (name.empty() || name == m_name) return;
+    m_name = name;
+    emit modified();
+}
+
 void Project::setCrs(const std::string& epsg)
 {
     const core::SpatialRef ref = geo::spatialRefFromId(epsg);
@@ -196,6 +203,66 @@ bool Project::saveAs(const std::string& new_path)
     m_name          = old_name;
     for (size_t i = 0; i < m_layers.size() && i < old_stores.size(); ++i)
         if (m_layers[i]) m_layers[i]->artifact_store_path = old_stores[i];
+    return false;
+}
+
+bool Project::renameOnDisk(const std::string& new_path)
+{
+    namespace fs = std::filesystem;
+    if (new_path.empty() || m_manifest_path.empty()) return false;
+
+    const std::string old_path = m_manifest_path;
+    std::error_code ec;
+    if (fs::path(old_path) == fs::path(new_path)) return true;   // nothing to do
+    if (fs::exists(fs::path(new_path), ec)) return false;        // never clobber
+
+    // 1. Move the manifest file.
+    fs::rename(fs::path(old_path), fs::path(new_path), ec);
+    if (ec) return false;
+
+    // 2. Move the project's cache folder (instant within a filesystem) and remap
+    //    any layer artifact paths that lived under it.
+    const QString old_root = detail::cacheRootForManifest(old_path);
+    const QString new_root = detail::cacheRootForManifest(new_path);
+    bool cache_moved = false;
+    if (!old_root.isEmpty() && !new_root.isEmpty() && old_root != new_root) {
+        const fs::path orp(old_root.toStdString());
+        const fs::path nrp(new_root.toStdString());
+        if (fs::exists(orp, ec)) {
+            if (fs::exists(nrp, ec)) {                            // target cache exists → abort
+                fs::rename(fs::path(new_path), fs::path(old_path), ec);   // roll back manifest
+                return false;
+            }
+            fs::create_directories(nrp.parent_path(), ec);
+            fs::rename(orp, nrp, ec);
+            if (ec) {
+                fs::rename(fs::path(new_path), fs::path(old_path), ec);   // roll back manifest
+                return false;
+            }
+            cache_moved = true;
+        }
+    }
+
+    if (cache_moved) {
+        for (auto& l : m_layers) {
+            if (!l || l->artifact_store_path.empty()) continue;
+            const QString cur = detail::normalisePath(l->artifact_store_path);
+            if (!detail::pathHasPrefix(cur, old_root)) continue;
+            QString relocated = cur;
+            relocated.replace(0, old_root.size(), new_root);     // whole dir moved → prefix swap
+            l->artifact_store_path = detail::normalisePath(relocated).toStdString();
+        }
+    }
+
+    m_manifest_path = new_path;   // display name is the caller's; not derived here
+
+    if (save()) return true;
+
+    // Best-effort rollback if the save failed after the moves.
+    m_manifest_path = old_path;
+    if (cache_moved)
+        fs::rename(fs::path(new_root.toStdString()), fs::path(old_root.toStdString()), ec);
+    fs::rename(fs::path(new_path), fs::path(old_path), ec);
     return false;
 }
 

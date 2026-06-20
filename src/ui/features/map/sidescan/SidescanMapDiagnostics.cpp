@@ -138,10 +138,10 @@ QImage SidescanViewController::colorizeIntensityCache(
 
 void SidescanViewController::setPaletteIndex(int idx)
 {
+    // Apply only — DisplayStateManager owns persistence of the global map palette
+    // (it writes "sss/paletteIdx" and drives this via the displayStateChanged bus).
     if (m_palette_idx == idx) return;
     m_palette_idx = idx;
-    QSettings qs;
-    qs.setValue(QStringLiteral("sss/paletteIdx"), idx);
     repaletteAllLayers();
 }
 

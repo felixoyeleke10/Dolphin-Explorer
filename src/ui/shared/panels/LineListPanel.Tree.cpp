@@ -193,6 +193,7 @@ void LineListPanel::buildProjectSection()
     const QString name = QString::fromStdString(m_project->name());
     auto* proj = makeSectionItem(m_tree, nullptr,
                                  name.isEmpty() ? tr("Project") : name);
+    proj->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
     setItemType(proj, ItemType::Project);
 
     buildLayersSection(proj);

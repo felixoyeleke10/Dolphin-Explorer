@@ -1,5 +1,6 @@
 ﻿#include "ui/mainwindow/rightpanel/RightPanel.Info.h"
 #include "ui/shell/Theme.h"
+#include "ui/shared/widgets/ElidingLabel.h"
 #include "app/layers/LayerUtils.h"
 #include "core/SpatialRef.h"
 #include "ui/shared/CoordFormat.h"
@@ -16,7 +17,7 @@ namespace {
 
 QString fmtDuration(double secs)
 {
-    if (secs <= 0.0) return QStringLiteral("—");
+    if (secs <= 0.0) return {};
     const int total = static_cast<int>(secs);
     const int h     = total / 3600;
     const int m     = (total % 3600) / 60;
@@ -48,26 +49,25 @@ InfoModule::InfoModule(QWidget* parent)
         m_pings_key->setObjectName("inspMetaKey");
         m_pings_key->setFixedWidth(Theme::kKeyLabelW);
         m_pings_key->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
-        m_pings_val = new QLabel(QStringLiteral("—"), this);
+        m_pings_val = new ElidingLabel(QStringLiteral("—"), this);
         m_pings_val->setObjectName("inspMetaVal");
         m_pings_val->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-        m_pings_val->setWordWrap(true);
         rl->addWidget(m_pings_key);
         rl->addWidget(m_pings_val, 1);
         vl->addWidget(row);
     }
     makeRow(vl, tr("Modality"),  m_modality_val);
-    makeRow(vl, tr("Frequency"), m_freq_val);
-    makeRow(vl, tr("Duration"),  m_duration_val);
-    makeRow(vl, tr("Sonar"),     m_sonar_val);
-    makeRow(vl, tr("Date"),      m_date_val);
-    makeRow(vl, tr("Survey"),    m_survey_val);
-    makeRow(vl, tr("Vessel"),    m_vessel_val);
-    makeRow(vl, tr("Source CRS"), m_crs_val);
+    m_freq_row     = makeRow(vl, tr("Frequency"), m_freq_val);
+    m_duration_row = makeRow(vl, tr("Duration"),  m_duration_val);
+    m_sonar_row    = makeRow(vl, tr("Sonar"),     m_sonar_val);
+    m_date_row     = makeRow(vl, tr("Date"),      m_date_val);
+    m_survey_row   = makeRow(vl, tr("Survey"),    m_survey_val);
+    m_vessel_row   = makeRow(vl, tr("Vessel"),    m_vessel_val);
+    m_crs_row      = makeRow(vl, tr("Source CRS"), m_crs_val);
     vl->addStretch(1);
 }
 
-void InfoModule::makeRow(QVBoxLayout* vl, const QString& key, QLabel*& val_out)
+QWidget* InfoModule::makeRow(QVBoxLayout* vl, const QString& key, ElidingLabel*& val_out)
 {
     auto* row = new QWidget(this);
     auto* rl  = new QHBoxLayout(row);
@@ -79,14 +79,22 @@ void InfoModule::makeRow(QVBoxLayout* vl, const QString& key, QLabel*& val_out)
     k->setFixedWidth(Theme::kKeyLabelW);
     k->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
 
-    val_out = new QLabel(QStringLiteral("—"), this);
+    val_out = new ElidingLabel(QStringLiteral("—"), this);
     val_out->setObjectName("inspMetaVal");
     val_out->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-    val_out->setWordWrap(true);
 
     rl->addWidget(k);
     rl->addWidget(val_out, 1);
     vl->addWidget(row);
+    return row;
+}
+
+void InfoModule::setOptionalRow(QWidget* row, ElidingLabel* value_label, const QString& value)
+{
+    if (!row || !value_label) return;
+    const QString trimmed = value.trimmed();
+    row->setVisible(!trimmed.isEmpty());
+    value_label->setText(trimmed);
 }
 
 void InfoModule::setLayer(app::DataLayer* layer)
@@ -96,6 +104,9 @@ void InfoModule::setLayer(app::DataLayer* layer)
                          m_sonar_val, m_date_val, m_survey_val, m_vessel_val, m_crs_val })
             if (l) l->setText(QStringLiteral("—"));
         if (m_pings_key) m_pings_key->setText(tr("Pings"));
+        for (auto* row : { m_freq_row, m_duration_row, m_sonar_row, m_date_row,
+                           m_survey_row, m_vessel_row, m_crs_row })
+            if (row) row->setVisible(false);
         return;
     }
 
@@ -123,7 +134,7 @@ void InfoModule::setLayer(app::DataLayer* layer)
             break;
         }
         if (m_pings_key) m_pings_key->setText(key);
-        m_pings_val->setText(count > 0 ? QLocale().toString(count) : QStringLiteral("—"));
+        m_pings_val->setText(QLocale().toString(count));
     }
 
     m_modality_val->setText(
@@ -134,32 +145,32 @@ void InfoModule::setLayer(app::DataLayer* layer)
         if (layer->low_frequency_hz > 0.f
                 && std::fabs(layer->low_frequency_hz - layer->frequency_hz) > 1.f)
             freq = fmtKhz(layer->low_frequency_hz) + QStringLiteral(" / ") + freq;
-        m_freq_val->setText(freq);
+        setOptionalRow(m_freq_row, m_freq_val, freq);
     } else {
-        m_freq_val->setText(QStringLiteral("—"));
+        setOptionalRow(m_freq_row, m_freq_val, {});
     }
 
-    m_duration_val->setText(
-        fmtDuration(layer->end_time_utc - layer->start_time_utc));
+    setOptionalRow(m_duration_row, m_duration_val,
+                   fmtDuration(layer->end_time_utc - layer->start_time_utc));
 
-    m_sonar_val->setText(layer->sonar_name.empty()
-        ? QStringLiteral("—") : QString::fromStdString(layer->sonar_name));
+    setOptionalRow(m_sonar_row, m_sonar_val,
+                   QString::fromStdString(layer->sonar_name));
 
     if (layer->start_time_utc > 0.0) {
         const QDateTime dt = QDateTime::fromSecsSinceEpoch(
             static_cast<qint64>(layer->start_time_utc), Qt::UTC);
-        m_date_val->setText(dt.toString("d MMM yyyy"));
+        setOptionalRow(m_date_row, m_date_val, dt.toString("d MMM yyyy"));
     } else {
-        m_date_val->setText(QStringLiteral("—"));
+        setOptionalRow(m_date_row, m_date_val, {});
     }
 
-    m_survey_val->setText(layer->survey_name.empty()
-        ? QStringLiteral("—") : QString::fromStdString(layer->survey_name));
-    m_vessel_val->setText(layer->vessel_name.empty()
-        ? QStringLiteral("—") : QString::fromStdString(layer->vessel_name));
+    setOptionalRow(m_survey_row, m_survey_val,
+                   QString::fromStdString(layer->survey_name));
+    setOptionalRow(m_vessel_row, m_vessel_val,
+                   QString::fromStdString(layer->vessel_name));
 
     const QString crs = spatialRefDisplayName(layer->source_spatial_ref);
-    m_crs_val->setText(crs.isEmpty() ? QStringLiteral("—") : crs);
+    setOptionalRow(m_crs_row, m_crs_val, crs);
 }
 
 } // namespace dolphin::ui

@@ -15,6 +15,7 @@
 #include <QMenu>
 #include <QMenuBar>
 #include <QPushButton>
+#include <QStyle>
 
 namespace dolphin::ui {
 
@@ -71,6 +72,13 @@ void MainWindow::setupTitleBar()
         m_cmd_bar->setFixedHeight(Theme::kCmdBarH);
         m_cmd_bar->setProvider([this] { return buildCommandItems(); });
         m_cmd_bar->setAnchorWidget(uni);  // palette spans the full pill, not just the search field
+        connect(m_cmd_bar, &CommandBar::activeChanged, uni, [uni](bool active) {
+            if (uni->property("commandActive").toBool() == active) return;
+            uni->setProperty("commandActive", active);
+            uni->style()->unpolish(uni);
+            uni->style()->polish(uni);
+            uni->update();
+        });
 
         auto mkInnerSep = [&]() -> QFrame* {
             auto* s = new QFrame(uni);

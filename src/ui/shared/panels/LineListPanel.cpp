@@ -109,6 +109,8 @@ LineListPanel::LineListPanel(QWidget* parent, ContentMode mode)
 
     connect(m_tree, &QTreeWidget::itemClicked,
             this, &LineListPanel::onItemClicked);
+    connect(m_tree, &QTreeWidget::itemDoubleClicked,
+            this, &LineListPanel::onItemDoubleClicked);
     connect(m_tree, &QTreeWidget::itemChanged,
             this, &LineListPanel::onItemChanged);
     connect(m_tree, &QTreeWidget::itemSelectionChanged,
@@ -248,6 +250,21 @@ void LineListPanel::onItemClicked(QTreeWidgetItem* item, int)
         default:
             break;
     }
+}
+
+void LineListPanel::onItemDoubleClicked(QTreeWidgetItem* item, int)
+{
+    if (!item || itemTypeOf(item) != ItemType::Layer) return;
+    const std::string id = item->data(0, kRoleId).toString().toStdString();
+    if (id.empty()) return;
+
+    // Open the matching viewer for this line's modality (mirrors the context-menu
+    // policy): sub-bottom → SBP viewer, sidescan → waterfall. Other modalities have
+    // no dedicated viewer, so double-click just leaves the (single-click) selection.
+    using M = app::Modality;
+    const auto mod = static_cast<M>(item->data(0, kRoleModality).toInt());
+    if (mod == M::SubBottom)      emit openInSubBottomRequested(id);
+    else if (mod == M::Sidescan)  emit openInWaterfallRequested(id);
 }
 
 void LineListPanel::onSelectionChanged()

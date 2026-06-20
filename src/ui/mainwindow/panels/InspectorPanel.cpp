@@ -34,8 +34,6 @@ InspectorPanel::InspectorPanel(QWidget* parent)
 
     connect(m_layer, &RightPanelHost::paletteChanged,
             this,    &InspectorPanel::paletteChanged);
-    connect(m_layer, &RightPanelHost::channelChanged,
-            this,    &InspectorPanel::channelChanged);
 
     showEmpty();
 }
@@ -69,21 +67,5 @@ void InspectorPanel::setPalette(int idx)
 {
     if (m_layer) m_layer->setPalette(idx);
 }
-
-void InspectorPanel::setChannel(DisplayChannel ch)
-{
-    if (m_layer) m_layer->setChannel(ch);
-}
-
-void InspectorPanel::setAvailableModalities(const QSet<app::Modality>& modalities)
-{
-    if (m_layer) m_layer->setAvailableModalities(modalities);
-}
-
-void InspectorPanel::setModalityFilter(app::Modality filter)
-{
-    if (m_layer) m_layer->setModalityFilter(filter);
-}
-
 
 } // namespace dolphin::ui

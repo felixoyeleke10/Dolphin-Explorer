@@ -459,10 +459,9 @@ bool Project::fromJson(const std::string& json)
             source.source_spatial_ref = (*it)->source_spatial_ref;
     }
 
-    // Contacts
-    m_contacts.clear();
+    // Contacts (active + recycle bin share one parse).
     uint64_t max_id = 0;
-    for (auto& jc : root.get("contacts").elements()) {
+    auto contactFromJson = [&](const util::JsonValue& jc) -> core::Contact {
         core::Contact c;
         c.id             = static_cast<uint64_t>(jc.get("id").asDouble());
         c.label          = jc.get("label").asString();
@@ -489,8 +488,17 @@ bool Project::fromJson(const std::string& json)
             c.tags.push_back(jt.asString());
         c.group_id = jc.get("group_id").asString();
         if (c.id > max_id) max_id = c.id;
-        m_contacts.push_back(std::move(c));
-    }
+        return c;
+    };
+
+    m_contacts.clear();
+    for (auto& jc : root.get("contacts").elements())
+        m_contacts.push_back(contactFromJson(jc));
+
+    m_recycled_contacts.clear();
+    for (auto& jc : root.get("recycled_contacts").elements())
+        m_recycled_contacts.push_back(contactFromJson(jc));
+
     m_next_contact_id = (max_id < UINT64_MAX) ? max_id + 1 : 1;
 
     // Layer groups

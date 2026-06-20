@@ -59,8 +59,6 @@ RightPanelHost::RightPanelHost(ShowMode mode, QWidget* parent)
 
         connect(m_display, &DisplayModule::paletteChanged,
                 this,      &RightPanelHost::paletteChanged);
-        connect(m_display, &DisplayModule::channelChanged,
-                this,      &RightPanelHost::channelChanged);
         connect(m_sbp_display, &SubBottomDisplayModule::paramsChanged,
                 this,          &RightPanelHost::sbpParamsChanged);
     }
@@ -82,11 +80,6 @@ void RightPanelHost::addModule(IRightPanelModule* mod)
     m_sections.append(sec);
 }
 
-void RightPanelHost::setAvailableModalities(const QSet<app::Modality>& modalities)
-{
-    m_available_modalities = modalities;
-}
-
 void RightPanelHost::setModalityFilter(app::Modality filter)
 {
     m_modality_filter = filter;
@@ -99,10 +92,10 @@ bool RightPanelHost::computeFilterVisible(app::Modality primary) const
 {
     if (m_show_mode == ShowMode::UniversalOnly)
         return true;  // all modules in this host are Unknown-primary
-    // ModalOnly: filter by active sensor tab, falling back to availability.
-    if (m_modality_filter != app::Modality::Unknown)
-        return primary == m_modality_filter;
-    return m_available_modalities.contains(primary);
+    // ModalOnly: show only the active sensor tab's sections. The Map tab (Unknown
+    // filter) has no sensor sections — it shows only universal (Unknown-primary)
+    // modules, of which the modal host has none, so Map shows no tools.
+    return primary == m_modality_filter;
 }
 
 void RightPanelHost::setLayer(app::DataLayer* layer)
@@ -156,11 +149,6 @@ int RightPanelHost::currentPaletteIndex() const
 void RightPanelHost::setPalette(int idx)
 {
     if (m_display) m_display->setPalette(idx);
-}
-
-void RightPanelHost::setChannel(DisplayChannel ch)
-{
-    if (m_display) m_display->setChannel(ch);
 }
 
 void RightPanelHost::setSbpParams(const SubBottomDisplayParams& p)

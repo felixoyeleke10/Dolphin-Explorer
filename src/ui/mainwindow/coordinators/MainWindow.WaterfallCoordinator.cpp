@@ -17,6 +17,8 @@
 #include "ui/mainwindow/panels/InspectorPanel.h"
 #include "ui/mainwindow/rightpanel/RightPanelHost.h"
 #include "ui/features/subbottom/SubBottomWindow.h"
+#include "ui/features/contacts/ContactManagerWindow.h"
+#include "ui/systems/ProjectEventBus.h"
 #include "ui/features/map/MapView.h"
 #include "ui/features/waterfall/WaterfallWindow.h"
 #include "app/project/Project.h"
@@ -27,6 +29,7 @@
 #include "geo/EpsgDatabase.h"
 
 #include <QMessageBox>
+#include <QVector>
 
 #include <algorithm>
 #include <cmath>
@@ -49,6 +52,8 @@ void MainWindow::onWaterfallOpen()
                 this, &MainWindow::toggleProperties);
         connect(m_waterfall_win, &WaterfallWindow::metadataRequested,
                 this, &MainWindow::onWaterfallMetadata);
+        connect(m_waterfall_win, &WaterfallWindow::contactManagerRequested,
+                this, &MainWindow::onContactManagerOpen);
         connect(m_waterfall_win, &WaterfallWindow::settingsRequested,
                 this, &MainWindow::onWaterfallSettings);
         connect(m_waterfall_win, &WaterfallWindow::prevLineRequested,
@@ -70,13 +75,7 @@ void MainWindow::onWaterfallOpen()
                 this, &MainWindow::onWaterfallNavProcessAllLines);
         connect(m_waterfall_win, &WaterfallWindow::paletteChanged,
                 this, [this](int idx) {
-                    onPaletteChanged(idx);   // global map palette apply (unchanged)
-                    // Per-layer SSS palette override → through the display-state
-                    // manager: it writes the layer field and emits
-                    // displayStateChanged(layer, Palette); MainWindow marks the project
-                    // dirty on that bus signal, so it persists and other views can react.
-                    if (m_display_state && !activeLayerId().empty())
-                        m_display_state->setLayerSssPalette(activeLayerId(), idx);
+                    onPaletteChanged(idx);
                 });
         connect(m_waterfall_win, &WaterfallWindow::qcViewedFractionChanged,
                 this, [this](const std::string& /*layer_id*/, float /*fraction*/) {
@@ -126,6 +125,8 @@ void MainWindow::onWaterfallOpen()
                 // which have a different numeric range.  Passing identity (0/1)
                 // lets the map fall back to its own data-calibrated stretch.
                 SonarDisplayParams map_dp = p;
+                if (m_display_state)
+                    map_dp.palette = m_display_state->mapPalette();
                 map_dp.display_low  = 0.f;
                 map_dp.display_high = 1.f;
                 m_sss_ctrl->setDisplayParams(map_dp);
@@ -138,11 +139,8 @@ void MainWindow::onWaterfallOpen()
                 const std::string wf_id = m_waterfall_win->currentLayerId();
                 if (!wf_id.empty()) {
                     auto* layer = currentProject()->findLayer(wf_id);
-                    if (layer) {
-                        layer->sss_display_state.params = p;
-                        layer->sss_display_state.customized = true;
-                        markProjectDirty();
-                    }
+                    if (layer && m_display_state)
+                        m_display_state->setLayerSssDisplay(wf_id, p);  // mutate + notify (marks dirty)
                     if (layer && layer->slant_range_corrected != p.slant_range_correction) {
                         layer->slant_range_corrected = p.slant_range_correction;
                         if (m_sss_ctrl) m_sss_ctrl->reloadLayer(wf_id);
@@ -185,8 +183,7 @@ void MainWindow::onWaterfallOpen()
             for (const auto& l : currentProject()->layers()) {
                 if (!l) continue;
                 l->slant_range_corrected = p.slant_range_correction;
-                l->sss_display_state.params = p;
-                l->sss_display_state.customized = true;
+                if (m_display_state) m_display_state->setLayerSssDisplay(l->id, p);
             }
             if (m_sss_ctrl) m_sss_ctrl->reloadCurrentLayer();
             tx.commit();
@@ -239,15 +236,10 @@ void MainWindow::onWaterfallOpen()
         }
     }
 
-    // Sync palette: use the per-layer saved palette if available, otherwise fall
-    // back to the Properties inspector (which shows the app-wide default).
-    {
-        auto* layer = currentProject() ? currentProject()->findLayer(activeLayerId()) : nullptr;
-        if (layer && layer->sss_palette >= 0)
-            m_waterfall_win->setPalette(layer->sss_palette);
-        else if (m_inspector)
-            m_waterfall_win->setPalette(m_inspector->currentPaletteIndex());
-    }
+    // Sync palette from the display-state authority. The waterfall display is
+    // global, so do not restore per-layer/inspector palette state on open.
+    if (m_display_state)
+        m_waterfall_win->setPalette(m_display_state->mapPalette());
 
     m_waterfall_win->show();
     m_waterfall_win->raise();
@@ -315,40 +307,6 @@ void MainWindow::onWaterfallCursorUpdated(float range_m, const QString& /*side*/
         m_status_bar->clearCursorPosition();
 }
 
-void MainWindow::onWaterfallContactCreated(float range_m, double lat, double lon,
-                                           bool is_projected,
-                                           const QString& classification,
-                                           const QString& line_id,
-                                           uint64_t abs_row,
-                                           int channel_idx)
-{
-    if (!currentProject()) return;
-
-    const int n = static_cast<int>(currentProject()->contacts().size()) + 1;
-    core::Contact c;
-    c.label          = QString("C%1").arg(n, 3, 10, QChar('0')).toStdString();
-    c.lat            = lat;
-    c.lon            = lon;
-    c.spatial_ref    = is_projected
-                     ? core::makeUnknownProjectedSpatialRef()
-                     : core::makeWgs84SpatialRef();
-    c.classification = classification.toStdString();
-    c.line_id        = line_id.toStdString();
-    c.range_m        = range_m;
-    c.artifact_id    = abs_row;
-    c.sample_idx     = static_cast<uint32_t>(channel_idx);
-
-    m_undo_stack->push(new AddContactCommand(
-        currentProject(), c,
-        [this]() {  }));
-
-    appendJobMessage(
-        QString("Contact %1 placed \u2014 %2 (%3 m)")
-            .arg(QString::fromStdString(c.label))
-            .arg(classification)
-            .arg(range_m, 0, 'f', 1));
-}
-
 void MainWindow::onWaterfallParamsApplied()
 {
     if (!activeLayerId().empty() && currentProject()) {
@@ -360,22 +318,6 @@ void MainWindow::onWaterfallParamsApplied()
     } else {
         recordActivity(ActivityKind::DisplayParams, tr("Display parameters applied"));
     }
-}
-
-void MainWindow::onContactSelected(uint64_t contact_id)
-{
-    if (m_map_view) m_map_view->setSelectedContact(contact_id);
-
-    if (!currentProject() || !m_inspector) return;
-    for (const auto& c : currentProject()->contacts())
-        if (c.id == contact_id) { m_inspector->showContact(&c); return; }
-}
-
-void MainWindow::onContactPicked(double lat, double lon,
-                                 uint64_t /*artifact_id*/, uint32_t /*sample_idx*/)
-{
-    appendJobMessage(QString("Picked  Lat %1  Lon %2")
-        .arg(lat, 0, 'f', 6).arg(lon, 0, 'f', 6));
 }
 
 void MainWindow::onWaterfallMetadata()
@@ -407,245 +349,6 @@ void MainWindow::onWaterfallSettings()
                 if (m_waterfall_win) m_waterfall_win->applyWfSettings(s);
             });
     dlg->show();
-}
-
-void MainWindow::onWaterfallSetCrs(const std::string& from_layer_id)
-{
-    if (!currentProject()) return;
-
-    // Use the layer the waterfall is actually showing, which may differ from
-    // activeLayerId() when the user has used Prev/Next inside the waterfall.
-    const std::string ref_id = from_layer_id.empty() ? activeLayerId() : from_layer_id;
-    auto* layer = currentProject()->findLayer(ref_id);
-    if (!layer) return;
-
-    // Open picker pre-seeded with the current (possibly unconfirmed) CRS
-    QWidget* parent = m_waterfall_win ? static_cast<QWidget*>(m_waterfall_win) : this;
-    CrsPickerDialog dlg(layer->source_spatial_ref, parent);
-    if (dlg.exec() != QDialog::Accepted) return;
-
-    const core::SpatialRef new_ref = dlg.selectedRef();
-    if (new_ref.kind == core::SpatialRefKind::Unknown) return;
-
-    const core::SpatialRef old_ref = layer->source_spatial_ref;
-
-    // Source CRS is a source-file property — apply to every layer and source in
-    // the project.  The project display CRS (map target) is left unchanged; the
-    // normalisation step reprojects source coordinates into it on reload.
-    auto apply_crs = [this, ref_id](const core::SpatialRef& ref) {
-        if (!currentProject()) return;
-        {
-            app::ProjectTransaction tx(currentProject());
-            for (const auto& l : currentProject()->layers())
-                if (l) l->source_spatial_ref = ref;
-            for (const auto& l : currentProject()->layers()) {
-                if (!l) continue;
-                if (auto* src = currentProject()->findSource(l->source_id))
-                    src->source_spatial_ref = ref;
-            }
-            tx.commit();
-        }
-        auto* lyr = currentProject()->findLayer(ref_id);
-        if (!ref_id.empty() && ref_id != activeLayerId()) {
-            m_layer_ctrl->setActiveLayer(ref_id);
-            m_app_state->setSelection({ref_id, lyr ? lyr->modality : app::Modality::Unknown});
-            if (m_inspector && lyr) m_inspector->showLayer(lyr);
-        }
-        if (m_sss_ctrl) m_sss_ctrl->reloadCurrentLayer();
-        if (m_waterfall_win && lyr) {
-            const auto* src = currentProject()->findSource(lyr->source_id);
-            m_waterfall_win->setLayer(lyr, m_import_service,
-                                      src ? src->path : std::string{},
-                                      src ? src->size_bytes : 0);
-            applyStoredNavParams(lyr->id);
-            if (lyr->sss_display_state.customized)
-                m_waterfall_win->applyExternalParams(lyr->sss_display_state.params);
-            // Restore per-layer palette after CRS-triggered reload.
-            if (lyr->sss_palette >= 0)
-                m_waterfall_win->setPalette(lyr->sss_palette);
-            else if (m_inspector)
-                m_waterfall_win->setPalette(m_inspector->currentPaletteIndex());
-        }
-    };
-
-    m_undo_stack->push(new SetSourceCrsCommand(old_ref, new_ref, apply_crs));
-
-    const std::string display = geo::epsgDisplayName(new_ref);
-    const int n = static_cast<int>(currentProject()->layers().size());
-    appendJobMessage(tr("Source CRS set to %1 — applied to %2 layer(s)")
-        .arg(QString::fromStdString(display)).arg(n));
-    recordActivity(ActivityKind::CrsChange,
-        tr("Source CRS → %1").arg(QString::fromStdString(display)));
-}
-
-void MainWindow::onWaterfallNavProcessLine(NavProcessingParams params)
-{
-    // Target the actively selected layer — the panel reflects it. The waterfall's
-    // current line can be stale (the map/tree selection moved on, or the window is
-    // closed), so prefer the active layer and only fall back to the viewer when
-    // nothing is selected. Store + apply live (model-owned; persisted).
-    std::string lid = activeLayerId();
-    if (lid.empty() && m_waterfall_win) lid = m_waterfall_win->currentLayerId();
-    if (lid.empty() || !currentProject()) return;
-    auto* layer = currentProject()->findLayer(lid);
-    if (!layer || layer->modality != app::Modality::Sidescan) return;
-
-    layer->nav_state      = params;
-    layer->nav_customized = true;
-    markProjectDirty();
-    if (m_waterfall_win) m_waterfall_win->applyNavToLine(params);
-
-    // Rebuild the SSS map preview with the new nav — same correction the waterfall
-    // uses — but only if this layer is currently on the map (mirrors the SBP path).
-    if (m_sss_ctrl && m_map_view && m_map_view->layerData(lid))
-        m_sss_ctrl->reloadLayer(lid);
-
-    recordActivity(ActivityKind::NavCorrection,
-        tr("Nav corrections applied to %1")
-            .arg(QString::fromStdString(layer->label)));
-}
-
-void MainWindow::onWaterfallNavProcessAllLines(NavProcessingParams params)
-{
-    if (!currentProject()) return;
-
-    // Snapshot per-layer nav_state before/after so undo restores layers that were
-    // uncustomized. The command's apply writes back into the model (the single
-    // source of truth) rather than a MainWindow-side map.
-    using ParamMap = std::unordered_map<std::string, NavProcessingParams>;
-    ParamMap old_state, new_state;
-    int n = 0;
-    for (const auto& layer : currentProject()->layers()) {
-        if (!layer || layer->modality != app::Modality::Sidescan) continue;
-        if (layer->nav_customized) old_state[layer->id] = layer->nav_state;
-        new_state[layer->id] = params;
-        ++n;
-    }
-    if (n == 0) return;
-
-    auto apply = [this](const ParamMap& map) {
-        if (!currentProject()) return;
-        for (const auto& l : currentProject()->layers()) {
-            if (!l || l->modality != app::Modality::Sidescan) continue;
-            const auto it = map.find(l->id);
-            l->nav_state      = (it != map.end()) ? it->second : NavProcessingParams{};
-            l->nav_customized = (it != map.end());
-        }
-        markProjectDirty();
-        if (m_waterfall_win)
-            applyStoredNavParams(m_waterfall_win->currentLayerId());
-        // Rebuild every loaded SSS layer's map preview with the new nav.
-        if (m_sss_ctrl) m_sss_ctrl->reloadCurrentLayer();
-    };
-    m_undo_stack->push(new SetNavParamsAllCommand(
-        std::move(old_state), std::move(new_state), std::move(apply)));
-
-    appendJobMessage(tr("Nav corrections stored for %1 sidescan line(s) — applied on next open").arg(n));
-    recordActivity(ActivityKind::NavCorrection,
-        tr("Nav corrections stored for %1 line(s)").arg(n));
-}
-
-void MainWindow::applyStoredNavParams(const std::string& layer_id)
-{
-    if (!m_waterfall_win || layer_id.empty() || !currentProject()) return;
-    // Apply the layer's nav state — defaults when uncustomized — so switching to a
-    // line without corrections clears any carried over from the previous line.
-    const auto* layer = currentProject()->findLayer(layer_id);
-    m_waterfall_win->applyNavToLine(layer ? layer->nav_state : NavProcessingParams{});
-}
-
-// Explicit "commit corrections to data" (SeaView-style mosaic bake). Ordinary
-// gain/imaging Apply is display-state only; this is the deliberate, confirmable
-// step that writes the corrected .dlpd sidecars (originals preserved) so the map
-// mosaic and exports reflect the full corrections. Covers SSS + SBP layers that
-// have applied corrections.
-void MainWindow::onBakeCorrections()
-{
-    if (!currentProject() || !m_corr_op) return;
-
-    int n = 0;
-    for (const auto& l : currentProject()->layers()) {
-        if (!l) continue;
-        if (l->modality == app::Modality::Sidescan && l->sss_display_state.customized)
-            ++n;
-        else if (l->modality == app::Modality::SubBottom
-                 && (l->sbp_display_state.gain_customized
-                     || l->sbp_display_state.signal_customized))
-            ++n;
-    }
-    if (n == 0) {
-        QMessageBox::information(this, tr("Bake Corrections"),
-            tr("No layers have applied gain/imaging corrections to bake.\n\n"
-               "Adjust gain/imaging and Apply first, then bake to write the corrected "
-               "data into the project's files."));
-        return;
-    }
-    if (QMessageBox::question(this, tr("Bake Corrections"),
-            tr("Write the applied gain/imaging corrections into the project's data "
-               "files (.dlpd) for %1 layer(s)?\n\n"
-               "This creates processed copies — the original parsed data is kept. Use "
-               "it to commit corrections for export and the high-quality map mosaic.").arg(n),
-            QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes)
-        return;
-
-    // Bake through the capped batch: one job per customized layer, each baking its
-    // own display state, dispatched ≤ kMaxConcurrent at a time so the heavy
-    // read+correct+write jobs honour D-14 (the per-layer applySSS/applySBP path
-    // fires immediately on the global pool and would flood the cap).
-    m_corr_op->bakeCustomized(*currentProject());
-    appendJobMessage(
-        tr("Baking corrections into %1 layer(s) — watch the bottom panel.").arg(n));
-    recordActivity(ActivityKind::NavCorrection,
-                   tr("Baked corrections into %1 layer(s)").arg(n));
-}
-
-void MainWindow::onChannelChanged(DisplayChannel ch)
-{
-    // Sync the inspector combo (may already be the source — uses QSignalBlocker).
-    if (m_inspector)
-        m_inspector->setChannel(ch);
-
-    // Apply to the waterfall.
-    if (m_waterfall_win)
-        m_waterfall_win->setDisplayChannel(ch);
-
-    // Persist into the active layer's display state so it is restored on layer switch.
-    if (currentProject() && !activeLayerId().empty()) {
-        if (auto* layer = currentProject()->findLayer(activeLayerId())) {
-            layer->sss_display_state.params.display_channel = ch;
-            markProjectDirty();
-        }
-    }
-}
-
-void MainWindow::onPaletteChanged(int idx)
-{
-    // Sync the Properties inspector (may be the source — setPalette uses QSignalBlocker).
-    if (m_inspector)
-        m_inspector->setPalette(idx);
-
-    // Sync the waterfall (may be the source — setPalette checks current index first).
-    if (m_waterfall_win)
-        m_waterfall_win->setPalette(idx);
-
-    // Sync the SBP window and keep the right panel in sync.
-    if (m_sbp_win) {
-        m_sbp_win->setPalette(idx);
-        if (m_modal_host)
-            m_modal_host->setSbpParams(m_sbp_win->displayParams());
-    }
-
-    // Rebuild the map swath preview with the new palette.
-    if (m_sss_ctrl)
-        m_sss_ctrl->setPaletteIndex(idx);
-
-    static const char* kPaletteNames[] = {
-        "Thermal", "Greyscale", "Ocean", "Copper", "Inverted",
-        "Viridis", "Plasma", "Midnight", "Sand", "Spectrum"
-    };
-    const char* name = (idx >= 0 && idx < 10) ? kPaletteNames[idx] : "Unknown";
-    recordActivity(ActivityKind::Palette,
-        tr("Palette changed to %1").arg(QLatin1String(name)));
 }
 
 } // namespace dolphin::ui

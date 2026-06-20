@@ -119,6 +119,13 @@ void MainWindow::bindProjectUi()
     if (m_op_coord)
         m_op_coord->setProject(proj_ptr);
 
+    // Seed the activity history when a real (saved) project is opened, so the
+    // History tab always reflects at least the open — loading an existing project
+    // records nothing else (only imports/edits do).
+    if (raw && !raw->isTempProject() && !raw->name().empty())
+        recordActivity(ActivityKind::GroupChange,
+                       tr("Opened project %1").arg(QString::fromStdString(raw->name())));
+
     updateContextInfo();
 }
 

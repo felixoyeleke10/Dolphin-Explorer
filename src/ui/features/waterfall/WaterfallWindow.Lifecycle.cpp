@@ -231,12 +231,12 @@ void WaterfallWindow::setLayer(app::DataLayer*     layer,
     if (m_inspector && layer)
         m_inspector->setActiveLine(layer->id);
 
-    // Restore per-layer palette; fall back to the app default for layers where
-    // the user has not yet made an explicit palette choice.
+    // Restore the global SSS palette. DisplayStateManager owns this setting and
+    // persists it to "sss/paletteIdx"; do not fall back to per-layer/app defaults
+    // here or opening the waterfall can clobber the currently active palette.
     if (layer && m_inspector) {
-        const int pal = (layer->sss_palette >= 0)
-            ? layer->sss_palette
-            : (m_app_state ? m_app_state->current().default_palette : PaletteIndex::Greyscale);
+        const int pal = QSettings().value(QStringLiteral("sss/paletteIdx"),
+                                          PaletteIndex::Greyscale).toInt();
         m_inspector->setPalette(pal);   // does NOT re-emit paletteChanged
     }
 

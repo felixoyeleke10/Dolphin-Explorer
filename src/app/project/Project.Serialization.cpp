@@ -236,9 +236,8 @@ std::string Project::toJson() const
     }
     root["layers"] = std::move(layers_arr);
 
-    // Contacts
-    util::JsonValue contacts_arr = util::JsonValue::array();
-    for (auto& c : m_contacts) {
+    // Contacts (active + recycle bin share one serialization shape).
+    auto contactToJson = [](const core::Contact& c) -> util::JsonValue {
         util::JsonValue jc = util::JsonValue::object();
         jc["id"]             = util::JsonValue(static_cast<double>(c.id));
         jc["label"]          = util::JsonValue(c.label);
@@ -262,9 +261,16 @@ std::string Project::toJson() const
             ctags.push(util::JsonValue(t));
         jc["tags"]     = std::move(ctags);
         jc["group_id"] = util::JsonValue(c.group_id);
-        contacts_arr.push(std::move(jc));
-    }
+        return jc;
+    };
+
+    util::JsonValue contacts_arr = util::JsonValue::array();
+    for (const auto& c : m_contacts) contacts_arr.push(contactToJson(c));
     root["contacts"] = std::move(contacts_arr);
+
+    util::JsonValue recycled_arr = util::JsonValue::array();
+    for (const auto& c : m_recycled_contacts) recycled_arr.push(contactToJson(c));
+    root["recycled_contacts"] = std::move(recycled_arr);
 
     // Layer groups
     util::JsonValue layer_groups_arr = util::JsonValue::array();

@@ -36,11 +36,27 @@ std::set<std::string> g_active_source_jobs;
 
 namespace import_detail {
 
+namespace {
+
+std::string trimMetadataString(std::string value)
+{
+    auto is_space = [](unsigned char ch) {
+        return std::isspace(ch) || ch == '\0';
+    };
+    value.erase(value.begin(), std::find_if(value.begin(), value.end(),
+        [&](unsigned char ch) { return !is_space(ch); }));
+    value.erase(std::find_if(value.rbegin(), value.rend(),
+        [&](unsigned char ch) { return !is_space(ch); }).base(), value.end());
+    return value;
+}
+
+} // namespace
+
 void copyImportMetadata(const io::FormatMeta& meta, ImportTaskResult& result)
 {
-    result.sonar_name       = meta.sonar_name;
-    result.survey_name      = meta.survey_name;
-    result.vessel_name      = meta.vessel_name;
+    result.sonar_name       = trimMetadataString(meta.sonar_name);
+    result.survey_name      = trimMetadataString(meta.survey_name);
+    result.vessel_name      = trimMetadataString(meta.vessel_name);
     result.start_time_utc   = meta.start_time;
     result.end_time_utc     = meta.end_time;
     result.frequency_hz     = meta.frequency_hz;

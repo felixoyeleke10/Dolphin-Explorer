@@ -104,16 +104,28 @@ MapViewportHost::MapViewportHost(QWidget* parent)
         if (ld) onLayerDataLoaded(lid, *ld, colorForLayer(lid));
     });
 
-    // 3D view is created lazily in ensureView3D() the first time the user switches
-    // to 3D mode.  An eagerly-created hidden QOpenGLWidget in the main window's
-    // hierarchy forces Windows DWM into GL-compositing mode even in pure 2D,
-    // causing persistent flickering and breaking external screenshot tools.
+    // Default the map background to the theme background so the transition cover is
+    // always opaque — even before AppSettings pushes a colour. Otherwise the first
+    // 2D→3D switch shows the cover transparent and the black GL zero-frame flickers
+    // through. MapView3D uses the same default, so cover and first frame match.
+    m_map_bg_color = Theme::kBg;
 
     // Transition cover — a solid-colour widget that floats over the stack during the
     // brief window between the first 2D→3D switch and the first completed GL frame.
     m_transition_cover = new QWidget(this);
+    m_transition_cover->setObjectName("mapTransitionCover");
     m_transition_cover->setAttribute(Qt::WA_TransparentForMouseEvents);
+    m_transition_cover->setAutoFillBackground(true);
     m_transition_cover->hide();
+
+    // Create the 3D QOpenGLWidget up front (kept hidden behind the 2D page) so the
+    // top-level window is GL-capable from its first show. If the first OpenGL surface
+    // is introduced *after* the window is shown (lazy creation on the first 2D→3D
+    // switch), Windows recreates the native top-level window — the whole app visibly
+    // disappears and reappears. A hidden stack page does not run paintGL, and layer
+    // data only sets dirty flags, so there is no rendering cost in 2D mode. (The GL
+    // context is shared app-wide via AA_ShareOpenGLContexts, set in main().)
+    ensureView3D();
 }
 
 MapView3D* MapViewportHost::ensureView3D()
@@ -267,21 +279,32 @@ void MapViewportHost::setMode3D(bool on)
     m_is_3d = on;
     if (on) {
         auto* view3d = ensureView3D();
-        m_stack->setCurrentWidget(view3d);
 
         if (!view3d->isGLReady()) {
-            // GL has not completed its first frame yet.  Show a solid cover
-            // matching the map background so the user never sees the black
-            // zero-frame that QOpenGLWidget paints before initializeGL() runs.
-            if (m_map_bg_color.isValid())
-                m_transition_cover->setStyleSheet(
-                    "background:" + m_map_bg_color.name(QColor::HexRgb) + ";");
+            // First switch: the QOpenGLWidget paints a black zero-frame before
+            // initializeGL() runs (and the window enters GL composition). Raise an
+            // opaque cover BEFORE swapping the stack, so the 3D widget never appears
+            // uncovered, and keep it up until the first real frame has been presented
+            // (deferred hide — firstFrameReady fires inside paintGL, before the frame
+            // reaches the screen, so hiding synchronously there unmasks too early).
+            const QColor bg = m_map_bg_color.isValid() ? m_map_bg_color : QColor(Theme::kBg);
+            m_transition_cover->setStyleSheet(
+                "#mapTransitionCover { background:" + bg.name(QColor::HexRgb) + "; }");
             m_transition_cover->setGeometry(m_stack->geometry());
             m_transition_cover->show();
             m_transition_cover->raise();
-            connect(view3d, &MapView3D::firstFrameReady,
-                    this, [this]() { m_transition_cover->hide(); },
-                    Qt::SingleShotConnection);
+
+            m_stack->setCurrentWidget(view3d);
+            m_transition_cover->raise();
+
+            connect(view3d, &MapView3D::firstFrameReady, this, [this]() {
+                // Defer past the present that completes the first frame.
+                QTimer::singleShot(0, this, [this]() {
+                    if (m_transition_cover) m_transition_cover->hide();
+                });
+            }, Qt::SingleShotConnection);
+        } else {
+            m_stack->setCurrentWidget(view3d);
         }
     } else {
         m_stack->setCurrentWidget(m_view2d);

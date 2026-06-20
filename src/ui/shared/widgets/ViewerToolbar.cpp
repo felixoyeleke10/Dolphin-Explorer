@@ -6,6 +6,7 @@
 #include <QHBoxLayout>
 #include <QIcon>
 #include <QSize>
+#include <QStyle>
 #include <QToolButton>
 
 namespace dolphin::ui {
@@ -56,6 +57,13 @@ ViewerToolbar::ViewerToolbar(QWidget* parent)
     m_cmd_bar->setToolTip(
         tr("Search and run viewer commands.\n"
            "Click or press the command shortcut, then type a command name."));
+    connect(m_cmd_bar, &CommandBar::activeChanged, m_cmd_bar, [bar = m_cmd_bar](bool active) {
+        if (bar->property("commandActive").toBool() == active) return;
+        bar->setProperty("commandActive", active);
+        bar->style()->unpolish(bar);
+        bar->style()->polish(bar);
+        bar->update();
+    });
     m_layout->addWidget(m_cmd_bar);
 
     m_layout->addStretch(1);

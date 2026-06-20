@@ -36,6 +36,7 @@ class QLabel;
 class QLineEdit;
 class QListWidget;
 class QListWidgetItem;
+class QPixmap;
 class QPropertyAnimation;
 class QScrollArea;
 class QStackedWidget;
@@ -108,6 +109,8 @@ private slots:
     void onSaveProjectAs()     { m_session_ctrl->saveProjectAs(); }
     void onOpenProjectFolder() { m_session_ctrl->openProjectFolder(); }
     void onCloseProject()      { m_session_ctrl->closeProject(); }
+    void onDeleteProject()     { m_session_ctrl->deleteProject(); }
+    void onRenameProject();
     void onImportFile();
     void onGeodeticSettings();
 
@@ -118,6 +121,8 @@ private slots:
     void onExportNav();
     void onExportPdf();
     void onExportScreenshot();
+    void onExportManagerOpen();              // project-wide export hub window
+    void exportContactsReport(bool docx);    // all contacts → PDF / Word via ContactReport
 
     // Processing
     void onRunAllLayers();
@@ -135,6 +140,7 @@ private slots:
     void onContactPickedOnMap(double lon, double lat);
     void onWaterfallOpen();
     void onSubBottomOpen();
+    void onContactManagerOpen();
     void onBottomTrack();
     void onWaterfallPrevLine(const std::string& from_layer_id);
     void onWaterfallNextLine(const std::string& from_layer_id);
@@ -149,7 +155,8 @@ private slots:
                                    const QString& classification,
                                    const QString& line_id,
                                    uint64_t abs_row,
-                                   int channel_idx);
+                                   int channel_idx,
+                                   const QPixmap& snapshot);
     void onWaterfallParamsApplied();
     void onWaterfallSetCrs(const std::string& from_layer_id);
     void onWaterfallNavProcessLine(dolphin::ui::NavProcessingParams params);
@@ -192,7 +199,6 @@ private slots:
     void onAbout();
     void onLayerVisibilityChanged(const std::string& layer_id, bool visible);
     void onPaletteChanged(int idx);
-    void onChannelChanged(DisplayChannel ch);
     void refreshLoadingIndicator();
     void onToggleContextPanel();
     void onTogglePropertiesPanel();
@@ -251,6 +257,9 @@ private:
     QFrame*  buildRightToolBar(QWidget* parent);
 
     void rebuildRecentMenu();
+    // Display name for a recent-project path: the open project's (live) name when it
+    // matches, else the name stored in the .dlp, falling back to the file basename.
+    QString recentDisplayName(const QString& path) const;
     void bindProjectUi();
     // Set the active sensor/modality tab and apply the matching filter to the inspector.
     void refreshSensorTab(app::Modality m);
@@ -287,6 +296,7 @@ private:
 
     QWidget* makeContextPlaceholder(const QString& title, const QString& body);
     void     refreshSidebarSections(const QStringList& paths);
+    void     refreshRecycleBin();
 
     DiagnosticsHub*   m_diag_hub     = nullptr;
     BottomDockPanel*  m_bottom_panel = nullptr;
@@ -350,6 +360,7 @@ private:
 
     // Layout: fixed file explorer dock + main area + right tool bar
     QStackedWidget* m_context_stack    = nullptr;
+    QWidget*        m_context_divider  = nullptr;  // 1px line at the panel's right edge
     QWidget*        m_left_edge_strip  = nullptr;
     QWidget*        m_right_edge_strip = nullptr;
     QFrame*         m_props_panel      = nullptr;
@@ -418,6 +429,7 @@ private:
     QToolButton*      m_context_collapse_btn     = nullptr;
     bool              m_context_collapsed        = false;
     QListWidget*      m_sidebar_recent_list      = nullptr;
+    QListWidget*      m_recycle_list             = nullptr;   // contact recycle bin (sidebar)
 
     // Geodesy standalone window (lazy-created on first open)
     QDialog*          m_geodesy_win    = nullptr;
@@ -454,6 +466,8 @@ private:
     NodeGraphWindow*   m_node_graph_win  = nullptr;
     ProcessingWindow*  m_processing_win  = nullptr;
     QPointer<QWidget>  m_metadata_win;               // MetadataWindow (lazy-created)
+    QPointer<QWidget>  m_contact_mgr_win;            // ContactManagerWindow (lazy-created)
+    QPointer<QWidget>  m_export_win;                 // ExportManagerWindow (lazy-created)
 
     // Conversation panel (floating overlay below the unified bar)
     ConversationPanel*    m_conv_panel    = nullptr;
