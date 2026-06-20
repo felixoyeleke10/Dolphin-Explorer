@@ -146,11 +146,74 @@ static void testDecimatedRead()
     std::filesystem::remove(path);
 }
 
+// CRS correctness: a projected (UTM) raster, read warped, must come back in WGS84
+// degrees (lon near the zone's central meridian) — proving the GDAL/PROJ reprojection
+// path (and the bundled PROJ data) works, not just a passthrough.
+static void testWarpReproject()
+{
+    // WGS 84 / UTM zone 31N (central meridian 3°E).
+    static const char* kUtm31N =
+        "PROJCS[\"WGS 84 / UTM zone 31N\",GEOGCS[\"WGS 84\","
+        "DATUM[\"WGS_1984\",SPHEROID[\"WGS 84\",6378137,298.257223563]],"
+        "PRIMEM[\"Greenwich\",0],UNIT[\"degree\",0.0174532925199433]],"
+        "PROJECTION[\"Transverse_Mercator\"],PARAMETER[\"latitude_of_origin\",0],"
+        "PARAMETER[\"central_meridian\",3],PARAMETER[\"scale_factor\",0.9996],"
+        "PARAMETER[\"false_easting\",500000],PARAMETER[\"false_northing\",0],"
+        "UNIT[\"metre\",1],AXIS[\"Easting\",EAST],AXIS[\"Northing\",NORTH]]";
+
+    core::RasterGrid g;
+    g.cols = 20; g.rows = 20; g.no_data_value = -9999.f;
+    g.geo_transform[0] = 500000.0; g.geo_transform[1] = 10.0; g.geo_transform[2] = 0.0;
+    g.geo_transform[3] = 100000.0; g.geo_transform[4] = 0.0; g.geo_transform[5] = -10.0;
+    g.crs_wkt = kUtm31N;
+    g.data.assign(static_cast<size_t>(20) * 20, 3.0f);
+
+    const std::string path = tmpPath("dolphin_utm.tif");
+    std::string err;
+    CHECK(io::writeElevationGeoTiff(path, g, &err));
+
+    core::RasterGrid back;
+    CHECK(io::readElevationRasterWgs84(path, back, &err));
+    // Reprojected to degrees: longitude near the 3°E central meridian, pixel size now
+    // a fraction of a degree (not 10 metres). If PROJ data were missing the warp would
+    // fall back to native and these would fail (still 500000 / 10).
+    CHECK(back.geo_transform[0] > 2.0 && back.geo_transform[0] < 4.0);
+    CHECK(std::fabs(back.geo_transform[1]) < 0.01);
+    CHECK(back.cols > 0 && back.rows > 0);
+
+    std::filesystem::remove(path);
+}
+
+// Big-file safeguard: a large raster read with a cap returns a small grid quickly
+// (GDAL resamples on read — the full grid is never materialised).
+static void testLargeDecimated()
+{
+    core::RasterGrid g;
+    g.cols = 2000; g.rows = 2000; g.no_data_value = -9999.f;
+    g.geo_transform[0] = 0; g.geo_transform[1] = 1; g.geo_transform[2] = 0;
+    g.geo_transform[3] = 0; g.geo_transform[4] = 0; g.geo_transform[5] = -1;
+    g.data.assign(static_cast<size_t>(2000) * 2000, 7.0f);
+
+    const std::string path = tmpPath("dolphin_big.tif");
+    std::string err;
+    CHECK(io::writeElevationGeoTiff(path, g, &err));
+
+    core::RasterGrid back;
+    CHECK(io::readElevationRaster(path, back, &err, /*max_dim*/ 256));
+    CHECK(back.cols <= 256 && back.rows <= 256);
+    CHECK(static_cast<size_t>(back.cols) * back.rows <= 256u * 256u);   // not the full 4M
+    CHECK(std::fabs(back.cols * back.geo_transform[1] - 2000 * 1.0) < 1.0);  // extent kept
+
+    std::filesystem::remove(path);
+}
+
 int main()
 {
     testElevationRoundTrip();
     testImageRoundTrip();
     testDecimatedRead();
+    testWarpReproject();
+    testLargeDecimated();
     std::printf("\n%d passed, %d failed\n", g_pass, g_fail);
     return g_fail == 0 ? 0 : 1;
 }

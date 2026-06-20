@@ -77,8 +77,10 @@ set_target_properties(test_raster_io PROPERTIES CXX_STANDARD 20 AUTOMOC OFF)
 add_test(NAME RasterIO COMMAND test_raster_io)
 # GDAL + its deps live in the vcpkg bin dir alongside gdal.dll — put it on PATH so
 # the test resolves them at runtime (config-correct: debug/bin for Debug builds).
-set_tests_properties(RasterIO PROPERTIES
-    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:GDAL::GDAL>")
+# GDAL_DATA / PROJ data come from the vcpkg share tree (GDAL_DIR == .../share/gdal)
+# so the warp/reprojection test can transform UTM -> WGS84.
+set_tests_properties(RasterIO PROPERTIES ENVIRONMENT_MODIFICATION
+    "PATH=path_list_prepend:$<TARGET_FILE_DIR:GDAL::GDAL>;GDAL_DATA=set:${GDAL_DIR};PROJ_DATA=set:${GDAL_DIR}/../proj;PROJ_LIB=set:${GDAL_DIR}/../proj")
 
 add_executable(test_sidescan_georef
     test_sidescan_georef.cpp
