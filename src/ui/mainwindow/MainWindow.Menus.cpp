@@ -141,7 +141,9 @@ void MainWindow::buildFileMenu()
         }) {
         auto* a = makeAction(id, this);
         connect(a, &QAction::triggered, this, slot);
-        if (id != CommandId::ExportCsv) a->setEnabled(false);
+        // CSV (contacts) and GeoTIFF (raster layers) are implemented; others Phase 2.
+        if (id != CommandId::ExportCsv && id != CommandId::ExportGeotiff)
+            a->setEnabled(false);
         exp->addAction(a);
     }
     exp->addSeparator();

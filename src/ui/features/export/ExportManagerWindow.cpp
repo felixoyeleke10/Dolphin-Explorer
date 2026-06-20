@@ -35,9 +35,10 @@ const QList<Target>& targets()
         { "screenshot", QObject::tr("Screenshot"),
           QObject::tr("A PNG image of the current map / application view."),
           ":/icons/export.svg", { "PNG" }, true },
-        { "geotiff",    QObject::tr("GeoTIFF Mosaic"),
-          QObject::tr("Georeferenced raster mosaic of the sidescan coverage."),
-          ":/icons/export_geotiff.svg", {}, false },
+        { "geotiff",    QObject::tr("Raster Layers"),
+          QObject::tr("Project raster layers — depth/bathy grids and georeferenced "
+                      "imagery — written as GeoTIFF."),
+          ":/icons/export_geotiff.svg", { "GeoTIFF" }, true },
         { "kmz",        QObject::tr("Google Earth (KMZ)"),
           QObject::tr("Contacts and track lines as a KMZ overlay."),
           ":/icons/export_kmz.svg", {}, false },
@@ -240,6 +241,8 @@ void ExportManagerWindow::doExport()
         else if (fmt == QLatin1String("Word")) emit exportContactsWordRequested();
     } else if (t.id == QLatin1String("screenshot")) {
         emit exportScreenshotRequested();
+    } else if (t.id == QLatin1String("geotiff")) {
+        emit exportRastersRequested();
     }
 }
 

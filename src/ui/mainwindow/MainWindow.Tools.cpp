@@ -118,11 +118,15 @@ void MainWindow::onExportCsv()
 void MainWindow::onExportGeotiff()
 {
     if (!currentProject()) { appendJobMessage(tr("Open a project before exporting.")); return; }
-    const QString path = QFileDialog::getSaveFileName(
-        this, tr("Export as GeoTIFF"), exportStartDir(),
-        tr("GeoTIFF files (*.tif *.tiff);;All files (*)"));
-    if (path.isEmpty()) return;
-    appendJobMessage(tr("GeoTIFF export is not yet available in this version."));
+    std::vector<std::string> ids;
+    for (const auto& l : currentProject()->layers())
+        if (l && l->modality == app::Modality::Raster && l->raster.valid)
+            ids.push_back(l->id);
+    if (ids.empty()) {
+        appendJobMessage(tr("No raster layers to export. Import a raster (GeoTIFF / image) first."));
+        return;
+    }
+    onExportLayers(ids, QStringLiteral("geotiff"));   // single → file dialog, many → folder
 }
 
 void MainWindow::onExportKmz()
@@ -169,6 +173,15 @@ void MainWindow::onExportManagerOpen()
                 this, [this]() { exportContactsReport(/*docx=*/true); });
         connect(win, &ExportManagerWindow::exportScreenshotRequested,
                 this, &MainWindow::onExportScreenshot);
+        connect(win, &ExportManagerWindow::exportRastersRequested, this, [this]() {
+            if (!currentProject()) return;
+            std::vector<std::string> ids;
+            for (const auto& l : currentProject()->layers())
+                if (l && l->modality == app::Modality::Raster && l->raster.valid)
+                    ids.push_back(l->id);
+            if (ids.empty()) { appendJobMessage(tr("No raster layers to export.")); return; }
+            onExportLayers(ids, QStringLiteral("geotiff"));   // folder dialog for >1
+        });
     }
     m_export_win->show();
     m_export_win->raise();

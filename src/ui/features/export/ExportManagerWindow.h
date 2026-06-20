@@ -25,6 +25,7 @@ signals:
     void exportContactsPdfRequested();
     void exportContactsWordRequested();
     void exportScreenshotRequested();
+    void exportRastersRequested();          // all raster layers -> GeoTIFF
 
 private:
     QWidget* buildNavPane();
