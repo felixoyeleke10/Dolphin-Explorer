@@ -33,6 +33,7 @@ class QButtonGroup;
 class QDialog;
 class QFrame;
 class QLabel;
+class QSplitter;
 class QLineEdit;
 class QListWidget;
 class QListWidgetItem;
@@ -387,8 +388,13 @@ private:
     QToolButton*        m_props_tab_chats     = nullptr;
     QToolButton*        m_props_tab_history   = nullptr;
     QStackedWidget*     m_props_stack         = nullptr;
+    QSplitter*          m_props_splitter      = nullptr;
     QListWidget*        m_props_history_list  = nullptr;
     QPropertyAnimation* m_props_anim          = nullptr;
+
+    // Size the upper (Properties/Chats/History) pane to its current content so
+    // the sensor shell rides up directly beneath it instead of leaving a gap.
+    void adjustPropsSplit();
 
     ActivityLog m_activity_log;
     void rebuildHistoryList();

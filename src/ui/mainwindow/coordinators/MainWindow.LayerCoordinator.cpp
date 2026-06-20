@@ -250,6 +250,9 @@ void MainWindow::onLayerSelected(const std::string& layer_id)
         if (m_props_tab_tools) m_props_tab_tools->setChecked(true);
     }
 
+    // Re-fit the upper pane to the freshly populated inspector content.
+    adjustPropsSplit();
+
 
     if (m_waterfall_win && m_waterfall_win->isVisible()) {
         if (layer && m_waterfall_win->currentLayerId() != layer->id) {

@@ -19,9 +19,12 @@
 #include <QPushButton>
 #include <QResizeEvent>
 #include <QScrollArea>
+#include <QSplitter>
 #include <QStackedWidget>
 #include <QToolButton>
 #include <QUndoStack>
+#include <QWidget>
+#include <algorithm>
 #include "ui/mainwindow/panels/InspectorPanel.h"
 
 namespace dolphin::ui {
@@ -29,6 +32,46 @@ namespace dolphin::ui {
 void MainWindow::resizeEvent(QResizeEvent* event)
 {
     QMainWindow::resizeEvent(event);
+    adjustPropsSplit();   // keep the upper pane hugging its content as the window grows
+}
+
+// Make the upper (Properties/Chats/History) pane only as tall as the page it's
+// currently showing, and hand all remaining height to the lower sensor shell.
+// Short property lists no longer leave a dead gap above the sensor tabs; long
+// content still scrolls inside the upper pane's own scroll area.
+void MainWindow::adjustPropsSplit()
+{
+    if (!m_props_splitter || !m_props_stack) return;
+
+    const int total = m_props_splitter->height();
+    if (total < 120) return;   // not laid out yet — leave the provisional split
+
+    const int handle = m_props_splitter->handleWidth();
+    const int avail  = total - handle;
+
+    // The lower sensor shell keeps a usable floor (tab bar + a couple of rows).
+    const int lower_min = 160;
+
+    int upper_want;
+    if (m_props_stack->currentIndex() == 0 && m_inspector) {
+        // Properties tab: header (tab bar) + the current page's real content.
+        int header_h = 0;
+        if (m_props_tab_tools && m_props_tab_tools->parentWidget())
+            header_h = m_props_tab_tools->parentWidget()->sizeHint().height();
+        upper_want = header_h + m_inspector->contentHeight() + 8 /* chrome */;
+    } else {
+        // Chats / History want room to work — give them the lion's share.
+        upper_want = avail * 6 / 10;
+    }
+
+    const int upper_min = 64;
+    const int upper_max = avail - lower_min;
+    if (upper_max <= upper_min) {            // panel too short to split sensibly
+        m_props_splitter->setSizes({ avail / 2, avail - avail / 2 });
+        return;
+    }
+    upper_want = std::clamp(upper_want, upper_min, upper_max);
+    m_props_splitter->setSizes({ upper_want, avail - upper_want });
 }
 
 bool MainWindow::panelUsesContextStack(int panel_id) const
@@ -193,6 +236,7 @@ void MainWindow::onPropsTabChanged(int tab)
 {
     if (m_props_stack) m_props_stack->setCurrentIndex(tab);
     if (tab == 2) rebuildHistoryList();  // refresh on every open
+    adjustPropsSplit();                  // resize the pane to the newly shown tab
 }
 
 void MainWindow::rebuildHistoryList()

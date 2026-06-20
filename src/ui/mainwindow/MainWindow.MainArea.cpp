@@ -31,6 +31,7 @@
 #include <QSplitter>
 #include <QStackedWidget>
 #include <QStyledItemDelegate>
+#include <QTimer>
 #include <QStyle>
 #include <QToolButton>
 #include <QVBoxLayout>
@@ -196,6 +197,7 @@ void MainWindow::buildPropertiesPanel(QWidget* parent)
     splitter->setHandleWidth(4);
     splitter->setChildrenCollapsible(false);
     splitter->setObjectName("propsSplitter");
+    m_props_splitter = splitter;
 
     // =====================================================================
     // UPPER SHELL — Properties | Chats | History + generic content
@@ -293,10 +295,16 @@ void MainWindow::buildPropertiesPanel(QWidget* parent)
     lower->setBody(modal_scroll);
     splitter->addWidget(lower);
 
-    // Initial split: ~55% upper / ~45% lower (sizes are hints, user can drag)
-    splitter->setSizes({ 320, 260 });
+    // The upper (Properties) pane hugs its content; the lower (sensor) pane
+    // absorbs all slack so there's no dead gap under short property lists.
+    splitter->setStretchFactor(0, 0);
+    splitter->setStretchFactor(1, 1);
+    splitter->setSizes({ 320, 260 });  // provisional; adjustPropsSplit() refines once laid out
 
     content_l->addWidget(splitter, 1);
+
+    // Size the upper pane to its real content after the first layout pass.
+    QTimer::singleShot(0, this, [this]() { adjustPropsSplit(); });
 
     // -- Pull panel pointers for signal wiring ----------------------------
     // Navigation / Geometry are now per-modality modal sections (SSS + SBP).

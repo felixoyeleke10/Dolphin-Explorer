@@ -27,6 +27,10 @@ public:
     int  currentPaletteIndex() const;
     void setPalette(int idx);
 
+    // Preferred height of the *currently shown* page (layer / contact / empty),
+    // not the max over all pages — lets the host pane hug its real content.
+    int  contentHeight() const;
+
 signals:
     void paletteChanged(int idx);
 

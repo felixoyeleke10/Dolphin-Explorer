@@ -16,7 +16,9 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QPixmap>
+#include <QStackedWidget>
 #include <QString>
+#include <QToolButton>
 #include <QVector>
 
 namespace dolphin::ui {
@@ -77,7 +79,17 @@ void MainWindow::onContactSelected(uint64_t contact_id)
 
     if (!currentProject() || !m_inspector) return;
     for (const auto& c : currentProject()->contacts())
-        if (c.id == contact_id) { m_inspector->showContact(&c); return; }
+        if (c.id == contact_id) {
+            m_inspector->showContact(&c);
+            // Contacts switch to the Properties tab so the page is visible, then
+            // re-fit the upper pane to the contact card's height.
+            if (m_props_stack && m_props_stack->currentIndex() != 0) {
+                m_props_stack->setCurrentIndex(0);
+                if (m_props_tab_tools) m_props_tab_tools->setChecked(true);
+            }
+            adjustPropsSplit();
+            return;
+        }
 }
 
 void MainWindow::onContactPicked(double lat, double lon,

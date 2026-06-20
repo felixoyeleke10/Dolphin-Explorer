@@ -58,6 +58,14 @@ void InspectorPanel::showContact(const core::Contact* contact)
     m_stack->setCurrentWidget(m_contact);
 }
 
+int InspectorPanel::contentHeight() const
+{
+    QWidget* cur = m_stack ? m_stack->currentWidget() : nullptr;
+    if (!cur) return 0;
+    const int h = cur->sizeHint().height();
+    return h > 0 ? h : cur->minimumSizeHint().height();
+}
+
 int InspectorPanel::currentPaletteIndex() const
 {
     return m_layer ? m_layer->currentPaletteIndex() : 0;
