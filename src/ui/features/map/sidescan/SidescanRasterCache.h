@@ -12,6 +12,7 @@
 #include <string>
 #include "ui/features/map/MapTypes.h"
 #include "app/display/NavProcessingParams.h"
+#include "app/display/WaterfallParams.h"
 
 namespace dolphin::ui::rastercache {
 
@@ -49,7 +50,13 @@ Meta makeMeta(const std::string&         store_path,
               const NavProcessingParams& nav,
               bool                       slant_range_corrected,
               MapSonarQuality            quality,
-              const std::string&         display_crs_id);
+              const std::string&         display_crs_id,
+              const WaterfallParams&     sss_params = {});
+
+// Cheap freshness probe: true if a cache file exists at `path` and its Meta matches
+// `expect` (same store fingerprint, params, quality) — reads only the header+meta, not
+// the raster body. Lets a loader decide to use a cached tier WITHOUT decoding pings.
+bool isFresh(const std::string& path, const Meta& expect);
 
 // Write the raster cache (atomic: temp file + rename). Returns false on I/O error.
 bool save(const std::string&  path,

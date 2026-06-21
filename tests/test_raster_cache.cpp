@@ -3,6 +3,8 @@
 // byte-identically, and a changed fingerprint must be rejected (forcing a rebuild).
 #include "ui/features/map/sidescan/SidescanRasterCache.h"
 #include "ui/features/map/MapTypes.h"
+#include "app/display/WaterfallParams.h"
+#include "app/display/NavProcessingParams.h"
 
 #include <cmath>
 #include <cstdio>
@@ -140,6 +142,56 @@ int main()
         LayerMapData out; rastercache::Summary osum;
         CHECK(!rastercache::load(path + ".nope", meta, out, osum),
               "load() of missing file returned true");
+    }
+
+    // -- isFresh: matching meta true; stale / missing false (header-only probe) --
+    {
+        CHECK(rastercache::isFresh(path, meta), "isFresh rejected a matching cache");
+        rastercache::Meta m2 = meta; m2.nav_hash ^= 1ULL;
+        CHECK(!rastercache::isFresh(path, m2), "isFresh accepted a stale nav_hash");
+        m2 = meta; m2.quality = static_cast<int>(MapSonarQuality::Medium);
+        CHECK(!rastercache::isFresh(path, m2), "isFresh accepted a stale quality");
+        CHECK(!rastercache::isFresh(path + ".nope", meta),
+              "isFresh accepted a missing file");
+    }
+
+    // -- makeMeta fingerprint: stable across a save/reload float round-trip, but
+    //    sensitive to real parameter changes. This is the guarantee that reopening a
+    //    project (params reloaded from JSON) reuses the persisted raster instead of
+    //    re-decoding pings. --
+    {
+        const std::string dummy = path + ".src";   // need not exist; hash ignores file size
+        NavProcessingParams nav;
+        WaterfallParams p;
+        p.tvg.enabled = true; p.tvg.spreading = 30.0f; p.tvg.absorption = 0.5f;
+        p.arc.enabled = true; p.arc.exponent = 1.5f;   p.arc.gain_cap_db = 12.0f;
+        p.arn.enabled = true; p.arn.strength = 0.8f;
+
+        auto hashOf = [&](const WaterfallParams& w) {
+            return rastercache::makeMeta(dummy, nav, false, MapSonarQuality::High,
+                                         "EPSG:4326", w).nav_hash;
+        };
+        const auto base = hashOf(p);
+
+        CHECK(hashOf(p) == base, "makeMeta not deterministic for identical params");
+
+        // Sub-quantum drift (what a float→double→JSON→float round-trip introduces)
+        // must NOT change the fingerprint.
+        WaterfallParams drift = p;
+        drift.tvg.spreading += 1e-6f;
+        drift.arn.strength  += 2e-6f;
+        CHECK(hashOf(drift) == base,
+              "makeMeta fingerprint shifted under sub-quantum float drift (would re-decode on reopen)");
+
+        // A real change must change the fingerprint (so the mosaic rebuilds).
+        WaterfallParams changed = p; changed.arn.strength = 0.6f;
+        CHECK(hashOf(changed) != base, "makeMeta ignored a real param change");
+
+        WaterfallParams toggled = p; toggled.destripe.enabled = true;
+        CHECK(hashOf(toggled) != base, "makeMeta ignored a stage toggle");
+
+        WaterfallParams pal = p; pal.beam_pattern.enabled = true;
+        CHECK(hashOf(pal) != base, "makeMeta ignored a beam-pattern toggle");
     }
 
     fs::remove(path, ec);

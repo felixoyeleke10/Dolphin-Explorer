@@ -286,8 +286,14 @@ MainWindow::MainWindow(QWidget* parent)
     });
     connect(m_session_ctrl, &ProjectSessionController::projectAboutToChange,
             this, [this]() {
-        if (m_viewport_host) m_viewport_host->setUpdatesEnabled(false);
-        if (m_sss_ctrl) m_sss_ctrl->deactivate(true);
+        // Do NOT blank the viewport here. The project parse runs synchronously on
+        // the UI thread; disabling updates (or clearing the map) before it left the
+        // GL viewport blank for the whole open — the window appeared to vanish and
+        // reappear. Instead, keep the existing mosaic on screen during the open and
+        // let bindProjectUi's ProjectReplaced broadcast clear it AFTER the parse,
+        // immediately before the new project's layers load. deactivate(false) cancels
+        // in-flight builds + resets controller state without wiping the map.
+        if (m_sss_ctrl) m_sss_ctrl->deactivate(false);
         if (m_import_service) m_import_service->cancelPendingRebuild();
         m_layer_ctrl->clearActiveLayer();
         m_layer_ctrl->clearHistory();
@@ -296,14 +302,9 @@ MainWindow::MainWindow(QWidget* parent)
             this, [this](std::shared_ptr<app::Project>) {
         if (m_display_state) m_display_state->setProject(currentProject());
         bindProjectUi();
-        // For close/failed-open: re-enable viewport immediately.
-        // For successful open: firstLayerReady() re-enables after next tick.
-        if (!m_session_ctrl->project())
-            if (m_viewport_host) m_viewport_host->setUpdatesEnabled(true);
     });
     connect(m_session_ctrl, &ProjectSessionController::firstLayerReady,
             this, [this](const std::string& first_layer_id) {
-        if (m_viewport_host) m_viewport_host->setUpdatesEnabled(true);
         const auto proj = m_session_ctrl->project();
         if (!proj) return;
 
@@ -480,6 +481,16 @@ MainWindow::MainWindow(QWidget* parent)
     connect(m_sss_ctrl, &SidescanViewController::loadingProgress, this, [this](int pct) {
         m_map_progress_active = true;
         if (m_status_bar) m_status_bar->setProgress(pct, true);
+        if (m_sss_apply_active && m_import_overlay)
+            m_import_overlay->updateJob("sss_apply", pct);
+    });
+    connect(m_sss_ctrl, &SidescanViewController::prebuildTierFinished, this,
+            [this](const std::string&, MapSonarQuality) {
+        refreshLoadingIndicator();
+        if (m_sss_apply_active && m_import_overlay) {
+            m_sss_apply_active = false;
+            m_import_overlay->finishJob("sss_apply", tr("Corrections applied"));
+        }
     });
     connect(m_sss_ctrl, &SidescanViewController::mapDiagnosticsReady,
             this, &MainWindow::onMapDiagnosticsReady);

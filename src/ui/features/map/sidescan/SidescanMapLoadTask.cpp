@@ -103,23 +103,35 @@ void SidescanViewController::activateLayer(const std::string& layer_id,
     const core::SpatialRef display_ref =
         project ? project->displaySpatialRef() : core::SpatialRef{};
 
-    // Progressive load: the heavy tiers (Medium/High) paint a fast Low preview
-    // first, then upgrade to the requested tier in the background (prebuildTier →
-    // prebuildTierComplete swap). CoverageOnly/Low build directly, so the common
-    // default path is unchanged — only the slow tiers stage.
-    MapSonarQuality build_quality = m_quality;
-    bool            stage_upgrade = false;
-    if (m_quality == MapSonarQuality::Medium || m_quality == MapSonarQuality::High) {
-        build_quality = MapSonarQuality::Low;
-        stage_upgrade = true;
-    }
-    const QualityParams qp = paramsForQuality(build_quality);
-
     const int palette_idx = m_palette_idx;
 
     // Display-time nav corrections live on the layer (model-owned). Captured here
     // and applied in the background task — the SAME correction the waterfall uses.
     const NavProcessingParams nav_params = layer->nav_state;
+    // Gain/imaging corrections (model-owned) — applied to the mosaic in the
+    // background task so the right-panel SSS tools render on the map.
+    const WaterfallParams sss_params = layer->sss_display_state.params;
+
+    // Progressive load: the heavy tiers (Medium/High) paint a fast Low preview
+    // first, then upgrade to the requested tier in the background (prebuildTier →
+    // prebuildTierComplete swap). BUT if the requested tier's raster is already
+    // cached fresh on disk (reopening a project, or re-applying the same settings),
+    // load it DIRECTLY — no Low preview, no ping decode/re-rasterize. CoverageOnly/
+    // Low build directly too, so only an uncached slow tier stages.
+    MapSonarQuality build_quality = m_quality;
+    bool            stage_upgrade = false;
+    if (m_quality == MapSonarQuality::Medium || m_quality == MapSonarQuality::High) {
+        const rastercache::Meta full_meta = rastercache::makeMeta(
+            store_path, nav_params, layer->slant_range_corrected, m_quality,
+            display_ref.id, sss_params);
+        const std::string full_path =
+            rastercache::cachePath(store_path, layer_id, m_quality);
+        if (!rastercache::isFresh(full_path, full_meta)) {
+            build_quality = MapSonarQuality::Low;
+            stage_upgrade = true;
+        }
+    }
+    const QualityParams qp = paramsForQuality(build_quality);
 
     if (as_active && m_status_ping) m_status_ping->setText(tr("Loading…"));
 
@@ -165,7 +177,7 @@ void SidescanViewController::activateLayer(const std::string& layer_id,
     // not part of the key).
     const rastercache::Meta cache_meta = rastercache::makeMeta(
         store_path, nav_params, layer->slant_range_corrected, build_quality,
-        display_ref.id);
+        display_ref.id, sss_params);
     const std::string cache_path =
         rastercache::cachePath(store_path, layer_id, build_quality);
 
@@ -337,6 +349,7 @@ void SidescanViewController::activateLayer(const std::string& layer_id,
     inputs.georef_params     = georef_params;
     inputs.current_quality   = current_quality;
     inputs.nav_params        = nav_params;
+    inputs.sss_params        = sss_params;
     inputs.cache_path        = cache_path;
     inputs.cache_meta        = cache_meta;
 

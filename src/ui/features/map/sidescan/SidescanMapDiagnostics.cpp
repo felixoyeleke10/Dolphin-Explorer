@@ -80,6 +80,25 @@ void SidescanViewController::reloadLayer(const std::string& layer_id)
     activateLayer(layer_id, m_project);
 }
 
+void SidescanViewController::applyLiveCorrections(bool all_layers)
+{
+    if (!m_project) return;
+
+    std::vector<std::string> targets;
+    if (all_layers)
+        targets.assign(m_loaded_layers.begin(), m_loaded_layers.end());
+    else if (!m_active_layer_id.empty())
+        targets.push_back(m_active_layer_id);
+
+    // Rebuild each target's tier with the new gain/imaging params in the BACKGROUND.
+    // Critically, nothing clears the map first: the existing mosaic stays on screen
+    // at full quality the whole time, and prebuildTierComplete atomically swaps the
+    // freshly-corrected tier in when it's ready (applyCachedTier). No blank, no
+    // quality downgrade — the data never disappears during Apply.
+    for (const auto& layer_id : targets)
+        prebuildTier(layer_id, m_quality, m_project);
+}
+
 // -- colorizeIntensityCache ----------------------------------------------------
 //
 // Static helper: build a colored ARGB32 QImage from a raw intensity cache,

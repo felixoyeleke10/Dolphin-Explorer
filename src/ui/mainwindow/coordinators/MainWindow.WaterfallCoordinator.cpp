@@ -94,20 +94,12 @@ void MainWindow::onWaterfallOpen()
                 this, [this](const std::string& id) { onLayerSelected(id); });
 
         // -- Control panel wiring ------------------------------------------
-        // Nav / Geometry panels are wired once at construction (see
-        // MainWindow.MainArea.cpp) so they work from the main/map view even when
-        // this window is closed; they route to model-owned MainWindow slots. The
-        // window's own analysis panel still persists via navProcessAllLinesRequested
-        // (connected above). Only the waterfall-display panels stay window-coupled:
-        // Gain / imaging panels push params back to the waterfall
-        connect(m_gain_panel,    &GainControlPanel::applyToLineRequested,
-                m_waterfall_win, &WaterfallWindow::applyExternalParams);
-        connect(m_gain_panel,    &GainControlPanel::applyToAllRequested,
-                m_waterfall_win, &WaterfallWindow::applyExternalParamsToAll);
-        connect(m_imaging_panel, &ImagingControlPanel::applyToLineRequested,
-                m_waterfall_win, &WaterfallWindow::applyExternalParams);
-        connect(m_imaging_panel, &ImagingControlPanel::applyToAllRequested,
-                m_waterfall_win, &WaterfallWindow::applyExternalParamsToAll);
+        // Nav / Geometry AND Gain / Imaging panels are all wired once at
+        // construction (see MainWindow.MainArea.cpp) so they work from the
+        // main/map view even when this window is closed; they route to model-owned
+        // MainWindow slots. The gain/imaging slots (onSssDisplayApply*) route back
+        // through this window's applyExternalParams when it is open, so do NOT
+        // connect them here too — that would apply every change twice.
 
         // When the waterfall applies any params, pull the latest state back into
         // the gain and imaging panels so they stay in sync with internal changes.

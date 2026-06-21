@@ -31,8 +31,19 @@ public:
     // hint: e.g. "Select a Sidescan layer to use this section."
     void setApplicable(bool applicable, const QString& hint = {});
 
+    // Enable drag-to-reorder: the header becomes a drag handle. A click still
+    // toggles expand/collapse; a drag past the start distance emits the reorder
+    // signals (coordinated by the host) instead.
+    void setReorderable(bool on);
+
 signals:
     void expandedChanged(bool expanded);
+
+    // Drag-to-reorder lifecycle (only emitted when setReorderable(true)).
+    // Positions are in global screen coordinates.
+    void reorderStarted();
+    void reorderMoved(const QPoint& global_pos);
+    void reorderFinished();
 
 protected:
     bool eventFilter(QObject* obj, QEvent* ev) override;
@@ -51,6 +62,12 @@ private:
     QPropertyAnimation* m_anim        = nullptr;
     bool                m_expanded    = true;
     bool                m_applicable  = true;
+
+    // Drag-to-reorder state.
+    bool                m_reorderable = false;
+    bool                m_drag_armed  = false;   // left button down on a reorderable header
+    bool                m_dragging    = false;   // moved past the start distance
+    QPoint              m_press_pos;             // global press position
 };
 
 } // namespace dolphin::ui

@@ -163,6 +163,24 @@ std::string Project::toJson() const
             jd["arc_en"]     = util::JsonValue(p.arc.enabled);
             jd["arc_exp"]    = util::JsonValue(static_cast<double>(p.arc.exponent));
             jd["arc_cap"]    = util::JsonValue(static_cast<double>(p.arc.gain_cap_db));
+            // Imaging chain (ARN / Destripe / Beam Pattern / ML Enhance) — must be
+            // persisted: they feed the map raster-cache fingerprint, so losing them
+            // on reopen invalidates the cached mosaic and forces a full rebuild.
+            jd["arn_en"]     = util::JsonValue(p.arn.enabled);
+            jd["arn_str"]    = util::JsonValue(static_cast<double>(p.arn.strength));
+            jd["arn_cap"]    = util::JsonValue(static_cast<double>(p.arn.gain_cap_db));
+            jd["arn_smooth"] = util::JsonValue(p.arn.column_smooth);
+            jd["ds_en"]      = util::JsonValue(p.destripe.enabled);
+            jd["ds_win"]     = util::JsonValue(p.destripe.window);
+            jd["ds_sub"]     = util::JsonValue(p.destripe.subdivision);
+            jd["ds_cap"]     = util::JsonValue(static_cast<double>(p.destripe.capping));
+            jd["bpn_en"]     = util::JsonValue(p.beam_pattern.enabled);
+            jd["bpn_str"]    = util::JsonValue(static_cast<double>(p.beam_pattern.strength));
+            jd["bpn_rad"]    = util::JsonValue(p.beam_pattern.smooth_radius);
+            jd["ml_en"]      = util::JsonValue(p.ml_enhance.enabled);
+            jd["ml_tp"]      = util::JsonValue(p.ml_enhance.tile_pings);
+            jd["ml_ts"]      = util::JsonValue(p.ml_enhance.tile_samps);
+            jd["ml_clip"]    = util::JsonValue(static_cast<double>(p.ml_enhance.clip_limit));
             jl["sss_display"] = std::move(jd);
         }
 

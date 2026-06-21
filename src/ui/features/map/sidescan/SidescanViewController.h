@@ -139,6 +139,17 @@ public:
 
     bool hasCachedTier(const std::string& layer_id, MapSonarQuality quality) const;
 
+    // Current map sonar quality tier (callers use it to know whether a load will
+    // stage a background high-tier upgrade).
+    MapSonarQuality currentMapQuality() const { return m_quality; }
+
+    // Re-rasterize loaded layers with their current gain/imaging params from the
+    // cached (pre-correction) pings — no disk decode. The existing mosaic stays on
+    // screen until the new one is ready (no blank), giving a fast Apply preview;
+    // staged tiers (Medium/High) then refine to full resolution in the background.
+    // all_layers=false targets only the active layer.
+    void applyLiveCorrections(bool all_layers);
+
     // Build a colored QImage from an IntensityCache without any disk I/O.
     // dp supplies stretch/gain overrides; if dp.display_low == 0 && dp.display_high == 1
     // (identity / not set) the cache's own percentile stretch is used instead.
@@ -158,6 +169,9 @@ signals:
     void mapDiagnosticsReady(const QString& layer_id, const dolphin::ui::NavStats& stats);
     // Emitted by prebuildTier() when the background build for one tier completes.
     void prebuildTierComplete(const std::string& layer_id, MapSonarQuality quality);
+    // Emitted on EVERY prebuild outcome (success / fail / cancel) — unlike
+    // prebuildTierComplete (success only). Lets a progress UI close reliably.
+    void prebuildTierFinished(const std::string& layer_id, MapSonarQuality quality);
 
 private:
     MapView*               m_map_view;

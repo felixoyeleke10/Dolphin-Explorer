@@ -8,6 +8,8 @@
 #include <QString>
 #include <QtGlobal>
 
+#include <cmath>
+
 namespace dolphin::ui::rastercache {
 
 namespace {
@@ -23,6 +25,14 @@ unsigned long long fnvMix(unsigned long long h, const T& v) {
     const auto* p = reinterpret_cast<const unsigned char*>(&v);
     for (size_t i = 0; i < sizeof(T); ++i) { h ^= p[i]; h *= kFnvPrime; }
     return h;
+}
+
+// Tolerance-based mix for floating-point parameters. Quantizes to 1e-4 before
+// hashing so the float→double→JSON→double→float round-trip on project save/reload
+// can't shift the fingerprint and cause a spurious cache miss (which would force a
+// full ping re-decode on every reopen). 1e-4 resolution is well below any UI step.
+unsigned long long fnvMixF(unsigned long long h, double v) {
+    return fnvMix(h, static_cast<long long>(std::llround(v * 10000.0)));
 }
 
 // -- QPointF vector helpers ----------------------------------------------------
@@ -106,7 +116,8 @@ Meta makeMeta(const std::string&         store_path,
               const NavProcessingParams& nav,
               bool                       slant_range_corrected,
               MapSonarQuality            quality,
-              const std::string&         display_crs_id) {
+              const std::string&         display_crs_id,
+              const WaterfallParams&     sss) {
     Meta m;
     const QFileInfo fi(QString::fromStdString(store_path));
     if (fi.exists()) {
@@ -114,18 +125,49 @@ Meta makeMeta(const std::string&         store_path,
         m.src_mtime = fi.lastModified().toMSecsSinceEpoch();
     }
     unsigned long long h = kFnvOffset;
-    h = fnvMix(h, nav.smooth_enabled);
-    h = fnvMix(h, nav.smooth_window);
-    h = fnvMix(h, nav.layback_enabled);
-    h = fnvMix(h, nav.layback_m);
-    h = fnvMix(h, nav.heading_offset_deg);
-    h = fnvMix(h, nav.pitch_offset_deg);
-    h = fnvMix(h, nav.roll_offset_deg);
-    h = fnvMix(h, slant_range_corrected);
+    h = fnvMix (h, nav.smooth_enabled);
+    h = fnvMix (h, nav.smooth_window);
+    h = fnvMix (h, nav.layback_enabled);
+    h = fnvMixF(h, nav.layback_m);
+    h = fnvMixF(h, nav.heading_offset_deg);
+    h = fnvMixF(h, nav.pitch_offset_deg);
+    h = fnvMixF(h, nav.roll_offset_deg);
+    h = fnvMix (h, slant_range_corrected);
     for (char c : display_crs_id) h = fnvMix(h, c);
+
+    // Gain/imaging corrections — changing any re-rasterizes the mosaic. Floats are
+    // quantized (fnvMixF) so a save/reload round-trip keeps the same fingerprint.
+    h = fnvMix (h, sss.tvg.enabled);    h = fnvMixF(h, sss.tvg.spreading);   h = fnvMixF(h, sss.tvg.absorption);
+    h = fnvMix (h, sss.arc.enabled);    h = fnvMixF(h, sss.arc.exponent);    h = fnvMixF(h, sss.arc.gain_cap_db);
+    h = fnvMix (h, sss.agc.enabled);    h = fnvMixF(h, sss.agc.strength);
+    h = fnvMix (h, sss.arn.enabled);    h = fnvMixF(h, sss.arn.strength);    h = fnvMixF(h, sss.arn.gain_cap_db);
+    h = fnvMix (h, sss.arn.column_smooth);
+    h = fnvMix (h, sss.destripe.enabled);     h = fnvMix (h, sss.destripe.window);
+    h = fnvMix (h, sss.destripe.subdivision); h = fnvMixF(h, sss.destripe.capping);
+    h = fnvMix (h, sss.beam_pattern.enabled); h = fnvMixF(h, sss.beam_pattern.strength);
+    h = fnvMix (h, sss.beam_pattern.smooth_radius);
+    h = fnvMix (h, sss.ml_enhance.enabled);   h = fnvMix (h, sss.ml_enhance.tile_pings);
+    h = fnvMix (h, sss.ml_enhance.tile_samps); h = fnvMixF(h, sss.ml_enhance.clip_limit);
     m.nav_hash = h;
     m.quality  = static_cast<int>(quality);
     return m;
+}
+
+bool isFresh(const std::string& path, const Meta& expect) {
+    QFile f(QString::fromStdString(path));
+    if (!f.open(QIODevice::ReadOnly)) return false;
+    QDataStream ds(&f);
+    ds.setVersion(QDataStream::Qt_6_0);
+    quint32 magic = 0, version = 0;
+    ds >> magic >> version;
+    if (magic != kMagic || version != kVersion) return false;
+    Meta meta;
+    readMeta(ds, meta);
+    return ds.status() == QDataStream::Ok
+        && meta.src_size  == expect.src_size
+        && meta.src_mtime == expect.src_mtime
+        && meta.nav_hash  == expect.nav_hash
+        && meta.quality   == expect.quality;
 }
 
 bool save(const std::string&  path,

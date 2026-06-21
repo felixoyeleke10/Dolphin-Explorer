@@ -368,23 +368,18 @@ void ExecutionProgressDialog::onMapLoadPending()
         m_close_btn->setEnabled(false);
         m_bg_btn->setEnabled(true);
     }
-    const bool phase_starting = (m_pending_map_loads == 0);
     ++m_pending_map_loads;
     ++m_map_total;
     m_has_map_phase = true;
     updateStages();
 
-    // Surface the panel for map-only work (e.g. opening a recent project, which has
-    // no import/reindex rows to call addJob()). Deferred so a fast cached open that
-    // finishes in well under the delay never flashes a dialog — it only appears when
-    // loading actually takes a moment. Auto-dismissed in checkAllDone() when a
-    // map-only phase completes.
-    if (phase_starting && !isVisible() && !m_backgrounded) {
-        QTimer::singleShot(400, this, [this] {
-            if (m_pending_map_loads > 0 && !m_all_done)
-                showForActiveBatch();
-        });
-    }
+    // NOTE: we intentionally do NOT auto-surface this dialog for a map-only phase
+    // (e.g. opening a recent project). Doing so popped a top-level window that then
+    // auto-dismissed when the background map builds finished — a visible "blink" on
+    // every open. Project-open / map-build progress is shown non-intrusively in the
+    // status bar (loadingProgress → setProgress) and the bottom Background Tasks
+    // panel. The dialog still appears for user-initiated batches (import / bake /
+    // export) via addJob(), and continues to track the map phase once it is open.
 }
 
 void ExecutionProgressDialog::onMapLoadDone()

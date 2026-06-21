@@ -7,6 +7,7 @@
 
 namespace dolphin::app { class DataLayer; }
 class QVBoxLayout;
+class QFrame;
 
 namespace dolphin::ui {
 
@@ -74,6 +75,26 @@ private:
     void addModule(IRightPanelModule* mod);
     bool computeFilterVisible(app::Modality primary) const;
 
+    // Context menu (Qt::CustomContextMenu — matches the app's other panels).
+    void showContextMenu(const QPoint& local_pos);
+    void resetSectionOrder();              // restore construction order, clear persisted
+    void setAllExpanded(bool expanded);    // expand / collapse all visible sections
+
+    // -- Drag-to-reorder --------------------------------------------------------
+    void onSectionReorderStarted(CollapsibleSection* sec);
+    void onSectionReorderMoved(CollapsibleSection* sec, const QPoint& global_pos);
+    void onSectionReorderFinished(CollapsibleSection* sec);
+    // m_sections index to insert the dragged section *before* (size = end), based on
+    // the pointer's vertical position among the currently-visible sections.
+    int  dropTargetIndex(const QPoint& global_pos) const;
+    void positionDropIndicator(int target_index);
+    void moveSection(int from, int to);     // reorder m_sections/m_modules + relayout
+    void relayoutSections();                // re-add sections to m_layout in list order
+    // Persisted section order (per ShowMode), keyed on each module's identity.
+    QString moduleKey(IRightPanelModule* mod) const;
+    void    saveOrder() const;
+    void    applySavedOrder();
+
     ShowMode         m_show_mode       = ShowMode::UniversalOnly;
     QVBoxLayout*     m_layout         = nullptr;
     app::Modality    m_modality_filter = app::Modality::Unknown;
@@ -99,6 +120,13 @@ private:
     // Parallel lists for generic setLayer / clearLayer iteration.
     QVector<IRightPanelModule*>  m_modules;
     QVector<CollapsibleSection*> m_sections;
+    // Construction order (modules), captured before any persisted order is applied —
+    // the target for "Reset section order".
+    QVector<IRightPanelModule*>  m_default_order;
+
+    // Drag-to-reorder runtime state.
+    CollapsibleSection* m_drag_section   = nullptr;
+    QFrame*             m_drop_indicator = nullptr;
 };
 
 } // namespace dolphin::ui

@@ -209,6 +209,31 @@ bool Project::fromJson(const std::string& json)
             p.arc.enabled      = jd.get("arc_en").asBool();
             p.arc.exponent     = static_cast<float>(jd.get("arc_exp").asDouble());
             p.arc.gain_cap_db  = static_cast<float>(jd.get("arc_cap").asDouble());
+            // Imaging chain — guarded for projects saved before these keys existed
+            // (missing → params keep their disabled defaults).
+            if (jd.has("arn_en")) {
+                p.arn.enabled      = jd.get("arn_en").asBool();
+                p.arn.strength     = static_cast<float>(jd.get("arn_str").asDouble());
+                p.arn.gain_cap_db  = static_cast<float>(jd.get("arn_cap").asDouble());
+                p.arn.column_smooth = jd.get("arn_smooth").asInt();
+            }
+            if (jd.has("ds_en")) {
+                p.destripe.enabled     = jd.get("ds_en").asBool();
+                p.destripe.window      = jd.get("ds_win").asInt();
+                p.destripe.subdivision = jd.get("ds_sub").asInt();
+                p.destripe.capping     = static_cast<float>(jd.get("ds_cap").asDouble());
+            }
+            if (jd.has("bpn_en")) {
+                p.beam_pattern.enabled      = jd.get("bpn_en").asBool();
+                p.beam_pattern.strength     = static_cast<float>(jd.get("bpn_str").asDouble());
+                p.beam_pattern.smooth_radius = jd.get("bpn_rad").asInt();
+            }
+            if (jd.has("ml_en")) {
+                p.ml_enhance.enabled    = jd.get("ml_en").asBool();
+                p.ml_enhance.tile_pings = jd.get("ml_tp").asInt();
+                p.ml_enhance.tile_samps = jd.get("ml_ts").asInt();
+                p.ml_enhance.clip_limit = static_cast<float>(jd.get("ml_clip").asDouble());
+            }
             layer->sss_display_state.customized = true;
         }
 

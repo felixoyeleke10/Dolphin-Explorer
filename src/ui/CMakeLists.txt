@@ -57,6 +57,7 @@ add_library(dolphin-ui-shared STATIC
     shared/panels/LineListPanel.cpp
     shared/panels/LineListPanel.Tree.cpp
     shared/panels/LineListPanel.ContextMenu.cpp
+    shared/processing/SssImagingAlgorithms.cpp
     shared/widgets/AnimatedToolButton.cpp
     shared/widgets/CollapsibleSection.cpp
     shared/widgets/EmptyStateWidget.cpp

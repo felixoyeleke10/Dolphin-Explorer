@@ -163,6 +163,12 @@ private slots:
     void onWaterfallNavProcessLine(dolphin::ui::NavProcessingParams params);
     void onWaterfallNavProcessAllLines(dolphin::ui::NavProcessingParams params);
 
+    // Gain / imaging (TVG/AGC/ARC/ARN/destripe/BPN/ML/SRC) Apply buttons in the
+    // right-panel SSS tools. Model-owned and wired at construction so they work
+    // from the map view whether or not the waterfall window is open.
+    void onSssDisplayApplyLine(const dolphin::ui::WaterfallParams& params);
+    void onSssDisplayApplyAll (const dolphin::ui::WaterfallParams& params);
+
     // Contact / layer stubs
     void onAddContact();
     void onLineProps();
@@ -299,6 +305,11 @@ private:
     // Re-apply (or clear) the stored nav corrections for a layer on SBP open.
     void applyStoredSbpNavParams(const std::string& layer_id);
 
+    // Shared implementation for the SSS gain/imaging Apply slots: store params on
+    // the target layer(s), then run the correction through CorrectionBatchOperator
+    // (progress panel + map reload) so the map reflects the result like a pro app.
+    void applySssCorrection(const dolphin::ui::WaterfallParams& params, bool all_lines);
+
     QWidget* makeContextPlaceholder(const QString& title, const QString& body);
     void     refreshSidebarSections(const QStringList& paths);
     void     refreshRecycleBin();
@@ -406,6 +417,9 @@ private:
 
     // Import progress overlay (bottom-centre of viewport)
     ExecutionProgressDialog* m_import_overlay = nullptr;
+    // True while an SSS gain/imaging Apply drives the execution window (shown in
+    // "Processing" mode, not "Importing"); closed on prebuildTierFinished.
+    bool m_sss_apply_active = false;
 
     // Inspector (lives in Properties overlay)
     InspectorPanel*    m_inspector     = nullptr;

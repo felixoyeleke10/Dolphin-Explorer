@@ -8,6 +8,7 @@
 #include "app/services/ImportService.h"
 #include "app/tasks/OperationManager.h"
 #include "app/display/NavCorrection.h"
+#include "ui/shared/processing/SssImagingAlgorithms.h"
 #include "geo/GeoUtils.h"
 #include "ui/features/map/sidescan/SidescanEntryFilter.h"
 #include "ui/features/map/sidescan/SidescanRasterCache.h"
@@ -121,7 +122,10 @@ void SidescanViewController::prebuildTier(const std::string& layer_id,
                                           app::Project*      project)
 {
     auto* layer = project ? project->findLayer(layer_id) : nullptr;
-    if (!layer || !layer->index_built || layer->sidescanCount() == 0) return;
+    if (!layer || !layer->index_built || layer->sidescanCount() == 0) {
+        emit prebuildTierFinished(layer_id, quality);  // nothing to build — let UIs close
+        return;
+    }
 
     auto* src = project->findSource(layer->source_id);
 
@@ -144,26 +148,35 @@ void SidescanViewController::prebuildTier(const std::string& layer_id,
     // Display-time nav correction (model-owned) — applied below so the upgraded
     // tier matches activateLayer's first-paint preview (no nav jump on swap).
     const NavProcessingParams nav_params = layer->nav_state;
+    const WaterfallParams     sss_params = layer->sss_display_state.params;
 
     // Raster-first cache for this tier (keyed by the target quality).
     const rastercache::Meta cache_meta = rastercache::makeMeta(
         store_path, nav_params, layer->slant_range_corrected, quality,
-        display_ref.id);
+        display_ref.id, sss_params);
     const std::string cache_path =
         rastercache::cachePath(store_path, layer_id, quality);
 
-    if (!m_op_mgr) return;
+    if (!m_op_mgr) { emit prebuildTierFinished(layer_id, quality); return; }
 
     // Keyed per layer+tier so a re-request supersedes; runs in the "map" lane
     // (cap 2) below; tracked in DiagnosticsHub via the OperationManager signals.
     m_op_mgr->run<PrebuildResult>(
         tr("Prebuilding sidescan tier — %1").arg(QString::fromStdString(layer_id)),
-        [svc, store_path, store_format, idx, source_path,
+        [this, svc, store_path, store_format, idx, source_path,
          layer_src_ref, apply_layer_crs, display_ref, layer_id,
          layer_freq_hz, layer_low_freq_hz, qp, quality, georef, nav_params,
-         cache_path, cache_meta]
+         sss_params, cache_path, cache_meta]
         (app::CancellationToken cancel) -> PrebuildResult
         {
+            // Coarse 0–100 progress, marshalled to the main thread — drives the
+            // execution window's bar (and status bar) through the slow tier build.
+            auto report = [this](int pct) {
+                QMetaObject::invokeMethod(this, [this, pct]() {
+                    emit loadingProgress(pct);
+                }, Qt::QueuedConnection);
+            };
+            report(3);
             try {
             PrebuildResult res;
             res.layer_id = layer_id;
@@ -219,6 +232,7 @@ void SidescanViewController::prebuildTier(const std::string& layer_id,
             auto raw = svc->loadAllSidescanPingsFromStore(
                 store_path, store_format, map_idx, source_path, qp.max_samples_per_ping);
             if (raw.empty()) return res;
+            report(55);   // pings decoded — the bulk of the work
 
             if (apply_layer_crs)
                 for (auto& ping : raw)
@@ -228,6 +242,12 @@ void SidescanViewController::prebuildTier(const std::string& layer_id,
             // Same display-time nav correction activateLayer applies (no-op when
             // the layer has none), so the upgraded tier matches the first paint.
             raw = applySidescanNavCorrections(std::move(raw), nav_params);
+            // Same gain/imaging chain as the first-paint build, so the upgraded
+            // tier matches (and the SSS tools render on the map). Tiers always
+            // build a raster (max_image_dim > 0), so the chain is always relevant.
+            if (qp.max_image_dim > 0)
+                imaging::applySssMapCorrections(raw, sss_params);
+            report(70);   // amplitude-corrected
 
             auto map_pings = geo::normalizeSidescanPingsForMap(std::move(raw), display_ref);
 
@@ -237,12 +257,14 @@ void SidescanViewController::prebuildTier(const std::string& layer_id,
 
             buildSwathNavTrack(map_pings, ld);
             buildSwathCoverage(map_pings, ld, georef);
+            report(82);   // coverage built; rasterizing next
 
             if (cancel.isCancelled()) return PrebuildResult{};
             if (qp.max_image_dim > 0)
                 buildSwathPreviewImage(map_pings, ld, qp.max_image_dim,
                     0 /* palette 0 = unused — intensity_cache is palette-free */,
                     *cancel.flag(), georef, qp.min_strip_cos, qp.cell_budget_div);
+            report(98);   // raster done
 
             // Persist this tier's raster so the next open loads it instantly.
             if (!cancel.isCancelled()) {
@@ -280,7 +302,11 @@ void SidescanViewController::prebuildTier(const std::string& layer_id,
         // Share the dedicated "map" lane (cap 2) with first-paint loads so staged
         // High/Full upgrades don't fan out across every line at once, and stay
         // separate from the import/decode lane.
-        /*heavy=*/false, /*on_finally=*/{}, /*lane=*/"map");
+        /*heavy=*/false,
+        // on_finally (every outcome) — let a progress UI close reliably even on
+        // failure/cancel, where prebuildTierComplete (success-only) never fires.
+        [this, layer_id, quality]() { emit prebuildTierFinished(layer_id, quality); },
+        /*lane=*/"map");
 }
 
 bool SidescanViewController::hasCachedTier(const std::string& layer_id,

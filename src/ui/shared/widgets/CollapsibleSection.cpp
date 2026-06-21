@@ -3,6 +3,7 @@
 #include "ui/shell/Anim.h"
 #include "ui/shell/Theme.h"
 
+#include <QApplication>
 #include <QEasingCurve>
 #include <QEvent>
 #include <QHBoxLayout>
@@ -229,14 +230,56 @@ void CollapsibleSection::setBadge(const QString& text)
     m_badge->setText(text);
 }
 
+void CollapsibleSection::setReorderable(bool on)
+{
+    m_reorderable = on;
+    // Open-hand hint that the header can be grabbed; click still toggles.
+    if (m_header) m_header->setCursor(on ? Qt::OpenHandCursor : Qt::PointingHandCursor);
+}
+
 bool CollapsibleSection::eventFilter(QObject* obj, QEvent* ev)
 {
-    if (obj == m_header && ev->type() == QEvent::MouseButtonRelease) {
+    if (obj != m_header) return QWidget::eventFilter(obj, ev);
+
+    switch (ev->type()) {
+    case QEvent::MouseButtonPress: {
         auto* me = static_cast<QMouseEvent*>(ev);
         if (me->button() == Qt::LeftButton) {
-            toggle();
+            m_press_pos  = me->globalPosition().toPoint();
+            m_drag_armed = m_reorderable && m_applicable;
+            m_dragging   = false;
+        }
+        return false;  // let press through (hover/press styling)
+    }
+    case QEvent::MouseMove: {
+        if (!m_drag_armed) return false;
+        auto* me = static_cast<QMouseEvent*>(ev);
+        if (!(me->buttons() & Qt::LeftButton)) return false;
+        const QPoint g = me->globalPosition().toPoint();
+        if (!m_dragging &&
+            (g - m_press_pos).manhattanLength() >= QApplication::startDragDistance()) {
+            m_dragging = true;
+            m_header->setCursor(Qt::ClosedHandCursor);
+            emit reorderStarted();
+        }
+        if (m_dragging) { emit reorderMoved(g); return true; }
+        return false;
+    }
+    case QEvent::MouseButtonRelease: {
+        auto* me = static_cast<QMouseEvent*>(ev);
+        if (me->button() != Qt::LeftButton) return false;
+        m_drag_armed = false;
+        if (m_dragging) {
+            m_dragging = false;
+            if (m_reorderable) m_header->setCursor(Qt::OpenHandCursor);
+            emit reorderFinished();
             return true;
         }
+        toggle();   // a plain click (no drag) toggles expand/collapse
+        return true;
+    }
+    default:
+        break;
     }
     return QWidget::eventFilter(obj, ev);
 }

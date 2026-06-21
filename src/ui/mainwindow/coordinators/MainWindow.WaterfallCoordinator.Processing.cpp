@@ -10,6 +10,7 @@
 #include "ui/shared/dialogs/CrsPickerDialog.h"
 #include "ui/features/map/MapView.h"
 #include "ui/features/map/sidescan/SidescanViewController.h"
+#include "ui/features/import/ImportProgressDialog.h"
 #include "ui/features/subbottom/SubBottomWindow.h"
 #include "ui/features/waterfall/WaterfallWindow.h"
 #include "app/project/Project.h"
@@ -166,6 +167,78 @@ void MainWindow::applyStoredNavParams(const std::string& layer_id)
     // line without corrections clears any carried over from the previous line.
     const auto* layer = currentProject()->findLayer(layer_id);
     m_waterfall_win->applyNavToLine(layer ? layer->nav_state : NavProcessingParams{});
+}
+
+// --- SSS gain / imaging Apply (right-panel tools) ----------------------------
+// TVG, AGC, ARC, ARN, destripe, beam pattern, ML enhance and SRC all live in the
+// right-panel Gain/Imaging sections. Their Apply buttons route here. The slots are
+// model-owned and wired once at construction (MainWindow.MainArea.cpp) so they
+// work from the map view whether or not the waterfall window is open — previously
+// every one was connected only inside onWaterfallOpen() and pushed straight to the
+// window, so the whole tool area did nothing until the waterfall had been opened.
+//
+// Apply stores the params on the layer(s) and re-rasterizes the map mosaic through
+// the SAME amplitude pipeline the waterfall uses (ui/shared/processing/
+// SssImagingAlgorithms): TVG/ARC/AGC + beam/ARN/destripe/ML all render on the map.
+// The off-thread map build surfaces its progress in the background-tasks panel.
+// This is a live re-raster (raster-first; the per-params raster is cached) — NOT a
+// .dlpd write; committing corrections to .dlpd for export is the explicit
+// Processing → "Bake Corrections into Data" command (onBakeCorrections).
+void MainWindow::onSssDisplayApplyLine(const WaterfallParams& params)
+{
+    applySssCorrection(params, /*all_lines*/ false);
+}
+
+void MainWindow::onSssDisplayApplyAll(const WaterfallParams& params)
+{
+    applySssCorrection(params, /*all_lines*/ true);
+}
+
+void MainWindow::applySssCorrection(const WaterfallParams& params, bool all_lines)
+{
+    auto* proj = currentProject();
+    if (!proj || !m_display_state) return;
+
+    const std::string active = activeLayerId();
+    int n = 0;
+    for (const auto& l : proj->layers()) {
+        if (!l || l->modality != app::Modality::Sidescan) continue;
+        if (all_lines || l->id == active) {
+            m_display_state->setLayerSssDisplay(l->id, params);  // mutate + notify (marks dirty)
+            l->slant_range_corrected = params.slant_range_correction;
+            ++n;
+        }
+    }
+    if (n == 0) return;
+
+    // Keep the live waterfall in sync when it is open (instant display preview).
+    if (m_waterfall_win && m_waterfall_win->isVisible()) {
+        if (all_lines) m_waterfall_win->applyExternalParamsToAll(params);
+        else           m_waterfall_win->applyExternalParams(params);
+    }
+
+    // Bring up the execution window in "Processing" mode (format "COR" → "Processing
+    // N line(s)", NOT "Importing"). It is driven by the map build's loadingProgress
+    // and closed on prebuildTierFinished. Scoped by m_sss_apply_active so it only
+    // appears for an explicit Apply, not for ordinary layer selection.
+    if (m_import_overlay) {
+        m_sss_apply_active = true;
+        m_import_overlay->addJob("sss_apply",
+            all_lines ? tr("Applying gain/imaging to all lines")
+                      : tr("Applying gain/imaging"),
+            QStringLiteral("COR"), 0.f);
+        m_import_overlay->updateJob("sss_apply", 1);
+    }
+
+    // Rebuild the map mosaic through the correction pipeline. applyLiveCorrections
+    // rebuilds each layer's tier in the background and keeps the existing mosaic on
+    // screen at full quality until the new one is ready (no blank, no downgrade).
+    if (m_sss_ctrl)
+        m_sss_ctrl->applyLiveCorrections(/*all_layers=*/all_lines);
+
+    recordActivity(ActivityKind::DisplayParams,
+        all_lines ? tr("Gain/imaging applied to %1 sidescan line(s)").arg(n)
+                  : tr("Gain/imaging applied to the selected line"));
 }
 
 // Explicit "commit corrections to data" (SeaView-style mosaic bake). Ordinary

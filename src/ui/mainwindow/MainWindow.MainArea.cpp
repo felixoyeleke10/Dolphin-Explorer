@@ -346,6 +346,23 @@ void MainWindow::buildPropertiesPanel(QWidget* parent)
                 this, &MainWindow::applySbpNavToAll);
     }
 
+    // Gain (TVG/AGC/ARC) and Imaging (ARN/destripe/BPN/ML/SRC) Apply buttons —
+    // wired here for the same reason as Nav/Geometry above: route to model-owned
+    // slots so the whole SSS tool area works from the map view, not only after the
+    // waterfall window has been opened.
+    if (m_gain_panel) {
+        connect(m_gain_panel, &GainControlPanel::applyToLineRequested,
+                this, &MainWindow::onSssDisplayApplyLine);
+        connect(m_gain_panel, &GainControlPanel::applyToAllRequested,
+                this, &MainWindow::onSssDisplayApplyAll);
+    }
+    if (m_imaging_panel) {
+        connect(m_imaging_panel, &ImagingControlPanel::applyToLineRequested,
+                this, &MainWindow::onSssDisplayApplyLine);
+        connect(m_imaging_panel, &ImagingControlPanel::applyToAllRequested,
+                this, &MainWindow::onSssDisplayApplyAll);
+    }
+
     outer->addWidget(content, 1);
 }
 

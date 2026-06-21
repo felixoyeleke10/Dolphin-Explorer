@@ -12,6 +12,7 @@
 #include "app/services/ImportService.h"
 #include "app/layers/DataLayer.h"
 #include "app/display/NavCorrection.h"
+#include "ui/shared/processing/SssImagingAlgorithms.h"
 #include "geo/GeoUtils.h"
 
 #include <algorithm>
@@ -137,6 +138,15 @@ SidescanLoadResult buildSidescanLoadResult(const SssLoadInputs&            in,
     auto map_pings = geo::normalizeSidescanPingsForMap(
         std::move(raw), in.display_ref, &result.unresolved_crs);
 
+    // Gain/imaging corrections (TVG/ARC/AGC + beam/ARN/destripe/ML) — the SAME
+    // algorithms the waterfall applies (ui/shared/processing/SssImagingAlgorithms),
+    // so the right-panel SSS tools render on the map mosaic, not only in the
+    // waterfall. Applied in place, so the cached pings (kept below) reflect the
+    // displayed corrected mosaic. No-op when the layer has no enabled corrections;
+    // skipped when no raster is built (CoverageOnly).
+    if (in.qp.max_image_dim > 0)
+        imaging::applySssMapCorrections(map_pings, in.sss_params);
+
     // -- Coverage + nav track (always built for CoverageOnly+) ---------
     // is_projected must be set before the build calls: both functions use
     // it to pick degree vs. metre gap thresholds and bbox padding units.
@@ -233,9 +243,8 @@ SidescanLoadResult buildSidescanLoadResult(const SssLoadInputs&            in,
         rastercache::save(in.cache_path, in.cache_meta, sum, result.layer_data);
     }
 
-    // Keep normalized pings so a palette change can re-rasterize without
-    // re-reading from disk.  Moved here (after all stats loops) so the
-    // vector is not consumed before we need it above.
+    // Keep the (corrected) normalized pings so a palette change can re-rasterize
+    // without re-reading from disk.
     result.map_pings_cache = std::move(map_pings);
 
     return result;

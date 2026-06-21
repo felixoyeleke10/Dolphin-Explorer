@@ -9,6 +9,7 @@
 #include "core/SidescanPing.h"
 #include "core/SpatialRef.h"
 #include "app/display/NavProcessingParams.h"
+#include "app/display/WaterfallParams.h"
 #include "app/tasks/CancellationToken.h"
 
 #include <cstdint>
@@ -116,6 +117,7 @@ struct SssLoadInputs {
     SssGeorefParams     georef_params;
     MapSonarQuality     current_quality = MapSonarQuality::Low;
     NavProcessingParams nav_params;
+    WaterfallParams     sss_params;        // gain/imaging corrections to render on the map
     std::string         cache_path;
     rastercache::Meta   cache_meta;
 };
