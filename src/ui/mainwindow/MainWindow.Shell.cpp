@@ -10,8 +10,11 @@
 #include "ui/mainwindow/panels/InspectorPanel.h"
 #include "ui/mainwindow/rightpanel/RightPanelHost.h"
 #include "ui/shared/panels/LineListPanel.h"
+#include "ui/mainwindow/commands/LayerCommands.h"
 #include "ui/features/map/MapView.h"
 #include "ui/features/map/MapViewportHost.h"
+#include "ui/mainwindow/MainStatusBar.h"
+#include "ui/systems/DisplayStateManager.h"
 #include "app/project/Project.h"
 #include "geo/GeoUtils.h"
 #include "core/SpatialRef.h"
@@ -128,12 +131,17 @@ void MainWindow::setupCentralWidget()
             this, &MainWindow::onLayerSelected);
     connect(m_line_list, &LineListPanel::contactSelected,
             this, &MainWindow::onContactSelected);
+    connect(m_line_list, &LineListPanel::featureSelected,
+            this, [this](uint64_t id) {
+        if (m_map_view) m_map_view->setSelectedFeature(id);
+    });
     connect(m_line_list, &LineListPanel::layerVisibilityChanged,
             this, &MainWindow::onLayerVisibilityChanged);
     connect(m_line_list, &LineListPanel::layerMultiSelected,
             this, [this](const std::vector<std::string>& ids) {
         if (m_viewport_host)  m_viewport_host->setSelectedLayers(ids);
         else if (m_map_view)  m_map_view->setSelectedLayers(ids);
+        updateToolsApplyBar();   // keep the "Apply to Selected (N)" label in sync
     });
     connect(m_line_list, &LineListPanel::navTrackVisibilityChanged,
             this, [this](const std::string& id, bool visible) {
@@ -161,6 +169,11 @@ void MainWindow::setupCentralWidget()
             this, &MainWindow::onRemoveLayer);
     connect(m_line_list, &LineListPanel::removeContactRequested,
             this, &MainWindow::onRemoveContact);
+    connect(m_line_list, &LineListPanel::removeFeatureRequested,
+            this, [this](uint64_t id) {
+        if (currentProject())
+            m_undo_stack->push(new RemoveFeatureCommand(currentProject(), id));
+    });
     connect(m_line_list, &LineListPanel::exportContactsRequested,
             this, &MainWindow::onExportCsv);
     connect(m_line_list, &LineListPanel::revealInExplorerRequested,
@@ -215,6 +228,8 @@ void MainWindow::setupCentralWidget()
 
     connect(m_modal_host, &RightPanelHost::paletteChanged,
             this,         &MainWindow::onPaletteChanged);
+    // NOTE: the status-bar palette picker is wired in setupStatusBar() — m_status_bar
+    // does not exist yet here (setupCentralWidget runs before setupStatusBar).
 
     // Properties panel tab bar — handled by PanelTabBar::tabChanged, wired in
     // buildPropertiesPanel().
@@ -277,6 +292,21 @@ void MainWindow::setupCentralWidget()
 
     connect(m_map_view, &MapView::contactPickedOnMap,
             this, &MainWindow::onContactPickedOnMap);
+
+    connect(m_map_view, &MapView::featureDrawn,
+            this, &MainWindow::onFeatureDrawn);
+
+    // Double-click a layer's coverage on the mosaic → open its viewer (SSS → waterfall,
+    // SBP → sub-bottom), mirroring a double-click in the left panel line list.
+    connect(m_map_view, &MapView::layerActivated,
+            this, [this](const std::string& id) {
+        if (!currentProject()) return;
+        const auto* layer = currentProject()->findLayer(id);
+        if (!layer) return;
+        onLayerSelected(id);
+        if (layer->modality == app::Modality::SubBottom)      onSubBottomOpen();
+        else if (layer->modality == app::Modality::Sidescan)  onWaterfallOpen();
+    });
 
     connect(m_viewport_host, &MapViewportHost::contactPickedAt,
             this, &MainWindow::onContactPickedOnMap);

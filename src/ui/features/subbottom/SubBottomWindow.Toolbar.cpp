@@ -6,8 +6,12 @@
 #include "ui/shared/widgets/ViewerToolbar.h"
 #include "app/layers/DataLayer.h"
 
+#include <QLabel>
+#include <QMenu>
 #include <QToolButton>
 #include <QVBoxLayout>
+
+#include <initializer_list>
 
 namespace dolphin::ui {
 
@@ -37,6 +41,9 @@ void SubBottomWindow::buildToolbar()
     btn_measure->setEnabled(false);
     btn_zoom->setEnabled(false);
 
+    // Contact + feature picking are right-panel tool sections (Contact Picking /
+    // Feature Drawing), not toolbar tools — see SubBottomWindow.cpp.
+
     qobject_cast<QVBoxLayout*>(layout())->insertWidget(0, m_toolbar);
 }
 
@@ -57,10 +64,10 @@ QList<CommandPaletteItem> SubBottomWindow::buildCommandItems()
 
     const bool has_layer = (m_layer != nullptr);
 
-    addCmd(CommandId::PrevLine, has_layer, [this] {
+    addCmd(CommandId::PrevLine, has_layer && m_has_prev_line, [this] {
         emit prevLineRequested(m_layer ? m_layer->id : std::string{});
     });
-    addCmd(CommandId::NextLine, has_layer, [this] {
+    addCmd(CommandId::NextLine, has_layer && m_has_next_line, [this] {
         emit nextLineRequested(m_layer ? m_layer->id : std::string{});
     });
 

@@ -112,7 +112,8 @@ private:
     void positionOverlay();
 
     MapView*        m_view2d              = nullptr;
-    MapView3D*      m_view3d              = nullptr;
+    MapView3D*      m_view3d              = nullptr;   // native QOpenGLWindow
+    QWidget*        m_view3d_container    = nullptr;   // createWindowContainer host (stack page)
     QStackedWidget* m_stack               = nullptr;
     QToolButton*    m_btn                 = nullptr;   // 2D / 3D toggle
     QToolButton*    m_terrain_btn         = nullptr;   // Load Terrain (3D mode only)

@@ -2,7 +2,11 @@
 #include "ui/mainwindow/MainStatusBar.h"
 #include "ui/shared/CoordFormat.h"
 #include "ui/shell/Theme.h"
+#include "render/sonar/SSSPalette.h"
+#include "render/sonar/SonarDisplayParams.h"   // PaletteIndex::Count
 
+#include <QSpinBox>
+#include <QSignalBlocker>
 #include <QDoubleSpinBox>
 #include <QValidator>
 #include <QHBoxLayout>
@@ -60,6 +64,22 @@ public:
     }
 };
 
+// Map-palette picker styled like the Scale/Rotation spin boxes: up/down arrows step
+// through palettes (wrapping), and the field shows the palette name instead of a number.
+class PaletteSpinBox : public QSpinBox {
+public:
+    explicit PaletteSpinBox(QWidget* parent = nullptr) : QSpinBox(parent) {
+        setRange(0, PaletteIndex::Count - 1);
+        setWrapping(true);                       // ▲/▼ cycle through all palettes
+        if (lineEdit()) lineEdit()->setReadOnly(true);  // arrows/scroll only — no typing
+    }
+    QString textFromValue(int v) const override {
+        return (v >= 0 && v < PaletteIndex::Count)
+            ? QString::fromLatin1(SSSPalette::name(v)) : QString();
+    }
+    int valueFromText(const QString&) const override { return value(); }
+};
+
 static constexpr int kAiDotSz = 7;  // AI status indicator dot size
 
 MainStatusBar::MainStatusBar(QWidget* parent)
@@ -74,6 +94,11 @@ MainStatusBar::MainStatusBar(QWidget* parent)
     m_progress->setVisible(false);
     // Fusion style required for indeterminate animation on Windows (native style ignores QSS).
     m_progress->setStyle(QStyleFactory::create("Fusion"));
+
+    // -- Busy label (persistent while a background load runs) ------------------
+    m_busy = new QLabel(this);
+    m_busy->setObjectName("statusChrome");
+    m_busy->setVisible(false);
 
     // -- Context label (project name) ------------------------------------------
     m_context = new QLabel(tr("No project"), this);
@@ -144,7 +169,7 @@ MainStatusBar::MainStatusBar(QWidget* parent)
 
     // Force visible text + arrow colors in dark theme via palette override.
     // QSS `color:` alone doesn't reliably propagate to the internal QLineEdit on Windows.
-    auto applySpinPalette = [](QDoubleSpinBox* spin) {
+    auto applySpinPalette = [](QAbstractSpinBox* spin) {
         QPalette pal = spin->palette();
         const QColor text(0xf2, 0xf2, 0xf7);   // @textPrimary
         const QColor bg  (0x2c, 0x2c, 0x2e);   // @bgCard
@@ -169,6 +194,18 @@ MainStatusBar::MainStatusBar(QWidget* parent)
     m_vp_crs->setToolTip(tr("Click to open Geodetic Settings"));
     connect(m_vp_crs, &QPushButton::clicked, this, &MainStatusBar::crsClicked);
 
+    // Map colour palette — spin-box picker (up/down arrows step palettes), styled to
+    // match the Scale/Rotation fields. Lives in the status bar (in-window chrome), so
+    // it never overlays the OpenGL viewport.
+    m_lbl_palette = makeFieldLabel("Palette");
+    m_palette     = new PaletteSpinBox(this);
+    m_palette->setObjectName("statusSpinBox");
+    m_palette->setMinimumWidth(124);   // fit longest palette names + arrows ("Greyscale")
+    m_palette->setToolTip(tr("Map colour palette — use arrows to change"));
+    connect(m_palette, qOverload<int>(&QSpinBox::valueChanged),
+            this, [this](int idx) { emit paletteRequested(idx); });
+    applySpinPalette(m_palette);   // match Scale/Rotation text + arrow colours
+
     // -- AI provider indicator -------------------------------------------------
     m_ai_widget = new QWidget(this);
     m_ai_widget->setObjectName("statusAiSection");
@@ -189,6 +226,7 @@ MainStatusBar::MainStatusBar(QWidget* parent)
 
     // -- Assemble left → right -------------------------------------------------
     addWidget(m_progress);
+    addWidget(m_busy);
     addWidget(m_context, 1);
     addWidget(m_job);
 
@@ -199,10 +237,22 @@ MainStatusBar::MainStatusBar(QWidget* parent)
     addPermanentWidget(m_spin_scale);
     addPermanentWidget(m_lbl_rot);
     addPermanentWidget(m_spin_rot);
+    addPermanentWidget(m_lbl_palette);
+    addPermanentWidget(m_palette);
     addPermanentWidget(m_lbl_crs);
     addPermanentWidget(m_vp_crs);
 
     addPermanentWidget(m_ai_widget);
+}
+
+// -- Map palette ---------------------------------------------------------------
+
+void MainStatusBar::setMapPalette(int idx)
+{
+    if (!m_palette) return;
+    const QSignalBlocker b(m_palette);   // sync only — don't re-emit paletteRequested
+    if (idx >= m_palette->minimum() && idx <= m_palette->maximum())
+        m_palette->setValue(idx);
 }
 
 // -- Context -------------------------------------------------------------------
@@ -259,6 +309,20 @@ void MainStatusBar::setProgress(int percent, bool visible)
     m_progress->setRange(0, 100);
     m_progress->setValue(percent);
     m_progress->setVisible(visible);
+}
+
+void MainStatusBar::setBusyText(const QString& text)
+{
+    if (!m_busy) return;
+    m_busy->setText(text);
+    m_busy->setVisible(!text.isEmpty());
+}
+
+void MainStatusBar::clearBusyText()
+{
+    if (!m_busy) return;
+    m_busy->clear();
+    m_busy->setVisible(false);
 }
 
 void MainStatusBar::hideProgress()

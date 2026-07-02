@@ -33,22 +33,14 @@ public:
     SbpSignalParams currentParams() const;
     void            setParams(const SbpSignalParams& p);
 
-signals:
-    void applyToLineRequested(dolphin::ui::SbpSignalParams params);
-    void applyToAllRequested (dolphin::ui::SbpSignalParams params);
-
 private:
     void updateControlStates();
-    void onApplyLine();
-    void onApplyAll();
 
     QCheckBox*      m_envelope_en    = nullptr;
     QCheckBox*      m_dc_removal_en  = nullptr;
     QCheckBox*      m_bandpass_en    = nullptr;
     QDoubleSpinBox* m_bp_lo_hz       = nullptr;
     QDoubleSpinBox* m_bp_hi_hz       = nullptr;
-    QPushButton*    m_apply_line_btn = nullptr;
-    QPushButton*    m_apply_all_btn  = nullptr;
 };
 
 } // namespace dolphin::ui

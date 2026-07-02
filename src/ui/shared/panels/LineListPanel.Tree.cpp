@@ -109,6 +109,20 @@ QString contactDisplayText(const dolphin::core::Contact& contact,
     return parts.join("  –  ");  // Tags shown as colored dots via item icon.
 }
 
+// Display text for a feature — label + type + classification + vertex count.
+static QString featureDisplayText(const dolphin::core::Feature& f)
+{
+    QStringList parts;
+    parts << QString::fromStdString(f.label);
+    parts << (f.type == dolphin::core::FeatureType::Polygon
+                  ? LineListPanel::tr("Polygon")
+                  : LineListPanel::tr("Line"));
+    if (!f.classification.empty())
+        parts << QString::fromStdString(f.classification);
+    parts << LineListPanel::tr("%n pt(s)", "", static_cast<int>(f.vertices.size()));
+    return parts.join("  –  ");
+}
+
 static void applyContactTagDecoration(QTreeWidgetItem* item, const dolphin::core::Contact& c)
 {
     if (c.tags.empty()) return;
@@ -258,7 +272,19 @@ void LineListPanel::buildFeaturesSection(QTreeWidgetItem* parent)
 {
     auto* sec = makeSectionItem(m_tree, parent, tr("Features"));
     setItemType(sec, ItemType::FeaturesSection);
-    makeEmptyPlaceholder(sec, tr("No features yet"));
+
+    const auto& features = m_project->features();
+    if (features.empty()) {
+        makeEmptyPlaceholder(sec, tr("No features yet"));
+        return;
+    }
+    for (const auto& f : features) {
+        auto* item = new QTreeWidgetItem(sec, QStringList{featureDisplayText(f)});
+        item->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
+        setItemType(item, ItemType::Feature);
+        item->setData(0, kRoleId, static_cast<qulonglong>(f.id));
+        item->setForeground(0, softText());
+    }
 }
 
 // Returns the resolved modality for a layer (same logic used in the ungrouped bucket loop).
@@ -285,6 +311,19 @@ static void addLayerItem(QTreeWidgetItem* parent, const app::DataLayer* layer)
     item->setData(0, kRoleModality, static_cast<int>(layer->modality));
     item->setCheckState(0, layer->visible ? Qt::Checked : Qt::Unchecked);
     applyLayerStateDecoration(item, layer->state);
+
+    // Bottom-tracked lines (auto / manual / both picks present) are shown in bold so
+    // the user can see at a glance which data has a seabed pick.
+    const bool bottom_tracked =
+        layer->bottom_track_kind == app::BottomTrackKind::Auto   ||
+        layer->bottom_track_kind == app::BottomTrackKind::Manual ||
+        layer->bottom_track_kind == app::BottomTrackKind::Mixed;
+    if (bottom_tracked) {
+        QFont f = item->font(0);
+        f.setBold(true);
+        item->setFont(0, f);
+    }
+
     if (!layer->tags.empty()) {
         item->setIcon(0, makeTagIcon(layer->tags));
         if (layer->state == app::LayerState::Ready) {
@@ -445,6 +484,41 @@ void LineListPanel::refreshContacts()
     applyFilter(m_search->text());
 }
 
+void LineListPanel::refreshFeatures()
+{
+    if (!m_project) return;
+
+    QTreeWidgetItem* sec = nullptr;
+    QTreeWidgetItemIterator it(m_tree);
+    while (*it) {
+        if (itemTypeOf(*it) == ItemType::FeaturesSection) { sec = *it; break; }
+        ++it;
+    }
+    if (!sec) { refresh(); return; }
+
+    m_rebuilding = true;
+    {
+        QSignalBlocker sb(m_tree);
+        while (sec->childCount())
+            delete sec->takeChild(0);
+
+        const auto& features = m_project->features();
+        if (features.empty()) {
+            makeEmptyPlaceholder(sec, tr("No features yet"));
+        } else {
+            for (const auto& f : features) {
+                auto* item = new QTreeWidgetItem(sec, QStringList{featureDisplayText(f)});
+                item->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
+                setItemType(item, ItemType::Feature);
+                item->setData(0, kRoleId, static_cast<qulonglong>(f.id));
+                item->setForeground(0, softText());
+            }
+        }
+    }
+    m_rebuilding = false;
+    applyFilter(m_search->text());
+}
+
 void LineListPanel::refreshLayer(const std::string& id)
 {
     if (!m_project) return;
@@ -469,6 +543,16 @@ void LineListPanel::refreshLayer(const std::string& id)
             item->setFlags(flags);
 
             applyLayerStateDecoration(item, layer->state);
+
+            // Re-apply the bottom-tracked bold (it can change after auto/manual picks).
+            const bool bottom_tracked =
+                layer->bottom_track_kind == app::BottomTrackKind::Auto   ||
+                layer->bottom_track_kind == app::BottomTrackKind::Manual ||
+                layer->bottom_track_kind == app::BottomTrackKind::Mixed;
+            QFont lf = item->font(0);
+            lf.setBold(bottom_tracked);
+            item->setFont(0, lf);
+
             item->setIcon(0, makeTagIcon(layer->tags));
             if (!layer->tags.empty() && layer->state == app::LayerState::Ready) {
                 QStringList tl;

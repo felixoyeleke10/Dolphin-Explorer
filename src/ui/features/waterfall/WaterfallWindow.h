@@ -9,7 +9,7 @@
 #include "core/Contact.h"
 #include "core/SidescanPing.h"
 #include <QCloseEvent>
-#include <QPixmap>
+#include <QPointF>
 #include <QWidget>
 #include <string>
 #include <utility>
@@ -71,6 +71,9 @@ public:
     // Delegates to WaterfallView::setGpuAccel — see that method for semantics.
     void setGpuAccel(bool enabled);
 
+    // Enable/disable the inspector's Prev/Next Line buttons (ends of the line list).
+    void setLineNavEnabled(bool has_prev, bool has_next);
+
 signals:
     void newFileRequested();
     void openFileRequested();
@@ -101,6 +104,16 @@ signals:
                         uint64_t abs_row,
                         int channel_idx,
                         const QPixmap& snapshot);
+
+    // Fired when the user draws a polygon/polyline feature on the waterfall.
+    // vertices are (lon,lat); polygon=true closes the shape. MainWindow creates the
+    // core::Feature in the project.
+    void featureCreated(const std::vector<QPointF>& lonlat_vertices, bool polygon,
+                        bool is_projected, const QString& classification,
+                        const QString& line_id);
+    // "Clear All Contacts" pressed — clears project contacts (same as SBP), not just
+    // the local overlay, so the action means the same thing in both viewers.
+    void clearAllContactsRequested();
 
     // Fired when the user clicks the Contact Manager button in the toolbar.
     void contactManagerRequested();
@@ -295,6 +308,10 @@ private:
 
     app::OperationManager*        m_op_mgr      = nullptr;  // owns pipeline ops (keyed)
     ViewerDataState               m_data_state  = ViewerDataState::Idle;
+    // Prev/Next availability (set by the coordinator) — gates the inspector buttons,
+    // command-palette entries, and context-menu actions consistently.
+    bool m_has_prev_line = false;
+    bool m_has_next_line = false;
     int   m_total_ssc_entries     = 0;
     int   m_window_first_row      = 0;
     float m_entries_per_row       = 1.0f;

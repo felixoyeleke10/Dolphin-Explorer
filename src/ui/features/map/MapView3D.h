@@ -11,7 +11,7 @@
 #include <QOpenGLShaderProgram>
 #include <QElapsedTimer>
 #include <QOpenGLVertexArrayObject>
-#include <QOpenGLWidget>
+#include <QOpenGLWindow>
 #include <QPoint>
 #include <QString>
 #include <QVector3D>
@@ -43,10 +43,15 @@ struct TerrainBuildResult;   // defined in MapView3D.Load.cpp
 //                 right-drag = pan target).
 // -----------------------------------------------------------------------------
 
-class MapView3D : public QOpenGLWidget, protected QOpenGLFunctions_3_3_Core {
+// Native OpenGL surface (QOpenGLWindow, embedded via QWidget::createWindowContainer).
+// Using a native window instead of a composited QOpenGLWidget keeps the rest of the
+// app off the GL/DWM composition path, which is what eliminates the whole-window
+// flicker on Windows (hover / alt-tab / popups). The trade-off — widgets can't float
+// over a native surface — is why the viewport buttons live in a toolbar, not over it.
+class MapView3D : public QOpenGLWindow, protected QOpenGLFunctions_3_3_Core {
     Q_OBJECT
 public:
-    explicit MapView3D(QWidget* parent = nullptr);
+    explicit MapView3D(QWindow* parent = nullptr);
     ~MapView3D() override;
 
     // -- Scene origin ------------------------------------------------------
@@ -165,8 +170,8 @@ protected:
     void mouseMoveEvent    (QMouseEvent*)        override;
     void mouseReleaseEvent (QMouseEvent*)        override;
     void wheelEvent        (QWheelEvent*)        override;
-    void leaveEvent        (QEvent*)             override;
-    void contextMenuEvent  (QContextMenuEvent*)  override;
+    // NOTE: QWindow has no leaveEvent/contextMenuEvent — the right-click context menu
+    // is emitted from mouseReleaseEvent instead (see MapView3D.Input.cpp).
 
 private:
     // -- Nav layer ---------------------------------------------------------

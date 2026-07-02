@@ -53,6 +53,8 @@ target_link_libraries(dolphin-ui-bottom
 add_library(dolphin-ui-shared STATIC
     shared/AppCommands.cpp
     shared/panels/ContactInspectorPage.cpp
+    shared/panels/ContactPickingPanel.cpp
+    shared/panels/FeatureDrawingPanel.cpp
     shared/panels/LayerInspectorPage.cpp
     shared/panels/LineListPanel.cpp
     shared/panels/LineListPanel.Tree.cpp
@@ -162,6 +164,7 @@ add_library(dolphin-ui-map STATIC
     features/map/paint/MapViewPaint.Sonar.cpp
     features/map/paint/MapViewPaint.NavTrack.cpp
     features/map/paint/MapViewPaint.Contacts.cpp
+    features/map/paint/MapViewPaint.Features.cpp
     features/map/paint/MapViewPaint.Overlays.cpp
     features/map/MapViewInput.cpp
     features/map/MapView3D.cpp
@@ -363,7 +366,6 @@ add_library(dolphin-ui-mainwindow STATIC
     mainwindow/rightpanel/PanelChatWidget.cpp
     mainwindow/rightpanel/PanelChatWidget.Ollama.cpp
     mainwindow/rightpanel/RightPanel.Info.cpp
-    mainwindow/rightpanel/RightPanel.Display.cpp
     mainwindow/rightpanel/RightPanel.SubBottomDisplay.cpp
     mainwindow/rightpanel/RightPanel.SbpGain.cpp
     mainwindow/rightpanel/RightPanel.SbpSignal.cpp

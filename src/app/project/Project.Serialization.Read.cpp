@@ -39,6 +39,11 @@ static core::Confidence confidenceFromString(const std::string& s) {
     return core::Confidence::Possible;
 }
 
+static core::FeatureType featureTypeFromString(const std::string& s) {
+    if (s == "polyline") return core::FeatureType::Polyline;
+    return core::FeatureType::Polygon;
+}
+
 static core::SpatialRef spatialRefFromJson(const util::JsonValue& node,
                                            const core::SpatialRef& fallback = {})
 {
@@ -547,6 +552,36 @@ bool Project::fromJson(const std::string& json)
         m_recycled_contacts.push_back(contactFromJson(jc));
 
     m_next_contact_id = (max_id < UINT64_MAX) ? max_id + 1 : 1;
+
+    // Features — SHAPE annotations (polylines/polygons).
+    uint64_t max_feat_id = 0;
+    m_features.clear();
+    for (const auto& jf : root.get("features").elements()) {
+        core::Feature f;
+        f.id             = static_cast<uint64_t>(jf.get("id").asDouble());
+        f.label          = jf.get("label").asString();
+        f.type           = featureTypeFromString(jf.get("type").asString());
+        for (const auto& jv : jf.get("vertices").elements()) {
+            core::GeoVertex v;
+            v.lat = jv.get("lat").asDouble();
+            v.lon = jv.get("lon").asDouble();
+            f.vertices.push_back(v);
+        }
+        f.spatial_ref    = spatialRefFromJson(jf.get("spatial_ref"));
+        if (f.spatial_ref.empty())
+            f.spatial_ref = m_display_spatial_ref;
+        f.line_id        = jf.get("line_id").asString();
+        f.classification = jf.get("classification").asString();
+        f.notes          = jf.get("notes").asString();
+        f.created_at     = jf.get("created_at").asDouble();
+        f.modified_at    = jf.get("modified_at").asDouble();
+        for (const auto& jt : jf.get("tags").elements())
+            f.tags.push_back(jt.asString());
+        f.group_id = jf.get("group_id").asString();
+        if (f.id > max_feat_id) max_feat_id = f.id;
+        m_features.push_back(std::move(f));
+    }
+    m_next_feature_id = (max_feat_id < UINT64_MAX) ? max_feat_id + 1 : 1;
 
     // Layer groups
     m_layer_groups.clear();

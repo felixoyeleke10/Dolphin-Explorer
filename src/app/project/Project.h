@@ -9,6 +9,7 @@
 #include "app/workers/Worker.h"
 #include "app/project/ItemGroup.h"
 #include "core/Contact.h"
+#include "core/Feature.h"
 #include "core/SpatialRef.h"
 
 namespace dolphin::app {
@@ -90,6 +91,12 @@ public:
     void           emptyRecycleBin();              // purge everything in the bin
     const std::vector<core::Contact>& recycledContacts() const { return m_recycled_contacts; }
 
+    // Features — SHAPE annotations (polylines/polygons), distinct from contacts.
+    void           addFeature(const core::Feature& f);
+    void           updateFeature(const core::Feature& f);
+    void           removeFeature(uint64_t id);
+    const std::vector<core::Feature>& features() const { return m_features; }
+
     // Layer groups
     ItemGroup*     addLayerGroup(const std::string& name);
     void           removeLayerGroup(const std::string& id);
@@ -148,6 +155,9 @@ signals:
     void contactRemoved(uint64_t id);
     void contactUpdated(uint64_t id);   // an existing contact's fields/group changed
     void recycleBinChanged();           // a contact entered/left/was purged from the bin
+    void featureAdded(const core::Feature& f);
+    void featureRemoved(uint64_t id);
+    void featureUpdated(uint64_t id);   // an existing feature's geometry/fields changed
     void layerGroupsChanged();
     void contactGroupsChanged();
     void modified();
@@ -165,6 +175,8 @@ private:
     std::vector<core::Contact>            m_contacts;
     std::vector<core::Contact>            m_recycled_contacts;   // soft-deleted
     uint64_t                              m_next_contact_id = 1;
+    std::vector<core::Feature>            m_features;
+    uint64_t                              m_next_feature_id = 1;
     std::vector<ItemGroup>                m_layer_groups;
     std::vector<ItemGroup>                m_contact_groups;
 

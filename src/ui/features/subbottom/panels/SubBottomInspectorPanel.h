@@ -8,6 +8,7 @@ class QDoubleSpinBox;
 class QLabel;
 class QListWidget;
 class QSpinBox;
+class QToolButton;
 class QVBoxLayout;
 
 namespace dolphin::app { class DataLayer; }
@@ -50,6 +51,9 @@ public:
     // Highlight the active line (does not emit layerChangeRequested).
     void setActiveLine(const std::string& id);
 
+    // Enable/disable the Prev/Next Line buttons (disabled at the ends of the list).
+    void setNavEnabled(bool has_prev, bool has_next);
+
 signals:
     void prevLineRequested();
     void nextLineRequested();
@@ -85,6 +89,9 @@ private:
     QDoubleSpinBox* m_depth_scale_spin  = nullptr;  // px per sample [0.05, 5.0]
     // -- Lines list ------------------------------------------------------------
     QListWidget*    m_lines_list        = nullptr;
+    // -- Line navigation buttons ----------------------------------------------
+    QToolButton*    m_btn_prev          = nullptr;
+    QToolButton*    m_btn_next          = nullptr;
 };
 
 } // namespace dolphin::ui

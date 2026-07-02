@@ -378,16 +378,10 @@ void MainWindow::onToolMeasure()
 
 void MainWindow::onBottomTrack()
 {
-    if (!currentProject() || activeLayerId().empty()) {
-        appendJobMessage(tr("Select a sub-bottom layer first."));
-        return;
-    }
-    const auto* layer = currentProject()->findLayer(activeLayerId());
-    if (!layer || layer->modality != app::Modality::SubBottom) {
-        appendJobMessage(tr("Sub-bottom Viewer requires a sub-bottom profiler layer."));
-        return;
-    }
-    // Open the viewer — the seabed picks are overlaid there
+    // Open the SBP/seabed viewer. onSubBottomOpen() guards "no indexed sub-bottom data"
+    // and selects a valid sub-bottom line itself, so this works regardless of the active
+    // layer's modality (e.g. while an SSS line is selected) — it no longer refuses to
+    // open just because the active layer isn't sub-bottom.
     onSubBottomOpen();
 }
 
@@ -432,6 +426,7 @@ void MainWindow::onContactPickedOnMap(double lon, double lat)
     core::Contact c;
     c.lat = lat;
     c.lon = lon;
+    c.classification = m_pending_contact_class;   // from the Contact Picking section
     c.spatial_ref = currentProject()->displaySpatialRef();
     // Leave the label empty: the project assigns a stable, monotonic "Cnnn" from the
     // contact id, so removals never cause a later pick to reuse a surviving number.
@@ -448,6 +443,51 @@ void MainWindow::onContactPickedOnMap(double lon, double lat)
         .arg(lon, 0, 'f', 6));
     recordActivity(ActivityKind::ContactPick,
         tr("Contact %1 placed").arg(label));
+}
+
+void MainWindow::onDrawFeature(bool polygon, const QString& classification)
+{
+    if (!currentProject()) {
+        appendJobMessage(tr("Open a project before drawing features."));
+        return;
+    }
+    // Feature drawing happens on the 2D chart; leave 3D mode if active.
+    if (m_viewport_host && m_viewport_host->isMode3D())
+        m_viewport_host->setMode3D(false);
+    m_pending_feature_class = classification.toStdString();
+    if (m_map_view) {
+        m_map_view->setFeatureDrawPolygon(polygon);
+        m_map_view->setInputMode(MapView::ModeDrawFeature);
+    }
+    appendJobMessage(polygon
+        ? tr("Draw polygon: click to add points, double-click or Enter to finish, "
+             "Esc or right-click to cancel.")
+        : tr("Draw line: click to add points, double-click or Enter to finish, "
+             "Esc or right-click to cancel."));
+}
+
+void MainWindow::onFeatureDrawn(const std::vector<QPointF>& lonlat_vertices, bool polygon)
+{
+    if (!currentProject() || lonlat_vertices.size() < 2) return;
+
+    core::Feature f;
+    f.type = polygon ? core::FeatureType::Polygon : core::FeatureType::Polyline;
+    f.classification = m_pending_feature_class;
+    f.spatial_ref = currentProject()->displaySpatialRef();
+    f.vertices.reserve(lonlat_vertices.size());
+    for (const QPointF& v : lonlat_vertices)
+        f.vertices.push_back(core::GeoVertex{ v.y(), v.x() });   // QPointF is (lon,lat)
+
+    // Empty label → project assigns a stable monotonic "Fnnn".
+    auto* cmd = new AddFeatureCommand(currentProject(), f, []() {});
+    m_undo_stack->push(cmd);
+
+    QString label;
+    for (const auto& ft : currentProject()->features())
+        if (ft.id == cmd->assignedId()) { label = QString::fromStdString(ft.label); break; }
+
+    appendJobMessage(tr("Feature %1 added (%n point(s))", "", static_cast<int>(f.vertices.size()))
+                         .arg(label));
 }
 
 void MainWindow::onRenumberContacts()

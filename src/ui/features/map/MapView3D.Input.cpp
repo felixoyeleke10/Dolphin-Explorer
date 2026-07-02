@@ -113,11 +113,6 @@ void MapView3D::mouseMoveEvent(QMouseEvent* ev)
         emit cursorMoved(qQNaN(), qQNaN());
 }
 
-void MapView3D::leaveEvent(QEvent*)
-{
-    emit cursorMoved(qQNaN(), qQNaN());
-}
-
 void MapView3D::mouseReleaseEvent(QMouseEvent* ev)
 {
     if (ev->button() == Qt::LeftButton) {
@@ -134,9 +129,20 @@ void MapView3D::mouseReleaseEvent(QMouseEvent* ev)
         setCursor(cursorForMode(m_tool_mode));
     }
     if (ev->button() == Qt::RightButton) {
+        const bool was_orbit = m_orbit_moved;
         m_orbiting    = false;
         m_orbit_moved = false;
         setCursor(cursorForMode(m_tool_mode));
+        // QWindow has no contextMenuEvent; emit the context menu here on a right-click
+        // that wasn't an orbit-drag (matches the old contextMenuEvent suppression).
+        if (!was_orbit) {
+            const std::string hit = hitTestLayer(ev->pos());
+            if (!hit.empty()) {
+                setSelectedLayers({hit});
+                emit layerClicked(hit);
+            }
+            emit contextMenuRequested(ev->globalPosition().toPoint());
+        }
     }
 }
 
@@ -167,22 +173,6 @@ void MapView3D::setDistance(float metres)
     m_camera.far_z    = m_camera.distance * 200.f;
     emitCameraViewport(this, m_camera.yaw, m_camera.distance, height());
     update();
-}
-
-void MapView3D::contextMenuEvent(QContextMenuEvent* ev)
-{
-    // m_orbit_moved is reset in mouseReleaseEvent before WM_CONTEXTMENU arrives;
-    // m_had_orbit persists until the next right-press so the suppress still works.
-    if (m_had_orbit) { m_had_orbit = false; ev->accept(); return; }
-
-    const std::string hit = hitTestLayer(ev->pos());
-    if (!hit.empty()) {
-        setSelectedLayers({hit});
-        emit layerClicked(hit);
-    }
-
-    emit contextMenuRequested(ev->globalPos());
-    ev->accept();
 }
 
 } // namespace dolphin::ui

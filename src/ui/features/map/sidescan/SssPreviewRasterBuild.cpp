@@ -31,8 +31,18 @@ bool buildSwathPreviewImage(const std::vector<core::SidescanPing>& pings,
                             const SssGeorefParams& georef_params,
                             double min_strip_cos,
                             int    cell_budget_div,
-                            bool   ping_lines_only)
+                            bool   ping_lines_only,
+                            const std::function<void(float)>& progress)
 {
+    // Throttle progress to integer-percent buckets so a callback that marshals
+    // across threads isn't flooded; no-op when no callback was supplied.
+    int last_pct = -1;
+    auto report = [&](float f) {
+        if (!progress) return;
+        const int p = std::clamp(static_cast<int>(f * 100.f), 0, 100);
+        if (p != last_pct) { last_pct = p; progress(f); }
+    };
+
     ld.preview_image   = QImage{};
     ld.preview_reduced = false;
 
@@ -106,6 +116,7 @@ bool buildSwathPreviewImage(const std::vector<core::SidescanPing>& pings,
 
     if (gr.strips.empty()) return false;
     if (cancelled.load(std::memory_order_relaxed)) return false;
+    report(0.15f);   // georeferencing done; stitch/raster next (the bulk)
 
     // -- Create transparent image + intensity cache ----------------------------
     // Rasterized cells write fully-opaque pixels; cells with no data stay
@@ -216,6 +227,10 @@ bool buildSwathPreviewImage(const std::vector<core::SidescanPing>& pings,
         return spacings[mid];
     };
 
+    // Stitch progress spans 0.15 → 0.85 across all strips of both channels.
+    const size_t strips_total = std::max<size_t>(1, gr.strips.size());
+    size_t       strips_done  = 0;
+
     for (const auto ch : {core::SidescanChannel::Port, core::SidescanChannel::Starboard}) {
         std::vector<const SssStrip*> ch_strips;
         ch_strips.reserve(gr.strips.size() / 2 + 1);
@@ -228,6 +243,8 @@ bool buildSwathPreviewImage(const std::vector<core::SidescanPing>& pings,
 
         for (size_t si = 1; si < ch_strips.size(); ++si) {
             if (cancelled.load(std::memory_order_relaxed)) return false;
+            if ((++strips_done & 0x3F) == 0)   // every 64 strips
+                report(0.15f + 0.70f * static_cast<float>(strips_done) / strips_total);
 
             const auto& prev = *ch_strips[si - 1];
             const auto& curr = *ch_strips[si];
@@ -301,6 +318,7 @@ bool buildSwathPreviewImage(const std::vector<core::SidescanPing>& pings,
     }
 
     if (cancelled.load(std::memory_order_relaxed)) return false;
+    report(0.85f);   // stitch done; pixel count + hole-fill next
 
     // Count raw non-transparent pixels.  If nothing was rasterized, discard the
     // image so MapView falls back to drawing the coverage ribbons instead of
@@ -363,6 +381,7 @@ bool buildSwathPreviewImage(const std::vector<core::SidescanPing>& pings,
 
     ld.nav_stats.preview_pixels_written = px_written;
     ld.nav_stats.preview_pixels_filled  = px_filled;
+    report(1.0f);   // raster complete
 
     if (px_written > 0) {
         ld.preview_image = std::move(img);

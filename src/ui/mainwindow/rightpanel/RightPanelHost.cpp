@@ -1,6 +1,5 @@
 #include "ui/mainwindow/rightpanel/RightPanelHost.h"
 #include "ui/mainwindow/rightpanel/RightPanel.Info.h"
-#include "ui/mainwindow/rightpanel/RightPanel.Display.h"
 #include "ui/mainwindow/rightpanel/RightPanel.SubBottomDisplay.h"
 #include "ui/mainwindow/rightpanel/RightPanel.SbpGain.h"
 #include "ui/mainwindow/rightpanel/RightPanel.SbpSignal.h"
@@ -8,6 +7,8 @@
 #include "ui/mainwindow/rightpanel/RightPanel.Geometry.h"
 #include "ui/mainwindow/rightpanel/RightPanel.Radiometry.h"
 #include "ui/mainwindow/rightpanel/RightPanel.Enhancement.h"
+#include "ui/mainwindow/rightpanel/RightPanel.ContactPicking.h"
+#include "ui/mainwindow/rightpanel/RightPanel.FeatureDrawing.h"
 #include "ui/mainwindow/panels/NavInfoPanel.h"
 #include "ui/mainwindow/panels/HeadingInfoPanel.h"
 #include "ui/mainwindow/panels/GainControlPanel.h"
@@ -43,12 +44,16 @@ RightPanelHost::RightPanelHost(ShowMode mode, QWidget* parent)
         addModule(m_info);
     } else {
         // Modal modules: sensor-specific, shown/hidden by modality filter.
-        m_display     = new DisplayModule(this);
+        // (The SSS palette is no longer a right-panel section — it moved to the
+        // status-bar picker; see MainStatusBar.)
         m_sbp_display = new SubBottomDisplayModule(this);
         m_sbp_gain    = new SbpGainModule(this);
         m_sbp_signal  = new SbpSignalModule(this);
         m_radiometry  = std::make_unique<RadiometryModule>();
         m_enhancement = std::make_unique<EnhancementModule>();
+        // Annotation tools — universal (Unknown modality), shown on every tab.
+        m_contact_picking = std::make_unique<ContactPickingModule>();
+        m_feature_drawing = std::make_unique<FeatureDrawingModule>();
         // Navigation + Geometry are per-modality: one instance per sensor tab so
         // SSS and SBP each get their own section (and their own panel for wiring).
         m_navigation_sss = std::make_unique<NavigationModule>(M::Sidescan);
@@ -56,8 +61,8 @@ RightPanelHost::RightPanelHost(ShowMode mode, QWidget* parent)
         m_geometry_sss   = std::make_unique<GeometryModule>(M::Sidescan);
         m_geometry_sbp   = std::make_unique<GeometryModule>(M::SubBottom);
 
-        // Section order per tab: display → processing → Navigation → Geometry.
-        addModule(m_display);
+        // Section order per tab: processing → Navigation → Geometry (SSS palette is
+        // now the status-bar picker, so there is no SSS Display section here).
         addModule(m_sbp_display);
         addModule(m_sbp_gain);
         addModule(m_sbp_signal);
@@ -67,9 +72,10 @@ RightPanelHost::RightPanelHost(ShowMode mode, QWidget* parent)
         addModule(m_geometry_sss.get());
         addModule(m_navigation_sbp.get());
         addModule(m_geometry_sbp.get());
+        // Universal annotation sections last — present under every sensor tab + Map.
+        addModule(m_contact_picking.get());
+        addModule(m_feature_drawing.get());
 
-        connect(m_display, &DisplayModule::paletteChanged,
-                this,      &RightPanelHost::paletteChanged);
         connect(m_sbp_display, &SubBottomDisplayModule::paramsChanged,
                 this,          &RightPanelHost::sbpParamsChanged);
     }
@@ -116,9 +122,11 @@ bool RightPanelHost::computeFilterVisible(app::Modality primary) const
 {
     if (m_show_mode == ShowMode::UniversalOnly)
         return true;  // all modules in this host are Unknown-primary
-    // ModalOnly: show only the active sensor tab's sections. The Map tab (Unknown
-    // filter) has no sensor sections — it shows only universal (Unknown-primary)
-    // modules, of which the modal host has none, so Map shows no tools.
+    // ModalOnly: Unknown-primary modules are universal annotation tools (Contact
+    // Picking / Feature Drawing) — shown on every tab including Map. Sensor-specific
+    // sections show only under their own tab.
+    if (primary == app::Modality::Unknown)
+        return true;
     return primary == m_modality_filter;
 }
 
@@ -165,14 +173,25 @@ ImagingControlPanel* RightPanelHost::imagingPanel() const
     return m_enhancement ? m_enhancement->panel() : nullptr;
 }
 
-int RightPanelHost::currentPaletteIndex() const
+ContactPickingPanel* RightPanelHost::contactPickingPanel() const
 {
-    return m_display ? m_display->currentPaletteIndex() : 0;
+    return m_contact_picking ? m_contact_picking->panel() : nullptr;
 }
 
-void RightPanelHost::setPalette(int idx)
+FeatureDrawingPanel* RightPanelHost::featureDrawingPanel() const
 {
-    if (m_display) m_display->setPalette(idx);
+    return m_feature_drawing ? m_feature_drawing->panel() : nullptr;
+}
+
+// The SSS palette moved to the status-bar picker; the right panel no longer hosts a
+// palette control. These remain as no-ops so existing callers compile unchanged.
+int RightPanelHost::currentPaletteIndex() const
+{
+    return 0;
+}
+
+void RightPanelHost::setPalette(int)
+{
 }
 
 void RightPanelHost::setSbpParams(const SubBottomDisplayParams& p)
@@ -363,12 +382,10 @@ void RightPanelHost::showContextMenu(const QPoint& local_pos)
     else if (chosen == collapse) setAllExpanded(false);
     else if (chosen == reset)    resetSectionOrder();
 
-    // The main window is frameless; a popup can leave it behind other windows on
-    // dismiss. Re-assert foreground so the app doesn't appear to "go to the back".
-    if (QWidget* top = window(); top && !top->isActiveWindow()) {
-        top->raise();
-        top->activateWindow();
-    }
+    // NOTE: do NOT raise()/activateWindow() the top-level window here. A QMenu is a
+    // Qt::Popup and does not deactivate its parent window, so no re-assert is needed —
+    // and on the frameless main window raise() forces a Z-order re-composite that
+    // shows as a visible blink on every right-click.
 }
 
 void RightPanelHost::setAllExpanded(bool expanded)

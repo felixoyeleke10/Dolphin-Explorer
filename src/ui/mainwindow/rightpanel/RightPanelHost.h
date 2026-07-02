@@ -14,7 +14,6 @@ namespace dolphin::ui {
 class IRightPanelModule;
 class CollapsibleSection;
 class InfoModule;
-class DisplayModule;
 class SubBottomDisplayModule;
 class SbpGainModule;
 class SbpSignalModule;
@@ -22,10 +21,14 @@ class NavigationModule;
 class GeometryModule;
 class RadiometryModule;
 class EnhancementModule;
+class ContactPickingModule;
+class FeatureDrawingModule;
 class NavInfoPanel;
 class HeadingInfoPanel;
 class GainControlPanel;
 class ImagingControlPanel;
+class ContactPickingPanel;
+class FeatureDrawingPanel;
 
 // Hosts a subset of right-panel modules as CollapsibleSections.
 // ShowMode controls which module set is created at construction time:
@@ -55,6 +58,9 @@ public:
     HeadingInfoPanel*    headingPanel(app::Modality m) const;
     GainControlPanel*    gainPanel()     const;
     ImagingControlPanel* imagingPanel()  const;
+    // Universal annotation tool sections (Contact Picking / Feature Drawing).
+    ContactPickingPanel* contactPickingPanel() const;
+    FeatureDrawingPanel* featureDrawingPanel() const;
 
     // Palette forwarding from DisplayModule (SSS).
     int  currentPaletteIndex() const;
@@ -102,7 +108,6 @@ private:
 
     // QWidget modules — Qt-owned after addModule re-parents them into sections.
     InfoModule*             m_info        = nullptr;
-    DisplayModule*          m_display     = nullptr;
     SubBottomDisplayModule* m_sbp_display = nullptr;
     SbpGainModule*          m_sbp_gain    = nullptr;
     SbpSignalModule*        m_sbp_signal  = nullptr;
@@ -116,6 +121,8 @@ private:
     std::unique_ptr<GeometryModule>    m_geometry_sbp;
     std::unique_ptr<RadiometryModule>  m_radiometry;
     std::unique_ptr<EnhancementModule> m_enhancement;
+    std::unique_ptr<ContactPickingModule> m_contact_picking;
+    std::unique_ptr<FeatureDrawingModule> m_feature_drawing;
 
     // Parallel lists for generic setLayer / clearLayer iteration.
     QVector<IRightPanelModule*>  m_modules;

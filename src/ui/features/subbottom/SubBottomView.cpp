@@ -21,6 +21,10 @@ void SubBottomView::setTraces(std::vector<core::SubBottomTrace> traces)
 {
     m_traces      = std::move(traces);
     m_first_trace = 0;
+    // New line: drop any in-progress feature draft so it can't be finished with
+    // vertices from the previous line.
+    m_feature_pts.clear();
+    m_feature_px.clear();
     m_image_dirty = true;
     update();
     emit scrollChanged(0, traceCount(), visibleTraceCount());
@@ -30,6 +34,9 @@ void SubBottomView::clear()
 {
     m_traces.clear();
     m_first_trace = 0;
+    m_feature_tool = 0;
+    m_feature_pts.clear();
+    m_feature_px.clear();
     m_image_dirty = true;
     m_image       = QImage{};
     update();

@@ -15,6 +15,8 @@
 #include <QToolButton>
 #include <QVBoxLayout>
 
+#include <initializer_list>
+
 namespace dolphin::ui {
 
 QFrame* MainWindow::buildActivityBar(QWidget* parent)
@@ -156,6 +158,8 @@ QFrame* MainWindow::buildRightToolBar(QWidget* parent)
     layout->addWidget(makeDivider());
     addToolBtn(m_contact_btn, ":/icons/add_contact.svg",  tr("Contact (C)    — click map to place a contact pick.\n"
                                                              "Stays active; switch tools to stop placing."),            &MainWindow::onAddContact);
+    // Feature drawing is a right-panel tool section (Feature Drawing), not a toolbar
+    // tool — see RightPanelHost / FeatureDrawingPanel.
     layout->addWidget(makeDivider());
 
     // More actions — 3D toggle plus destructive ops hidden behind ···

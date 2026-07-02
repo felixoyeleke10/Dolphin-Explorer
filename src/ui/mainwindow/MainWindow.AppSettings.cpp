@@ -91,12 +91,16 @@ void MainWindow::refreshLoadingIndicator()
     if (!busy) {
         m_map_progress_active = false;
         m_status_bar->hideProgress();
+        m_status_bar->clearBusyText();
         return;
     }
     // Busy: if the active map build is reporting real 0→100 progress, leave its
-    // determinate bar alone; otherwise (waterfall/sub-bottom load) show the spinner.
-    if (!m_map_progress_active)
+    // determinate bar + "Building map…" label alone; otherwise (waterfall/sub-bottom
+    // load) show the spinner with a generic label.
+    if (!m_map_progress_active) {
         m_status_bar->setProgressIndeterminate();
+        m_status_bar->setBusyText(tr("Loading…"));
+    }
 }
 
 void MainWindow::onAppSettings()

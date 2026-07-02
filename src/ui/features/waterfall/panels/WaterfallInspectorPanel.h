@@ -61,6 +61,9 @@ public:
     // Highlight the active file (does not emit layerChangeRequested).
     void setActiveLine(const std::string& id);
 
+    // Enable/disable the Prev/Next Line buttons (disabled at the ends of the list).
+    void setNavEnabled(bool has_prev, bool has_next);
+
 signals:
     void prevLineRequested();
     void nextLineRequested();
@@ -81,6 +84,9 @@ private:
     void makeWideRow(QVBoxLayout* bl, const QString& key, QLabel*& val_out);
 
     // -- Widgets ------------------------------------------------------------
+    // Line navigation buttons
+    QToolButton* m_btn_prev = nullptr;
+    QToolButton* m_btn_next = nullptr;
     // Files list
     QListWidget* m_files_list = nullptr;
     // Survey data

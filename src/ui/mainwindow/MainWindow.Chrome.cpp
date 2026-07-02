@@ -5,6 +5,7 @@
 #include "ui/shared/UiUtils.h"
 #include "ui/mainwindow/MainStatusBar.h"
 #include "ui/mainwindow/MenuBarFilter.h"
+#include "ui/systems/DisplayStateManager.h"
 #include "ui/mainwindow/ChatPanel.h"   // ConversationPanel — file kept as ChatPanel.h
 #include "ui/bottom/BottomDockPanel.h"
 #include "ui/shared/widgets/CommandBar.h"
@@ -26,6 +27,14 @@ void MainWindow::setupStatusBar()
 {
     m_status_bar = new MainStatusBar(this);
     setStatusBar(m_status_bar);
+
+    // Map colour-palette picker (relocated from the right-panel Display section):
+    // user pick → global palette; seed it with the current palette. Wired here (not
+    // in setupCentralWidget) because that runs before m_status_bar exists.
+    connect(m_status_bar, &MainStatusBar::paletteRequested,
+            this, &MainWindow::onPaletteChanged);
+    if (m_display_state)
+        m_status_bar->setMapPalette(m_display_state->mapPalette());
 }
 
 void MainWindow::setupTitleBar()
@@ -210,7 +219,7 @@ void MainWindow::setupTitleBar()
     sep->setFixedSize(Theme::kSepSz, kCornerSepH);
     cl->addWidget(sep);
 
-    // -- Window control buttons ------------------------------------------------
+    // -- Window control buttons (custom title bar) -----------------------------
     auto makeWinBtn = [&](const QString& glyph, const QString& tip,
                            bool is_close = false) -> QPushButton* {
         auto* btn = new QPushButton(glyph, corner);

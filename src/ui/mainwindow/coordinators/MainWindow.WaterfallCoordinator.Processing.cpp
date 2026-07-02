@@ -5,10 +5,21 @@
 #include "ui/mainwindow/MainWindow.h"
 #include "ui/mainwindow/commands/LayerCommands.h"
 #include "ui/mainwindow/panels/InspectorPanel.h"
+#include "ui/shared/panels/LineListPanel.h"
+#include "ui/mainwindow/panels/GainControlPanel.h"
+#include "ui/mainwindow/panels/ImagingControlPanel.h"
+#include "ui/mainwindow/panels/NavInfoPanel.h"
+#include "ui/mainwindow/panels/HeadingInfoPanel.h"
 #include "ui/mainwindow/rightpanel/RightPanelHost.h"
+#include "ui/mainwindow/rightpanel/RightPanel.SbpGain.h"
+#include "ui/mainwindow/rightpanel/RightPanel.SbpSignal.h"
+#include "ui/systems/DisplayStateManager.h"
+#include <QPushButton>
+#include <QStringList>
 #include "ui/mainwindow/coordinators/CorrectionBatchOperator.h"
 #include "ui/shared/dialogs/CrsPickerDialog.h"
 #include "ui/features/map/MapView.h"
+#include "ui/mainwindow/MainStatusBar.h"
 #include "ui/features/map/sidescan/SidescanViewController.h"
 #include "ui/features/import/ImportProgressDialog.h"
 #include "ui/features/subbottom/SubBottomWindow.h"
@@ -169,76 +180,205 @@ void MainWindow::applyStoredNavParams(const std::string& layer_id)
     m_waterfall_win->applyNavToLine(layer ? layer->nav_state : NavProcessingParams{});
 }
 
-// --- SSS gain / imaging Apply (right-panel tools) ----------------------------
-// TVG, AGC, ARC, ARN, destripe, beam pattern, ML enhance and SRC all live in the
-// right-panel Gain/Imaging sections. Their Apply buttons route here. The slots are
-// model-owned and wired once at construction (MainWindow.MainArea.cpp) so they
-// work from the map view whether or not the waterfall window is open — previously
-// every one was connected only inside onWaterfallOpen() and pushed straight to the
-// window, so the whole tool area did nothing until the waterfall had been opened.
-//
-// Apply stores the params on the layer(s) and re-rasterizes the map mosaic through
-// the SAME amplitude pipeline the waterfall uses (ui/shared/processing/
-// SssImagingAlgorithms): TVG/ARC/AGC + beam/ARN/destripe/ML all render on the map.
-// The off-thread map build surfaces its progress in the background-tasks panel.
-// This is a live re-raster (raster-first; the per-params raster is cached) — NOT a
-// .dlpd write; committing corrections to .dlpd for export is the explicit
-// Processing → "Bake Corrections into Data" command (onBakeCorrections).
-void MainWindow::onSssDisplayApplyLine(const WaterfallParams& params)
+// --- Single shared Apply bar (whole tools panel) -----------------------------
+// One "Apply to Line" / "Apply to All" at the bottom of the panel replaces the
+// per-section buttons. It gathers every visible tool section's settings for the
+// active sensor and applies them in a single map rebuild.
+void MainWindow::onApplyToolsToLine() { applyActiveTools(/*all_lines*/ false); }
+void MainWindow::onApplyToolsToAll()  { applyActiveTools(/*all_lines*/ true); }
+
+void MainWindow::updateToolsApplyBar()
 {
-    applySssCorrection(params, /*all_lines*/ false);
+    if (!m_tools_apply_bar) return;
+    using M = app::Modality;
+    bool show = false;
+    M mod = M::Unknown;
+    if (currentProject() && !activeLayerId().empty())
+        if (const auto* l = currentProject()->findLayer(activeLayerId())) {
+            mod  = l->modality;
+            show = (mod == M::Sidescan || mod == M::SubBottom);
+        }
+    m_tools_apply_bar->setVisible(show);
+    if (!show || !m_tools_apply_line) return;
+
+    // Reflect the multi-selection in the primary button: when more than one line of
+    // the active modality is selected it reads "Apply to Selected (N)" — exactly the
+    // set applyActiveTools(false) will target.
+    int n = 0;
+    if (m_line_list && currentProject())
+        for (const auto& id : m_line_list->selectedLayerIds())
+            if (const auto* sl = currentProject()->findLayer(id);
+                sl && sl->modality == mod)
+                ++n;
+    m_tools_apply_line->setText(n > 1 ? tr("Apply to Selected (%1)").arg(n)
+                                      : tr("Apply to Line"));
 }
 
-void MainWindow::onSssDisplayApplyAll(const WaterfallParams& params)
-{
-    applySssCorrection(params, /*all_lines*/ true);
-}
-
-void MainWindow::applySssCorrection(const WaterfallParams& params, bool all_lines)
+void MainWindow::applyActiveTools(bool all_lines)
 {
     auto* proj = currentProject();
     if (!proj || !m_display_state) return;
-
     const std::string active = activeLayerId();
-    int n = 0;
-    for (const auto& l : proj->layers()) {
-        if (!l || l->modality != app::Modality::Sidescan) continue;
-        if (all_lines || l->id == active) {
-            m_display_state->setLayerSssDisplay(l->id, params);  // mutate + notify (marks dirty)
-            l->slant_range_corrected = params.slant_range_correction;
-            ++n;
+    const auto* layer = proj->findLayer(active);
+    if (!layer) return;
+    using M = app::Modality;
+    const M mod = layer->modality;
+
+    // Target lines:
+    //   Apply to All     → every line of the active line's modality.
+    //   Apply to Line(s) → the tree's selected rows (of that modality); when nothing
+    //                      multi-selected, just the active line.
+    std::vector<std::string> target_ids;
+    if (all_lines) {
+        for (const auto& l : proj->layers())
+            if (l && l->modality == mod) target_ids.push_back(l->id);
+    } else {
+        if (m_line_list)
+            for (const auto& id : m_line_list->selectedLayerIds())
+                if (const auto* sl = proj->findLayer(id); sl && sl->modality == mod)
+                    target_ids.push_back(id);
+        if (target_ids.empty() && !active.empty())
+            target_ids.push_back(active);
+    }
+    if (target_ids.empty()) return;
+    const int sel_n = static_cast<int>(target_ids.size());
+
+    // Open a processing-dialog card per line that will actually rebuild now, tracking
+    // each on m_tools_apply_layers so progress/finish handlers update + close them.
+    auto openCards = [this, proj](const std::vector<std::string>& rebuild,
+                                  const QString& summary, const QString& tag,
+                                  bool tools_present) {
+        if (!m_import_overlay) return;
+        m_tools_apply_layers.clear();
+        m_import_overlay->setQueueTotal(static_cast<int>(rebuild.size()));
+        for (const auto& id : rebuild) {
+            const auto* l = proj->findLayer(id);
+            const QString name = l ? QString::fromStdString(l->label)
+                                   : QString::fromStdString(id);
+            m_import_overlay->addJob(id, tr("%1 — %2").arg(name, summary), tag, 0.f);
+            m_import_overlay->updateJob(id, 0, tr("Waiting…"));
+            m_tools_apply_layers[id] = tools_present ? summary : QString();
         }
+    };
+
+    if (mod == M::Sidescan) {
+        // Gather amplitude/display (gain+imaging) and nav (smoothing/layback+attitude)
+        // from every SSS section into one combined params set.
+        WaterfallParams disp = layer->sss_display_state.params;
+        if (m_gain_panel)    m_gain_panel->writeInto(disp);
+        if (m_imaging_panel) m_imaging_panel->writeInto(disp);
+        NavProcessingParams nav = layer->nav_state;
+        if (m_nav_panel)     m_nav_panel->writeInto(nav);
+        if (m_heading_panel) m_heading_panel->writeInto(nav);
+
+        // Store on every target line; the rebuild below applies it to those on screen.
+        for (const auto& id : target_ids) {
+            auto* l = proj->findLayer(id);
+            if (!l) continue;
+            m_display_state->setLayerSssDisplay(id, disp);
+            l->slant_range_corrected = disp.slant_range_correction;
+            m_display_state->setLayerNav(id, nav);
+        }
+
+        // Keep the live waterfall in sync if it is open.
+        if (m_waterfall_win && m_waterfall_win->isVisible()) {
+            if (all_lines) m_waterfall_win->applyExternalParamsToAll(disp);
+            else           m_waterfall_win->applyExternalParams(disp);
+            applyStoredNavParams(m_waterfall_win->currentLayerId());
+        }
+
+        QStringList tools;
+        if (disp.tvg.enabled)            tools << QStringLiteral("TVG");
+        if (disp.agc.enabled)            tools << QStringLiteral("AGC");
+        if (disp.arc.enabled)            tools << QStringLiteral("ARC");
+        if (disp.arn.enabled)            tools << QStringLiteral("ARN");
+        if (disp.destripe.enabled)       tools << QStringLiteral("Destripe");
+        if (disp.beam_pattern.enabled)   tools << QStringLiteral("Beam Pattern");
+        if (disp.ml_enhance.enabled)     tools << QStringLiteral("ML Enhance");
+        if (nav.smooth_enabled || nav.layback_enabled ||
+            nav.heading_offset_deg != 0.f || nav.pitch_offset_deg != 0.f ||
+            nav.roll_offset_deg != 0.f)  tools << tr("Nav");
+        const QString summary = tools.isEmpty() ? tr("display only")
+                                                : tools.join(QStringLiteral(", "));
+
+        // Only lines currently on the map rebuild now (cards mirror that); others
+        // pick up the stored params lazily when first activated.
+        std::vector<std::string> rebuild;
+        if (m_sss_ctrl) {
+            const auto loaded = m_sss_ctrl->loadedLayers();
+            for (const auto& id : target_ids)
+                if (std::find(loaded.begin(), loaded.end(), id) != loaded.end())
+                    rebuild.push_back(id);
+        }
+
+        // ONE card per rebuilding line; advances through phases + closes when done.
+        openCards(rebuild, summary, QStringLiteral("COR"), !tools.isEmpty());
+
+        // Line-by-line rebuild (keeps the old mosaic until ready). Routed through
+        // applyLiveCorrections → prebuildTier so prebuildTierProgress/Finished update
+        // and close each line's dialog card.
+        if (m_sss_ctrl) m_sss_ctrl->applyLiveCorrections(rebuild);
+
+        recordActivity(ActivityKind::DisplayParams,
+            all_lines ? tr("Tools applied to all sidescan lines")
+                      : tr("Tools applied to %n sidescan line(s)", nullptr, sel_n));
     }
-    if (n == 0) return;
+    else if (mod == M::SubBottom) {
+        auto* gm = m_modal_host ? m_modal_host->sbpGainModule()   : nullptr;
+        auto* sm = m_modal_host ? m_modal_host->sbpSignalModule() : nullptr;
+        NavProcessingParams nav = layer->nav_state;
+        if (m_sbp_nav_panel)     m_sbp_nav_panel->writeInto(nav);
+        if (m_sbp_heading_panel) m_sbp_heading_panel->writeInto(nav);
 
-    // Keep the live waterfall in sync when it is open (instant display preview).
-    if (m_waterfall_win && m_waterfall_win->isVisible()) {
-        if (all_lines) m_waterfall_win->applyExternalParamsToAll(params);
-        else           m_waterfall_win->applyExternalParams(params);
+        // Store gain/signal/nav on every target line.
+        for (const auto& id : target_ids) {
+            if (gm) m_display_state->setLayerSbpGain(id, gm->currentParams());
+            if (sm) m_display_state->setLayerSbpSignal(id, sm->currentParams());
+            m_display_state->setLayerNav(id, nav);
+        }
+        // Push gain/signal live to the SBP window (display-state only — no .dlpd bake).
+        if (m_sbp_win) {
+            if (gm) m_sbp_win->applyGainParams(gm->currentParams());
+            if (sm) m_sbp_win->applySignalParams(sm->currentParams());
+            m_sbp_win->applyNavToLine(nav);
+        }
+
+        QStringList tools;
+        if (gm) { const auto g = gm->currentParams();
+            if (g.static_gain_en) tools << QStringLiteral("Static Gain");
+            if (g.agc_en)         tools << QStringLiteral("AGC");
+            if (g.normalize_en)   tools << QStringLiteral("Normalize"); }
+        if (sm) { const auto s = sm->currentParams();
+            if (s.envelope_en)    tools << QStringLiteral("Envelope");
+            if (s.dc_removal_en)  tools << QStringLiteral("DC Removal");
+            if (s.bandpass_en)    tools << QStringLiteral("Bandpass"); }
+        if (nav.smooth_enabled || nav.layback_enabled ||
+            nav.heading_offset_deg != 0.f || nav.pitch_offset_deg != 0.f ||
+            nav.roll_offset_deg != 0.f)  tools << tr("Nav");
+        const QString summary = tools.isEmpty() ? tr("display only")
+                                                : tools.join(QStringLiteral(", "));
+
+        // Only lines already on the map rebuild now; others apply lazily on select.
+        std::vector<std::string> rebuild;
+        for (const auto& id : target_ids)
+            if (m_map_view && m_map_view->layerData(id)) rebuild.push_back(id);
+
+        openCards(rebuild, summary, QStringLiteral("SBP"), !tools.isEmpty());
+
+        // Line-by-line profile rebuild (symmetric with the SSS branch above).
+        applySbpLiveCorrections(rebuild);
+
+        recordActivity(ActivityKind::NavCorrection,
+            all_lines ? tr("Tools applied to all sub-bottom lines")
+                      : tr("Tools applied to %n sub-bottom line(s)", nullptr, sel_n));
     }
 
-    // Bring up the execution window in "Processing" mode (format "COR" → "Processing
-    // N line(s)", NOT "Importing"). It is driven by the map build's loadingProgress
-    // and closed on prebuildTierFinished. Scoped by m_sss_apply_active so it only
-    // appears for an explicit Apply, not for ordinary layer selection.
-    if (m_import_overlay) {
-        m_sss_apply_active = true;
-        m_import_overlay->addJob("sss_apply",
-            all_lines ? tr("Applying gain/imaging to all lines")
-                      : tr("Applying gain/imaging"),
-            QStringLiteral("COR"), 0.f);
-        m_import_overlay->updateJob("sss_apply", 1);
-    }
-
-    // Rebuild the map mosaic through the correction pipeline. applyLiveCorrections
-    // rebuilds each layer's tier in the background and keeps the existing mosaic on
-    // screen at full quality until the new one is ready (no blank, no downgrade).
-    if (m_sss_ctrl)
-        m_sss_ctrl->applyLiveCorrections(/*all_layers=*/all_lines);
-
-    recordActivity(ActivityKind::DisplayParams,
-        all_lines ? tr("Gain/imaging applied to %1 sidescan line(s)").arg(n)
-                  : tr("Gain/imaging applied to the selected line"));
+    // Confirm in the status bar — important when the targeted line(s) aren't on the
+    // map (nothing rebuilds visibly), so the user still sees the apply registered.
+    if (m_status_bar)
+        m_status_bar->showJobMessage(
+            all_lines ? tr("Tools applied to all lines")
+                      : tr("Tools applied to %n line(s)", nullptr, sel_n));
 }
 
 // Explicit "commit corrections to data" (SeaView-style mosaic bake). Ordinary
@@ -291,6 +431,11 @@ void MainWindow::onPaletteChanged(int idx)
     // Sync the Properties inspector (may be the source — setPalette uses QSignalBlocker).
     if (m_inspector)
         m_inspector->setPalette(idx);
+
+    // Sync the status-bar palette picker (may be the source — setMapPalette() blocks
+    // signals so it does not re-emit).
+    if (m_status_bar)
+        m_status_bar->setMapPalette(idx);
 
     // Sync the waterfall (may be the source — setPalette checks current index first).
     if (m_waterfall_win)

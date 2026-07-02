@@ -4,6 +4,7 @@
 
 #include <QContextMenuEvent>
 #include <QImage>
+#include <QKeyEvent>
 #include <QMouseEvent>
 #include <QPixmap>
 #include <QResizeEvent>
@@ -13,6 +14,54 @@
 #include <cmath>
 
 namespace dolphin::ui {
+
+// -----------------------------------------------------------------------------
+//  Geo conversion — shared by contact picking and feature drawing
+// -----------------------------------------------------------------------------
+
+bool WaterfallView::rangeToGeo(int row, core::SidescanChannel ch, float range_m,
+                               double& lat, double& lon, bool& is_projected) const
+{
+    if (row < 0 || row >= rowCount()) return false;
+
+    const double nav_lat = m_rows[row].lat;
+    const double nav_lon = m_rows[row].lon;
+    is_projected         = m_rows[row].is_projected;
+    lat = nav_lat;
+    lon = nav_lon;
+    if (nav_lat == 0.0 && nav_lon == 0.0) return false;
+
+    const float heading  = m_rows[row].heading_deg;
+    const float altitude = m_rows[row].altitude_m;
+
+    // Slant → ground range (Pythagorean correction when altitude known)
+    float ground_range = range_m;
+    if (altitude > 0.f && range_m > altitude)
+        ground_range = std::sqrt(range_m * range_m - altitude * altitude);
+
+    // Bearing perpendicular to heading: port = left, stbd = right
+    const float bearing_deg =
+        (ch == core::SidescanChannel::Port) ? heading - 90.f : heading + 90.f;
+    const double bearing_rad = bearing_deg * M_PI / 180.0;
+
+    if (!is_projected) {
+        constexpr double R = 6371000.0;
+        const double d    = ground_range / R;
+        const double lat1 = nav_lat * M_PI / 180.0;
+        const double lon1 = nav_lon * M_PI / 180.0;
+        const double lat2 = std::asin(std::sin(lat1) * std::cos(d)
+                                      + std::cos(lat1) * std::sin(d) * std::cos(bearing_rad));
+        const double lon2 = lon1 + std::atan2(
+            std::sin(bearing_rad) * std::sin(d) * std::cos(lat1),
+            std::cos(d) - std::sin(lat1) * std::sin(lat2));
+        lat = lat2 * 180.0 / M_PI;
+        lon = lon2 * 180.0 / M_PI;
+    } else {
+        lat = nav_lat + ground_range * std::cos(bearing_rad);
+        lon = nav_lon + ground_range * std::sin(bearing_rad);
+    }
+    return true;
+}
 
 // -----------------------------------------------------------------------------
 //  Mouse events
@@ -39,47 +88,11 @@ void WaterfallView::mousePressEvent(QMouseEvent* ev)
             c.classification = m_contact_class;
             m_contacts.push_back(c);
 
-            double nav_lat = (row < rowCount()) ? m_rows[row].lat          : 0.0;
-            double nav_lon = (row < rowCount()) ? m_rows[row].lon          : 0.0;
-            const bool proj = (row < rowCount()) ? m_rows[row].is_projected : false;
-
             // Compute real contact position: offset nav point by ground range
-            // in the direction perpendicular to the vessel heading.
-            double contact_lat = nav_lat;
-            double contact_lon = nav_lon;
-            if (row < rowCount() && (nav_lat != 0.0 || nav_lon != 0.0)) {
-                const float heading   = m_rows[row].heading_deg;
-                const float altitude  = m_rows[row].altitude_m;
-
-                // Slant → ground range (Pythagorean correction when altitude known)
-                float ground_range = range_m;
-                if (altitude > 0.f && range_m > altitude)
-                    ground_range = std::sqrt(range_m * range_m - altitude * altitude);
-
-                // Bearing perpendicular to heading: port = left, stbd = right
-                const float bearing_deg =
-                    (ch == core::SidescanChannel::Port) ? heading - 90.f : heading + 90.f;
-                const double bearing_rad = bearing_deg * M_PI / 180.0;
-
-                if (!proj) {
-                    // WGS84 spherical offset
-                    constexpr double R = 6371000.0;
-                    const double d = ground_range / R;
-                    const double lat1 = nav_lat * M_PI / 180.0;
-                    const double lon1 = nav_lon * M_PI / 180.0;
-                    const double lat2 = std::asin(std::sin(lat1) * std::cos(d)
-                                                  + std::cos(lat1) * std::sin(d) * std::cos(bearing_rad));
-                    const double lon2 = lon1 + std::atan2(
-                        std::sin(bearing_rad) * std::sin(d) * std::cos(lat1),
-                        std::cos(d) - std::sin(lat1) * std::sin(lat2));
-                    contact_lat = lat2 * 180.0 / M_PI;
-                    contact_lon = lon2 * 180.0 / M_PI;
-                } else {
-                    // Projected (UTM etc.) — metric northing/easting
-                    contact_lat = nav_lat + ground_range * std::cos(bearing_rad);
-                    contact_lon = nav_lon + ground_range * std::sin(bearing_rad);
-                }
-            }
+            // perpendicular to the vessel heading (shared with feature drawing).
+            double contact_lat = 0.0, contact_lon = 0.0;
+            bool   proj        = false;
+            rangeToGeo(row, ch, range_m, contact_lat, contact_lon, proj);
             // Square grab of the waterfall around the pick, used as the contact's
             // thumbnail in the Contact Manager. Grabbed now, before update()
             // repaints, so the new marker dot is not baked into the snapshot.
@@ -104,6 +117,26 @@ void WaterfallView::mousePressEvent(QMouseEvent* ev)
 
             m_dirty = true;
             update();
+        }
+        ev->accept();
+        return;
+    }
+
+    if (m_feature_tool != 0 && row >= 0 && row < rowCount()) {
+        // Feature draw — each click adds a geo vertex (offset like a contact pick).
+        core::SidescanChannel ch;
+        float range_m = 0.f;
+        if (m_renderer.xToRange(ev->pos().x(), row, m_rows,
+                                 m_scroll.hZoom(), m_scroll.hPan(), ch, range_m)) {
+            double lat = 0.0, lon = 0.0;
+            bool   proj = false;
+            if (rangeToGeo(row, ch, range_m, lat, lon, proj)) {
+                m_feature_pts.push_back(QPointF(lon, lat));   // (lon,lat)
+                m_feature_px.push_back(ev->pos());
+                m_feature_proj = proj;
+                m_dirty = true;
+                update();
+            }
         }
         ev->accept();
         return;
@@ -256,6 +289,9 @@ void WaterfallView::mouseReleaseEvent(QMouseEvent* ev)
     if (m_contact_tool != 0) {
         return;  // contact pick was already handled on press — don't fire pingClicked
     }
+    if (m_feature_tool != 0) {
+        return;  // feature draw handled on press — don't fire pingClicked
+    }
     if (m_seabed.isDragging()) {
         m_seabed.endDrag();
         m_pen_last_row = -1;
@@ -374,8 +410,70 @@ void WaterfallView::leaveEvent(QEvent*)
     update();
 }
 
+// -----------------------------------------------------------------------------
+//  Feature draw — commit / cancel
+// -----------------------------------------------------------------------------
+
+void WaterfallView::mouseDoubleClickEvent(QMouseEvent* ev)
+{
+    if (m_feature_tool != 0 && ev->button() == Qt::LeftButton) {
+        const bool   polygon = (m_feature_tool == 1);
+        const size_t min_pts = polygon ? 3u : 2u;
+        if (m_feature_pts.size() >= min_pts)
+            emit featureDrawn(m_feature_pts, polygon, m_feature_proj);
+        m_feature_pts.clear();
+        m_feature_px.clear();
+        m_dirty = true;
+        update();
+        ev->accept();
+        return;
+    }
+    QOpenGLWidget::mouseDoubleClickEvent(ev);
+}
+
+void WaterfallView::keyPressEvent(QKeyEvent* ev)
+{
+    if (m_feature_tool != 0 && !m_feature_pts.empty()) {
+        switch (ev->key()) {
+        case Qt::Key_Return:
+        case Qt::Key_Enter: {
+            const bool   polygon = (m_feature_tool == 1);
+            const size_t min_pts = polygon ? 3u : 2u;
+            if (m_feature_pts.size() >= min_pts)
+                emit featureDrawn(m_feature_pts, polygon, m_feature_proj);
+            m_feature_pts.clear();
+            m_feature_px.clear();
+            m_dirty = true; update();
+            return;
+        }
+        case Qt::Key_Escape:
+            m_feature_pts.clear();
+            m_feature_px.clear();
+            m_dirty = true; update();
+            return;
+        case Qt::Key_Backspace:
+            m_feature_pts.pop_back();
+            m_feature_px.pop_back();
+            m_dirty = true; update();
+            return;
+        default:
+            break;
+        }
+    }
+    QOpenGLWidget::keyPressEvent(ev);
+}
+
 void WaterfallView::contextMenuEvent(QContextMenuEvent* event)
 {
+    // While drawing a feature, right-click cancels the in-progress draft.
+    if (m_feature_tool != 0 && !m_feature_pts.empty()) {
+        m_feature_pts.clear();
+        m_feature_px.clear();
+        m_dirty = true;
+        update();
+        event->accept();
+        return;
+    }
     emit contextMenuRequested(event->globalPos());
 }
 

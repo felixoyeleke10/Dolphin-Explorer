@@ -32,6 +32,8 @@ WaterfallView::WaterfallView(QWidget* parent)
 {
     setMouseTracking(true);
     setMinimumSize(200, 100);
+    // ClickFocus lets the feature-draw tool receive Enter/Esc/Backspace keys.
+    setFocusPolicy(Qt::ClickFocus);
 
     // Explicitly request the same context the shaders require.
     // Without this, Qt uses the OS default (often 2.0 compat), which silently

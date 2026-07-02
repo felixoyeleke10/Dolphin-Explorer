@@ -3,11 +3,16 @@
 #include "ui/features/subbottom/SubBottomViewStyle.h"
 #include <QImage>
 #include <QPoint>
+#include <QPointF>
+#include <QString>
 #include <QWidget>
+#include <string>
 #include <vector>
 
 class QContextMenuEvent;
+class QKeyEvent;
 class QMouseEvent;
+class QPainter;
 class QPaintEvent;
 class QResizeEvent;
 class QWheelEvent;
@@ -66,17 +71,33 @@ public:
     const SubBottomViewStyle& viewStyle() const { return m_style; }
     void setViewStyle(const SubBottomViewStyle& s);
 
+    // -- Annotation tools --------------------------------------------------
+    // Contact pick: 0=none, 1=pick. Feature draw: 0=none, 1=polygon, 2=line.
+    // Activating one annotation tool deactivates the other.
+    void setContactTool(int tool);
+    void setFeatureTool(int tool);
+    void setContactClass(const QString& cls) { m_contact_class = cls.toStdString(); }
+
 signals:
     void scrollChanged(int first_trace, int total_traces, int visible_traces);
     void scaleChanged (int px_per_trace, float px_per_sample);
     void cursorMoved  (int trace_idx, float depth_s, double lat, double lon, bool nav_projected);
     void cursorLeft   ();
     void contextMenuRequested(const QPoint& global_pos);
+    // Contact placed at a trace (geo = that trace's nav position).
+    void contactPicked(int trace_idx, float depth_s, double lat, double lon,
+                       bool is_projected);
+    // Feature (polygon/polyline) drawn; vertices are (lon,lat) from trace nav.
+    void featureDrawn(const std::vector<QPointF>& lonlat_vertices, bool polygon,
+                      bool is_projected);
 
 protected:
     void paintEvent        (QPaintEvent*        e) override;
     void resizeEvent       (QResizeEvent*       e) override;
+    void mousePressEvent   (QMouseEvent*        e) override;
     void mouseMoveEvent    (QMouseEvent*        e) override;
+    void mouseDoubleClickEvent(QMouseEvent*     e) override;
+    void keyPressEvent     (QKeyEvent*          e) override;
     void wheelEvent        (QWheelEvent*        e) override;
     void leaveEvent        (QEvent*             e) override;
     void contextMenuEvent  (QContextMenuEvent*  e) override;
@@ -84,6 +105,11 @@ protected:
 private:
     void   rebuildImage();
     QRgb   sampleToRgb(float sample) const;
+    // Map a screen point to a trace index + travel-time depth and the trace's geo
+    // position. Returns false when outside the loaded traces.
+    bool   traceGeoAt(QPoint pos, int& trace_idx, float& depth_s,
+                      double& lat, double& lon, bool& is_projected) const;
+    void   paintAnnotationDraft(QPainter& p) const;
 
     std::vector<core::SubBottomTrace> m_traces;
 
@@ -102,6 +128,14 @@ private:
 
     int   m_cursor_x         = -1;
     int   m_cursor_y         = -1;
+
+    // -- Annotation tool state ---------------------------------------------
+    int                  m_contact_tool = 0;   // 0=none, 1=pick
+    std::string          m_contact_class;       // applied to next contact pick
+    int                  m_feature_tool = 0;    // 0=none, 1=polygon, 2=line
+    std::vector<QPointF> m_feature_pts;         // committed vertices (lon,lat)
+    std::vector<QPoint>  m_feature_px;          // matching screen points for the draft
+    bool                 m_feature_proj = false;
 
     QImage m_image;
     bool   m_image_dirty     = true;

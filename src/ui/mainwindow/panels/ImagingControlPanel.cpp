@@ -96,8 +96,8 @@ ImagingControlPanel::ImagingControlPanel(QWidget* parent) : QWidget(parent)
     m_bpn_en->setToolTip(
         tr("Beam Pattern Normalisation — corrects transducer array sensitivity\n"
            "variation across the swath.\n"
-           "Slant Range Correction is forced on while BPN is enabled so column\n"
-           "statistics are computed in ground-range geometry. Requires Apply."));
+           "Slant Range Correction is applied automatically while BPN is enabled so\n"
+           "column statistics are computed in ground-range geometry. Requires Apply."));
     vl->addWidget(m_bpn_en);
 
     auto* bpn_rows = new QWidget(container);
@@ -137,69 +137,22 @@ ImagingControlPanel::ImagingControlPanel(QWidget* parent) : QWidget(parent)
     ml_l->addWidget(m_ml_clip_limit);
     vl->addWidget(ml_rows);
 
-    // -- Slant Range Correction ------------------------------------------------
-    auto* div4 = new QFrame(container); div4->setObjectName("ctrlDivider");
-    div4->setFixedHeight(Theme::kSepSz); vl->addWidget(div4);
-
-    m_src_en = new QCheckBox(tr("Slant Range Corr."), container);
-    m_src_en->setObjectName("ctrlToggle");
-    m_src_en->setToolTip(
-        tr("Slant Range Correction — remaps samples from slant range (the diagonal\n"
-           "acoustic path) to ground range (true horizontal seabed distance).\n"
-           "Corrects the near-nadir compression and hyperbolic warp of the raw image.\n"
-           "Recommended before enabling Beam Pattern Normalisation.\n"
-           "Requires Apply."));
-    vl->addWidget(m_src_en);
-
     vl->addStretch(1);
 
-    // -- Apply buttons (pinned below scroll) -----------------------------------
-    auto* sep = new QFrame(this);
-    sep->setFrameShape(QFrame::HLine);
-    sep->setObjectName("ctrlDivider");
-    fl->addWidget(sep);
-
-    auto* btn_row = new QWidget(this);
-    auto* bl = new QHBoxLayout(btn_row);
-    bl->setContentsMargins(Theme::kSpacing3, Theme::kSpacing2, Theme::kSpacing3, Theme::kSpacing3);
-    bl->setSpacing(Theme::kSpacing1);
-
-    m_apply_line_btn = new QPushButton(tr("Apply to Line"), btn_row);
-    m_apply_line_btn->setObjectName("ctrlApplyBtn");
-    m_apply_line_btn->setToolTip(
-        tr("Apply the current imaging settings to this waterfall line only.\n"
-           "All enabled processing steps run in pipeline order on the loaded data."));
-
-    m_apply_all_btn = new QPushButton(tr("Apply to All"), btn_row);
-    m_apply_all_btn->setObjectName("ctrlApplyBtnSecondary");
-    m_apply_all_btn->setToolTip(
-        tr("Apply the current imaging settings to every line in the project.\n"
-           "Use only after confirming the result looks correct on this line."));
-
-    bl->addWidget(m_apply_line_btn);
-    bl->addWidget(m_apply_all_btn);
-    fl->addWidget(btn_row);
-
-    connect(m_arn_en,         &QCheckBox::toggled, this, &ImagingControlPanel::updateControlStates);
-    connect(m_destripe_en,    &QCheckBox::toggled, this, &ImagingControlPanel::updateControlStates);
-    connect(m_bpn_en, &QCheckBox::toggled, this, [this](bool on) {
-        if (on) m_src_en->setChecked(true);
-        updateControlStates();
-    });
-    connect(m_ml_en,          &QCheckBox::toggled, this, &ImagingControlPanel::updateControlStates);
-    connect(m_src_en, &QCheckBox::toggled, this, [this](bool on) {
-        if (!on && m_bpn_en->isChecked())
-            m_src_en->setChecked(true);
-    });
-    connect(m_apply_line_btn, &QPushButton::clicked, this, &ImagingControlPanel::onApplyLine);
-    connect(m_apply_all_btn,  &QPushButton::clicked, this, &ImagingControlPanel::onApplyAll);
+    // Apply is a single shared bar at the bottom of the right-panel (see MainWindow);
+    // this section only edits values and contributes them via writeInto().
+    // Slant Range Correction has no user control here — it is implied by Beam Pattern
+    // (which needs ground-range geometry) and driven automatically in writeInto().
+    connect(m_arn_en,      &QCheckBox::toggled, this, &ImagingControlPanel::updateControlStates);
+    connect(m_destripe_en, &QCheckBox::toggled, this, &ImagingControlPanel::updateControlStates);
+    connect(m_bpn_en,      &QCheckBox::toggled, this, &ImagingControlPanel::updateControlStates);
+    connect(m_ml_en,       &QCheckBox::toggled, this, &ImagingControlPanel::updateControlStates);
 
     setParams(m_params);
 }
 
-WaterfallParams ImagingControlPanel::buildParams() const
+void ImagingControlPanel::writeInto(WaterfallParams& p) const
 {
-    WaterfallParams p = m_params;
     p.arn.enabled          = m_arn_en->isChecked();
     p.arn.strength         = static_cast<float>(m_arn_strength->value());
     p.arn.gain_cap_db      = static_cast<float>(m_arn_gain_cap->value());
@@ -213,8 +166,8 @@ WaterfallParams ImagingControlPanel::buildParams() const
     p.ml_enhance.enabled    = m_ml_en->isChecked();
     p.ml_enhance.clip_limit = static_cast<float>(m_ml_clip_limit->value());
 
-    p.slant_range_correction = m_src_en->isChecked() || m_bpn_en->isChecked();
-    return p;
+    // Slant Range Correction is no longer a user toggle here; Beam Pattern implies it.
+    p.slant_range_correction = m_bpn_en->isChecked();
 }
 
 void ImagingControlPanel::setParams(const WaterfallParams& p)
@@ -225,7 +178,6 @@ void ImagingControlPanel::setParams(const WaterfallParams& p)
     const QSignalBlocker b4(m_destripe_en), b5(m_destripe_capping);
     const QSignalBlocker b6(m_bpn_en),      b7(m_bpn_strength);
     const QSignalBlocker b8(m_ml_en),       b9(m_ml_clip_limit);
-    const QSignalBlocker b10(m_src_en);
 
     m_arn_en->setChecked(p.arn.enabled);
     m_arn_strength->setValue(p.arn.strength);
@@ -240,21 +192,7 @@ void ImagingControlPanel::setParams(const WaterfallParams& p)
     m_ml_en->setChecked(p.ml_enhance.enabled);
     m_ml_clip_limit->setValue(p.ml_enhance.clip_limit);
 
-    m_src_en->setChecked(p.slant_range_correction || p.beam_pattern.enabled);
-
     updateControlStates();
-}
-
-void ImagingControlPanel::onApplyLine()
-{
-    m_params = buildParams();
-    emit applyToLineRequested(m_params);
-}
-
-void ImagingControlPanel::onApplyAll()
-{
-    m_params = buildParams();
-    emit applyToAllRequested(m_params);
 }
 
 void ImagingControlPanel::updateControlStates()
@@ -264,7 +202,6 @@ void ImagingControlPanel::updateControlStates()
     m_destripe_capping->setEnabled(m_destripe_en->isChecked());
     m_bpn_strength->setEnabled(m_bpn_en->isChecked());
     m_ml_clip_limit->setEnabled(m_ml_en->isChecked());
-    m_src_en->setEnabled(!m_bpn_en->isChecked());
 }
 
 } // namespace dolphin::ui

@@ -12,6 +12,8 @@
 #include "ui/shared/widgets/SidePanelShell.h"
 #include "ui/features/map/MapView.h"
 #include "ui/features/map/MapViewportHost.h"
+#include "ui/shared/panels/ContactPickingPanel.h"
+#include "ui/shared/panels/FeatureDrawingPanel.h"
 #include "ui/mainwindow/panels/InspectorPanel.h"
 #include "ui/mainwindow/rightpanel/RightPanelHost.h"
 #include "ui/mainwindow/rightpanel/PanelChatWidget.h"
@@ -27,6 +29,7 @@
 #include <QLabel>
 #include <QListWidget>
 #include <QPainter>
+#include <QPushButton>
 #include <QScrollArea>
 #include <QSplitter>
 #include <QStackedWidget>
@@ -166,8 +169,11 @@ QWidget* MainWindow::buildMainArea(QWidget* parent)
     m_bottom_panel = new BottomDockPanel(m_diag_hub, area);
     layout->addWidget(m_bottom_panel, 0);  // no stretch — panel controls its own height
 
-    // Dialog is a top-level window parented to the MainWindow — not added to layout.
-    m_import_overlay = new ExecutionProgressDialog(this);
+    // Background Tasks panel: embedded as a child overlay of the viewport (anchored
+    // bottom-centre), NOT a top-level window. A popup over the frameless main window
+    // blinks it when shown during project open; an in-window overlay cannot.
+    m_import_overlay = new ExecutionProgressDialog(m_viewport_host);
+    m_import_overlay->embedIn(m_viewport_host);
 
     return area;
 }
@@ -292,7 +298,39 @@ void MainWindow::buildPropertiesPanel(QWidget* parent)
         modal_l->addStretch(1);
         modal_scroll->setWidget(modal_body);
     }
-    lower->setBody(modal_scroll);
+
+    // -- Shared Apply bar (one for the whole tools panel, not per-section) ------
+    // Gathers every visible tool section's settings and applies them in a single
+    // rebuild. Shown only when a sensor (SSS/SBP) layer is active.
+    auto* lower_body = new QWidget(lower);
+    auto* lower_l = makeCompactLayout<QVBoxLayout>(lower_body);
+    lower_l->addWidget(modal_scroll, 1);
+
+    m_tools_apply_bar = new QWidget(lower_body);
+    m_tools_apply_bar->setObjectName("toolsApplyBar");
+    auto* bar_l = new QHBoxLayout(m_tools_apply_bar);
+    bar_l->setContentsMargins(Theme::kSpacing3, Theme::kSpacing2,
+                              Theme::kSpacing3, Theme::kSpacing3);
+    bar_l->setSpacing(Theme::kSpacing1);
+    m_tools_apply_line = new QPushButton(tr("Apply to Line"), m_tools_apply_bar);
+    m_tools_apply_line->setObjectName("ctrlApplyBtn");
+    m_tools_apply_all  = new QPushButton(tr("Apply to All"), m_tools_apply_bar);
+    m_tools_apply_all->setObjectName("ctrlApplyBtnSecondary");
+    // Expanding so the buttons fill and split the bar; the layout re-flows when the
+    // primary label grows ("Apply to Line" → "Apply to Selected (N)"), and the
+    // Expanding minimum (content) means the text never clips.
+    m_tools_apply_line->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    m_tools_apply_all->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    bar_l->addWidget(m_tools_apply_line, 1);
+    bar_l->addWidget(m_tools_apply_all, 1);
+    lower_l->addWidget(m_tools_apply_bar);
+    connect(m_tools_apply_line, &QPushButton::clicked,
+            this, &MainWindow::onApplyToolsToLine);
+    connect(m_tools_apply_all, &QPushButton::clicked,
+            this, &MainWindow::onApplyToolsToAll);
+    m_tools_apply_bar->setVisible(false);   // shown when a sensor layer is active
+
+    lower->setBody(lower_body);
     splitter->addWidget(lower);
 
     // The upper (Properties) pane hugs its content; the lower (sensor) pane
@@ -315,53 +353,41 @@ void MainWindow::buildPropertiesPanel(QWidget* parent)
     m_gain_panel        = m_modal_host->gainPanel();      // modal (Sidescan)
     m_imaging_panel     = m_modal_host->imagingPanel();   // modal (Sidescan)
 
-    // Wire the Navigation / Geometry Apply buttons at construction — NOT in
-    // onWaterfallOpen()/onSubBottomOpen() — so they work from the main/map view
-    // even when the viewer window is closed (root cause of "nav buttons do nothing
-    // in the map view"). They route to model-owned MainWindow slots that store on
-    // DataLayer::nav_state, mark the project dirty, rebuild the map, and refresh
-    // the viewer only if it is open.
-    if (m_nav_panel) {
-        connect(m_nav_panel, &NavInfoPanel::applyToLineRequested,
-                this, &MainWindow::onWaterfallNavProcessLine);
-        connect(m_nav_panel, &NavInfoPanel::applyToAllRequested,
-                this, &MainWindow::onWaterfallNavProcessAllLines);
+    // -- Annotation tool sections → map tools ------------------------------
+    // Contact Picking and Feature Drawing are universal sections (shown on every
+    // tab). They drive the 2-D map's pick/draw input modes; the contact/feature is
+    // created by the existing onContactPickedOnMap / onFeatureDrawn handlers.
+    if (auto* cp = m_modal_host->contactPickingPanel()) {
+        connect(cp, &ContactPickingPanel::pickToggled, this, [this, cp](bool on) {
+            if (!m_map_view) return;
+            if (on) {
+                if (m_viewport_host && m_viewport_host->isMode3D())
+                    m_viewport_host->setMode3D(false);
+                m_pending_contact_class = cp->classification().toStdString();
+                m_map_view->setInputMode(MapView::ModePickContact);
+            } else {
+                m_map_view->setInputMode(MapView::ModePan);
+            }
+        });
+        connect(cp, &ContactPickingPanel::classificationChanged, this,
+                [this](const QString& c) { m_pending_contact_class = c.toStdString(); });
+        connect(cp, &ContactPickingPanel::clearRequested, this, &MainWindow::onClearContacts);
     }
-    if (m_heading_panel) {
-        connect(m_heading_panel, &HeadingInfoPanel::applyToLineRequested,
-                this, &MainWindow::onWaterfallNavProcessLine);
-        connect(m_heading_panel, &HeadingInfoPanel::applyToAllRequested,
-                this, &MainWindow::onWaterfallNavProcessAllLines);
-    }
-    if (m_sbp_nav_panel) {
-        connect(m_sbp_nav_panel, &NavInfoPanel::applyToLineRequested,
-                this, &MainWindow::applySbpNavToLine);
-        connect(m_sbp_nav_panel, &NavInfoPanel::applyToAllRequested,
-                this, &MainWindow::applySbpNavToAll);
-    }
-    if (m_sbp_heading_panel) {
-        connect(m_sbp_heading_panel, &HeadingInfoPanel::applyToLineRequested,
-                this, &MainWindow::applySbpNavToLine);
-        connect(m_sbp_heading_panel, &HeadingInfoPanel::applyToAllRequested,
-                this, &MainWindow::applySbpNavToAll);
+    if (auto* fp = m_modal_host->featureDrawingPanel()) {
+        connect(fp, &FeatureDrawingPanel::toolChanged, this, [this, fp](int tool) {
+            if (!m_map_view) return;
+            if (tool == 0) { m_map_view->setInputMode(MapView::ModePan); return; }
+            onDrawFeature(tool == 1, fp->classification());  // 1=polygon, 2=line
+        });
+        connect(fp, &FeatureDrawingPanel::classificationChanged, this,
+                [this](const QString& c) { m_pending_feature_class = c.toStdString(); });
     }
 
-    // Gain (TVG/AGC/ARC) and Imaging (ARN/destripe/BPN/ML/SRC) Apply buttons —
-    // wired here for the same reason as Nav/Geometry above: route to model-owned
-    // slots so the whole SSS tool area works from the map view, not only after the
-    // waterfall window has been opened.
-    if (m_gain_panel) {
-        connect(m_gain_panel, &GainControlPanel::applyToLineRequested,
-                this, &MainWindow::onSssDisplayApplyLine);
-        connect(m_gain_panel, &GainControlPanel::applyToAllRequested,
-                this, &MainWindow::onSssDisplayApplyAll);
-    }
-    if (m_imaging_panel) {
-        connect(m_imaging_panel, &ImagingControlPanel::applyToLineRequested,
-                this, &MainWindow::onSssDisplayApplyLine);
-        connect(m_imaging_panel, &ImagingControlPanel::applyToAllRequested,
-                this, &MainWindow::onSssDisplayApplyAll);
-    }
+    // The tool sections (Gain/Imaging/Nav/Geometry, SSS + SBP) have no per-section
+    // Apply buttons: they only edit values. The single shared Apply bar at the bottom
+    // of the panel gathers every section's settings and applies them in one rebuild
+    // (MainWindow::applyActiveTools). The panel pointers above are still used to read
+    // the current control values (writeInto / currentParams) from that bar.
 
     outer->addWidget(content, 1);
 }

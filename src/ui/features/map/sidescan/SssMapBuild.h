@@ -16,6 +16,7 @@
 #include "ui/features/map/sidescan/SssGeorefParams.h"
 #include "core/SidescanPing.h"
 #include <atomic>
+#include <functional>
 #include <vector>
 
 namespace dolphin::ui {
@@ -45,6 +46,10 @@ size_t buildSwathNavTrack(const std::vector<core::SidescanPing>& pings, LayerMap
 // Returns true and stores the image in ld.preview_image on success.
 // ping_lines_only: debug flag — skip quad stitching; render each strip as
 //   individual sample dots. Use to isolate whether stretching is a stitch bug.
+// progress: optional 0.0–1.0 callback invoked as rasterization advances (georef →
+//   stitch → hole-fill). Called from this (background) thread; keep it lightweight
+//   and thread-safe. Lets a long High/Full raster report sub-progress instead of
+//   appearing frozen at one percentage.
 bool buildSwathPreviewImage(const std::vector<core::SidescanPing>& pings,
                             LayerMapData& ld,
                             int max_image_dim,
@@ -53,6 +58,7 @@ bool buildSwathPreviewImage(const std::vector<core::SidescanPing>& pings,
                             const SssGeorefParams& georef_params = {},
                             double min_strip_cos    = 0.940,
                             int    cell_budget_div  = 16,
-                            bool   ping_lines_only  = false);
+                            bool   ping_lines_only  = false,
+                            const std::function<void(float)>& progress = {});
 
 } // namespace dolphin::ui

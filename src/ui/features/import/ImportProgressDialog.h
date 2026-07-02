@@ -37,6 +37,9 @@ public:
                 float              size_mb);
 
     void updateJob(const std::string& layer_id, int percent);
+    // Like updateJob, but sets an explicit status line (e.g. "Applying corrections… 70%")
+    // instead of the default "Reading N%" — lets a processing op describe its phase.
+    void updateJob(const std::string& layer_id, int percent, const QString& status);
 
     void finishJob(const std::string& layer_id,
                    int                artifact_count,
@@ -53,10 +56,23 @@ public:
     void onMapLoadPending();
     void onMapLoadDone();
 
+    // Drop all batch/map-phase state and hide. Call when the project changes: the
+    // previous project's in-flight builds are cancelled, so its counters/cards must
+    // not carry into the next project (which would leave the panel stale or stuck).
+    // Bumps a generation so a late onMapLoadDone from a cancelled build is ignored.
+    void resetState();
+
+    // Embed this panel as a child overlay of `host` (instead of a top-level window).
+    // A top-level popup over the frameless main window makes it blink when shown
+    // during project open; an in-window child overlay cannot. Anchored bottom-centre
+    // over the host and repositioned on host resize.
+    void embedIn(QWidget* host);
+
     void reanchor() {} // no-op; kept for API compatibility with old overlay
 
 protected:
     void closeEvent(QCloseEvent* event) override;
+    bool eventFilter(QObject* obj, QEvent* ev) override;  // reposition on host resize
 
 private slots:
     void onTick();
@@ -92,6 +108,7 @@ private:
     void     updateStages();           // refresh stage chips + "now" line from state
     void     runInBackground();
     void     showForActiveBatch();
+    void     positionInParent();   // anchor bottom-centre within the embed host
 
     QLabel*       m_title_lbl   = nullptr;
     QLabel*       m_sub_lbl     = nullptr;
@@ -116,8 +133,14 @@ private:
     std::vector<FileRow> m_rows;
     int    m_queue_total        = 0;
     int    m_pending_map_loads  = 0;
+    // Map-load "done" events still expected from builds cancelled by a project change.
+    // They fire late (the cancelled worker finishes shortly after) and must be absorbed
+    // so they don't decrement the NEW project's pending count.
+    int    m_stale_done_expected = 0;
     bool   m_all_done           = false;
     bool   m_backgrounded       = false;
+    bool   m_embedded           = false;   // child overlay (no top-level window)
+    QWidget* m_host             = nullptr; // embed host (viewport area)
     QTimer* m_timer      = nullptr;
     qint64  m_start_ms   = 0;
 };

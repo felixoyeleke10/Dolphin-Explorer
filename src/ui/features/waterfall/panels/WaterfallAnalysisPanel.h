@@ -44,6 +44,9 @@ public:
     SeabedAutoParams     currentSeabedAutoParams() const;
     int                  currentSeabedChannel() const;  // 0=Both, 1=Port, 2=Starboard
     QString              currentContactClassText() const;
+    QString              currentFeatureClassText() const;
+    // Reflect the active feature tool back onto the panel buttons (signal-blocked).
+    void                 setFeatureToolActive(int tool);
 
 signals:
     void applyToLineRequested();
@@ -54,6 +57,9 @@ signals:
     void contactToolChanged(int tool);
     void contactClassChanged(dolphin::ui::ContactClass cls);
     void clearContactsRequested();
+    // Feature draw tool: 0=none, 1=polygon, 2=line. classification via separate signal.
+    void featureToolChanged(int tool);
+    void featureClassChanged(const QString& classification);
     // Nav processing — emitted when user clicks Run in the Navigation section.
     // Modifies stored raw ping nav; never auto-fired on data load.
     void navProcessThisLineRequested(dolphin::ui::NavProcessingParams params);
@@ -146,6 +152,11 @@ private:
     // -- Contact picking ---------------------------------------------------
     QToolButton* m_contact_pick_btn    = nullptr;
     QComboBox*   m_contact_class_combo = nullptr;
+
+    // -- Feature picking ---------------------------------------------------
+    QToolButton* m_feature_draw_btn    = nullptr;
+    QComboBox*   m_feature_type_combo  = nullptr;  // 0=Polygon, 1=Line
+    QComboBox*   m_feature_class_combo = nullptr;
 
     // -- Processing Tools (image enhancement, applied via main Apply btns) -
     WfToggleRow* m_bpn_toggle        = nullptr;

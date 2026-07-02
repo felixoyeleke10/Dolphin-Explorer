@@ -15,6 +15,8 @@
 #include <QDebug>
 #include <QOpenGLContext>
 #include <QPainter>
+#include <QPen>
+#include <QPolygon>
 
 namespace {
 const QColor kSeabedBandFill  (255, 220,   0,  22);  // selection box while drawing seabed pick
@@ -170,6 +172,43 @@ void WaterfallView::paintOverlays(QPainter& p, const WfLayout& lay)
     if (!m_contacts.empty()) {
         WaterfallOverlayPainter::paintContactOverlay(p, m_contacts, m_rows, lay, m_scroll);
     }
+    // Feature draw draft (polygon/polyline in progress) — teal, dashed live edge.
+    if (m_feature_tool != 0 && !m_feature_px.empty()) {
+        const QColor line (120, 240, 255, 230);
+        const QColor live (120, 240, 255, 150);
+        const QColor fill (120, 240, 255,  40);
+        const QColor vtx  ( 60, 200, 200, 240);
+        const bool polygon = (m_feature_tool == 1);
+        p.save();
+        p.setRenderHint(QPainter::Antialiasing, true);
+
+        QPolygon chain;
+        for (const QPoint& pt : m_feature_px) chain << pt;
+
+        if (polygon && chain.size() >= 2 && m_cursor_x >= 0) {
+            QPolygon closed = chain;
+            closed << QPoint(m_cursor_x, m_cursor_y);
+            p.setPen(Qt::NoPen);
+            p.setBrush(fill);
+            p.drawPolygon(closed);
+        }
+        if (chain.size() >= 2) {
+            p.setPen(QPen(line, 1.5));
+            p.setBrush(Qt::NoBrush);
+            p.drawPolyline(chain);
+        }
+        if (m_cursor_x >= 0) {
+            p.setPen(QPen(live, 1.5, Qt::DashLine));
+            p.drawLine(chain.back(), QPoint(m_cursor_x, m_cursor_y));
+            if (polygon && chain.size() >= 2)
+                p.drawLine(QPoint(m_cursor_x, m_cursor_y), chain.front());
+        }
+        p.setPen(QPen(QColor(0, 0, 0, 150), 1));
+        p.setBrush(vtx);
+        for (const QPoint& pt : chain) p.drawEllipse(pt, 3, 3);
+        p.restore();
+    }
+
     WaterfallOverlayPainter::paintScaleBar(p, m_rows, lay, m_scroll, samplesPerPing());
     if (m_show_amp_bar) {
         if (m_amp_profile_dirty || m_scroll.scrollRow() != m_amp_profile_scroll_row) {

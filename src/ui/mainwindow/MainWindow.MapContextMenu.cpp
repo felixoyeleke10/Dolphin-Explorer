@@ -1,17 +1,20 @@
 // MainWindow.MapContextMenu.cpp — right-click context menu for the map view.
+// The menu is described declaratively as a list of MenuEntry (see MenuSpec.h) and
+// rendered by buildMenu(); the structure is data, not imperative addAction() surgery.
 #include "ui/mainwindow/MainWindow.h"
 #include "ui/features/map/MapView.h"
 #include "ui/features/map/MapViewportHost.h"
 #include "ui/features/map/MapView3D.h"
 #include "ui/features/map/sidescan/SidescanViewController.h"
+#include "ui/shared/widgets/MenuSpec.h"
 #include "app/layers/DataLayer.h"
 #include "app/project/Project.h"
 
-#include <QActionGroup>
 #include <QKeySequence>
 #include <QMenu>
 
 #include <algorithm>
+#include <initializer_list>
 #include <vector>
 
 namespace dolphin::ui {
@@ -36,55 +39,9 @@ void MainWindow::onMapContextMenu(QPoint globalPos)
     if (!clicked_id.empty() && clicked_id != activeLayerId())
         onLayerSelected(clicked_id);
 
-    auto addLayerAction = [&](const QString& text, auto slot) {
-        QAction* act = menu.addAction(text, this, [this, layer_id, slot] {
-            if (!layer_id.empty()) slot(layer_id);
-        });
-        act->setEnabled(has_layer);
-        return act;
-    };
+    const bool has_project = currentProject() != nullptr;
 
-    QAction* open_viewer = menu.addAction(
-        is_sbp ? tr("Open sub-bottom viewer") : tr("Open waterfall"),
-        this, [this] {
-            if (!currentProject() || activeLayerId().empty()) return;
-            const auto* active = currentProject()->findLayer(activeLayerId());
-            if (active && active->modality == app::Modality::SubBottom)
-                onSubBottomOpen();
-            else
-                onWaterfallOpen();
-        });
-    open_viewer->setEnabled(has_layer && (is_sidescan || is_sbp));
-
-    QAction* metadata = menu.addAction(tr("Open metadata viewer"), this, [this] {
-        onWaterfallMetadata();
-    });
-    metadata->setEnabled(is_sidescan);
-
-    QAction* zoom_to = addLayerAction(tr("Zoom to"), [this](const std::string& id) {
-        if (m_map_view) m_map_view->fitToLayer(id);
-    });
-    zoom_to->setShortcut(QKeySequence(Qt::Key_F2));
-
-    menu.addSeparator();
-
-    QMenu* group_menu = menu.addMenu(tr("Group"));
-    group_menu->setEnabled(has_layer);
-    group_menu->addAction(tr("Create group from selection"))->setEnabled(false);
-    group_menu->addAction(tr("Move to group"))->setEnabled(false);
-
-    QMenu* tags_menu = menu.addMenu(tr("Tags"));
-    tags_menu->setEnabled(has_layer);
-    tags_menu->addAction(tr("Add tag"))->setEnabled(false);
-    tags_menu->addAction(tr("Clear tags"))->setEnabled(false);
-
-    QAction* edit_nav = menu.addAction(tr("Edit navigation"), this, [this] {
-        onRenumberContacts();
-    });
-    edit_nav->setEnabled(is_sidescan);
-
-    menu.addSeparator();
-
+    // Reorder a layer relative to its siblings. mode: -2 front, -1 up, 1 down, 2 back.
     auto reorderLayer = [this](const std::string& id, int mode) {
         if (!currentProject() || id.empty()) return;
         std::vector<std::string> ids;
@@ -112,98 +69,103 @@ void MainWindow::onMapContextMenu(QPoint globalPos)
         currentProject()->reorderLayers(ids);
     };
 
-    QAction* bring_front = addLayerAction(tr("Bring to front"), [reorderLayer](const std::string& id) {
-        reorderLayer(id, -2);
-    });
-    bring_front->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_Home));
+    using K = Qt::Key;
+    using ME = MenuEntry;
 
-    QAction* move_up = addLayerAction(tr("Move up"), [reorderLayer](const std::string& id) {
-        reorderLayer(id, -1);
-    });
-    move_up->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_PageUp));
+    // -- The menu, as data -----------------------------------------------------
+    std::vector<MenuEntry> entries;
 
-    QAction* move_down = addLayerAction(tr("Move down"), [reorderLayer](const std::string& id) {
-        reorderLayer(id, 1);
-    });
-    move_down->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_PageDown));
+    entries.push_back(ME::action(
+        is_sbp ? tr("Open sub-bottom viewer") : tr("Open waterfall"),
+        [this] {
+            if (!currentProject() || activeLayerId().empty()) return;
+            const auto* active = currentProject()->findLayer(activeLayerId());
+            if (active && active->modality == app::Modality::SubBottom) onSubBottomOpen();
+            else                                                        onWaterfallOpen();
+        },
+        has_layer && (is_sidescan || is_sbp)));
+    entries.push_back(ME::action(tr("Open metadata viewer"),
+        [this] { onWaterfallMetadata(); }, is_sidescan));
+    entries.push_back(ME::action(tr("Zoom to"),
+        [this, layer_id] { if (m_map_view && !layer_id.empty()) m_map_view->fitToLayer(layer_id); },
+        has_layer, QKeySequence(K::Key_F2)));
 
-    QAction* send_back = addLayerAction(tr("Send to back"), [reorderLayer](const std::string& id) {
-        reorderLayer(id, 2);
-    });
-    send_back->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_End));
+    entries.push_back(ME::separator());
 
-    menu.addSeparator();
+    entries.push_back(ME::submenu(tr("Group"), {
+        ME::action(tr("Create group from selection"), {}, false),
+        ME::action(tr("Move to group"),               {}, false),
+    }, has_layer));
+    entries.push_back(ME::submenu(tr("Tags"), {
+        ME::action(tr("Add tag"),    {}, false),
+        ME::action(tr("Clear tags"), {}, false),
+    }, has_layer));
+    entries.push_back(ME::action(tr("Edit navigation"),
+        [this] { onRenumberContacts(); }, is_sidescan));
 
-    QMenu* import_menu = menu.addMenu(tr("Import"));
-    import_menu->addAction(tr("Import survey files..."), this, &MainWindow::onImportFile)
-        ->setEnabled(currentProject() != nullptr);
+    entries.push_back(ME::separator());
 
-    // Export not yet implemented — disabled per D-05.
-    menu.addMenu(tr("Export"))->setEnabled(false);
+    entries.push_back(ME::action(tr("Bring to front"),
+        [reorderLayer, layer_id] { reorderLayer(layer_id, -2); },
+        has_layer, QKeySequence(Qt::CTRL | K::Key_Home)));
+    entries.push_back(ME::action(tr("Move up"),
+        [reorderLayer, layer_id] { reorderLayer(layer_id, -1); },
+        has_layer, QKeySequence(Qt::CTRL | K::Key_PageUp)));
+    entries.push_back(ME::action(tr("Move down"),
+        [reorderLayer, layer_id] { reorderLayer(layer_id, 1); },
+        has_layer, QKeySequence(Qt::CTRL | K::Key_PageDown)));
+    entries.push_back(ME::action(tr("Send to back"),
+        [reorderLayer, layer_id] { reorderLayer(layer_id, 2); },
+        has_layer, QKeySequence(Qt::CTRL | K::Key_End)));
 
-    QAction* processing_settings = menu.addAction(tr("Processing settings"), this,
-        &MainWindow::onRunSelectedLayer);
-    processing_settings->setEnabled(has_layer);
+    entries.push_back(ME::separator());
 
-    QAction* navigation_settings = menu.addAction(tr("Navigation settings"), this,
-        &MainWindow::onGeodeticSettings);
-    navigation_settings->setEnabled(currentProject() != nullptr);
+    entries.push_back(ME::submenu(tr("Import"), {
+        ME::action(tr("Import survey files..."), [this] { onImportFile(); }, has_project),
+    }));
+    entries.push_back(ME::submenu(tr("Export"), {}, /*enabled=*/false));  // not implemented (D-05)
 
-    menu.addSeparator();
+    entries.push_back(ME::separator());
 
-    addLayerAction(tr("Rename"), [this](const std::string& id) {
-        onRenameLayer(id);
-    });
-
-    QAction* del = addLayerAction(tr("Delete"), [this](const std::string& id) {
-        onRemoveLayer(id);
-    });
-    del->setShortcut(QKeySequence::Delete);
-
-    QAction* properties = menu.addAction(tr("Properties"), this, [this] {
-        onTogglePropertiesPanel();
-    });
-    properties->setEnabled(has_layer);
-
-    menu.addSeparator();
-
-    menu.addAction(tr("Fit to Data"), this, [this] {
-        if (m_map_view) m_map_view->fitToDataAndReset();
-    });
+    entries.push_back(ME::action(tr("Rename"),
+        [this, layer_id] { if (!layer_id.empty()) onRenameLayer(layer_id); }, has_layer));
+    entries.push_back(ME::action(tr("Delete"),
+        [this, layer_id] { if (!layer_id.empty()) onRemoveLayer(layer_id); },
+        has_layer, QKeySequence(QKeySequence::Delete)));
 
     if (is_3d_mode && m_viewport_host && m_viewport_host->view3D()) {
-        menu.addAction(tr("Fit to Scene"), m_viewport_host->view3D(), &MapView3D::fitToScene);
-        menu.addAction(tr("Reset Camera"), m_viewport_host->view3D(), &MapView3D::resetCamera);
-        menu.addAction(tr("Load Terrain..."), m_viewport_host, &MapViewportHost::promptLoadTerrain);
+        MapView3D* v3d = m_viewport_host->view3D();
+        MapViewportHost* host = m_viewport_host;
+        entries.push_back(ME::separator());
+        entries.push_back(ME::action(tr("Reset Camera"), [v3d] { v3d->resetCamera(); }));
+        entries.push_back(ME::action(tr("Load Terrain..."),
+            [host] { host->promptLoadTerrain(); }));
     }
 
-    QMenu* quality_menu = menu.addMenu(tr("Sonar Preview"));
-    auto*  ag           = new QActionGroup(&menu);
-    ag->setExclusive(true);
+    entries.push_back(ME::separator());
 
-    struct Entry { MapSonarQuality q; const char* label; };
-    static constexpr Entry kEntries[] = {
-        { MapSonarQuality::Off,          "Off"                  },
-        { MapSonarQuality::CoverageOnly, "Coverage Only"        },
-        { MapSonarQuality::Low,          "Low"                  },
-        { MapSonarQuality::Medium,       "Medium"               },
-        { MapSonarQuality::High,         "High"                 },
+    // Sonar Preview quality — checkable radio set reflecting the current tier.
+    const int cur_q = m_display_state ? static_cast<int>(m_display_state->mapQuality())
+                                      : static_cast<int>(MapSonarQuality::CoverageOnly);
+    struct QEntry { MapSonarQuality q; const char* label; };
+    static constexpr QEntry kQ[] = {
+        { MapSonarQuality::Off,          "Off"           },
+        { MapSonarQuality::CoverageOnly, "Coverage Only" },
+        { MapSonarQuality::Low,          "Low"           },
+        { MapSonarQuality::Medium,       "Medium"        },
+        { MapSonarQuality::High,         "High"          },
     };
-
-    const int cur_q = m_display_state
-        ? static_cast<int>(m_display_state->mapQuality())
-        : static_cast<int>(MapSonarQuality::CoverageOnly);
-    for (const auto& e : kEntries) {
-        auto* act = quality_menu->addAction(tr(e.label));
-        act->setCheckable(true);
-        act->setChecked(static_cast<int>(e.q) == cur_q);
-        ag->addAction(act);
+    std::vector<MenuEntry> quality;
+    for (const auto& e : kQ) {
         const MapSonarQuality q = e.q;
-        connect(act, &QAction::triggered, this, [this, q] { onMapSonarQuality(q); });
-        if (e.q == MapSonarQuality::CoverageOnly)
-            quality_menu->addSeparator();
+        quality.push_back(ME::check(tr(e.label), static_cast<int>(q) == cur_q,
+                                    [this, q] { onMapSonarQuality(q); }));
+        if (q == MapSonarQuality::CoverageOnly)
+            quality.push_back(ME::separator());
     }
+    entries.push_back(ME::submenu(tr("Sonar Preview"), std::move(quality)));
 
+    buildMenu(menu, entries);
     menu.exec(globalPos);
 }
 

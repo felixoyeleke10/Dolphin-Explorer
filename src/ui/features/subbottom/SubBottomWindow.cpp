@@ -10,6 +10,9 @@
 #include "ui/features/subbottom/SubBottomView.h"
 #include "ui/features/subbottom/panels/SubBottomInspectorPanel.h"
 #include "ui/features/subbottom/panels/SubBottomDisplayPanel.h"
+#include "ui/shared/panels/ContactPickingPanel.h"
+#include "ui/shared/panels/FeatureDrawingPanel.h"
+#include "ui/shared/widgets/CollapsibleSection.h"
 #include "ui/shared/widgets/CommandBar.h"
 #include "ui/shell/Theme.h"
 #include "app/layers/DataLayer.h"
@@ -23,6 +26,7 @@
 #include <QSettings>
 #include <QSignalBlocker>
 #include <QTimer>
+#include <QLabel>
 #include <QToolButton>
 #include <QVBoxLayout>
 
@@ -95,11 +99,32 @@ SubBottomWindow::SubBottomWindow(AppState* app_state, QWidget* parent)
     div_r->setObjectName("av_divider");
     content->addWidget(div_r);
 
-    // Right — display panel
-    m_display = new SubBottomDisplayPanel(this);
-    m_display->setObjectName("av_analysis");
-    m_display->setFixedWidth(kAvAnalysisW);
-    content->addWidget(m_display);
+    // Right — display panel + annotation tool sections (Contact Picking / Feature
+    // Drawing), each a CollapsibleSection like the rest of the panel.
+    {
+        auto* right_col = new QWidget(this);
+        right_col->setFixedWidth(kAvAnalysisW);
+        auto* rc = makeCompactLayout<QVBoxLayout>(right_col);
+
+        m_display = new SubBottomDisplayPanel(right_col);
+        m_display->setObjectName("av_analysis");
+        rc->addWidget(m_display);
+
+        m_contact_panel = new ContactPickingPanel(right_col);
+        auto* contact_sec = new CollapsibleSection(tr("Contact Picking"), right_col);
+        contact_sec->setIcon(QStringLiteral(":/icons/add_contact.svg"));
+        contact_sec->setContent(m_contact_panel);
+        rc->addWidget(contact_sec);
+
+        m_feature_panel = new FeatureDrawingPanel(right_col);
+        auto* feature_sec = new CollapsibleSection(tr("Feature Drawing"), right_col);
+        feature_sec->setIcon(QStringLiteral(":/icons/feature.svg"));
+        feature_sec->setContent(m_feature_panel);
+        rc->addWidget(feature_sec);
+
+        rc->addStretch(1);
+        content->addWidget(right_col);
+    }
 
     root->addLayout(content, 1);
 
@@ -166,6 +191,50 @@ SubBottomWindow::SubBottomWindow(AppState* app_state, QWidget* parent)
     // Context menu
     connect(m_view, &SubBottomView::contextMenuRequested,
             this, &SubBottomWindow::onContextMenu);
+
+    // Annotation tool sections → view tools (mutually exclusive).
+    connect(m_contact_panel, &ContactPickingPanel::pickToggled, this, [this](bool on) {
+        if (m_view) m_view->setContactTool(on ? 1 : 0);
+        if (on && m_feature_panel) m_feature_panel->setDrawActive(false);
+        if (m_status_left)
+            m_status_left->setText(on
+                ? tr("Contact — click the section to place a point pick") : QString{});
+    });
+    connect(m_contact_panel, &ContactPickingPanel::clearRequested,
+            this, &SubBottomWindow::clearAllContactsRequested);
+    connect(m_feature_panel, &FeatureDrawingPanel::toolChanged, this, [this](int tool) {
+        if (m_view) m_view->setFeatureTool(tool);
+        m_feature_class = m_feature_panel->classification();
+        if (tool != 0 && m_contact_panel) m_contact_panel->setPickActive(false);
+        if (m_status_left)
+            m_status_left->setText(tool == 0 ? QString{}
+                : tr("Feature — click to add vertices, double-click or Enter to finish"));
+    });
+    connect(m_feature_panel, &FeatureDrawingPanel::classificationChanged, this,
+            [this](const QString& c) { m_feature_class = c; });
+
+    // Annotation tools — forward picks/draws up to MainWindow (project owner).
+    connect(m_view, &SubBottomView::contactPicked,
+            this, [this](int trace_idx, float depth_s, double lat, double lon,
+                         bool is_projected) {
+                QString cls = m_contact_panel ? m_contact_panel->classification() : tr("Unknown");
+                const QString line_id = m_layer ? QString::fromStdString(m_layer->id) : QString{};
+                // Two-way travel time × half sound-speed → depth in metres.
+                const float depth_m = (depth_s > 0.f) ? depth_s * m_sound_half_speed : 0.f;
+                if (m_status_left)
+                    m_status_left->setText(tr("Contact placed — trace %1  ·  %2 m")
+                                               .arg(trace_idx + 1).arg(depth_m, 0, 'f', 1));
+                emit contactCreated(lat, lon, is_projected, depth_m, cls, line_id,
+                                    static_cast<uint64_t>(trace_idx));
+            });
+    connect(m_view, &SubBottomView::featureDrawn,
+            this, [this](const std::vector<QPointF>& verts, bool polygon, bool is_projected) {
+                const QString line_id = m_layer ? QString::fromStdString(m_layer->id) : QString{};
+                if (m_status_left)
+                    m_status_left->setText(
+                        tr("Feature drawn — %1 vertices").arg(static_cast<int>(verts.size())));
+                emit featureCreated(verts, polygon, is_projected, m_feature_class, line_id);
+            });
 
     // Restore view scale and overlay style from persisted QSettings.
     {
@@ -261,6 +330,13 @@ void SubBottomWindow::setPalette(int idx)
     m_display->notifyParamsChanged();
 }
 
+void SubBottomWindow::setLineNavEnabled(bool has_prev, bool has_next)
+{
+    m_has_prev_line = has_prev;
+    m_has_next_line = has_next;
+    if (m_inspector) m_inspector->setNavEnabled(has_prev, has_next);
+}
+
 void SubBottomWindow::applyDisplayParams(const SubBottomDisplayParams& params)
 {
     if (!m_display) return;
@@ -310,14 +386,16 @@ void SubBottomWindow::onContextMenu(const QPoint& global_pos)
     });
     menu.addAction(tr("Scroll to End"), this, [this] {
         m_view->scrollToTrace(m_total_traces);
+        QSignalBlocker sb(m_hscroll);
+        m_hscroll->setValue(m_view->firstVisibleTrace());  // keep scrollbar in sync
     });
     menu.addSeparator();
     menu.addAction(tr("Previous Line"), this, [this] {
         emit prevLineRequested(m_layer ? m_layer->id : std::string{});
-    });
+    })->setEnabled(m_has_prev_line);
     menu.addAction(tr("Next Line"), this, [this] {
         emit nextLineRequested(m_layer ? m_layer->id : std::string{});
-    });
+    })->setEnabled(m_has_next_line);
     menu.addSeparator();
     menu.addAction(tr("Metadata…"), this, [this] {
         emit metadataRequested();

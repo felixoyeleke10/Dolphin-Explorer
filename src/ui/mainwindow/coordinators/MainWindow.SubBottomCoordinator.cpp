@@ -17,6 +17,7 @@
 #include "ui/features/subbottom/SubBottomViewStyle.h"
 #include "ui/features/map/MapView.h"
 #include "ui/features/metadata/SBPMetadataWindow.h"
+#include "ui/shared/LineNavigation.h"
 #include "app/project/Project.h"
 #include "app/layers/DataLayer.h"
 
@@ -103,15 +104,19 @@ void MainWindow::onSubBottomOpen()
 
         connect(m_sbp_win, &SubBottomWindow::prevLineRequested,
                 this, [this](const std::string& from_id) {
-                    if (!currentProject()) return;
+                    if (!currentProject() || !m_sbp_win) return;
                     const auto& layers = currentProject()->layers();
-                    const std::string& ref = from_id.empty() ? activeLayerId() : from_id;
+                    // The SBP viewer's own loaded line is the source of truth — not the
+                    // app's active layer (which may be an SSS line).
+                    const std::string ref = !from_id.empty() ? from_id
+                                                             : m_sbp_win->currentLayerId();
                     int cur = -1;
                     for (int i = 0; i < static_cast<int>(layers.size()); ++i)
                         if (layers[i]->id == ref) { cur = i; break; }
                     for (int i = cur - 1; i >= 0; --i) {
-                        if (layers[i]->index_built && layers[i]->subBottomCount() > 0) {
+                        if (layers[i] && layers[i]->modality == app::Modality::SubBottom) {
                             onLayerSelected(layers[i]->id);
+                            onSubBottomOpen();   // reload the open viewer to the new line
                             return;
                         }
                     }
@@ -120,15 +125,17 @@ void MainWindow::onSubBottomOpen()
 
         connect(m_sbp_win, &SubBottomWindow::nextLineRequested,
                 this, [this](const std::string& from_id) {
-                    if (!currentProject()) return;
+                    if (!currentProject() || !m_sbp_win) return;
                     const auto& layers = currentProject()->layers();
-                    const std::string& ref = from_id.empty() ? activeLayerId() : from_id;
+                    const std::string ref = !from_id.empty() ? from_id
+                                                             : m_sbp_win->currentLayerId();
                     int cur = -1;
                     for (int i = 0; i < static_cast<int>(layers.size()); ++i)
                         if (layers[i]->id == ref) { cur = i; break; }
                     for (int i = cur + 1; i < static_cast<int>(layers.size()); ++i) {
-                        if (layers[i]->index_built && layers[i]->subBottomCount() > 0) {
+                        if (layers[i] && layers[i]->modality == app::Modality::SubBottom) {
                             onLayerSelected(layers[i]->id);
+                            onSubBottomOpen();   // reload the open viewer to the new line
                             return;
                         }
                     }
@@ -150,6 +157,14 @@ void MainWindow::onSubBottomOpen()
 
         connect(m_sbp_win, &SubBottomWindow::layerChangeRequested,
                 this, [this](const std::string& id) { onLayerSelected(id); });
+
+        // Annotation tools — contact + feature picks create project entities.
+        connect(m_sbp_win, &SubBottomWindow::contactCreated,
+                this, &MainWindow::onSbpContactCreated);
+        connect(m_sbp_win, &SubBottomWindow::featureCreated,
+                this, &MainWindow::onWaterfallFeatureCreated);  // identical handling
+        connect(m_sbp_win, &SubBottomWindow::clearAllContactsRequested,
+                this, &MainWindow::onClearContacts);
         // Busy-state → status-bar spinner. Cancellation is owned by
         // OperationManager (the window's load/process ops are keyed), so no
         // external-token registration is needed.
@@ -178,50 +193,9 @@ void MainWindow::onSubBottomOpen()
                             m_display_state->setLayerSbpDisplay(activeLayerId(), p);
                     });
 
-            if (auto* gain_mod = host->sbpGainModule()) {
-                connect(gain_mod, &SbpGainModule::applyToLineRequested,
-                        this, [this](SbpGainParams p) {
-                            // Display-state only (SeaView model): store on the active
-                            // layer and push live to the SBP window. No .dlpd bake —
-                            // committing to disk is Processing → "Bake Corrections".
-                            std::string lid = activeLayerId();
-                            if (lid.empty() && m_sbp_win) lid = m_sbp_win->currentLayerId();
-                            if (lid.empty() || !currentProject()) return;
-                            if (m_display_state)
-                                m_display_state->setLayerSbpGain(lid, p);
-                            if (m_sbp_win && m_sbp_win->currentLayerId() == lid)
-                                m_sbp_win->applyGainParams(p);
-                        });
-                connect(gain_mod, &SbpGainModule::applyToAllRequested,
-                        this, [this](SbpGainParams p) {
-                            if (!currentProject()) return;
-                            // Display-state only: store on every SBP layer + refresh the
-                            // open window live. No .dlpd bake (see Bake Corrections).
-                            if (m_display_state) m_display_state->setAllSbpGain(p);
-                            if (m_sbp_win) m_sbp_win->applyGainParams(p);
-                        });
-            }
-            if (auto* sig_mod = host->sbpSignalModule()) {
-                connect(sig_mod, &SbpSignalModule::applyToLineRequested,
-                        this, [this](SbpSignalParams p) {
-                            // Display-state only: store on the active layer + push live.
-                            std::string lid = activeLayerId();
-                            if (lid.empty() && m_sbp_win) lid = m_sbp_win->currentLayerId();
-                            if (lid.empty() || !currentProject()) return;
-                            if (m_display_state)
-                                m_display_state->setLayerSbpSignal(lid, p);
-                            if (m_sbp_win && m_sbp_win->currentLayerId() == lid)
-                                m_sbp_win->applySignalParams(p);
-                        });
-                connect(sig_mod, &SbpSignalModule::applyToAllRequested,
-                        this, [this](SbpSignalParams p) {
-                            if (!currentProject()) return;
-                            // Display-state only: store on every SBP layer + refresh the
-                            // open window live. No .dlpd bake (see Bake Corrections).
-                            if (m_display_state) m_display_state->setAllSbpSignal(p);
-                            if (m_sbp_win) m_sbp_win->applySignalParams(p);
-                        });
-            }
+            // SBP gain/signal Apply is handled by the single shared bottom Apply bar
+            // (MainWindow::applyActiveTools) — the modules only edit values and expose
+            // currentParams(); no per-section apply signals to wire here.
 
             // SBP Navigation / Geometry panels are wired once at construction (see
             // MainWindow.MainArea.cpp) so Apply works from the main view even when
@@ -239,8 +213,28 @@ void MainWindow::onSubBottomOpen()
         m_sbp_win->setProjectLayers(sbp_layers);
     }
 
-    if (currentProject() && !activeLayerId().empty()) {
-        auto* layer = currentProject()->findLayer(activeLayerId());
+    // Resolve which SBP line to show: the active layer if it is sub-bottom, else the
+    // first indexed sub-bottom line. Opening the viewer from the toolbar/menu while an
+    // SSS (or other) layer is active must still land on a real SBP line.
+    std::string sbp_id;
+    if (currentProject()) {
+        if (auto* al = currentProject()->findLayer(activeLayerId());
+            al && al->modality == app::Modality::SubBottom)
+            sbp_id = activeLayerId();
+        else
+            for (const auto& l : currentProject()->layers())
+                if (l && l->modality == app::Modality::SubBottom
+                        && l->index_built && l->subBottomCount() > 0) {
+                    sbp_id = l->id;
+                    break;
+                }
+    }
+
+    if (!sbp_id.empty()) {
+        // Sync app state/map/inspector/tab to the SBP line (no-op if already active;
+        // does not re-enter onSubBottomOpen).
+        if (sbp_id != activeLayerId()) onLayerSelected(sbp_id);
+        auto* layer = currentProject()->findLayer(sbp_id);
         if (layer && layer->modality == app::Modality::SubBottom) {
             const auto* src = currentProject()->findSource(layer->source_id);
             m_sbp_win->setLayer(layer, m_import_service,
@@ -268,6 +262,16 @@ void MainWindow::onSubBottomOpen()
                 m_modal_host->setSbpParams(m_sbp_win->displayParams());
             }
         }
+    }
+
+    // Reflect Prev/Next availability for the VIEWER's current line (its loaded line is
+    // the source of truth, not the app's active layer).
+    {
+        // Match the LINES list (populated by modality) so the buttons reflect the SBP
+        // lines the user actually sees — not only those whose index is currently loaded.
+        const auto nav = computeLineNav(currentProject(), m_sbp_win->currentLayerId(),
+            [](const app::DataLayer& l) { return l.modality == app::Modality::SubBottom; });
+        m_sbp_win->setLineNavEnabled(nav.has_prev, nav.has_next);
     }
 
     m_sbp_win->show();

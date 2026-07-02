@@ -14,6 +14,7 @@
 
 class QContextMenuEvent;
 class QEvent;
+class QKeyEvent;
 class QMouseEvent;
 class QPaintEvent;
 class QPainter;
@@ -28,7 +29,7 @@ namespace dolphin::ui {
 class MapView : public QWidget {
     Q_OBJECT
 public:
-    enum MapInputMode { ModePan = 0, ModeSelect, ModeZoom, ModeMeasure, ModePickContact };
+    enum MapInputMode { ModePan = 0, ModeSelect, ModeZoom, ModeMeasure, ModePickContact, ModeDrawFeature };
 
     explicit MapView(QWidget* parent = nullptr);
 
@@ -74,6 +75,11 @@ public:
     // Returns the layer_id of the topmost visible coverage layer under the pixel point.
     std::string hitTestLayer(QPoint px) const;
     void setSelectedContact(uint64_t id);
+    void setSelectedFeature(uint64_t id);
+    // Feature drawing: in ModeDrawFeature each left-click adds a geo vertex,
+    // double-click / Enter commits, Esc / right-click cancels. polygon=true closes
+    // the shape (area); polygon=false leaves it open (polyline).
+    void setFeatureDrawPolygon(bool polygon);
     void setShowGrid          (bool show);
     void setMapBgColor        (QColor c);
     void setGridColor         (QColor c);
@@ -107,6 +113,8 @@ signals:
     void contextMenuRequested(QPoint globalPos);
     // Emitted on single left-click hit (no Ctrl, ModePan only).
     void layerClicked(const std::string& layer_id);
+    // Emitted on double-click over a layer's coverage — open that layer's viewer.
+    void layerActivated(const std::string& layer_id);
     // Emitted for multi-select: Ctrl+click toggle or rubber-band release.
     // An empty vector means the selection was cleared.
     void layersSelected(const std::vector<std::string>& layer_ids);
@@ -116,6 +124,9 @@ signals:
     // Emitted in ModePickContact when user clicks: lon/lat of the picked point.
     // MapView auto-resets to ModePan after emitting.
     void contactPickedOnMap(double lon, double lat);
+    // Emitted in ModeDrawFeature on commit: ordered (lon,lat) vertices + polygon
+    // flag. The view stays in draw mode (sticky) so several features can be drawn.
+    void featureDrawn(const std::vector<QPointF>& lonlat_vertices, bool polygon);
 
     // Emitted from setLayerMapData after data is stored — allows MapViewportHost
     // to forward data to the 3D view without touching every call site.
@@ -129,6 +140,7 @@ protected:
     void mouseReleaseEvent    (QMouseEvent*        event) override;
     void mouseMoveEvent       (QMouseEvent*        event) override;
     void wheelEvent        (QWheelEvent*        event) override;
+    void keyPressEvent     (QKeyEvent*          event) override;
     void leaveEvent        (QEvent*             event) override;
     void contextMenuEvent  (QContextMenuEvent*  event) override;
 
@@ -147,6 +159,7 @@ private:
     void paintNavTrack      (QPainter& p) const;
     void paintProfileTracks (QPainter& p) const;  // colored scalar ribbon (Profile layers)
     void paintContacts      (QPainter& p) const;
+    void paintFeatures      (QPainter& p) const;  // committed shapes + in-progress draft
     void paintMeasureOverlay(QPainter& p) const;
     void paintScaleAndBadges(QPainter& p) const;
 
@@ -154,6 +167,11 @@ private:
     std::vector<std::string> layersInRect(QRect px_rect) const;
     // Zoom by factor centered on pos (pixel coords).
     void zoomAtPoint(QPointF pos, double factor);
+
+    // Feature draw helpers: commit emits featureDrawn (if enough vertices) and
+    // clears the draft; cancel just discards it. Both repaint. Stay in draw mode.
+    void commitFeatureDraft();
+    void cancelFeatureDraft();
 
     // -- View state ------------------------------------------------------------
     bool         m_show_grid           = true;
@@ -194,6 +212,13 @@ private:
 
     // -- Contact selection -----------------------------------------------------
     uint64_t m_selected_contact_id = 0;
+
+    // -- Feature draw tool state (multi-vertex polygon/polyline) ---------------
+    std::vector<QPointF> m_feature_pts_geo;          // confirmed vertices (lon,lat)
+    QPoint               m_feature_cursor_px;         // live cursor pixel
+    bool                 m_feature_drawing  = false;  // a draft is in progress
+    bool                 m_feature_polygon  = true;   // closed area vs open polyline
+    uint64_t             m_selected_feature_id = 0;
 
     // -- Measure tool state (multi-point polyline) -----------------------------
     std::vector<QPointF> m_measure_pts_geo;              // confirmed anchor points (lon, lat)

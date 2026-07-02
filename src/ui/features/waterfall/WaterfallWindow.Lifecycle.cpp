@@ -268,6 +268,10 @@ void WaterfallWindow::resetContactTool()
         QSignalBlocker sb(m_btn_contact);
         m_btn_contact->setChecked(false);
     }
+    // Also drop any in-progress feature draw so a line change can't finish a feature
+    // with vertices from the previous line.
+    m_view->setFeatureTool(0);
+    if (m_analysis) m_analysis->setFeatureToolActive(0);
 }
 
 void WaterfallWindow::clearLayer()

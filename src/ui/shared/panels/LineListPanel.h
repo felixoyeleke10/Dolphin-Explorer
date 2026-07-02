@@ -52,11 +52,15 @@ public:
     // Programmatically sets the tree's selection to the given layer IDs.
     // Uses QSignalBlocker so it doesn't re-emit layerMultiSelected.
     void setSelectedLayers(const std::vector<std::string>& layer_ids);
+    // Layer IDs of the currently selected tree rows (Layer rows only), in tree
+    // order. Empty when nothing (or only non-layer rows) is selected.
+    std::vector<std::string> selectedLayerIds() const;
 
     // Targeted updates — cheaper than refresh() when only one thing changed.
     void setLayerVisibility(const std::string& id, bool visible);
     void updateLayerLabel(const std::string& id, const std::string& label);
     void refreshContacts();
+    void refreshFeatures();
     void refreshLayer(const std::string& id);
 
 signals:
@@ -64,6 +68,7 @@ signals:
     void layerMultiSelected         (const std::vector<std::string>& layer_ids);
     void sourceSelected             (const std::string& source_id);
     void contactSelected            (uint64_t contact_id);
+    void featureSelected            (uint64_t feature_id);
     void layerVisibilityChanged     (const std::string& layer_id, bool visible);
     void navTrackVisibilityChanged  (const std::string& layer_id, bool visible);
 
@@ -91,6 +96,7 @@ signals:
     // Context menu — source and contact actions
     void removeContactRequested     (uint64_t contact_id);
     void exportContactsRequested    ();
+    void removeFeatureRequested     (uint64_t feature_id);
     void revealInExplorerRequested  (const std::string& source_id);
 
     // Empty-state call-to-action buttons

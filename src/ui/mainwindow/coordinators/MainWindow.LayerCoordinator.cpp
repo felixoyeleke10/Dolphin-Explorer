@@ -11,6 +11,7 @@
 #include "ui/bottom/DiagnosticsHub.h"
 #include "ui/features/processing/ProcessingController.h"
 #include "ui/mainwindow/panels/InspectorPanel.h"
+#include "ui/features/import/ImportProgressDialog.h"
 #include "ui/mainwindow/rightpanel/RightPanelHost.h"
 #include "ui/mainwindow/rightpanel/RightPanel.SbpGain.h"
 #include "ui/mainwindow/rightpanel/RightPanel.SbpSignal.h"
@@ -51,7 +52,7 @@ namespace dolphin::ui {
 // nav corrections stored for it. Shared by layer selection and the SBP
 // Navigation / Geometry "Apply" actions. Always rebuilds; the caller decides
 // whether a rebuild is warranted.
-void MainWindow::buildSbpProfileMap(app::DataLayer* layer)
+void MainWindow::buildSbpProfileMap(app::DataLayer* layer, const std::string& lane)
 {
     if (!layer || !m_map_view || !m_import_service || !currentProject()) return;
     if (!layer->index_built || layer->artifact_index.empty())           return;
@@ -83,13 +84,32 @@ void MainWindow::buildSbpProfileMap(app::DataLayer* layer)
     // an import/decode job, so it must not sit under the D-14 cap (2) — capping it
     // throttled multi-line projects (parse→display felt slow). The global
     // QThreadPool still bounds total concurrency.
+    // Per-line progress for a bottom-bar SBP Apply batch: report coarse phases to that
+    // line's dialog card (marshalled to the main thread).
+    auto report = [this, lid](int pct, const QString& phase) {
+        QMetaObject::invokeMethod(this, [this, lid, pct, phase]() {
+            if (!m_import_overlay) return;
+            const auto it = m_tools_apply_layers.find(lid);
+            if (it == m_tools_apply_layers.end()) return;
+            // Name the actual tools while in the corrections band ("Applying Static
+            // Gain, AGC…"); keep the worker's phase text for read/build bands.
+            const QString status = (pct >= 60 && pct < 90 && !it->second.isEmpty())
+                ? tr("Applying %1…").arg(it->second)
+                : phase;
+            m_import_overlay->updateJob(lid, pct,
+                QStringLiteral("%1  %2%").arg(status).arg(pct));
+        }, Qt::QueuedConnection);
+    };
     m_op_mgr->run<LayerMapData>(
         tr("Building sub-bottom profile map…"),
         [svc, store_path, store_format, index_copy,
-         source_path, source_crs, display_crs, nav](app::CancellationToken) {
+         source_path, source_crs, display_crs, nav, report](app::CancellationToken) {
+            report(15, tr("Reading traces…"));
             auto traces = svc->loadAllSubBottomTraces(
                 store_path, store_format, index_copy, source_path);
+            report(70, tr("Applying corrections…"));
             applySbpNavCorrections(traces, nav);   // display-time nav corrections
+            report(90, tr("Building profile…"));
             return buildSbpProfileMapData(traces, source_crs, display_crs);
         },
         [this, lid](LayerMapData result) {
@@ -103,28 +123,27 @@ void MainWindow::buildSbpProfileMap(app::DataLayer* layer)
                     m_diag_hub, QString::fromStdString(lid), result.track_stats);
         },
         "sbp_profile:" + lid,
-        /*heavy=*/false);   // display build, not import/decode — see note above
+        /*heavy=*/false,   // display build, not import/decode — see note above
+        // on_finally: mark this line's dialog card done (any outcome) when it is part
+        // of a bottom-bar SBP Apply batch.
+        [this, lid]() {
+            if (m_import_overlay && m_tools_apply_layers.erase(lid) > 0) {
+                m_import_overlay->finishJob(lid, tr("Tools applied"));
+            }
+        },
+        lane);
 }
 
-void MainWindow::applySbpNavToLine(const NavProcessingParams& p)
+void MainWindow::applySbpLiveCorrections(const std::vector<std::string>& layer_ids)
 {
-    // Target the actively selected layer — the panel reflects it. The SBP window's
-    // current line can be stale (the map/tree selection moved on, or the window is
-    // closed), so prefer the active layer and only fall back to the viewer when
-    // nothing is selected.
-    std::string lid = activeLayerId();
-    if (lid.empty() && m_sbp_win) lid = m_sbp_win->currentLayerId();
-    if (lid.empty() || !currentProject()) return;
-    auto* layer = currentProject()->findLayer(lid);
-    if (!layer || layer->modality != app::Modality::SubBottom) return;
-
-    if (m_display_state) m_display_state->setLayerNav(lid, p);  // mutate + notify (marks dirty)
-    if (m_sbp_win) m_sbp_win->applyNavToLine(p);   // refresh the open SBP window
-    buildSbpProfileMap(layer);                      // rebuild map ribbon with corrected nav
-
-    recordActivity(ActivityKind::NavCorrection,
-        tr("SBP nav corrections applied to %1")
-            .arg(QString::fromStdString(layer->label)));
+    // Line-by-line rebuild (mirrors SidescanViewController::applyLiveCorrections):
+    // a cap-1 "sbp:apply" lane processes one profile at a time. Callers pass only the
+    // layers that should rebuild now (already on the map); others apply lazily.
+    if (!currentProject() || layer_ids.empty()) return;
+    if (m_op_mgr) m_op_mgr->setLaneCap("sbp:apply", 1);
+    for (const auto& id : layer_ids)
+        if (auto* l = currentProject()->findLayer(id))
+            buildSbpProfileMap(l, "sbp:apply");
 }
 
 void MainWindow::applyStoredSbpNavParams(const std::string& layer_id)
@@ -134,29 +153,6 @@ void MainWindow::applyStoredSbpNavParams(const std::string& layer_id)
     // line without corrections clears any carried over from the previous line.
     const auto* layer = currentProject()->findLayer(layer_id);
     m_sbp_win->applyNavToLine(layer ? layer->nav_state : NavProcessingParams{});
-}
-
-void MainWindow::applySbpNavToAll(const NavProcessingParams& p)
-{
-    if (!currentProject()) return;
-    const std::string current = m_sbp_win ? m_sbp_win->currentLayerId() : std::string{};
-
-    int n = 0;
-    for (const auto& l : currentProject()->layers()) {
-        if (!l || l->modality != app::Modality::SubBottom) continue;
-        if (m_display_state) m_display_state->setLayerNav(l->id, p);  // mutate + notify (marks dirty)
-        // Rebuild profiles already on the map now; others apply the stored
-        // params lazily the first time they are selected.
-        if (m_map_view && m_map_view->layerData(l->id))
-            buildSbpProfileMap(l.get());
-        ++n;
-    }
-    if (n == 0) return;
-    if (m_sbp_win && !current.empty()) m_sbp_win->applyNavToLine(p);
-
-    appendJobMessage(tr("Nav corrections applied to %1 sub-bottom line(s)").arg(n));
-    recordActivity(ActivityKind::NavCorrection,
-        tr("SBP nav corrections applied to %1 line(s)").arg(n));
 }
 
 void MainWindow::onLayerSelected(const std::string& layer_id)
@@ -243,6 +239,7 @@ void MainWindow::onLayerSelected(const std::string& layer_id)
             tab = M::Unknown;  // Map tab for Multibeam, Raster, etc.
         refreshSensorTab(tab);
     }
+    updateToolsApplyBar();   // show the shared Apply bar for SSS/SBP layers only
 
     // Always bring the Properties tab into view when a layer is selected.
     if (layer && m_props_stack && m_props_stack->currentIndex() != 0) {
@@ -659,6 +656,9 @@ void MainWindow::refreshInspectorModalities()
     // while a sensor layer is active. A still-valid manual sensor choice is left be.
     if (!cur_visible || (cur == M::Unknown && want != M::Unknown))
         refreshSensorTab(want);
+
+    // The shared bottom Apply bar is only relevant for sensor (SSS/SBP) layers.
+    updateToolsApplyBar();
 }
 
 } // namespace dolphin::ui

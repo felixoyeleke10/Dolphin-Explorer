@@ -6,6 +6,7 @@
 #include "geo/GeoUtils.h"
 
 #include <QContextMenuEvent>
+#include <QKeyEvent>
 #include <QMouseEvent>
 #include <QPolygonF>
 #include <QRect>
@@ -37,6 +38,10 @@ void MapView::setInputMode(MapInputMode mode)
         emit measurementUpdated(-1.0);
     }
 
+    // Drop any in-progress feature draft when the tool changes.
+    m_feature_pts_geo.clear();
+    m_feature_drawing = false;
+
     switch (mode) {
     case ModeSelect:
         setCursor(Qt::CrossCursor);
@@ -46,12 +51,46 @@ void MapView::setInputMode(MapInputMode mode)
         break;
     case ModeMeasure:
     case ModePickContact:
+    case ModeDrawFeature:
         setCursor(Qt::CrossCursor);
+        // Feature drawing needs keyboard focus for Enter/Esc/Backspace.
+        if (mode == ModeDrawFeature) setFocus(Qt::OtherFocusReason);
         break;
     default:
         setCursor(Qt::OpenHandCursor);
         break;
     }
+    update();
+}
+
+void MapView::setFeatureDrawPolygon(bool polygon)
+{
+    m_feature_polygon = polygon;
+}
+
+void MapView::setSelectedFeature(uint64_t id)
+{
+    if (m_selected_feature_id == id) return;
+    m_selected_feature_id = id;
+    update();
+}
+
+void MapView::commitFeatureDraft()
+{
+    // Polygon needs >=3 vertices to enclose area; polyline needs >=2.
+    const size_t min_pts = m_feature_polygon ? 3u : 2u;
+    if (m_feature_pts_geo.size() >= min_pts) {
+        emit featureDrawn(m_feature_pts_geo, m_feature_polygon);
+    }
+    m_feature_pts_geo.clear();
+    m_feature_drawing = false;
+    update();
+}
+
+void MapView::cancelFeatureDraft()
+{
+    m_feature_pts_geo.clear();
+    m_feature_drawing = false;
     update();
 }
 
@@ -195,6 +234,16 @@ void MapView::mousePressEvent(QMouseEvent* event)
         return;
     }
 
+    // Feature-draw mode — each left-click adds a geo vertex to the draft.
+    if (m_input_mode == ModeDrawFeature && event->button() == Qt::LeftButton) {
+        const QPointF geo = pixelToGeo(event->pos());
+        m_feature_pts_geo.push_back(geo);
+        m_feature_cursor_px = event->pos();
+        m_feature_drawing   = true;
+        update();
+        return;
+    }
+
     // Pick-contact mode: emit position; stay in contact-pick mode (sticky tool).
     if (m_input_mode == ModePickContact && event->button() == Qt::LeftButton) {
         const QPointF geo = pixelToGeo(event->pos());
@@ -306,6 +355,11 @@ void MapView::mouseMoveEvent(QMouseEvent* event)
         update();
     }
 
+    if (m_input_mode == ModeDrawFeature && m_feature_drawing) {
+        m_feature_cursor_px = event->pos();
+        update();
+    }
+
     QPointF geo = pixelToGeo(event->pos());
     emit cursorMoved(geo.x(), geo.y());
 }
@@ -342,12 +396,61 @@ void MapView::mouseDoubleClickEvent(QMouseEvent* event)
         update();
         return;
     }
+    // Feature-draw mode — double-click finishes and commits the shape.
+    // (mousePressEvent already added a vertex for the first click of this pair;
+    //  the duplicate trailing point is harmless and dropped by de-duplication.)
+    if (m_input_mode == ModeDrawFeature && event->button() == Qt::LeftButton) {
+        commitFeatureDraft();
+        return;
+    }
+
+    // Pan mode — double-click a layer's coverage to open its viewer.
+    if (m_input_mode == ModePan && event->button() == Qt::LeftButton) {
+        const std::string hit = hitTestLayer(event->pos());
+        if (!hit.empty()) {
+            emit layerActivated(hit);
+            event->accept();
+            return;
+        }
+    }
     QWidget::mouseDoubleClickEvent(event);
+}
+
+void MapView::keyPressEvent(QKeyEvent* event)
+{
+    if (m_input_mode == ModeDrawFeature && m_feature_drawing) {
+        switch (event->key()) {
+        case Qt::Key_Return:
+        case Qt::Key_Enter:
+            commitFeatureDraft();
+            return;
+        case Qt::Key_Escape:
+            cancelFeatureDraft();
+            return;
+        case Qt::Key_Backspace:
+            if (!m_feature_pts_geo.empty()) {
+                m_feature_pts_geo.pop_back();
+                if (m_feature_pts_geo.empty()) m_feature_drawing = false;
+                update();
+            }
+            return;
+        default:
+            break;
+        }
+    }
+    QWidget::keyPressEvent(event);
 }
 
 void MapView::contextMenuEvent(QContextMenuEvent* event)
 {
     if (m_input_mode == ModeZoom) { event->accept(); return; }
+    // While drawing a feature, right-click cancels the in-progress draft instead
+    // of opening the layer context menu.
+    if (m_input_mode == ModeDrawFeature && m_feature_drawing) {
+        cancelFeatureDraft();
+        event->accept();
+        return;
+    }
     if (m_input_mode == ModeMeasure) {
         if (!m_measure_pts_geo.empty()) {
             m_measure_pts_geo.clear();

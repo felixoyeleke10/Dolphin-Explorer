@@ -18,6 +18,7 @@
 #include <QFrame>
 #include <functional>
 
+class QGridLayout;
 class QHBoxLayout;
 class QToolButton;
 
@@ -45,6 +46,9 @@ public:
 
     CommandBar* commandBar() const { return m_cmd_bar; }
 
+    // (Width is layout-driven via column stretch + the pill's minimum width, so no
+    //  resize/show hook is needed — the search bar is correct on the first paint.)
+
 signals:
     void newRequested();
     void openRequested();
@@ -52,15 +56,14 @@ signals:
     void metaRequested();
     void settingsRequested();
 
-protected:
-    bool eventFilter(QObject* watched, QEvent* ev) override;
-
 private:
     QToolButton* makeBtn(const QString& icon_path, const QString& tip);
 
     CommandBar*  m_cmd_bar  = nullptr;
     QToolButton* m_btn_meta = nullptr;
-    QHBoxLayout* m_layout   = nullptr;
+    QFrame*      m_pill     = nullptr;   // uniBar pill wrapping the command bar
+    QGridLayout* m_grid     = nullptr;   // [left | centered pill | right]
+    QHBoxLayout* m_right    = nullptr;   // caller-appended right-section widgets
 };
 
 } // namespace dolphin::ui

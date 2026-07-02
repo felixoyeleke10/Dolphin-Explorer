@@ -100,10 +100,10 @@ void ExecutionProgressDialog::addJob(const std::string& layer_id,
 
     showForActiveBatch();
 
-    if (!m_backgrounded) {
-        raise();
-        activateWindow();
-    }
+    // Bring it above siblings but do NOT activateWindow(): stealing the foreground
+    // from the frameless main window makes it blink. WA_ShowWithoutActivating + this
+    // keeps the main window in front; the user can still click the dialog.
+    if (!m_backgrounded) raise();
 }
 
 void ExecutionProgressDialog::updateJob(const std::string& layer_id, int percent)
@@ -113,6 +113,17 @@ void ExecutionProgressDialog::updateJob(const std::string& layer_id, int percent
     r->percent = percent;
     if (r->result_lbl && r->state == FileRow::State::Active)
         r->result_lbl->setText(tr("Reading %1%").arg(percent));
+    updateOverallProgress();
+}
+
+void ExecutionProgressDialog::updateJob(const std::string& layer_id, int percent,
+                                        const QString& status)
+{
+    auto* r = findRow(layer_id);
+    if (!r) return;
+    r->percent = percent;
+    if (r->result_lbl && r->state == FileRow::State::Active)
+        r->result_lbl->setText(status);
     updateOverallProgress();
 }
 
@@ -246,7 +257,9 @@ void ExecutionProgressDialog::updateHeader()
     if (m_all_done)
         m_title_lbl->setText(tr("All Done"));
     else if (total <= 0)
-        m_title_lbl->setText(tr("Background Tasks"));
+        // No per-file rows: either idle, or a map-only phase (opening a project).
+        m_title_lbl->setText(m_has_map_phase ? tr("Opening project")
+                                             : tr("Background Tasks"));
     else
         m_title_lbl->setText(m_op_is_processing
             ? tr("Processing %1 line(s)").arg(total)
@@ -290,6 +303,19 @@ void ExecutionProgressDialog::updateStages()
         m_stage_lbls[idx]->setStyleSheet(QString("color:%1; font-weight:%2;")
             .arg(c.name(), st == 1 ? "600" : "400"));
     };
+
+    // Map-only phase (opening/reloading a project): no per-file rows, just background
+    // map (re)builds. One "Building map" chip + an X-of-Y sub-line.
+    if (total == 0 && m_has_map_phase) {
+        const int done = std::max(0, m_map_total - m_pending_map_loads);
+        const bool map_done = (m_pending_map_loads == 0);
+        setChip(0, tr("Building map"), map_done ? 2 : 1);
+        if (m_sub_lbl)
+            m_sub_lbl->setText(map_done
+                ? tr("Maps ready")
+                : tr("Building map — %1 of %2").arg(done).arg(m_map_total));
+        return;
+    }
 
     // Sub-line is an aggregate summary — per-line detail lives in the rows below.
     QString now;
@@ -360,33 +386,90 @@ void ExecutionProgressDialog::checkAllDone()
 
 // -- Map-load phase -------------------------------------------------------------
 
+// Delay before a map-only phase (project open) surfaces the panel — opens that finish
+// within this window (fully-cached, no rebuild) never flash a panel that immediately
+// closes; slower (re)builds cross it and show progress.
+static constexpr int kMapPhaseShowDelayMs = 350;
+
 void ExecutionProgressDialog::onMapLoadPending()
 {
+    // Starting a fresh map batch after a previous one finished: reset the map-phase
+    // counters (mirrors addJob's reset) so any later "Building map — X of Y" counts
+    // this open, not the accumulation of every open this session.
     if (m_all_done) {
         m_all_done = false;
         m_backgrounded = false;
+        m_pending_map_loads = 0;
+        m_map_total = 0;
         m_close_btn->setEnabled(false);
         m_bg_btn->setEnabled(true);
     }
     ++m_pending_map_loads;
     ++m_map_total;
     m_has_map_phase = true;
+
+    // Map-only phase (project open / reload): give the panel a "Building map" stage so
+    // it reads sensibly even with no per-file rows.
+    if (m_rows.empty() && m_stage_lbls.empty()) {
+        m_op_is_processing = false;
+        buildStageChips(1);
+        m_start_ms = QDateTime::currentMSecsSinceEpoch();
+        m_timer->start();
+    }
     updateStages();
 
-    // NOTE: we intentionally do NOT auto-surface this dialog for a map-only phase
-    // (e.g. opening a recent project). Doing so popped a top-level window that then
-    // auto-dismissed when the background map builds finished — a visible "blink" on
-    // every open. Project-open / map-build progress is shown non-intrusively in the
-    // status bar (loadingProgress → setProgress) and the bottom Background Tasks
-    // panel. The dialog still appears for user-initiated batches (import / bake /
-    // export) via addJob(), and continues to track the map phase once it is open.
+    // Surface the panel after a short delay. Safe now that the 3D view is a native
+    // QOpenGLWindow: in 2D the main window is no longer GL-composited, so showing the
+    // embedded panel over the (QPainter) map no longer flickers the whole window. The
+    // delay means instant, fully-cached opens that finish first never flash a panel.
+    if (!m_backgrounded && !isVisible()) {
+        QTimer::singleShot(kMapPhaseShowDelayMs, this, [this]() {
+            if (!m_backgrounded && !isVisible()
+                && !m_all_done && m_pending_map_loads > 0)
+                showForActiveBatch();
+        });
+    }
 }
 
 void ExecutionProgressDialog::onMapLoadDone()
 {
+    // Absorb late "done" events from builds cancelled by a project change so they
+    // don't decrement the new project's pending count (which would hide the panel
+    // early or desync "X of Y").
+    if (m_stale_done_expected > 0) {
+        --m_stale_done_expected;
+        return;
+    }
     if (m_pending_map_loads <= 0) return;
     --m_pending_map_loads;
     checkAllDone();
+}
+
+void ExecutionProgressDialog::resetState()
+{
+    m_timer->stop();
+
+    // Any in-flight map builds were just cancelled by the caller; their done events
+    // will still arrive — remember how many to absorb.
+    m_stale_done_expected += m_pending_map_loads;
+
+    // Remove every card (active + finished) and reset all batch/map-phase state.
+    for (auto& r : m_rows)
+        if (r.card) { m_list_lay->removeWidget(r.card); r.card->deleteLater(); }
+    m_rows.clear();
+
+    m_queue_total       = 0;
+    m_pending_map_loads = 0;
+    m_map_total         = 0;
+    m_has_map_phase     = false;
+    m_all_done          = false;
+    m_backgrounded      = false;
+    m_op_is_processing  = false;
+    m_stages_built      = false;
+    buildStageChips(0);          // clear the stage chips
+    m_overall_bar->setValue(0);
+
+    hide();
 }
 
 } // namespace dolphin::ui

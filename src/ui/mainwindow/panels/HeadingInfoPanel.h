@@ -14,17 +14,12 @@ class HeadingInfoPanel : public QWidget {
 public:
     explicit HeadingInfoPanel(QWidget* parent = nullptr);
 
-signals:
-    void applyToLineRequested(const dolphin::ui::NavProcessingParams& params);
-    void applyToAllRequested(const dolphin::ui::NavProcessingParams& params);
-
-private slots:
-    void onApplyLine();
-    void onApplyAll();
-
-private:
+    // Write this section's attitude offsets into p. Used by the shared bottom Apply
+    // bar to gather all sections into one rebuild.
+    void writeInto(NavProcessingParams& p) const;
     NavProcessingParams currentParams() const;
 
+private:
     WfValueRow* m_hdg_offset   = nullptr;  // °
     WfValueRow* m_pitch_offset = nullptr;  // °
     WfValueRow* m_roll_offset  = nullptr;  // °

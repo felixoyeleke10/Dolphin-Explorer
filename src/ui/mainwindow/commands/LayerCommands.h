@@ -2,6 +2,7 @@
 #include "app/project/Project.h"
 #include "app/layers/DataLayer.h"
 #include "core/Contact.h"
+#include "core/Feature.h"
 #include "core/SpatialRef.h"
 #include "app/display/NavProcessingParams.h"
 #include <QUndoCommand>
@@ -117,6 +118,80 @@ private:
     core::Contact         m_contact;
     uint64_t              m_assigned_id = 0;
     std::function<void()> m_on_applied;
+};
+
+// Undoable feature placement (polygon/polyline shape annotation). Mirrors
+// AddContactCommand: project->addFeature on redo, project->removeFeature on undo.
+class AddFeatureCommand final : public QUndoCommand {
+public:
+    AddFeatureCommand(app::Project*         project,
+                      core::Feature         feature,
+                      std::function<void()> on_applied)
+        : QUndoCommand(QStringLiteral("Add Feature"))
+        , m_project(project)
+        , m_feature(std::move(feature))
+        , m_on_applied(std::move(on_applied))
+    {}
+
+    void redo() override {
+        const auto& before = m_project->features();
+        const size_t prev_sz = before.size();
+        m_project->addFeature(m_feature);
+        const auto& after = m_project->features();
+        for (auto it = after.begin() + static_cast<ptrdiff_t>(prev_sz); it != after.end(); ++it)
+            m_assigned_id = it->id;
+        if (m_assigned_id == 0 && !after.empty())
+            m_assigned_id = after.back().id;
+        // Capture the project-assigned default label so a redo after undo keeps the
+        // same name (the feature was created with an empty label).
+        if (m_feature.label.empty())
+            for (const auto& f : after)
+                if (f.id == m_assigned_id) { m_feature.label = f.label; break; }
+        if (m_on_applied) m_on_applied();
+    }
+
+    void undo() override {
+        if (m_assigned_id) m_project->removeFeature(m_assigned_id);
+        if (m_on_applied) m_on_applied();
+    }
+
+    uint64_t assignedId() const { return m_assigned_id; }
+
+private:
+    app::Project*         m_project;
+    core::Feature         m_feature;
+    uint64_t              m_assigned_id = 0;
+    std::function<void()> m_on_applied;
+};
+
+// Undoable feature removal. Snapshots the full feature so undo re-adds it (the
+// re-added feature gets a fresh id, kept for any subsequent redo).
+class RemoveFeatureCommand final : public QUndoCommand {
+public:
+    RemoveFeatureCommand(app::Project* project, uint64_t id)
+        : QUndoCommand(QStringLiteral("Remove Feature"))
+        , m_project(project)
+        , m_id(id)
+    {
+        for (const auto& f : project->features())
+            if (f.id == id) { m_snapshot = f; m_have = true; break; }
+    }
+
+    void redo() override { if (m_id) m_project->removeFeature(m_id); }
+
+    void undo() override {
+        if (!m_have) return;
+        core::Feature f = m_snapshot;
+        f.id = 0;                 // let the project assign a fresh id
+        m_project->addFeature(f);
+        m_id = m_project->features().empty() ? 0 : m_project->features().back().id;
+    }
+
+private:
+    app::Project* m_project;
+    uint64_t      m_id;
+    core::Feature m_snapshot;
+    bool          m_have = false;
 };
 
 // Undoable soft-delete: moves a contact to the project recycle bin (redo) and

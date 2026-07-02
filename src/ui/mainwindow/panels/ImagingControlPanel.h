@@ -9,29 +9,28 @@ namespace dolphin::ui {
 
 class WfValueRow;
 
-// Post-assembly imaging chain: ARN, Destripe, Beam Pattern, ML Enhance, SRC.
-// Each section has a master toggle and the key tuning parameter.
-// Changes are batched — Apply sends the full WaterfallParams.
+// Post-assembly imaging chain: ARN, Destripe, Beam Pattern, ML Enhance.
+// Edits values only; the shared bottom Apply bar reads them via writeInto() and
+// applies all sections together (one rebuild). Slant Range Correction has no control
+// here — it is implied by Beam Pattern and set automatically in writeInto().
 class ImagingControlPanel : public QWidget {
     Q_OBJECT
 public:
     explicit ImagingControlPanel(QWidget* parent = nullptr);
 
-signals:
-    void applyToLineRequested(const WaterfallParams& params);
-    void applyToAllRequested(const WaterfallParams& params);
-
 public slots:
     void setParams(const WaterfallParams& p);
 
+public:
+    // Write this section's control values (ARN/destripe/BPN/ML) into p; also sets
+    // p.slant_range_correction from Beam Pattern (BPN requires ground-range geometry).
+    // Used by the shared bottom Apply bar to gather all sections into one rebuild.
+    void writeInto(WaterfallParams& p) const;
+
 private slots:
-    void onApplyLine();
-    void onApplyAll();
     void updateControlStates();
 
 private:
-    WaterfallParams buildParams() const;
-
     // ARN — Adaptive Range Normalisation
     QCheckBox*  m_arn_en       = nullptr;
     WfValueRow* m_arn_strength = nullptr;   // 0-1
@@ -48,12 +47,6 @@ private:
     // ML Enhance (CLAHE)
     QCheckBox*  m_ml_en         = nullptr;
     WfValueRow* m_ml_clip_limit = nullptr;  // 1–8
-
-    // Slant Range Correction (no sub-params)
-    QCheckBox*   m_src_en    = nullptr;
-
-    QPushButton* m_apply_line_btn = nullptr;
-    QPushButton* m_apply_all_btn  = nullptr;
 
     WaterfallParams m_params;
 };

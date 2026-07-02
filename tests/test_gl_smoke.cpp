@@ -60,7 +60,7 @@ int main(int argc, char* argv[])
         });
         view.resize(800, 600);
         view.show();
-        view.repaint();  // force initializeGL to fire synchronously
+        view.update();  // MapView3D is a QOpenGLWindow — schedule a frame
         QApplication::processEvents();
         CHECK(gl_errors == 0);
     }

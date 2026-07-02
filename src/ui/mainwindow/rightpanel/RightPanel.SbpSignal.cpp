@@ -116,36 +116,9 @@ SbpSignalModule::SbpSignalModule(QWidget* parent) : QWidget(parent)
 
     vl->addStretch(1);
 
-    // -- Apply buttons (pinned below scroll) -----------------------------------
-    auto* sep = new QFrame(this);
-    sep->setFrameShape(QFrame::HLine);
-    sep->setObjectName("ctrlDivider");
-    fl->addWidget(sep);
-
-    auto* btn_row = new QWidget(this);
-    auto* bl = new QHBoxLayout(btn_row);
-    bl->setContentsMargins(Theme::kSpacing3, Theme::kSpacing2, Theme::kSpacing3, Theme::kSpacing3);
-    bl->setSpacing(Theme::kSpacing1);
-
-    m_apply_line_btn = new QPushButton(tr("Apply to Line"), btn_row);
-    m_apply_line_btn->setObjectName("ctrlApplyBtn");
-    m_apply_line_btn->setToolTip(
-        tr("Apply the current signal processing to this SBP line only.\n"
-           "Check the result before applying to all lines."));
-
-    m_apply_all_btn = new QPushButton(tr("Apply to All"), btn_row);
-    m_apply_all_btn->setObjectName("ctrlApplyBtnSecondary");
-    m_apply_all_btn->setToolTip(
-        tr("Apply the current signal processing to every SBP line in the project.\n"
-           "Use only after confirming the result looks correct on this line."));
-
-    bl->addWidget(m_apply_line_btn);
-    bl->addWidget(m_apply_all_btn);
-    fl->addWidget(btn_row);
-
-    connect(m_bandpass_en,    &QCheckBox::toggled, this, &SbpSignalModule::updateControlStates);
-    connect(m_apply_line_btn, &QPushButton::clicked, this, &SbpSignalModule::onApplyLine);
-    connect(m_apply_all_btn,  &QPushButton::clicked, this, &SbpSignalModule::onApplyAll);
+    // Apply is the single shared bar at the bottom of the right-panel (see
+    // MainWindow); this section only edits values and exposes them via currentParams().
+    connect(m_bandpass_en, &QCheckBox::toggled, this, &SbpSignalModule::updateControlStates);
 
     updateControlStates();
 }
@@ -173,16 +146,6 @@ void SbpSignalModule::setParams(const SbpSignalParams& p)
     m_bp_hi_hz->setValue(p.bp_hi_hz);
 
     updateControlStates();
-}
-
-void SbpSignalModule::onApplyLine()
-{
-    emit applyToLineRequested(currentParams());
-}
-
-void SbpSignalModule::onApplyAll()
-{
-    emit applyToAllRequested(currentParams());
 }
 
 void SbpSignalModule::updateControlStates()

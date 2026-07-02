@@ -2,6 +2,7 @@
 #include <QDateTime>
 #include <QMainWindow>
 #include <QMap>
+#include <QPointF>
 #include <QPointer>
 #include <array>
 #include <memory>
@@ -33,6 +34,7 @@ class QButtonGroup;
 class QDialog;
 class QFrame;
 class QLabel;
+class QPushButton;
 class QSplitter;
 class QLineEdit;
 class QListWidget;
@@ -139,6 +141,11 @@ private slots:
     void onToolMeasure();
     void onMeasurementUpdated(double metres);
     void onContactPickedOnMap(double lon, double lat);
+    // Activate the map feature-draw tool (polygon=true closes the shape).
+    // classification is applied to the feature committed by this draw session.
+    void onDrawFeature(bool polygon, const QString& classification = {});
+    // Commit a drawn shape (lon/lat vertices) as a new project feature.
+    void onFeatureDrawn(const std::vector<QPointF>& lonlat_vertices, bool polygon);
     void onWaterfallOpen();
     void onSubBottomOpen();
     void onContactManagerOpen();
@@ -158,16 +165,27 @@ private slots:
                                    uint64_t abs_row,
                                    int channel_idx,
                                    const QPixmap& snapshot);
+    void onWaterfallFeatureCreated(const std::vector<QPointF>& lonlat_vertices,
+                                   bool polygon, bool is_projected,
+                                   const QString& classification,
+                                   const QString& line_id);
+    // SBP/seabed viewer contact pick (geo from the trace nav; depth_m from the
+    // clicked travel time).
+    void onSbpContactCreated(double lat, double lon, bool is_projected, float depth_m,
+                             const QString& classification, const QString& line_id,
+                             uint64_t abs_trace);
     void onWaterfallParamsApplied();
     void onWaterfallSetCrs(const std::string& from_layer_id);
     void onWaterfallNavProcessLine(dolphin::ui::NavProcessingParams params);
     void onWaterfallNavProcessAllLines(dolphin::ui::NavProcessingParams params);
 
-    // Gain / imaging (TVG/AGC/ARC/ARN/destripe/BPN/ML/SRC) Apply buttons in the
-    // right-panel SSS tools. Model-owned and wired at construction so they work
-    // from the map view whether or not the waterfall window is open.
-    void onSssDisplayApplyLine(const dolphin::ui::WaterfallParams& params);
-    void onSssDisplayApplyAll (const dolphin::ui::WaterfallParams& params);
+    // Single shared Apply bar at the bottom of the tools panel: gather every visible
+    // tool section's settings for the active sensor and apply them in one rebuild.
+    void onApplyToolsToLine();
+    void onApplyToolsToAll();
+    void applyActiveTools(bool all_lines);
+    // Reflect tool availability: show the Apply bar only for SSS/SBP layers.
+    void updateToolsApplyBar();
 
     // Contact / layer stubs
     void onAddContact();
@@ -296,19 +314,18 @@ private:
     void updateActionStates();
     void refreshInspectorModalities();
 
-    // SBP navigation corrections (Navigation / Geometry under the SBP sensor tab).
-    // applySbpNavTo* store params per layer, refresh the SBP window, and rebuild
-    // the affected map profile(s); buildSbpProfileMap is the shared rebuild.
-    void applySbpNavToLine(const dolphin::ui::NavProcessingParams& p);
-    void applySbpNavToAll (const dolphin::ui::NavProcessingParams& p);
-    void buildSbpProfileMap(app::DataLayer* layer);
+    // SBP profile map rebuild (gain/signal/nav are stored by applyActiveTools).
+    // lane selects the OperationManager concurrency lane: "" (default) runs the
+    // build immediately for layer selection; an explicit Apply passes a cap-1 lane
+    // ("sbp:apply") so a multi-line Apply rebuilds line-by-line (mirrors SSS).
+    void buildSbpProfileMap(app::DataLayer* layer, const std::string& lane = {});
+
+    // SBP counterpart to SidescanViewController::applyLiveCorrections(ids): rebuild
+    // the given sub-bottom profiles line-by-line on the cap-1 "sbp:apply" lane.
+    // Keeps the SBP and SSS Apply paths symmetric (one call each in applyActiveTools).
+    void applySbpLiveCorrections(const std::vector<std::string>& layer_ids);
     // Re-apply (or clear) the stored nav corrections for a layer on SBP open.
     void applyStoredSbpNavParams(const std::string& layer_id);
-
-    // Shared implementation for the SSS gain/imaging Apply slots: store params on
-    // the target layer(s), then run the correction through CorrectionBatchOperator
-    // (progress panel + map reload) so the map reflects the result like a pro app.
-    void applySssCorrection(const dolphin::ui::WaterfallParams& params, bool all_lines);
 
     QWidget* makeContextPlaceholder(const QString& title, const QString& body);
     void     refreshSidebarSections(const QStringList& paths);
@@ -350,6 +367,11 @@ private:
 
     // Map sonar preview quality actions (index == MapSonarQuality int value)
     std::array<QAction*, 6> m_act_map_quality{};
+
+    // Classification applied to the feature drawn / contact picked by the current
+    // map draw session (set from the Feature Drawing / Contact Picking sections).
+    std::string m_pending_feature_class;
+    std::string m_pending_contact_class;
 
     // Undo / redo
     QUndoStack* m_undo_stack  = nullptr;
@@ -417,15 +439,23 @@ private:
 
     // Import progress overlay (bottom-centre of viewport)
     ExecutionProgressDialog* m_import_overlay = nullptr;
-    // True while an SSS gain/imaging Apply drives the execution window (shown in
-    // "Processing" mode, not "Importing"); closed on prebuildTierFinished.
-    bool m_sss_apply_active = false;
+    // Layers whose tier/profile rebuild is being tracked as a bottom-bar Apply batch
+    // (one processing-dialog card per line, SSS or SBP). Non-empty = Apply in flight.
+    // Value = the human-readable tool summary ("TVG, ARC, ARN") so the per-line card
+    // can name what it is applying, not just "Applying corrections…".
+    std::unordered_map<std::string, QString> m_tools_apply_layers;
 
     // Inspector (lives in Properties overlay)
     InspectorPanel*    m_inspector     = nullptr;
     // Modal host — sensor-specific modules (Display, Radiometry, SBP tools)
     // Lives in the lower half of the properties panel, always visible.
     RightPanelHost*    m_modal_host    = nullptr;
+
+    // Single shared Apply bar at the bottom of the tools panel (replaces the
+    // per-section Apply buttons). Applies every visible tool section in one rebuild.
+    QWidget*     m_tools_apply_bar  = nullptr;
+    QPushButton* m_tools_apply_line = nullptr;
+    QPushButton* m_tools_apply_all  = nullptr;
 
     // Panel pointers sourced from RightPanelHost — used for viewer signal wiring.
     // Navigation / Geometry are per-modality: SSS pair drives the waterfall,

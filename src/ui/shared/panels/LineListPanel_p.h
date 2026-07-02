@@ -39,6 +39,7 @@ inline constexpr int kTagPaletteSize = static_cast<int>(sizeof(kTagPalette) / si
         ContactsSection,
         Contact,
         FeaturesSection,
+        Feature,
         LayerGroup,      // user-defined layer group
         ContactGroup,    // user-defined contact group
     };

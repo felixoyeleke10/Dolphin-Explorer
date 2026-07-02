@@ -8,6 +8,7 @@
 #include <QColor>
 #include <QDateTime>
 #include <QCloseEvent>
+#include <QEvent>
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -16,6 +17,8 @@
 #include <QScrollArea>
 #include <QTimer>
 #include <QVBoxLayout>
+
+#include <algorithm>
 
 namespace dolphin::ui {
 
@@ -34,6 +37,10 @@ ExecutionProgressDialog::ExecutionProgressDialog(QWidget* parent)
     setWindowTitle(tr("Background Tasks"));
     setModal(false);
     setFixedWidth(kDialogW);
+    // Show without stealing activation: the main window is frameless, and a popup that
+    // grabs the foreground makes it drop/redraw (a visible "blink"). The user can still
+    // click this dialog's buttons — clicking activates it then.
+    setAttribute(Qt::WA_ShowWithoutActivating);
 
 
     // -- Root layout -----------------------------------------------------------
@@ -219,16 +226,52 @@ void ExecutionProgressDialog::runInBackground()
     hide();
 }
 
+void ExecutionProgressDialog::embedIn(QWidget* host)
+{
+    if (!host) return;
+    m_embedded = true;
+    m_host     = host;
+    setParent(host);
+    // Render as an in-window child overlay, not a top-level window. A popup over the
+    // frameless main window blinks it when shown during open; a child cannot.
+    setWindowFlags(Qt::Widget);
+    host->installEventFilter(this);
+    hide();
+}
+
+void ExecutionProgressDialog::positionInParent()
+{
+    if (!m_host) return;
+    adjustSize();   // size to current content (cards/stage list)
+    const int margin = 18;
+    const int x = (m_host->width()  - width())  / 2;
+    const int y =  m_host->height() - height() - margin;
+    move(std::max(margin, x), std::max(margin, y));
+}
+
+bool ExecutionProgressDialog::eventFilter(QObject* obj, QEvent* ev)
+{
+    if (m_embedded && obj == m_host && ev->type() == QEvent::Resize && isVisible())
+        positionInParent();
+    return QDialog::eventFilter(obj, ev);
+}
+
 void ExecutionProgressDialog::showForActiveBatch()
 {
     if (m_backgrounded || isVisible()) return;
 
-    if (parentWidget()) {
-        const QRect pr = parentWidget()->geometry();
-        move(pr.center().x() - width() / 2,
-             pr.center().y() - height() / 2);
+    if (m_embedded) {
+        positionInParent();
+        show();
+        raise();   // above the map/siblings within the host
+    } else {
+        if (parentWidget()) {
+            const QRect pr = parentWidget()->geometry();
+            move(pr.center().x() - width() / 2,
+                 pr.center().y() - height() / 2);
+        }
+        show();
     }
-    show();
     m_start_ms = QDateTime::currentMSecsSinceEpoch();
     m_timer->start();
 }

@@ -85,53 +85,28 @@ NavInfoPanel::NavInfoPanel(QWidget* parent) : QWidget(parent)
 
     vl->addStretch(1);
 
-    // -- Apply buttons (pinned below scroll) -----------------------------------
-    auto* sep = new QFrame(this);
-    sep->setFrameShape(QFrame::HLine);
-    sep->setObjectName("ctrlDivider");
-    fl->addWidget(sep);
-
-    auto* btn_row = new QWidget(this);
-    auto* bl = new QHBoxLayout(btn_row);
-    bl->setContentsMargins(Theme::kSpacing3, Theme::kSpacing2, Theme::kSpacing3, Theme::kSpacing3);
-    bl->setSpacing(Theme::kSpacing1);
-
-    auto* apply_line = new QPushButton(tr("Apply to Line"), btn_row);
-    apply_line->setObjectName("ctrlApplyBtn");
-    apply_line->setToolTip(
-        tr("Run the selected navigation corrections on the current waterfall line only.\n"
-           "Check the result here before applying to all lines."));
-
-    auto* apply_all = new QPushButton(tr("Apply to All"), btn_row);
-    apply_all->setObjectName("ctrlApplyBtnSecondary");
-    apply_all->setToolTip(
-        tr("Run the selected navigation corrections on every line in the project.\n"
-           "Use only after confirming the result looks correct on this line."));
-
-    bl->addWidget(apply_line);
-    bl->addWidget(apply_all);
-    fl->addWidget(btn_row);
-
+    // Apply is the single shared bar at the bottom of the right-panel (see
+    // MainWindow); this section only edits values and contributes via writeInto().
     connect(m_smooth_en,  &QCheckBox::toggled, this, &NavInfoPanel::updateControlStates);
     connect(m_layback_en, &QCheckBox::toggled, this, &NavInfoPanel::updateControlStates);
-    connect(apply_line, &QPushButton::clicked, this, &NavInfoPanel::onApplyLine);
-    connect(apply_all,  &QPushButton::clicked, this, &NavInfoPanel::onApplyAll);
 
     updateControlStates();
+}
+
+void NavInfoPanel::writeInto(NavProcessingParams& p) const
+{
+    p.smooth_enabled  = m_smooth_en->isChecked();
+    p.smooth_window   = m_smooth_win->intValue();
+    p.layback_enabled = m_layback_en->isChecked();
+    p.layback_m       = static_cast<float>(m_layback_m->value());
 }
 
 NavProcessingParams NavInfoPanel::currentParams() const
 {
     NavProcessingParams p;
-    p.smooth_enabled  = m_smooth_en->isChecked();
-    p.smooth_window   = m_smooth_win->intValue();
-    p.layback_enabled = m_layback_en->isChecked();
-    p.layback_m       = static_cast<float>(m_layback_m->value());
+    writeInto(p);
     return p;
 }
-
-void NavInfoPanel::onApplyLine() { emit applyToLineRequested(currentParams()); }
-void NavInfoPanel::onApplyAll()  { emit applyToAllRequested(currentParams()); }
 
 void NavInfoPanel::updateControlStates()
 {

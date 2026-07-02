@@ -40,6 +40,13 @@ static std::string confidenceToString(core::Confidence c) {
     }
 }
 
+static std::string featureTypeToString(core::FeatureType t) {
+    switch (t) {
+    case core::FeatureType::Polyline: return "polyline";
+    default:                          return "polygon";
+    }
+}
+
 static util::JsonValue spatialRefToJson(const core::SpatialRef& ref)
 {
     util::JsonValue out = util::JsonValue::object();
@@ -311,6 +318,37 @@ std::string Project::toJson() const
     util::JsonValue recycled_arr = util::JsonValue::array();
     for (const auto& c : m_recycled_contacts) recycled_arr.push(contactToJson(c));
     root["recycled_contacts"] = std::move(recycled_arr);
+
+    // Features — SHAPE annotations (polylines/polygons).
+    auto featureToJson = [](const core::Feature& f) -> util::JsonValue {
+        util::JsonValue jf = util::JsonValue::object();
+        jf["id"]             = util::JsonValue(static_cast<double>(f.id));
+        jf["label"]          = util::JsonValue(f.label);
+        jf["type"]           = util::JsonValue(featureTypeToString(f.type));
+        util::JsonValue verts = util::JsonValue::array();
+        for (const auto& v : f.vertices) {
+            util::JsonValue jv = util::JsonValue::object();
+            jv["lat"] = util::JsonValue(v.lat);
+            jv["lon"] = util::JsonValue(v.lon);
+            verts.push(std::move(jv));
+        }
+        jf["vertices"]       = std::move(verts);
+        jf["spatial_ref"]    = spatialRefToJson(f.spatial_ref);
+        jf["line_id"]        = util::JsonValue(f.line_id);
+        jf["classification"] = util::JsonValue(f.classification);
+        jf["notes"]          = util::JsonValue(f.notes);
+        jf["created_at"]     = util::JsonValue(f.created_at);
+        jf["modified_at"]    = util::JsonValue(f.modified_at);
+        util::JsonValue ftags = util::JsonValue::array();
+        for (const auto& t : f.tags)
+            ftags.push(util::JsonValue(t));
+        jf["tags"]     = std::move(ftags);
+        jf["group_id"] = util::JsonValue(f.group_id);
+        return jf;
+    };
+    util::JsonValue features_arr = util::JsonValue::array();
+    for (const auto& f : m_features) features_arr.push(featureToJson(f));
+    root["features"] = std::move(features_arr);
 
     // Layer groups
     util::JsonValue layer_groups_arr = util::JsonValue::array();

@@ -2,6 +2,7 @@
 #include <QStatusBar>
 #include <QString>
 
+class QSpinBox;
 class QDoubleSpinBox;
 class QLabel;
 class QPushButton;
@@ -46,6 +47,16 @@ public:
     void setProgress(int percent, bool visible);
     void hideProgress();
 
+    // -- Persistent busy label (sits next to the progress bar) -------------
+    // Non-intrusive, in-window background-task feedback (e.g. "Building map…")
+    // shown while a load runs and cleared when it finishes. Unlike showJobMessage
+    // it does not auto-expire, so it stays for the whole operation.
+    void setBusyText(const QString& text);
+    void clearBusyText();
+
+    // -- Map colour palette (relocated from the right-panel Display section) -
+    void setMapPalette(int idx);              // sync only — does not emit
+
     // -- Map viewport indicators ------------------------------------------
     // Called on every zoom / fit change.  metres_per_pixel and rotation_deg
     // drive the scale, zoom-level, and bearing labels.
@@ -65,12 +76,14 @@ signals:
     void scaleChangeRequested(double mpp);      // user changed scale spin box
     void rotationChangeRequested(double deg);   // user changed rotation spin box
     void crsClicked();                          // user clicked the CRS badge
+    void paletteRequested(int idx);             // user picked a map palette
 
 private:
     void rebuildAiSection();
 
     // Left-side non-permanent widgets
     QProgressBar* m_progress  = nullptr;
+    QLabel*       m_busy      = nullptr;   // persistent "Building map…" while loading
     QLabel*       m_context   = nullptr;
     QLabel*       m_job       = nullptr;
     QTimer*       m_job_timer = nullptr;
@@ -87,6 +100,9 @@ private:
 
     QLabel*       m_lbl_crs  = nullptr;   // "⊙" globe glyph
     QPushButton*  m_vp_crs   = nullptr;   // clickable CRS badge → opens geodesy dialog
+
+    QLabel*    m_lbl_palette = nullptr;  // "Palette"
+    QSpinBox*  m_palette     = nullptr;  // map colour palette picker (up/down arrows)
 
     QWidget* m_ai_widget  = nullptr;   // composite: icon + status dot
     QLabel*  m_ai_icon    = nullptr;

@@ -46,7 +46,7 @@ MainWindow::MainWindow(QWidget* parent)
     setWindowTitle(tr("Dolphin Explorer"));
     setMinimumSize(kMinW, kMinH);
     setAcceptDrops(true);
-    setWindowFlag(Qt::FramelessWindowHint);
+    setWindowFlag(Qt::FramelessWindowHint);  // custom title bar (menubar = caption)
 
     m_undo_stack = new QUndoStack(this);
 
@@ -295,6 +295,11 @@ MainWindow::MainWindow(QWidget* parent)
         // in-flight builds + resets controller state without wiping the map.
         if (m_sss_ctrl) m_sss_ctrl->deactivate(false);
         if (m_import_service) m_import_service->cancelPendingRebuild();
+        // Clear the Background Tasks panel: the cancelled builds' counters/cards must
+        // not carry into the next project (stale "Building map X of Y" / stuck panel
+        // when switching projects back and forth).
+        if (m_import_overlay) m_import_overlay->resetState();
+        m_tools_apply_layers.clear();   // drop stale per-line apply tracking
         m_layer_ctrl->clearActiveLayer();
         m_layer_ctrl->clearHistory();
     });
@@ -394,6 +399,12 @@ MainWindow::MainWindow(QWidget* parent)
                 m_line_list, &LineListPanel::refreshContacts);
         connect(m_event_bus, &ProjectEventBus::contactRemoved,
                 m_line_list, &LineListPanel::refreshContacts);
+        connect(m_event_bus, &ProjectEventBus::featureAdded,
+                m_line_list, &LineListPanel::refreshFeatures);
+        connect(m_event_bus, &ProjectEventBus::featureRemoved,
+                m_line_list, &LineListPanel::refreshFeatures);
+        connect(m_event_bus, &ProjectEventBus::featureUpdated,
+                m_line_list, &LineListPanel::refreshFeatures);
     }
     if (m_map_view) {
         connect(m_event_bus, &ProjectEventBus::layersReordered,
@@ -401,6 +412,12 @@ MainWindow::MainWindow(QWidget* parent)
         connect(m_event_bus, &ProjectEventBus::contactAdded,
                 m_map_view, static_cast<void (QWidget::*)()>(&QWidget::update));
         connect(m_event_bus, &ProjectEventBus::contactRemoved,
+                m_map_view, static_cast<void (QWidget::*)()>(&QWidget::update));
+        connect(m_event_bus, &ProjectEventBus::featureAdded,
+                m_map_view, static_cast<void (QWidget::*)()>(&QWidget::update));
+        connect(m_event_bus, &ProjectEventBus::featureRemoved,
+                m_map_view, static_cast<void (QWidget::*)()>(&QWidget::update));
+        connect(m_event_bus, &ProjectEventBus::featureUpdated,
                 m_map_view, static_cast<void (QWidget::*)()>(&QWidget::update));
     }
     // Inspector modality set changes when layers arrive or depart.
@@ -480,16 +497,37 @@ MainWindow::MainWindow(QWidget* parent)
     // status-bar bar from start to end instead of the indeterminate bounce.
     connect(m_sss_ctrl, &SidescanViewController::loadingProgress, this, [this](int pct) {
         m_map_progress_active = true;
-        if (m_status_bar) m_status_bar->setProgress(pct, true);
-        if (m_sss_apply_active && m_import_overlay)
-            m_import_overlay->updateJob("sss_apply", pct);
+        if (m_status_bar) {
+            m_status_bar->setProgress(pct, true);
+            // In-window background-task feedback (no top-level popup → no blink on the
+            // frameless window). Cleared by refreshLoadingIndicator when idle.
+            m_status_bar->setBusyText(tr("Building map…"));
+        }
+    });
+    // Per-line progress for a bottom-bar Apply batch: update that line's dialog card
+    // with a readable phase (the map build reports ~5–55 decode, ~66 corrections,
+    // ~80 georeference, ~98 raster).
+    connect(m_sss_ctrl, &SidescanViewController::prebuildTierProgress, this,
+            [this](const std::string& layer_id, int pct) {
+        if (!m_import_overlay) return;
+        const auto it = m_tools_apply_layers.find(layer_id);
+        if (it == m_tools_apply_layers.end()) return;
+        const QString& tools = it->second;   // "TVG, ARC, ARN" (empty = display only)
+        const QString phase =
+            pct < 55  ? tr("Reading pings…")        :
+            pct < 70  ? (tools.isEmpty() ? tr("Applying corrections…")
+                                         : tr("Applying %1…").arg(tools)) :
+            pct < 85  ? tr("Georeferencing…")       :
+            pct < 100 ? tr("Building mosaic…")      :
+                        tr("Finishing…");
+        m_import_overlay->updateJob(layer_id, pct,
+                                    QStringLiteral("%1  %2%").arg(phase).arg(pct));
     });
     connect(m_sss_ctrl, &SidescanViewController::prebuildTierFinished, this,
-            [this](const std::string&, MapSonarQuality) {
+            [this](const std::string& layer_id, MapSonarQuality) {
         refreshLoadingIndicator();
-        if (m_sss_apply_active && m_import_overlay) {
-            m_sss_apply_active = false;
-            m_import_overlay->finishJob("sss_apply", tr("Corrections applied"));
+        if (m_import_overlay && m_tools_apply_layers.erase(layer_id) > 0) {
+            m_import_overlay->finishJob(layer_id, tr("Corrections applied"));
         }
     });
     connect(m_sss_ctrl, &SidescanViewController::mapDiagnosticsReady,

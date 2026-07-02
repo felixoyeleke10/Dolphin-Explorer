@@ -9,6 +9,8 @@
 #include "ui/shared/widgets/ViewerToolbar.h"
 #include "ui/shell/ViewerWindow.h"
 #include "core/SubBottomTrace.h"
+#include <QPointF>
+#include <QString>
 #include <QWidget>
 #include <memory>
 #include <string>
@@ -34,6 +36,8 @@ namespace dolphin::ui {
 
 class SubBottomInspectorPanel;
 class SubBottomView;
+class ContactPickingPanel;
+class FeatureDrawingPanel;
 
 // -----------------------------------------------------------------------------
 //  SubBottomWindow — top-level window for sub-bottom profiler (SBP) display.
@@ -91,6 +95,9 @@ public:
     // Sync the palette index from the app-wide default without touching other params.
     void setPalette(int idx);
 
+    // Enable/disable the inspector's Prev/Next Line buttons (ends of the line list).
+    void setLineNavEnabled(bool has_prev, bool has_next);
+
     // Update sound velocity (from AppState) without a disk reload.
     // Propagates to the display panel and depth readout.
     void setSoundVelocity(double sv);
@@ -129,6 +136,17 @@ signals:
     void cursorUpdated(float depth_m, double lat, double lon, bool is_projected);  // depth_m < 0 = cursor off-screen
     void layerChangeRequested(const std::string& id);
     void dataStateChanged(dolphin::ui::ViewerDataState state);
+    // Contact placed at a trace (geo from the trace nav; depth_m from the clicked
+    // travel time × half sound-speed). MainWindow creates the core::Contact.
+    void contactCreated(double lat, double lon, bool is_projected, float depth_m,
+                        const QString& classification, const QString& line_id,
+                        uint64_t abs_trace);
+    // Polygon/polyline feature drawn on the section; vertices are (lon,lat).
+    void featureCreated(const std::vector<QPointF>& lonlat_vertices, bool polygon,
+                        bool is_projected, const QString& classification,
+                        const QString& line_id);
+    // "Clear All Contacts" pressed in the Contact Picking section.
+    void clearAllContactsRequested();
 
 private slots:
     void onScrollbarMoved(int first_trace);
@@ -160,6 +178,9 @@ private:
     QScrollBar*              m_hscroll             = nullptr;
     ViewerToolbar*           m_toolbar             = nullptr;
     QToolButton*             m_btn_bottom_track_tb = nullptr;
+    ContactPickingPanel*     m_contact_panel       = nullptr;
+    FeatureDrawingPanel*     m_feature_panel       = nullptr;
+    QString                  m_feature_class;      // applied to next drawn feature
 
     QLabel*        m_status_left   = nullptr;
     QLabel*        m_status_right  = nullptr;
@@ -184,6 +205,11 @@ private:
     NavProcessingParams               m_nav_params;   // display-time nav corrections
 
     AppState*           m_app_state         = nullptr;
+
+    // Prev/Next availability (set by the coordinator) — gates the inspector buttons,
+    // command-palette entries, and context-menu actions consistently.
+    bool m_has_prev_line = false;
+    bool m_has_next_line = false;
 
     // -- Display state -----------------------------------------------------
     float               m_sound_half_speed  = 750.0f; // depth = time * this (= speed/2)

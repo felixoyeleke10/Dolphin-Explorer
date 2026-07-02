@@ -475,6 +475,15 @@ void LineListPanel::onContextMenuRequested(const QPoint& pos)
         });
         menu.exec(gpos);
 
+    // -- Feature item ----------------------------------------------------------
+    } else if (type == ItemType::Feature) {
+        const uint64_t feature_id = item->data(0, kRoleId).toULongLong();
+        QMenu menu(this);
+        menu.addAction(tr("Remove Feature"), this, [this, feature_id] {
+            emit removeFeatureRequested(feature_id);
+        });
+        menu.exec(gpos);
+
     // -- Contact group item ----------------------------------------------------
     } else if (type == ItemType::ContactGroup) {
         const std::string group_id = item->data(0, kRoleGroupId).toString().toStdString();

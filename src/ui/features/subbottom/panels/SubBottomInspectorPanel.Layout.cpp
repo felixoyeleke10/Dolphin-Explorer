@@ -176,18 +176,24 @@ SubBottomInspectorPanel::SubBottomInspectorPanel(QWidget* parent)
             return b;
         };
 
-        auto* btn_prev = makeNavBtn(tr("◄  Prev Line"));
-        btn_prev->setToolTip(tr("Open the previous sub-bottom line in the project."));
-        auto* btn_next = makeNavBtn(tr("Next Line  ►"));
-        btn_next->setToolTip(tr("Open the next sub-bottom line in the project."));
+        m_btn_prev = makeNavBtn(tr("◄  Prev Line"));
+        m_btn_prev->setToolTip(tr("Open the previous sub-bottom line in the project."));
+        m_btn_next = makeNavBtn(tr("Next Line  ►"));
+        m_btn_next->setToolTip(tr("Open the next sub-bottom line in the project."));
 
-        connect(btn_prev, &QToolButton::clicked, this, &SubBottomInspectorPanel::prevLineRequested);
-        connect(btn_next, &QToolButton::clicked, this, &SubBottomInspectorPanel::nextLineRequested);
+        connect(m_btn_prev, &QToolButton::clicked, this, &SubBottomInspectorPanel::prevLineRequested);
+        connect(m_btn_next, &QToolButton::clicked, this, &SubBottomInspectorPanel::nextLineRequested);
 
-        rl->addWidget(btn_prev, 1);
-        rl->addWidget(btn_next, 1);
+        rl->addWidget(m_btn_prev, 1);
+        rl->addWidget(m_btn_next, 1);
         fl->addWidget(row);
     }
+}
+
+void SubBottomInspectorPanel::setNavEnabled(bool has_prev, bool has_next)
+{
+    if (m_btn_prev) m_btn_prev->setEnabled(has_prev);
+    if (m_btn_next) m_btn_next->setEnabled(has_next);
 }
 
 // static

@@ -58,48 +58,22 @@ HeadingInfoPanel::HeadingInfoPanel(QWidget* parent) : QWidget(parent)
     vl->addWidget(m_pitch_offset);
     vl->addWidget(m_roll_offset);
     vl->addStretch(1);
+    // Apply is the single shared bar at the bottom of the right-panel (see
+    // MainWindow); this section only edits values and contributes via writeInto().
+}
 
-    // -- Apply buttons (pinned below scroll) -----------------------------------
-    auto* sep = new QFrame(this);
-    sep->setFrameShape(QFrame::HLine);
-    sep->setObjectName("ctrlDivider");
-    fl->addWidget(sep);
-
-    auto* btn_row = new QWidget(this);
-    auto* bl = new QHBoxLayout(btn_row);
-    bl->setContentsMargins(Theme::kSpacing3, Theme::kSpacing2, Theme::kSpacing3, Theme::kSpacing3);
-    bl->setSpacing(Theme::kSpacing1);
-
-    auto* apply_line = new QPushButton(tr("Apply to Line"), btn_row);
-    apply_line->setObjectName("ctrlApplyBtn");
-    apply_line->setToolTip(
-        tr("Apply the attitude offsets to the current waterfall line only.\n"
-           "Check the swath geometry result before applying to all lines."));
-
-    auto* apply_all = new QPushButton(tr("Apply to All"), btn_row);
-    apply_all->setObjectName("ctrlApplyBtnSecondary");
-    apply_all->setToolTip(
-        tr("Apply the attitude offsets to every line in the project.\n"
-           "Use only after confirming the geometry looks correct on this line."));
-
-    bl->addWidget(apply_line);
-    bl->addWidget(apply_all);
-    fl->addWidget(btn_row);
-
-    connect(apply_line, &QPushButton::clicked, this, &HeadingInfoPanel::onApplyLine);
-    connect(apply_all,  &QPushButton::clicked, this, &HeadingInfoPanel::onApplyAll);
+void HeadingInfoPanel::writeInto(NavProcessingParams& p) const
+{
+    p.heading_offset_deg = static_cast<float>(m_hdg_offset->value());
+    p.pitch_offset_deg   = static_cast<float>(m_pitch_offset->value());
+    p.roll_offset_deg    = static_cast<float>(m_roll_offset->value());
 }
 
 NavProcessingParams HeadingInfoPanel::currentParams() const
 {
     NavProcessingParams p;
-    p.heading_offset_deg = static_cast<float>(m_hdg_offset->value());
-    p.pitch_offset_deg   = static_cast<float>(m_pitch_offset->value());
-    p.roll_offset_deg    = static_cast<float>(m_roll_offset->value());
+    writeInto(p);
     return p;
 }
-
-void HeadingInfoPanel::onApplyLine() { emit applyToLineRequested(currentParams()); }
-void HeadingInfoPanel::onApplyAll()  { emit applyToAllRequested(currentParams()); }
 
 } // namespace dolphin::ui

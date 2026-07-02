@@ -4,6 +4,7 @@ add_library(dolphin-app STATIC
     project/Project.Sources.cpp
     project/Project.Layers.cpp
     project/Project.Contacts.cpp
+    project/Project.Features.cpp
     project/Project.Workers.cpp
     project/Project.Groups.cpp
     project/Project.Serialization.cpp

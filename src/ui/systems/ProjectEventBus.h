@@ -1,6 +1,7 @@
 #pragma once
 #include "app/project/Project.h"   // QPointer<Project> requires complete type
 #include "core/Contact.h"
+#include "core/Feature.h"
 #include <QObject>
 #include <QPointer>
 #include <string>
@@ -32,6 +33,9 @@ signals:
     void contactUpdated(uint64_t id);
     void contactGroupsChanged();
     void recycleBinChanged();
+    void featureAdded(const core::Feature& f);
+    void featureRemoved(uint64_t id);
+    void featureUpdated(uint64_t id);
     void projectModified();
     void layerDataChanged(const std::string& layer_id);
 

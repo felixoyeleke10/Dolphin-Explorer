@@ -21,16 +21,13 @@ namespace dolphin::ui {
 //  Construction / destruction
 // -----------------------------------------------------------------------------
 
-MapView3D::MapView3D(QWidget* parent)
-    : QOpenGLWidget(parent)
+MapView3D::MapView3D(QWindow* parent)
+    : QOpenGLWindow(QOpenGLWindow::NoPartialUpdate, parent)
 {
-    setMinimumSize(200, 200);
-    setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
-    setMouseTracking(true);
+    // QWindow has no size policy / auto-fill / mouse-tracking / paint attributes —
+    // the container widget governs sizing, and a QWindow always receives mouse moves.
+    setMinimumSize(QSize(200, 200));
     setCursor(Qt::OpenHandCursor);
-    setAutoFillBackground(false);
-    setAttribute(Qt::WA_OpaquePaintEvent, true);
-    setUpdateBehavior(QOpenGLWidget::NoPartialUpdate);
 
     QSurfaceFormat fmt;
     fmt.setVersion(3, 3);

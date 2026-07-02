@@ -3,6 +3,8 @@
 #include "ui/features/subbottom/SubBottomWindow.h"
 #include "ui/systems/AppState.h"
 #include "ui/features/subbottom/SubBottomView.h"
+#include "ui/shared/panels/ContactPickingPanel.h"
+#include "ui/shared/panels/FeatureDrawingPanel.h"
 #include "ui/features/subbottom/panels/SubBottomInspectorPanel.h"
 #include "ui/features/subbottom/panels/SubBottomDisplayPanel.h"
 #include "app/layers/DataLayer.h"
@@ -36,6 +38,12 @@ void SubBottomWindow::setLayer(app::DataLayer*     layer,
         m_inspector->setActiveLine(layer->id);
 
     m_view->clear();
+    // Clean annotation state on each new line (mirrors the waterfall): drop any
+    // active contact/feature tool + draft and untoggle the panel buttons.
+    m_view->setContactTool(0);
+    m_view->setFeatureTool(0);
+    if (m_contact_panel) m_contact_panel->setPickActive(false);
+    if (m_feature_panel) m_feature_panel->setDrawActive(false);
     if (m_hscroll)   m_hscroll->setRange(0, 0);
     if (m_inspector) m_inspector->refresh(nullptr, {}, 0, 0, 0, 0.f, 0.f, 0.f, 0.f);
 

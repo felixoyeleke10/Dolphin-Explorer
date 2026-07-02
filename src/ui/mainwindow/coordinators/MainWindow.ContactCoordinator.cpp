@@ -73,6 +73,64 @@ void MainWindow::onWaterfallContactCreated(float range_m, double lat, double lon
             .arg(range_m, 0, 'f', 1));
 }
 
+void MainWindow::onWaterfallFeatureCreated(const std::vector<QPointF>& lonlat_vertices,
+                                           bool polygon, bool is_projected,
+                                           const QString& classification,
+                                           const QString& line_id)
+{
+    if (!currentProject() || lonlat_vertices.size() < 2) return;
+
+    core::Feature f;
+    f.type = polygon ? core::FeatureType::Polygon : core::FeatureType::Polyline;
+    f.classification = classification.toStdString();
+    f.line_id        = line_id.toStdString();
+    f.spatial_ref    = is_projected
+                     ? core::makeUnknownProjectedSpatialRef()
+                     : core::makeWgs84SpatialRef();
+    f.vertices.reserve(lonlat_vertices.size());
+    for (const QPointF& v : lonlat_vertices)
+        f.vertices.push_back(core::GeoVertex{ v.y(), v.x() });   // (lon,lat) → {lat,lon}
+
+    auto* cmd = new AddFeatureCommand(currentProject(), f, []() {});
+    m_undo_stack->push(cmd);
+
+    QString label;
+    for (const auto& ft : currentProject()->features())
+        if (ft.id == cmd->assignedId()) { label = QString::fromStdString(ft.label); break; }
+
+    appendJobMessage(
+        tr("Feature %1 added — %2 (%n vertex(es))", "", static_cast<int>(f.vertices.size()))
+            .arg(label)
+            .arg(classification.isEmpty() ? tr("Unclassified") : classification));
+}
+
+void MainWindow::onSbpContactCreated(double lat, double lon, bool is_projected,
+                                     float depth_m, const QString& classification,
+                                     const QString& line_id, uint64_t abs_trace)
+{
+    if (!currentProject()) return;
+
+    core::Contact c;
+    c.lat            = lat;
+    c.lon            = lon;
+    c.depth_m        = depth_m;   // section depth the user clicked
+    c.spatial_ref    = is_projected
+                     ? core::makeUnknownProjectedSpatialRef()
+                     : core::makeWgs84SpatialRef();
+    c.classification = classification.toStdString();
+    c.line_id        = line_id.toStdString();
+    c.artifact_id    = abs_trace;
+
+    auto* cmd = new AddContactCommand(currentProject(), c, []() {});
+    m_undo_stack->push(cmd);
+
+    QString label;
+    for (const auto& ct : currentProject()->contacts())
+        if (ct.id == cmd->assignedId()) { label = QString::fromStdString(ct.label); break; }
+
+    appendJobMessage(tr("Contact %1 placed — %2").arg(label).arg(classification));
+}
+
 void MainWindow::onContactSelected(uint64_t contact_id)
 {
     if (m_map_view) m_map_view->setSelectedContact(contact_id);

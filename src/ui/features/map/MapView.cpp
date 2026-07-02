@@ -37,6 +37,8 @@ MapView::MapView(QWidget* parent)
     setMouseTracking(true);
     setCursor(Qt::CrossCursor);
     setAttribute(Qt::WA_OpaquePaintEvent);
+    // ClickFocus lets the feature-draw tool receive Enter/Esc/Backspace keys.
+    setFocusPolicy(Qt::ClickFocus);
 }
 
 

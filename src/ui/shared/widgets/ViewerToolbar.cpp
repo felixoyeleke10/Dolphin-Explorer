@@ -2,7 +2,7 @@
 #include "ui/shared/widgets/CommandBar.h"
 #include "ui/shell/Theme.h"
 
-#include <QEvent>
+#include <QGridLayout>
 #include <QHBoxLayout>
 #include <QIcon>
 #include <QSize>
@@ -19,11 +19,28 @@ ViewerToolbar::ViewerToolbar(QWidget* parent)
     setObjectName("av_toolbar");
     setFixedHeight(kAvToolBarH);
 
-    m_layout = new QHBoxLayout(this);
-    m_layout->setContentsMargins(10, 0, 10, 0);
-    m_layout->setSpacing(2);
+    // Three columns: [left buttons] [centred command pill] [right tools].
+    // Columns 0 and 2 share equal stretch, so the pill in column 1 is centred on
+    // the toolbar regardless of how many right-section tools a viewer adds — this
+    // is why the SSS and SBP search bars line up identically, and match the main
+    // window's centred command pill.
+    //
+    // The pill width is LAYOUT-DRIVEN (column-stretch ratio + a minimum width), not
+    // set after show() via a resize hook — so it is correct on the very first paint
+    // and never visibly jumps into place when the viewer opens.
+    // Column ratio 36:28:36 ⇒ the pill targets ~28% of the toolbar (= kCmdBarPct).
+    m_grid = new QGridLayout(this);
+    m_grid->setContentsMargins(10, 0, 10, 0);
+    m_grid->setHorizontalSpacing(0);
+    m_grid->setColumnStretch(0, 36);
+    m_grid->setColumnStretch(1, kCmdBarPct);   // 28
+    m_grid->setColumnStretch(2, 36);
 
     // -- Standard left buttons -------------------------------------------------
+    auto* left = new QHBoxLayout;
+    left->setContentsMargins(0, 0, 0, 0);
+    left->setSpacing(2);
+
     auto* btn_new      = makeBtn(":/icons/new.svg",
         tr("Create a new project or workspace. Shortcut: Ctrl+N."));
     auto* btn_open     = makeBtn(":/icons/open.svg",
@@ -35,12 +52,12 @@ ViewerToolbar::ViewerToolbar(QWidget* parent)
     auto* btn_settings = makeBtn(":/icons/settings2.svg",
         tr("Open application and processing settings."));
 
-    m_layout->addWidget(btn_new);
-    m_layout->addWidget(btn_open);
-    m_layout->addWidget(btn_save);
-    m_layout->addWidget(m_btn_meta);
-    m_layout->addWidget(btn_settings);
-    m_layout->addSpacing(6);
+    left->addWidget(btn_new);
+    left->addWidget(btn_open);
+    left->addWidget(btn_save);
+    left->addWidget(m_btn_meta);
+    left->addWidget(btn_settings);
+    m_grid->addLayout(left, 0, 0, Qt::AlignLeft | Qt::AlignVCenter);
 
     connect(btn_new,      &QToolButton::clicked, this, &ViewerToolbar::newRequested);
     connect(btn_open,     &QToolButton::clicked, this, &ViewerToolbar::openRequested);
@@ -48,30 +65,44 @@ ViewerToolbar::ViewerToolbar(QWidget* parent)
     connect(m_btn_meta,   &QToolButton::clicked, this, &ViewerToolbar::metaRequested);
     connect(btn_settings, &QToolButton::clicked, this, &ViewerToolbar::settingsRequested);
 
-    // -- Centred command bar ---------------------------------------------------
-    m_layout->addStretch(1);
+    // -- Centred command pill (matches the main window's uniBar "blue ribbon") -
+    m_pill = new QFrame(this);
+    m_pill->setObjectName("uniBar");
+    // Expanding to fill its column (down to a sensible minimum) — the column ratio
+    // sizes it to ~kCmdBarPct of the toolbar; the minimum keeps it usable on narrow
+    // windows. No post-show fixup needed.
+    m_pill->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    m_pill->setMinimumWidth(kCmdBarMinW);
+    auto* pill_l = new QHBoxLayout(m_pill);
+    pill_l->setContentsMargins(Theme::kSpacing1, 0, Theme::kSpacing1, 0);
+    pill_l->setSpacing(0);
 
-    m_cmd_bar = new CommandBar(this);
-    m_cmd_bar->setObjectName("avCommandBar");
+    m_cmd_bar = new CommandBar(m_pill);
+    m_cmd_bar->setObjectName("titleSearch");   // reuse the main-window search QSS
     m_cmd_bar->setFixedHeight(kCmdBarH);
+    m_cmd_bar->setAnchorWidget(m_pill);        // palette spans the full pill
     m_cmd_bar->setToolTip(
         tr("Search and run viewer commands.\n"
            "Click or press the command shortcut, then type a command name."));
-    connect(m_cmd_bar, &CommandBar::activeChanged, m_cmd_bar, [bar = m_cmd_bar](bool active) {
-        if (bar->property("commandActive").toBool() == active) return;
-        bar->setProperty("commandActive", active);
-        bar->style()->unpolish(bar);
-        bar->style()->polish(bar);
-        bar->update();
+    pill_l->addWidget(m_cmd_bar, 1);
+
+    // Focus turns the pill border accent-blue, exactly like the main window.
+    connect(m_cmd_bar, &CommandBar::activeChanged, m_pill, [pill = m_pill](bool active) {
+        if (pill->property("commandActive").toBool() == active) return;
+        pill->setProperty("commandActive", active);
+        pill->style()->unpolish(pill);
+        pill->style()->polish(pill);
+        pill->update();
     });
-    m_layout->addWidget(m_cmd_bar);
+    // Fill column 1 (no horizontal alignment) so the pill width is the column width
+    // — equal side columns keep it centred on the toolbar.
+    m_grid->addWidget(m_pill, 0, 1, Qt::AlignVCenter);
 
-    m_layout->addStretch(1);
-    m_layout->addSpacing(6);
-
-    // Right section: callers append buttons/widgets via addButton()/addWidget().
-
-    installEventFilter(this);
+    // -- Right section: callers append via addButton()/addWidget() -------------
+    m_right = new QHBoxLayout;
+    m_right->setContentsMargins(0, 0, 0, 0);
+    m_right->setSpacing(2);
+    m_grid->addLayout(m_right, 0, 2, Qt::AlignRight | Qt::AlignVCenter);
 }
 
 void ViewerToolbar::setCommandProvider(std::function<QList<CommandPaletteItem>()> fn)
@@ -87,29 +118,18 @@ void ViewerToolbar::setMetaButtonTip(const QString& tip)
 QToolButton* ViewerToolbar::addButton(const QString& icon_path, const QString& tip)
 {
     auto* b = makeBtn(icon_path, tip);
-    m_layout->addWidget(b);
+    m_right->addWidget(b);
     return b;
 }
 
 void ViewerToolbar::addWidget(QWidget* w)
 {
-    if (w) m_layout->addWidget(w);
+    if (w) m_right->addWidget(w);
 }
 
 void ViewerToolbar::addSpacing(int px)
 {
-    m_layout->addSpacing(px);
-}
-
-bool ViewerToolbar::eventFilter(QObject* watched, QEvent* ev)
-{
-    if (watched == this
-            && (ev->type() == QEvent::Resize || ev->type() == QEvent::Show)) {
-        const int sw = qBound(kCmdBarMinW, width() * kCmdBarPct / 100, kCmdBarMaxW);
-        m_cmd_bar->setFixedWidth(sw);
-        return false;
-    }
-    return QFrame::eventFilter(watched, ev);
+    m_right->addSpacing(px);
 }
 
 QToolButton* ViewerToolbar::makeBtn(const QString& icon_path, const QString& tip)

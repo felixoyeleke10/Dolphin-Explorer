@@ -16,18 +16,15 @@ class NavInfoPanel : public QWidget {
 public:
     explicit NavInfoPanel(QWidget* parent = nullptr);
 
-signals:
-    void applyToLineRequested(const dolphin::ui::NavProcessingParams& params);
-    void applyToAllRequested(const dolphin::ui::NavProcessingParams& params);
+    // Write this section's nav controls (smoothing / layback) into p. Used by the
+    // shared bottom Apply bar to gather all sections into one rebuild.
+    void writeInto(NavProcessingParams& p) const;
+    NavProcessingParams currentParams() const;
 
 private slots:
-    void onApplyLine();
-    void onApplyAll();
     void updateControlStates();
 
 private:
-    NavProcessingParams currentParams() const;
-
     QCheckBox*  m_smooth_en  = nullptr;
     WfValueRow* m_smooth_win = nullptr;   // pings
 

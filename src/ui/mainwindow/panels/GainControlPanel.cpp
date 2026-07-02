@@ -119,45 +119,18 @@ GainControlPanel::GainControlPanel(QWidget* parent) : QWidget(parent)
 
     vl->addStretch(1);
 
-    // -- Apply buttons (pinned below scroll) -----------------------------------
-    auto* sep = new QFrame(this);
-    sep->setFrameShape(QFrame::HLine);
-    sep->setObjectName("ctrlDivider");
-    fl->addWidget(sep);
-
-    auto* btn_row = new QWidget(this);
-    auto* bl = new QHBoxLayout(btn_row);
-    bl->setContentsMargins(Theme::kSpacing3, Theme::kSpacing2, Theme::kSpacing3, Theme::kSpacing3);
-    bl->setSpacing(Theme::kSpacing1);
-
-    m_apply_line_btn = new QPushButton(tr("Apply to Line"), btn_row);
-    m_apply_line_btn->setObjectName("ctrlApplyBtn");
-    m_apply_line_btn->setToolTip(
-        tr("Apply the current gain settings to the waterfall for this line only.\n"
-           "Check the result before applying to all lines."));
-
-    m_apply_all_btn = new QPushButton(tr("Apply to All"), btn_row);
-    m_apply_all_btn->setObjectName("ctrlApplyBtnSecondary");
-    m_apply_all_btn->setToolTip(
-        tr("Apply the current gain settings to every line in the project.\n"
-           "Use only after confirming the result looks correct on this line."));
-
-    bl->addWidget(m_apply_line_btn);
-    bl->addWidget(m_apply_all_btn);
-    fl->addWidget(btn_row);
-
-    connect(m_tvg_en,         &QCheckBox::toggled, this, &GainControlPanel::updateControlStates);
-    connect(m_agc_en,         &QCheckBox::toggled, this, &GainControlPanel::updateControlStates);
-    connect(m_arc_en,         &QCheckBox::toggled, this, &GainControlPanel::updateControlStates);
-    connect(m_apply_line_btn, &QPushButton::clicked, this, &GainControlPanel::onApplyLine);
-    connect(m_apply_all_btn,  &QPushButton::clicked, this, &GainControlPanel::onApplyAll);
+    // Apply is a single shared bar at the bottom of the right-panel (see
+    // MainWindow): this section only edits values and contributes them via
+    // writeInto(). No per-section Apply buttons.
+    connect(m_tvg_en, &QCheckBox::toggled, this, &GainControlPanel::updateControlStates);
+    connect(m_agc_en, &QCheckBox::toggled, this, &GainControlPanel::updateControlStates);
+    connect(m_arc_en, &QCheckBox::toggled, this, &GainControlPanel::updateControlStates);
 
     setParams(m_params);
 }
 
-WaterfallParams GainControlPanel::buildParams() const
+void GainControlPanel::writeInto(WaterfallParams& p) const
 {
-    WaterfallParams p = m_params;
     p.tvg.enabled    = m_tvg_en->isChecked();
     p.tvg.spreading  = static_cast<float>(m_tvg_spread->value());
     p.tvg.absorption = static_cast<float>(m_tvg_absorb->value());
@@ -168,7 +141,6 @@ WaterfallParams GainControlPanel::buildParams() const
     p.arc.enabled     = m_arc_en->isChecked();
     p.arc.exponent    = static_cast<float>(m_arc_exp->value());
     p.arc.gain_cap_db = static_cast<float>(m_arc_gain_cap->value());
-    return p;
 }
 
 void GainControlPanel::setParams(const WaterfallParams& p)
@@ -191,18 +163,6 @@ void GainControlPanel::setParams(const WaterfallParams& p)
     m_arc_gain_cap->setValue(p.arc.gain_cap_db);
 
     updateControlStates();
-}
-
-void GainControlPanel::onApplyLine()
-{
-    m_params = buildParams();
-    emit applyToLineRequested(m_params);
-}
-
-void GainControlPanel::onApplyAll()
-{
-    m_params = buildParams();
-    emit applyToAllRequested(m_params);
 }
 
 void GainControlPanel::updateControlStates()

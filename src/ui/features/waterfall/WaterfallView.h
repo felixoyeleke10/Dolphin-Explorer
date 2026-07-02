@@ -14,6 +14,8 @@
 #include "core/SidescanPing.h"
 
 #include <QOpenGLWidget>
+#include <QPoint>
+#include <QPointF>
 #include <atomic>
 #include <unordered_map>
 #include <vector>
@@ -134,6 +136,11 @@ public:
     void clearContacts();
     // Read back all contacts placed in the current window.
     const std::vector<WfContact>& contacts() const { return m_contacts; }
+
+    // -- Feature API -------------------------------------------------------
+    // Set the active feature draw tool: 0=none, 1=polygon, 2=line.
+    // Activating it deactivates the contact and seabed tools (and vice versa).
+    void setFeatureTool(int tool);
     // Set externally-supplied project contacts for the current window.
     // Replaces the existing external list and triggers a repaint.
     // window_first_row: absolute row index of the first row in the current window.
@@ -158,6 +165,18 @@ public:
     float soundVelocityMs()   const;   // first non-zero sound velocity from loaded pings
     const SeabedAutoParams& seabedAutoParams() const { return m_seabed_auto_params; }
     bool seabedEnabled() const { return m_seabed_enabled; }
+    // Slant Range Correction diagnostics. SRC remaps each column against the seabed
+    // altitude (detected seabed range, falling back to the sensor's nav altitude).
+    // Reports how many rows have a usable altitude and the altitude/swath span, so
+    // the UI can show what SRC is actually working with (and how large the effect is).
+    struct SrcStats {
+        int   total      = 0;     // loaded rows
+        int   with_alt   = 0;     // rows with a usable altitude reference
+        float alt_min_m  = 0.f;   // min/max altitude across rows that have one
+        float alt_max_m  = 0.f;
+        float range_max_m = 0.f;  // max slant range (swath edge)
+    };
+    SrcStats srcStats() const;
 
     void scrollToRow(int row);
     void scrollToEnd();
@@ -181,6 +200,10 @@ signals:
     void contactPicked(int row_idx, core::SidescanChannel ch,
                        float range_m, double lat, double lon, bool is_projected,
                        const QPixmap& snapshot);
+    // Feature (polygon/polyline) drawn on the waterfall. vertices are (lon,lat);
+    // polygon=true closes the shape. The window attaches classification + line.
+    void featureDrawn(const std::vector<QPointF>& lonlat_vertices, bool polygon,
+                      bool is_projected);
     // Scroll position changed — drives the external QScrollBar
     void scrollChanged(int scroll_row, int total_rows, int visible_rows);
     // Scroll attempt past data boundary; direction = -1 (top) or +1 (bottom)
@@ -195,6 +218,8 @@ protected:
     void mousePressEvent(QMouseEvent*) override;
     void mouseMoveEvent(QMouseEvent*) override;
     void mouseReleaseEvent(QMouseEvent*) override;
+    void mouseDoubleClickEvent(QMouseEvent*) override;
+    void keyPressEvent(QKeyEvent*) override;
     void wheelEvent(QWheelEvent*) override;
     void resizeEvent(QResizeEvent*) override;
     void leaveEvent(QEvent*) override;
@@ -233,6 +258,12 @@ private:
     // Pen smart snap: given a cursor screen_x on a row, return the range_m of the
     // peak amplitude sample within ±kPenSnapRadius samples of the cursor position.
     float smartPenRange(int row, int screen_x) const;
+
+    // Map a click (row + across-track channel/range) to a geographic position by
+    // offsetting the row's nav point by ground range perpendicular to heading.
+    // Shared by contact picking and feature drawing. Returns false with no nav.
+    bool rangeToGeo(int row, core::SidescanChannel ch, float range_m,
+                    double& lat, double& lon, bool& is_projected) const;
 
     // Overlay painting shared between GPU and CPU paths.
     void paintOverlays(QPainter& p, const WfLayout& lay);
@@ -279,6 +310,12 @@ private:
     float m_pen_last_range   = 0.f;
     int          m_contact_tool  = 0;               // 0=none, 1=pick
     ContactClass m_contact_class = ContactClass::Unknown;  // applied to next pick
+
+    // -- Feature draw tool state (polygon/polyline) ------------------------
+    int                  m_feature_tool = 0;   // 0=none, 1=polygon, 2=line
+    std::vector<QPointF> m_feature_pts;        // committed vertices (lon,lat)
+    std::vector<QPoint>  m_feature_px;         // matching screen points for the draft
+    bool                 m_feature_proj = false;  // is_projected of the draft rows
     int  m_cursor_x = -1;
     int  m_cursor_y = -1;
     int   m_last_w   = -1;   // cached width to detect resize in paintEvent

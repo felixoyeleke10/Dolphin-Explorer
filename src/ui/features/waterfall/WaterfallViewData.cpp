@@ -98,6 +98,11 @@ void WaterfallView::setPreassembledRows(std::vector<core::SidescanPing> raw_ping
 void WaterfallView::clear()
 {
     m_rows.clear();
+    // Drop any in-progress feature draft so switching lines can't finish a feature
+    // with stale vertices from the previous line.
+    m_feature_tool = 0;
+    m_feature_pts.clear();
+    m_feature_px.clear();
     m_dirty              = true;
     m_gl_data_dirty      = true;
     m_amp_profile_dirty  = true;
@@ -112,8 +117,12 @@ void WaterfallView::setSeabedChannel(int ch)
 void WaterfallView::setSeabedTool(int tool)
 {
     m_seabed_tool = tool;
-    if (tool != 0)
+    if (tool != 0) {
         m_contact_tool = 0;
+        m_feature_tool = 0;
+        m_feature_pts.clear();
+        m_feature_px.clear();
+    }
     if (tool != 1) {
         m_seabed.endDrag();
         m_pen_last_row = -1;
@@ -132,6 +141,24 @@ void WaterfallView::setContactTool(int tool)
     if (tool != 0) {
         m_seabed_tool = 0;
         m_seabed.endDrag();
+        m_feature_tool = 0;
+        m_feature_pts.clear();
+        m_feature_px.clear();
+    }
+    update();
+}
+
+void WaterfallView::setFeatureTool(int tool)
+{
+    m_feature_tool = tool;
+    // Switching tool (or off) discards any in-progress draft.
+    m_feature_pts.clear();
+    m_feature_px.clear();
+    if (tool != 0) {
+        m_contact_tool = 0;
+        m_seabed_tool  = 0;
+        m_seabed.endDrag();
+        setFocus(Qt::OtherFocusReason);   // receive Enter/Esc/Backspace
     }
     update();
 }
@@ -151,7 +178,11 @@ void WaterfallView::refreshExternalContacts(const std::vector<core::Contact>& co
     for (const auto& c : contacts) {
         WfContact wfc;
 
-        if (c.artifact_id > 0) {
+        // A waterfall pick always has a slant range (the pick requires range_m > 0);
+        // map/externally-placed contacts have range_m == 0. Discriminating on range_m
+        // (not artifact_id > 0) means a pick on absolute row 0 keeps its waterfall
+        // identity instead of falling into the nearest-nav map path.
+        if (c.range_m > 0.f) {
             // Waterfall-picked: artifact_id stores the absolute ping row.
             const int local_row = static_cast<int>(c.artifact_id) - window_first_row;
             if (local_row < 0 || local_row >= static_cast<int>(m_rows.size())) continue;
@@ -349,6 +380,31 @@ void WaterfallView::setParamsNoRebuild(const WaterfallParams& p)
 int WaterfallView::rowCount() const
 {
     return static_cast<int>(m_rows.size());
+}
+
+WaterfallView::SrcStats WaterfallView::srcStats() const
+{
+    SrcStats s;
+    s.total = static_cast<int>(m_rows.size());
+    float amin = 1e18f, amax = 0.f, rmax = 0.f;
+    for (const auto& r : m_rows) {
+        const float seabed = (std::isfinite(r.seabed.range_m) && r.seabed.range_m > 0.f)
+                               ? r.seabed.range_m : 0.f;
+        const float alt    = seabed > 0.f ? seabed
+                           : (std::isfinite(r.altitude_m) && r.altitude_m > 0.f)
+                               ? r.altitude_m : 0.f;
+        if (alt > 0.f) {
+            ++s.with_alt;
+            amin = std::min(amin, alt);
+            amax = std::max(amax, alt);
+        }
+        if (std::isfinite(r.slant_range_m) && r.slant_range_m > rmax)
+            rmax = r.slant_range_m;
+    }
+    s.alt_min_m   = (s.with_alt > 0) ? amin : 0.f;
+    s.alt_max_m   = amax;
+    s.range_max_m = rmax;
+    return s;
 }
 
 const core::SidescanPing* WaterfallView::pingAt(int idx) const

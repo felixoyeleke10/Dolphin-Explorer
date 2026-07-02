@@ -37,12 +37,14 @@ void MapView::paintEvent(QPaintEvent*)
     if (m_layer_data.empty() && m_nav_track.empty()) {
         if (m_show_grid) paintGraticule(p);
         paintEmptyState(p);
+        paintFeatures      (p);
     } else {
         paintSonarLayers(p);
         if (m_show_grid) paintGraticule(p);
         paintNavTrack      (p);
         paintProfileTracks (p);
         paintContacts      (p);
+        paintFeatures      (p);
         paintMeasureOverlay(p);
     }
 

@@ -10,29 +10,26 @@ namespace dolphin::ui {
 class WfValueRow;
 
 // Compact gain controls (TVG / AGC / ARC).
-// Changes are batched — nothing is applied until the user clicks a button.
-// Both signals carry the full WaterfallParams so all other fields
-// (destripe, BPN, ML, …) are preserved from the last setParams() call.
+// Edits values only; the shared bottom Apply bar reads them via writeInto() and
+// applies all sections together (one rebuild). Other WaterfallParams fields are
+// preserved via the m_params shadow set by setParams().
 class GainControlPanel : public QWidget {
     Q_OBJECT
 public:
     explicit GainControlPanel(QWidget* parent = nullptr);
 
-signals:
-    void applyToLineRequested(const WaterfallParams& params);
-    void applyToAllRequested(const WaterfallParams& params);
-
 public slots:
     void setParams(const WaterfallParams& p);
 
+public:
+    // Write this section's control values (TVG / AGC / ARC) into p. Used by the
+    // shared bottom Apply bar to gather all sections into one params + one rebuild.
+    void writeInto(WaterfallParams& p) const;
+
 private slots:
-    void onApplyLine();
-    void onApplyAll();
     void updateControlStates();
 
 private:
-    WaterfallParams buildParams() const;
-
     // TVG
     QCheckBox*  m_tvg_en     = nullptr;
     WfValueRow* m_tvg_spread = nullptr;   // dB/decade
@@ -46,9 +43,6 @@ private:
     QCheckBox*  m_arc_en       = nullptr;
     WfValueRow* m_arc_exp      = nullptr; // exponent
     WfValueRow* m_arc_gain_cap = nullptr; // dB
-
-    QPushButton* m_apply_line_btn = nullptr;
-    QPushButton* m_apply_all_btn  = nullptr;
 
     WaterfallParams m_params;   // shadow copy — preserved on setParams
 };

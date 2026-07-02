@@ -98,7 +98,7 @@ void MapView3D::drawHUD(QPainter& painter)
         QFont big = painter.font();
         big.setPointSizeF(big.pointSizeF() * 1.5);
         painter.setFont(big);
-        painter.drawText(rect(), Qt::AlignCenter,
+        painter.drawText(QRect(0, 0, width(), height()), Qt::AlignCenter,
                          tr("No data loaded\nImport a survey to view in 3D"));
     }
 }

@@ -161,6 +161,29 @@ WaterfallWindow::WaterfallWindow(AppState* app_state, QWidget* parent)
                 // way to verify the pick quality.
                 m_view->setParams(p);
                 emit paramsApplied();
+
+                // SRC remaps each column against the seabed altitude. Surface what it
+                // is actually working with — altitude span vs swath — so its effect is
+                // verifiable rather than appearing to "do nothing" (the water-column
+                // collapse is small when altitude is a small fraction of the swath).
+                if (src_on && m_status_left) {
+                    const auto s = m_view->srcStats();
+                    if (s.total > 0 && s.with_alt == 0) {
+                        m_status_left->setText(tr(
+                            "Slant Range Correction has no reference — seabed detection "
+                            "returned no bottom for this line."));
+                    } else if (s.range_max_m > 0.f) {
+                        const float pct = 100.f * s.alt_max_m / s.range_max_m;
+                        m_status_left->setText(tr(
+                            "SRC applied — seabed altitude %1–%2 m over %3 m swath "
+                            "(~%4%% water column collapses), %5/%6 rows")
+                            .arg(s.alt_min_m, 0, 'f', 1).arg(s.alt_max_m, 0, 'f', 1)
+                            .arg(s.range_max_m, 0, 'f', 0).arg(pct, 0, 'f', 0)
+                            .arg(s.with_alt).arg(s.total));
+                    } else {
+                        m_status_left->setText(tr("Slant Range Correction applied"));
+                    }
+                }
             });
     connect(m_analysis, &WaterfallAnalysisPanel::seabedChannelChanged,
             this, [this](int ch) { m_view->setSeabedChannel(ch); });
@@ -193,8 +216,10 @@ WaterfallWindow::WaterfallWindow(AppState* app_state, QWidget* parent)
                     QSignalBlocker sb(m_btn_contact);
                     m_btn_contact->setChecked(tool == 1);
                 }
-                if (tool != 0)
+                if (tool != 0) {
                     m_analysis->setSeabedToolActive(0);
+                    m_analysis->setFeatureToolActive(0);
+                }
             });
 
     connect(m_btn_contact, &QToolButton::toggled,
@@ -202,7 +227,10 @@ WaterfallWindow::WaterfallWindow(AppState* app_state, QWidget* parent)
                 m_view->setContactTool(checked ? 1 : 0);
                 if (m_analysis) {
                     m_analysis->setContactPickActive(checked);
-                    if (checked) m_analysis->setSeabedToolActive(0);
+                    if (checked) {
+                        m_analysis->setSeabedToolActive(0);
+                        m_analysis->setFeatureToolActive(0);
+                    }
                 }
                 m_status_left->setText(
                     checked ? tr("Contact — click on the waterfall to place a point pick")
@@ -214,8 +242,33 @@ WaterfallWindow::WaterfallWindow(AppState* app_state, QWidget* parent)
 
     connect(m_analysis, &WaterfallAnalysisPanel::clearContactsRequested,
             this, [this]() {
-                m_view->clearContacts();
-                m_status_left->setText(tr("Contacts cleared"));
+                // Clear project contacts (confirmed + undoable in MainWindow), same as
+                // the SBP viewer — the local overlay refreshes via the project signals.
+                emit clearAllContactsRequested();
+            });
+
+    // -- Feature drawing ---------------------------------------------------
+    connect(m_analysis, &WaterfallAnalysisPanel::featureToolChanged,
+            this, [this](int tool) {
+                m_view->setFeatureTool(tool);
+                if (tool != 0) {
+                    m_view->setContactTool(0);
+                    if (m_btn_contact) { QSignalBlocker sb(m_btn_contact); m_btn_contact->setChecked(false); }
+                    if (m_analysis) m_analysis->setContactPickActive(false);
+                }
+                m_status_left->setText(
+                    tool == 0 ? QString{}
+                              : tr("Feature — click to add vertices, double-click or Enter to finish"));
+            });
+
+    connect(m_view, &WaterfallView::featureDrawn,
+            this, [this](const std::vector<QPointF>& verts, bool polygon, bool is_projected) {
+                QString cls = m_analysis ? m_analysis->currentFeatureClassText() : QString{};
+                if (cls == tr("Unclassified")) cls.clear();
+                const QString line_id = m_layer ? QString::fromStdString(m_layer->id) : QString{};
+                m_status_left->setText(
+                    tr("Feature drawn — %1 vertices").arg(static_cast<int>(verts.size())));
+                emit featureCreated(verts, polygon, is_projected, cls, line_id);
             });
 
     connect(m_analysis, &WaterfallAnalysisPanel::navProcessThisLineRequested,
@@ -307,6 +360,13 @@ WaterfallWindow::WaterfallWindow(AppState* app_state, QWidget* parent)
 void WaterfallWindow::setGpuAccel(bool enabled)
 {
     if (m_view) m_view->setGpuAccel(enabled);
+}
+
+void WaterfallWindow::setLineNavEnabled(bool has_prev, bool has_next)
+{
+    m_has_prev_line = has_prev;
+    m_has_next_line = has_next;
+    if (m_inspector) m_inspector->setNavEnabled(has_prev, has_next);
 }
 
 void WaterfallWindow::setProjectLayers(

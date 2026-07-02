@@ -18,6 +18,8 @@
 #include <QtConcurrent/QtConcurrent>
 #include <algorithm>
 #include <cmath>
+#include <memory>
+#include <vector>
 
 namespace dolphin::ui {
 
@@ -27,6 +29,10 @@ void SidescanViewController::setMapSonarQuality(MapSonarQuality quality)
 {
     if (m_quality == quality) return;
     m_quality = quality;
+
+    // Raw decoded pings are thinned/sample-capped per tier, so they are stale at the
+    // new quality — drop them (a later Apply re-decodes once for the new tier).
+    m_layer_raw_pings_cache.clear();
 
     // Cancel any in-progress per-layer builds/recolours (re-launched below at the
     // new quality tier).
@@ -113,13 +119,18 @@ struct PrebuildResult {
     MapSonarQuality quality;
     PrebuiltTier    tier;
     bool            ok = false;
+    // Set only when the worker had to decode from disk (cache miss); the on_done
+    // handler installs it into m_layer_raw_pings_cache so the next Apply is
+    // decode-free. Null on the raster-cache fast path or the raw-reuse path.
+    std::shared_ptr<const std::vector<core::SidescanPing>> raw_decoded;
 };
 
 } // namespace
 
 void SidescanViewController::prebuildTier(const std::string& layer_id,
                                           MapSonarQuality    quality,
-                                          app::Project*      project)
+                                          app::Project*      project,
+                                          const std::string& lane)
 {
     auto* layer = project ? project->findLayer(layer_id) : nullptr;
     if (!layer || !layer->index_built || layer->sidescanCount() == 0) {
@@ -159,6 +170,14 @@ void SidescanViewController::prebuildTier(const std::string& layer_id,
 
     if (!m_op_mgr) { emit prebuildTierFinished(layer_id, quality); return; }
 
+    // Raw-ping reuse: if a prior build already decoded this layer at this tier, hand
+    // the worker the cached raw pings so it skips the disk decode (the dominant cost
+    // of an Apply) and only re-runs nav + corrections + raster with the new params.
+    std::shared_ptr<const std::vector<core::SidescanPing>> raw_cached;
+    if (const auto it = m_layer_raw_pings_cache.find(layer_id);
+        it != m_layer_raw_pings_cache.end())
+        raw_cached = it->second;
+
     // Keyed per layer+tier so a re-request supersedes; runs in the "map" lane
     // (cap 2) below; tracked in DiagnosticsHub via the OperationManager signals.
     m_op_mgr->run<PrebuildResult>(
@@ -166,14 +185,16 @@ void SidescanViewController::prebuildTier(const std::string& layer_id,
         [this, svc, store_path, store_format, idx, source_path,
          layer_src_ref, apply_layer_crs, display_ref, layer_id,
          layer_freq_hz, layer_low_freq_hz, qp, quality, georef, nav_params,
-         sss_params, cache_path, cache_meta]
+         sss_params, cache_path, cache_meta, raw_cached]
         (app::CancellationToken cancel) -> PrebuildResult
         {
-            // Coarse 0–100 progress, marshalled to the main thread — drives the
-            // execution window's bar (and status bar) through the slow tier build.
-            auto report = [this](int pct) {
-                QMetaObject::invokeMethod(this, [this, pct]() {
+            // Coarse 0–100 progress, marshalled to the main thread. loadingProgress
+            // drives the status bar; prebuildTierProgress carries the layer id so a
+            // batch dialog can update the right line's card.
+            auto report = [this, layer_id](int pct) {
+                QMetaObject::invokeMethod(this, [this, layer_id, pct]() {
                     emit loadingProgress(pct);
+                    emit prebuildTierProgress(layer_id, pct);
                 }, Qt::QueuedConnection);
             };
             report(3);
@@ -206,38 +227,51 @@ void SidescanViewController::prebuildTier(const std::string& layer_id,
                 }
             }
 
-            core::ArtifactIndex map_idx = idx;
-            // Frequency band filter (same logic as SidescanMapLoadTask).
-            if (layer_low_freq_hz == 0.f)
-                filterSidescanEntriesByBand(map_idx, layer_freq_hz);
+            std::vector<core::SidescanPing> raw;
+            if (raw_cached) {
+                // Decode-free Apply: reuse the previously decoded raw pings. One copy
+                // off-thread (cache stays immutable) — far cheaper than disk decode.
+                raw = *raw_cached;
+                report(55);
+            } else {
+                core::ArtifactIndex map_idx = idx;
+                // Frequency band filter (same logic as SidescanMapLoadTask).
+                if (layer_low_freq_hz == 0.f)
+                    filterSidescanEntriesByBand(map_idx, layer_freq_hz);
 
-            const size_t total_groups =
-                map_idx.byType(core::ArtifactType::Sidescan).size() / 2;
+                const size_t total_groups =
+                    map_idx.byType(core::ArtifactType::Sidescan).size() / 2;
 
-            size_t effective_cap = qp.max_ping_groups;
-            if (effective_cap == 0 && total_groups > detail::kFullSafeLimit)
-                effective_cap = detail::paramsForQuality(MapSonarQuality::Medium).max_ping_groups;
+                size_t effective_cap = qp.max_ping_groups;
+                if (effective_cap == 0 && total_groups > detail::kFullSafeLimit)
+                    effective_cap = detail::paramsForQuality(MapSonarQuality::Medium).max_ping_groups;
 
-            if (effective_cap > 0) {
-                auto thin = thinSidescanEntriesForMap(map_idx, effective_cap);
-                map_idx.entries.erase(
-                    std::remove_if(map_idx.entries.begin(), map_idx.entries.end(),
-                        [](const core::ArtifactIndexEntry& e) {
-                            return e.type == core::ArtifactType::Sidescan;
-                        }),
-                    map_idx.entries.end());
-                map_idx.entries.insert(map_idx.entries.end(), thin.begin(), thin.end());
+                if (effective_cap > 0) {
+                    auto thin = thinSidescanEntriesForMap(map_idx, effective_cap);
+                    map_idx.entries.erase(
+                        std::remove_if(map_idx.entries.begin(), map_idx.entries.end(),
+                            [](const core::ArtifactIndexEntry& e) {
+                                return e.type == core::ArtifactType::Sidescan;
+                            }),
+                        map_idx.entries.end());
+                    map_idx.entries.insert(map_idx.entries.end(), thin.begin(), thin.end());
+                }
+
+                raw = svc->loadAllSidescanPingsFromStore(
+                    store_path, store_format, map_idx, source_path, qp.max_samples_per_ping);
+                if (raw.empty()) return res;
+
+                if (apply_layer_crs)
+                    for (auto& ping : raw)
+                        if (ping.nav.is_projected && !ping.nav.spatial_ref.exact)
+                            ping.nav.spatial_ref = layer_src_ref;
+                report(55);   // pings decoded — the bulk of the work
+
+                // Stash the freshly decoded raw pings (pre nav/correction/normalize)
+                // so the on_done handler can cache them for the next Apply.
+                res.raw_decoded =
+                    std::make_shared<const std::vector<core::SidescanPing>>(raw);
             }
-
-            auto raw = svc->loadAllSidescanPingsFromStore(
-                store_path, store_format, map_idx, source_path, qp.max_samples_per_ping);
-            if (raw.empty()) return res;
-            report(55);   // pings decoded — the bulk of the work
-
-            if (apply_layer_crs)
-                for (auto& ping : raw)
-                    if (ping.nav.is_projected && !ping.nav.spatial_ref.exact)
-                        ping.nav.spatial_ref = layer_src_ref;
 
             // Same display-time nav correction activateLayer applies (no-op when
             // the layer has none), so the upgraded tier matches the first paint.
@@ -263,7 +297,11 @@ void SidescanViewController::prebuildTier(const std::string& layer_id,
             if (qp.max_image_dim > 0)
                 buildSwathPreviewImage(map_pings, ld, qp.max_image_dim,
                     0 /* palette 0 = unused — intensity_cache is palette-free */,
-                    *cancel.flag(), georef, qp.min_strip_cos, qp.cell_budget_div);
+                    *cancel.flag(), georef, qp.min_strip_cos, qp.cell_budget_div,
+                    /*ping_lines_only=*/false,
+                    // Map the rasterizer's 0–1 onto the card's 82–98 band so the
+                    // longest phase shows live sub-progress instead of freezing at 82.
+                    [&report](float f) { report(82 + static_cast<int>(f * 16.f)); });
             report(98);   // raster done
 
             // Persist this tier's raster so the next open loads it instantly.
@@ -294,19 +332,23 @@ void SidescanViewController::prebuildTier(const std::string& layer_id,
         },
         [this](PrebuildResult res) {
             if (!res.ok) return;
+            // Cache the raw pings (decode-miss path only) so the next Apply on this
+            // layer skips the disk read entirely.
+            if (res.raw_decoded)
+                m_layer_raw_pings_cache[res.layer_id] = std::move(res.raw_decoded);
             m_quality_tier_cache[res.layer_id][static_cast<int>(res.quality)] =
                 std::move(res.tier);
             emit prebuildTierComplete(res.layer_id, res.quality);
         },
         "sss:prebuild:" + layer_id + ":" + std::to_string(static_cast<int>(quality)),
-        // Share the dedicated "map" lane (cap 2) with first-paint loads so staged
-        // High/Full upgrades don't fan out across every line at once, and stay
-        // separate from the import/decode lane.
+        // By default share the "map" lane (cap 2) with first-paint loads so staged
+        // High/Full upgrades don't fan out across every line at once. An explicit
+        // user Apply passes a wider lane so all lines rebuild concurrently.
         /*heavy=*/false,
         // on_finally (every outcome) — let a progress UI close reliably even on
         // failure/cancel, where prebuildTierComplete (success-only) never fires.
         [this, layer_id, quality]() { emit prebuildTierFinished(layer_id, quality); },
-        /*lane=*/"map");
+        lane);
 }
 
 bool SidescanViewController::hasCachedTier(const std::string& layer_id,

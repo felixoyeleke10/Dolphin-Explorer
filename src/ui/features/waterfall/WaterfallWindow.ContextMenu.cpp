@@ -23,10 +23,10 @@ void WaterfallWindow::onContextMenu(QPoint globalPos)
     menu.addSeparator();
     menu.addAction(tr("Previous Line"), this, [this] {
         emit prevLineRequested(m_layer ? m_layer->id : std::string{});
-    });
+    })->setEnabled(m_has_prev_line);
     menu.addAction(tr("Next Line"), this, [this] {
         emit nextLineRequested(m_layer ? m_layer->id : std::string{});
-    });
+    })->setEnabled(m_has_next_line);
     menu.addSeparator();
     menu.addAction(tr("Metadata…"), this, [this] {
         emit metadataRequested();

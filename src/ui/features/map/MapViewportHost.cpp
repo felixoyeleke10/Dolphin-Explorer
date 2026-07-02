@@ -69,6 +69,23 @@ MapViewportHost::MapViewportHost(QWidget* parent)
     m_terrain_label->setObjectName("map3DTerrainLabel");
     m_terrain_label->hide();
 
+    // Viewport toolbar (2D/3D toggle + Terrain). These live in a real toolbar row, NOT
+    // floating over the viewport: the 3D view is a native QOpenGLWindow that renders on
+    // top of sibling widgets, so a floating button would be hidden in 3D and you could
+    // never switch back. Adding them to a layout reparents them out of the GL region.
+    {
+        auto* vp_tools = new QWidget(this);
+        vp_tools->setObjectName("mapViewportToolbar");
+        auto* tb = makeCompactLayout<QHBoxLayout>(vp_tools);
+        tb->setContentsMargins(Theme::kMap3DMargin, 2, Theme::kMap3DMargin, 2);
+        tb->setSpacing(Theme::kSpacing2);
+        tb->addStretch(1);
+        tb->addWidget(m_terrain_label);
+        tb->addWidget(m_terrain_btn);
+        tb->addWidget(m_btn);
+        layout->addWidget(vp_tools);
+    }
+
     // Empty-state overlay — transparent QWidget covering the full viewport.
     // A QVBoxLayout centers the import button automatically; no manual move() needed.
     m_empty_state      = new QWidget(this);
@@ -132,8 +149,13 @@ MapView3D* MapViewportHost::ensureView3D()
 {
     if (m_view3d) return m_view3d;
 
-    m_view3d = new MapView3D(m_stack);
-    m_stack->addWidget(m_view3d);
+    // MapView3D is a native QOpenGLWindow; embed it via createWindowContainer so it
+    // lives in the stack as a normal page. The native surface keeps the rest of the
+    // app off the GL composition path (no whole-window flicker).
+    m_view3d = new MapView3D();
+    m_view3d_container = QWidget::createWindowContainer(m_view3d, m_stack);
+    m_view3d_container->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    m_stack->addWidget(m_view3d_container);
 
     // Apply the display settings that were pushed to the host before the 3D view existed.
     m_view3d->setShowGrid(m_grid_visible);
@@ -294,7 +316,7 @@ void MapViewportHost::setMode3D(bool on)
             m_transition_cover->show();
             m_transition_cover->raise();
 
-            m_stack->setCurrentWidget(view3d);
+            m_stack->setCurrentWidget(m_view3d_container);
             m_transition_cover->raise();
 
             connect(view3d, &MapView3D::firstFrameReady, this, [this]() {
@@ -304,7 +326,7 @@ void MapViewportHost::setMode3D(bool on)
                 });
             }, Qt::SingleShotConnection);
         } else {
-            m_stack->setCurrentWidget(view3d);
+            m_stack->setCurrentWidget(m_view3d_container);
         }
     } else {
         m_stack->setCurrentWidget(m_view2d);
@@ -519,30 +541,9 @@ void MapViewportHost::panByPixels(int dx, int dy)
 
 void MapViewportHost::positionOverlay()
 {
-    // 2D/3D toggle — bottom-right corner
-    if (m_btn) {
-        m_btn->move(width()  - m_btn->width()  - kMap3DMargin,
-                    height() - m_btn->height() - kMap3DMargin);
-        m_btn->raise();
-    }
-
-    // Load Terrain button — immediately to the left of the toggle
-    if (m_terrain_btn && m_terrain_btn->isVisible()) {
-        m_terrain_btn->adjustSize();
-        m_terrain_btn->move(
-            m_btn ? m_btn->x() - m_terrain_btn->width() - kSpacing2
-                  : width() - m_terrain_btn->width() - kMap3DMargin,
-            height() - m_terrain_btn->height() - kMap3DMargin);
-        m_terrain_btn->raise();
-    }
-
-    // "Loading terrain…" label — above the terrain button
-    if (m_terrain_label && m_terrain_label->isVisible() && m_terrain_btn) {
-        m_terrain_label->move(m_terrain_btn->x(),
-                              m_terrain_btn->y() - m_terrain_label->height() - 4);
-        m_terrain_label->raise();
-    }
-
+    // The 2D/3D toggle, Terrain button, and load label now live in the viewport
+    // toolbar row (a real layout, not floating) — they can't float over the native
+    // 3D surface. Nothing here needs manual positioning anymore.
 }
 
 } // namespace dolphin::ui

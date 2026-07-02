@@ -60,6 +60,7 @@ void SidescanViewController::reloadCurrentLayer()
     }
     m_loaded_layers.clear();
     m_layer_pings_cache.clear();      // georef changed — cached pings are stale
+    m_layer_raw_pings_cache.clear();  // CRS/georef changed — raw decode is stale
     m_layer_intensity_cache.clear();  // stale at old CRS / georef
     m_quality_tier_cache.clear();     // stale at old CRS / georef
     for (const auto& id : to_reload)
@@ -75,28 +76,37 @@ void SidescanViewController::reloadLayer(const std::string& layer_id)
     if (!m_project || layer_id.empty()) return;
     m_loaded_layers.erase(layer_id);
     m_layer_pings_cache.erase(layer_id);
+    m_layer_raw_pings_cache.erase(layer_id);
     m_layer_intensity_cache.erase(layer_id);
     m_quality_tier_cache.erase(layer_id);
     activateLayer(layer_id, m_project);
 }
 
-void SidescanViewController::applyLiveCorrections(bool all_layers)
+void SidescanViewController::applyLiveCorrections(const std::vector<std::string>& layer_ids)
 {
     if (!m_project) return;
 
+    // Only rebuild layers that are actually on the map (have a cached tier/pings);
+    // others pick up the stored params lazily when first activated.
     std::vector<std::string> targets;
-    if (all_layers)
-        targets.assign(m_loaded_layers.begin(), m_loaded_layers.end());
-    else if (!m_active_layer_id.empty())
-        targets.push_back(m_active_layer_id);
+    for (const auto& id : layer_ids)
+        if (m_loaded_layers.count(id)) targets.push_back(id);
+    if (targets.empty()) return;
 
     // Rebuild each target's tier with the new gain/imaging params in the BACKGROUND.
     // Critically, nothing clears the map first: the existing mosaic stays on screen
     // at full quality the whole time, and prebuildTierComplete atomically swaps the
     // freshly-corrected tier in when it's ready (applyCachedTier). No blank, no
     // quality downgrade — the data never disappears during Apply.
+    //
+    // Process line-by-line: a dedicated "sss:apply" lane with cap 1 rebuilds one
+    // line at a time so each completes and lands on the map before the next starts —
+    // clear sequential progress ("2 of 4 … 3 of 4"), one ~64 MB raster in flight at
+    // a time, and no CPU/IO thrash. Per-line cost is small (decode-free re-Apply via
+    // the raw-ping cache + smooth raster sub-progress), so the batch stays snappy.
+    if (m_op_mgr) m_op_mgr->setLaneCap("sss:apply", 1);
     for (const auto& layer_id : targets)
-        prebuildTier(layer_id, m_quality, m_project);
+        prebuildTier(layer_id, m_quality, m_project, "sss:apply");
 }
 
 // -- colorizeIntensityCache ----------------------------------------------------
@@ -254,6 +264,7 @@ void SidescanViewController::unloadLayer(const std::string& layer_id)
         m_map_view->removeLayerData(layer_id);
     m_loaded_layers.erase(layer_id);
     m_layer_pings_cache.erase(layer_id);
+    m_layer_raw_pings_cache.erase(layer_id);
     m_layer_intensity_cache.erase(layer_id);
     // Cancel any in-flight build/recolour for this layer; its on_done is then
     // skipped (cancelled) so it can't write map data after removeLayerData.
@@ -268,6 +279,7 @@ void SidescanViewController::deactivate(bool clear_map)
     // fires (balancing m_active_builds), then reset state explicitly below.
     if (m_op_mgr) m_op_mgr->cancelByPrefix("sss:load:");
     m_layer_pings_cache.clear();
+    m_layer_raw_pings_cache.clear();
     m_layer_intensity_cache.clear();
     m_quality_tier_cache.clear();
 

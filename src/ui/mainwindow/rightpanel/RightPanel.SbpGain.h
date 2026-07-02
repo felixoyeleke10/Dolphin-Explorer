@@ -34,22 +34,14 @@ public:
     SbpGainParams currentParams() const;
     void          setParams(const SbpGainParams& p);
 
-signals:
-    void applyToLineRequested(dolphin::ui::SbpGainParams params);
-    void applyToAllRequested (dolphin::ui::SbpGainParams params);
-
 private:
     void updateControlStates();
-    void onApplyLine();
-    void onApplyAll();
 
     QCheckBox*      m_static_en      = nullptr;
     QDoubleSpinBox* m_static_db      = nullptr;
     QCheckBox*      m_agc_en         = nullptr;
     QSpinBox*       m_agc_window     = nullptr;
     QCheckBox*      m_normalize_en   = nullptr;
-    QPushButton*    m_apply_line_btn = nullptr;
-    QPushButton*    m_apply_all_btn  = nullptr;
 };
 
 } // namespace dolphin::ui

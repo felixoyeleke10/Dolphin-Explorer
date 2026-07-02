@@ -92,9 +92,9 @@ QList<CommandPaletteItem> WaterfallWindow::buildCommandItems()
     add("Mode", tr("Analyze"),  "4", "analyze analysis image processing",
         true, [this] { onModeChanged(ModeAnalyze); });
 
-    addCmd(CommandId::PrevLine, has_layer,
+    addCmd(CommandId::PrevLine, has_layer && m_has_prev_line,
         [this] { emit prevLineRequested(m_layer ? m_layer->id : std::string{}); });
-    addCmd(CommandId::NextLine, has_layer,
+    addCmd(CommandId::NextLine, has_layer && m_has_next_line,
         [this] { emit nextLineRequested(m_layer ? m_layer->id : std::string{}); });
 
     add("Tools", tr("Add Contact"), "C", "contact pick mark",

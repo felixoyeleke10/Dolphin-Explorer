@@ -12,6 +12,7 @@
 #include "ui/mainwindow/coordinators/CorrectionBatchOperator.h"
 #include "ui/shell/Features.h"
 #include "ui/shared/dialogs/CrsPickerDialog.h"
+#include "ui/shared/LineNavigation.h"
 #include "ui/features/metadata/SSSMetadataWindow.h"
 #include "ui/features/waterfall/WaterfallSettingsDialog.h"
 #include "ui/mainwindow/panels/InspectorPanel.h"
@@ -65,6 +66,10 @@ void MainWindow::onWaterfallOpen()
                 this, &MainWindow::onWaterfallCursorUpdated);
         connect(m_waterfall_win, &WaterfallWindow::contactCreated,
                 this, &MainWindow::onWaterfallContactCreated);
+        connect(m_waterfall_win, &WaterfallWindow::featureCreated,
+                this, &MainWindow::onWaterfallFeatureCreated);
+        connect(m_waterfall_win, &WaterfallWindow::clearAllContactsRequested,
+                this, &MainWindow::onClearContacts);
         connect(m_waterfall_win, &WaterfallWindow::paramsApplied,
                 this, &MainWindow::onWaterfallParamsApplied);
         connect(m_waterfall_win, &WaterfallWindow::applyToAllRequested,
@@ -173,7 +178,7 @@ void MainWindow::onWaterfallOpen()
             const WaterfallParams p = m_waterfall_win->currentParams();
             app::ProjectTransaction tx(currentProject());
             for (const auto& l : currentProject()->layers()) {
-                if (!l) continue;
+                if (!l || l->modality != app::Modality::Sidescan) continue;  // SSS only
                 l->slant_range_corrected = p.slant_range_correction;
                 if (m_display_state) m_display_state->setLayerSssDisplay(l->id, p);
             }
@@ -202,14 +207,32 @@ void MainWindow::onWaterfallOpen()
         m_waterfall_win->setProjectLayers(sss_layers);
     }
 
-    if (currentProject() && !activeLayerId().empty()) {
-        auto* layer = currentProject()->findLayer(activeLayerId());
+    // Resolve which sidescan line to show: the active layer if it is sidescan, else
+    // the first indexed sidescan line. Opening the viewer while a non-SSS layer is
+    // active must still land on a real SSS line.
+    std::string sss_id;
+    if (currentProject()) {
+        if (auto* al = currentProject()->findLayer(activeLayerId());
+            al && al->modality == app::Modality::Sidescan)
+            sss_id = activeLayerId();
+        else
+            for (const auto& l : currentProject()->layers())
+                if (l && l->modality == app::Modality::Sidescan
+                        && l->index_built && l->sidescanCount() > 0) {
+                    sss_id = l->id;
+                    break;
+                }
+    }
+
+    if (!sss_id.empty()) {
+        if (sss_id != activeLayerId()) onLayerSelected(sss_id);  // sync app/map/inspector
+        auto* layer = currentProject()->findLayer(sss_id);
         if (layer && layer->modality == app::Modality::Sidescan) {
             const auto* src    = currentProject()->findSource(layer->source_id);
             const std::string path = src ? src->path : std::string{};
             const uint64_t    sz   = src ? src->size_bytes : 0;
             m_waterfall_win->setLayer(layer, m_import_service, path, sz);
-            applyStoredNavParams(activeLayerId());
+            applyStoredNavParams(sss_id);
             m_waterfall_win->setProjectContacts(currentProject()->contacts());
 
             // Restore per-layer display params if the user has previously adjusted them.
@@ -233,6 +256,15 @@ void MainWindow::onWaterfallOpen()
     if (m_display_state)
         m_waterfall_win->setPalette(m_display_state->mapPalette());
 
+    // Reflect Prev/Next availability for the VIEWER's current line (source of truth).
+    {
+        // Match the FILES list (populated by modality) so the buttons reflect the SSS
+        // lines the user sees — not only those whose index is currently loaded.
+        const auto nav = computeLineNav(currentProject(), m_waterfall_win->currentLayerId(),
+            [](const app::DataLayer& l) { return l.modality == app::Modality::Sidescan; });
+        m_waterfall_win->setLineNavEnabled(nav.has_prev, nav.has_next);
+    }
+
     m_waterfall_win->show();
     m_waterfall_win->raise();
     m_waterfall_win->activateWindow();
@@ -240,20 +272,23 @@ void MainWindow::onWaterfallOpen()
 
 void MainWindow::onWaterfallPrevLine(const std::string& from_layer_id)
 {
-    if (!currentProject()) return;
+    if (!currentProject() || !m_waterfall_win) return;
     const auto& layers = currentProject()->layers();
     if (layers.empty()) return;
 
-    const std::string& ref_id = from_layer_id.empty() ? activeLayerId() : from_layer_id;
+    // The waterfall's own loaded line is the source of truth (not the app active layer).
+    const std::string ref_id = !from_layer_id.empty() ? from_layer_id
+                                                       : m_waterfall_win->currentLayerId();
 
     int cur = -1;
     for (int i = 0; i < static_cast<int>(layers.size()); ++i)
         if (layers[i]->id == ref_id) { cur = i; break; }
 
-    const int start = (cur >= 0) ? cur - 1 : static_cast<int>(layers.size()) - 1;
-    for (int i = start; i >= 0; --i) {
-        if (layers[i]->index_built && layers[i]->artifactCount() > 0) {
+    for (int i = cur - 1; i >= 0; --i) {
+        // Stay within sidescan lines — the waterfall only shows SSS.
+        if (layers[i] && layers[i]->modality == app::Modality::Sidescan) {
             onLayerSelected(layers[i]->id);
+            onWaterfallOpen();   // reload the open waterfall to the new line
             return;
         }
     }
@@ -262,11 +297,12 @@ void MainWindow::onWaterfallPrevLine(const std::string& from_layer_id)
 
 void MainWindow::onWaterfallNextLine(const std::string& from_layer_id)
 {
-    if (!currentProject()) return;
+    if (!currentProject() || !m_waterfall_win) return;
     const auto& layers = currentProject()->layers();
     if (layers.empty()) return;
 
-    const std::string& ref_id = from_layer_id.empty() ? activeLayerId() : from_layer_id;
+    const std::string ref_id = !from_layer_id.empty() ? from_layer_id
+                                                       : m_waterfall_win->currentLayerId();
 
     int cur = -1;
     for (int i = 0; i < static_cast<int>(layers.size()); ++i)
@@ -274,8 +310,10 @@ void MainWindow::onWaterfallNextLine(const std::string& from_layer_id)
 
     const int start = cur + 1;
     for (int i = start; i < static_cast<int>(layers.size()); ++i) {
-        if (layers[i]->index_built && layers[i]->artifactCount() > 0) {
+        // Stay within sidescan lines — the waterfall only shows SSS.
+        if (layers[i] && layers[i]->modality == app::Modality::Sidescan) {
             onLayerSelected(layers[i]->id);
+            onWaterfallOpen();   // reload the open waterfall to the new line
             return;
         }
     }

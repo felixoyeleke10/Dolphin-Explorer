@@ -247,6 +247,9 @@ void LineListPanel::onItemClicked(QTreeWidgetItem* item, int)
         case ItemType::Contact:
             emit contactSelected(item->data(0, kRoleId).toULongLong());
             break;
+        case ItemType::Feature:
+            emit featureSelected(item->data(0, kRoleId).toULongLong());
+            break;
         default:
             break;
     }
@@ -269,12 +272,18 @@ void LineListPanel::onItemDoubleClicked(QTreeWidgetItem* item, int)
 
 void LineListPanel::onSelectionChanged()
 {
+    emit layerMultiSelected(selectedLayerIds());
+}
+
+std::vector<std::string> LineListPanel::selectedLayerIds() const
+{
     std::vector<std::string> ids;
+    if (!m_tree) return ids;
     for (QTreeWidgetItem* item : m_tree->selectedItems()) {
         if (itemTypeOf(item) == ItemType::Layer)
             ids.push_back(item->data(0, kRoleId).toString().toStdString());
     }
-    emit layerMultiSelected(ids);
+    return ids;
 }
 
 void LineListPanel::applyFilter(const QString& text)

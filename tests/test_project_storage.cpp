@@ -432,6 +432,75 @@ static void testNavStatePersistence()
     CHECK(!lu->nav_state.layback_enabled);
 }
 
+// 11. Feature round-trip — polygon + polyline shape annotations (geometry, type,
+//     classification, notes) survive save → reopen; ids stay stable and the
+//     next-feature-id counter is restored above the max loaded id.
+static void testFeaturePersistence()
+{
+    QTemporaryDir tmp;
+    CHECK(tmp.isValid());
+    if (!tmp.isValid()) return;
+
+    const std::string manifest = (tmp.path() + "/features.dlp").toStdString();
+    auto proj = dolphin::app::Project::create("features", manifest);
+    CHECK(proj != nullptr);
+    if (!proj) return;
+
+    // A closed polygon (debris field) and an open polyline (cable run).
+    dolphin::core::Feature poly;
+    poly.type = dolphin::core::FeatureType::Polygon;
+    poly.classification = "Debris Field";
+    poly.notes = "scattered targets";
+    poly.line_id = "layer-7";
+    poly.vertices = { {10.0, 20.0}, {10.5, 20.0}, {10.5, 20.5}, {10.0, 20.5} };
+    proj->addFeature(poly);
+
+    dolphin::core::Feature line;
+    line.type = dolphin::core::FeatureType::Polyline;
+    line.classification = "Cable Corridor";
+    line.vertices = { {11.0, 21.0}, {11.2, 21.3}, {11.4, 21.1} };
+    proj->addFeature(line);
+
+    CHECK(proj->features().size() == 2);
+    const uint64_t poly_id = proj->features()[0].id;
+    const uint64_t line_id = proj->features()[1].id;
+    CHECK(poly_id != 0 && line_id != 0 && poly_id != line_id);
+
+    CHECK(proj->save());
+
+    auto loaded = dolphin::app::Project::open(manifest);
+    CHECK(loaded != nullptr);
+    if (!loaded) return;
+    CHECK(loaded->features().size() == 2);
+    if (loaded->features().size() < 2) return;
+
+    const auto& lp = loaded->features()[0];
+    const auto& ll = loaded->features()[1];
+    CHECK(lp.id == poly_id);
+    CHECK(lp.type == dolphin::core::FeatureType::Polygon);
+    CHECK(lp.classification == "Debris Field");
+    CHECK(lp.notes == "scattered targets");
+    CHECK(lp.line_id == "layer-7");
+    CHECK(lp.vertices.size() == 4);
+    if (lp.vertices.size() == 4) {
+        CHECK(std::fabs(lp.vertices[0].lat - 10.0) < 1e-9);
+        CHECK(std::fabs(lp.vertices[2].lon - 20.5) < 1e-9);
+    }
+    CHECK(lp.label == "F001");
+
+    CHECK(ll.id == line_id);
+    CHECK(ll.type == dolphin::core::FeatureType::Polyline);
+    CHECK(ll.classification == "Cable Corridor");
+    CHECK(ll.vertices.size() == 3);
+
+    // Adding after reopen must not collide with restored ids.
+    dolphin::core::Feature extra;
+    extra.type = dolphin::core::FeatureType::Polyline;
+    extra.vertices = { {0.0, 0.0}, {1.0, 1.0} };
+    loaded->addFeature(extra);
+    CHECK(loaded->features().back().id > line_id);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 //  Entry point
 // ─────────────────────────────────────────────────────────────────────────────
@@ -450,6 +519,7 @@ int main(int argc, char** argv)
     testLayerRemoval();
     testDisplayStatePersistence();
     testNavStatePersistence();
+    testFeaturePersistence();
 
     std::printf("\n%d passed, %d failed\n", g_pass, g_fail);
     return (g_fail == 0) ? 0 : 1;
