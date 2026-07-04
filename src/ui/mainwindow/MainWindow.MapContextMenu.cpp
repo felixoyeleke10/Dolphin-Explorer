@@ -135,11 +135,12 @@ void MainWindow::onMapContextMenu(QPoint globalPos)
 
     if (is_3d_mode && m_viewport_host && m_viewport_host->view3D()) {
         MapView3D* v3d = m_viewport_host->view3D();
-        MapViewportHost* host = m_viewport_host;
         entries.push_back(ME::separator());
         entries.push_back(ME::action(tr("Reset Camera"), [v3d] { v3d->resetCamera(); }));
-        entries.push_back(ME::action(tr("Load Terrain..."),
-            [host] { host->promptLoadTerrain(); }));
+        // Terrain loads through the Views ▸ MAP ▸ Draping surface flow so the
+        // choice persists with the project.
+        entries.push_back(ME::action(tr("Set Draping Surface..."),
+            [this] { onChooseDrapingSurface(); }));
     }
 
     entries.push_back(ME::separator());

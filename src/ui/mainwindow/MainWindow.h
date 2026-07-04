@@ -422,6 +422,7 @@ private:
     QButtonGroup* m_tool_grp           = nullptr;
     QToolButton* m_settings_btn        = nullptr;
     QToolButton* m_btn_sbp_open        = nullptr;
+    QToolButton* m_btn_3d_toggle       = nullptr;   // top-toolbar 2D/3D switch (checked = 3D)
     std::vector<QAction*> m_export_actions;
 
     // Activity bar button map: panel_id → button (for check state management)

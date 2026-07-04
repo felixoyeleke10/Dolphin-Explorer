@@ -144,11 +144,8 @@ void MainWindow::setupCentralWidget()
             s.value(QStringLiteral("recentProjects")).toStringList());
     }
 
-    // Terrain loaded via the 3D HUD chip → adopt as the project draping surface.
-    connect(m_viewport_host, &MapViewportHost::terrainFileLoaded,
-            this, [this](const QString& path) {
-                applyDrapingSurface(path, /*already_loaded=*/true);
-            });
+    // (Terrain/draping loads go exclusively through Views ▸ MAP ▸ Draping
+    // surface / the 3D context menu — both call onChooseDrapingSurface.)
 
     connect(m_line_list, &LineListPanel::layerSelected,
             this, &MainWindow::onLayerSelected);

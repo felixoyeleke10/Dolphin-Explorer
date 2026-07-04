@@ -45,18 +45,6 @@ void MapView3D::setToolMode(int mode)
 
 void MapView3D::mousePressEvent(QMouseEvent* ev)
 {
-    // In-HUD view buttons take priority over camera drags.
-    if (ev->button() == Qt::LeftButton) {
-        if (m_hud_2d_rect.contains(ev->pos())) {
-            emit switchTo2DRequested();
-            return;
-        }
-        if (m_hud_terrain_rect.contains(ev->pos())) {
-            if (!m_terrain_loading) emit loadTerrainRequested();
-            return;
-        }
-    }
-
     if (ev->button() == Qt::LeftButton) {
         // Left drag = pan, matching 2D map view muscle memory.
         m_panning     = true;
@@ -116,13 +104,6 @@ void MapView3D::mouseMoveEvent(QMouseEvent* ev)
         m_camera.pitch = std::clamp(m_drag_pitch0 + d.y() * 0.25f, 5.f, 89.f);
         emitCameraViewport(this, m_camera.yaw, m_camera.distance, height());
         update();
-    }
-
-    // Pointing-hand feedback over the HUD chips (only when not dragging).
-    if (!m_panning && !m_orbiting) {
-        const bool over_chip = m_hud_2d_rect.contains(ev->pos()) ||
-                               m_hud_terrain_rect.contains(ev->pos());
-        setCursor(over_chip ? Qt::PointingHandCursor : cursorForMode(m_tool_mode));
     }
 
     QPointF geo;

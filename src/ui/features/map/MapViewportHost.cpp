@@ -20,7 +20,6 @@
 #include <QStackedWidget>
 #include <QString>
 #include <QTimer>
-#include <QToolButton>
 #include <QVBoxLayout>
 
 #include <algorithm>
@@ -53,26 +52,9 @@ MapViewportHost::MapViewportHost(QWidget* parent)
 
     layout->addWidget(m_stack);
 
-    // -- 2D/3D toggle button (overlaid bottom-right) ----------------------
-    m_btn = new QToolButton(this);
-    m_btn->setText(tr("3D"));
-    m_btn->setObjectName("map3DBtn");
-    m_btn->setFixedSize(kMap3DBtnW, kMap3DBtnH);
-    m_btn->setToolTip(tr("Switch to 3D OpenGL view"));
-    connect(m_btn, &QToolButton::clicked, this, [this]() { setMode3D(!m_is_3d); });
-
-    // Floating "3D" button, overlaid bottom-right on the 2D map (a plain
-    // widget floats fine over the 2D view — it is not a native window).
-    // In 3D mode this is hidden: the QWindowContainer stacks the native GL
-    // window above every sibling widget (documented Qt limitation), so
-    // MapView3D draws its own "2D" / "⊞ Terrain" chips inside the HUD instead
-    // (MapView3D::drawViewButtons) — same corner, same look.
-    m_vp_overlay = new QWidget(this);
-    m_vp_overlay->setObjectName("mapViewportOverlay");
-    {
-        auto* tb = makeCompactLayout<QHBoxLayout>(m_vp_overlay);
-        tb->addWidget(m_btn);
-    }
+    // (No in-viewport 2D/3D switch — the checkable button on the main toolbar
+    // is the single mode control, per user direction. Terrain/draping loads
+    // live in Views ▸ MAP ▸ Draping surface.)
 
     // Empty-state launcher — transparent overlay covering the full viewport.
     // Welcome-window composition (a la Xcode): ONE solid card carrying the app
@@ -189,10 +171,6 @@ MapViewportHost::MapViewportHost(QWidget* parent)
     // data only sets dirty flags, so there is no rendering cost in 2D mode. (The GL
     // context is shared app-wide via AA_ShareOpenGLContexts, set in main().)
     ensureView3D();
-
-    // The GL container's native window was just created — re-assert the
-    // overlay cluster's place at the top of the native sibling order.
-    positionOverlay();
 }
 
 MapView3D* MapViewportHost::ensureView3D()
@@ -233,10 +211,6 @@ MapView3D* MapViewportHost::ensureView3D()
             });
     connect(m_view3d, &MapView3D::cursorMoved,
             this, &MapViewportHost::cursorMoved);
-    connect(m_view3d, &MapView3D::loadTerrainRequested,
-            this, &MapViewportHost::promptLoadTerrain);
-    connect(m_view3d, &MapView3D::switchTo2DRequested,
-            this, [this]() { setMode3D(false); });
     connect(m_view3d, &MapView3D::layerClicked,
             this, &MapViewportHost::layerClicked);
     connect(m_view3d, &MapView3D::layersSelected,
@@ -381,10 +355,6 @@ void MapViewportHost::setMode3D(bool on)
     } else {
         m_stack->setCurrentWidget(m_view2d);
     }
-    // In 3D the native GL window would cover the floating button — hide it;
-    // the in-HUD "2D" chip (drawn by MapView3D) is the way back.
-    if (m_vp_overlay)
-        m_vp_overlay->setVisible(!on);
 
     // Push cached viewport state into the newly-active view so the status bar
     // stays accurate and the new view opens at the same scale/rotation.
@@ -401,22 +371,7 @@ void MapViewportHost::setMode3D(bool on)
         emit viewportChanged(m_last_mpp, m_last_rot_deg);
     }
 
-    positionOverlay();
     emit modeChanged(on);
-}
-
-void MapViewportHost::promptLoadTerrain()
-{
-    if (!m_is_3d) return;
-
-    const QString path = QFileDialog::getOpenFileName(
-        this, tr("Open Bathymetry File"), {},
-        tr("XYZ / CSV files (*.xyz *.csv *.txt);;All files (*)"));
-    if (path.isEmpty()) return;
-
-    loadTerrainPath(path);
-    // Let the owner persist the choice (project draping surface).
-    emit terrainFileLoaded(path);
 }
 
 void MapViewportHost::loadTerrainPath(const QString& path)
@@ -618,7 +573,6 @@ void MapViewportHost::resizeEvent(QResizeEvent* e)
     if (m_empty_state) m_empty_state->setGeometry(rect());
     if (m_transition_cover && m_transition_cover->isVisible())
         m_transition_cover->setGeometry(m_stack->geometry());
-    positionOverlay();
 }
 
 void MapViewportHost::setShowImportHint(bool show)
@@ -661,16 +615,5 @@ void MapViewportHost::panByPixels(int dx, int dy)
     if (m_view2d) m_view2d->panByPixels(dx, dy);
 }
 
-void MapViewportHost::positionOverlay()
-{
-    // Pin the floating control cluster to the bottom-right corner of the
-    // viewport and keep its native window above the (native) 3D surface.
-    if (!m_vp_overlay) return;
-    m_vp_overlay->adjustSize();
-    const int m = Theme::kMap3DMargin;
-    m_vp_overlay->move(width()  - m_vp_overlay->width()  - m,
-                       height() - m_vp_overlay->height() - m);
-    m_vp_overlay->raise();
-}
 
 } // namespace dolphin::ui

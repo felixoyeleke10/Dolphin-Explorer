@@ -1,5 +1,6 @@
 // MainWindow.ToolBar.cpp — buildActivityBar, setupToolBar.
 #include "ui/mainwindow/MainWindow.h"
+#include "ui/features/map/MapViewportHost.h"
 #include "ui/shared/AppCommands.h"
 #include "ui/shared/widgets/AnimatedToolButton.h"
 #include "ui/shell/Features.h"
@@ -229,6 +230,27 @@ void MainWindow::setupToolBar()
     connect(m_btn_sbp_open, &QToolButton::clicked, this, &MainWindow::onSubBottomOpen);
     connect(module_tb_btns[2], &QToolButton::clicked, this, &MainWindow::onWaterfallOpen);
 
+    // 2D/3D viewport switch — promoted from the ··· overflow menu (user
+    // direction): a view-mode control belongs with the view shortcuts.
+    // Checked = 3D. State follows the viewport (corner button / HUD chip /
+    // command palette all funnel through setMode3D → modeChanged).
+    m_btn_3d_toggle = new QToolButton(tb);
+    m_btn_3d_toggle->setIcon(Theme::icon(QStringLiteral(":/icons/layers.svg")));
+    m_btn_3d_toggle->setToolTip(
+        tr("3D View — toggle the OpenGL terrain/sonar-drape perspective.\n"
+           "Unchecked = 2D plan chart."));
+    m_btn_3d_toggle->setCheckable(true);
+    m_btn_3d_toggle->setToolButtonStyle(Qt::ToolButtonIconOnly);
+    connect(m_btn_3d_toggle, &QToolButton::clicked, this, &MainWindow::onToggle3D);
+    if (m_viewport_host) {
+        connect(m_viewport_host, &MapViewportHost::modeChanged, m_btn_3d_toggle,
+                [btn = m_btn_3d_toggle](bool on) {
+                    const QSignalBlocker b(btn);
+                    btn->setChecked(on);
+                });
+    }
+    tb->addWidget(m_btn_3d_toggle);
+
     tb->addSeparator();
 
     // -- Interactive map tools ---------------------------------------------------
@@ -299,13 +321,7 @@ void MainWindow::setupToolBar()
         more_btn->setToolButtonStyle(Qt::ToolButtonIconOnly);
         more_btn->setPopupMode(QToolButton::InstantPopup);
         auto* menu = new QMenu(more_btn);
-        auto* act_3d = menu->addAction(
-            Theme::icon(":/icons/layers.svg"),
-            tr("Toggle 3D View"),
-            this, &MainWindow::onToggle3D);
-        act_3d->setToolTip(
-            tr("Switch to OpenGL terrain/sonar-drape view. Run again to return to 2D plan view."));
-        menu->addSeparator();
+        // (Toggle 3D View moved to the main toolbar as a checkable button.)
         auto* act_reset = menu->addAction(
             Theme::icon(":/icons/reset_raw.svg"),
             tr("Reset to Raw Navigation"),

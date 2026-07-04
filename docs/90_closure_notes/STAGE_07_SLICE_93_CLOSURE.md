@@ -37,6 +37,23 @@ tools under the Views tool for SBP."
 - m_pending_contact_class now stays at its default; classification is set in
   the Contact Editor after picking.
 
+## Round 2 — 2D/3D switch promoted to the main toolbar (user direction)
+The "Toggle 3D View" entry moved out of the ··· overflow menu onto the main
+(icon) toolbar as a checkable button, placed with the viewer shortcuts
+(Geodesy / SBP / Waterfall / 3D). Checked = 3D; check state follows
+MapViewportHost::modeChanged. Verified via toolbar grab.
+
+## Round 3 — in-viewport 2D/3D switches removed entirely (user direction)
+The toolbar button is now the SINGLE mode control:
+- Floating corner "3D" button over the 2D map: removed (widget, overlay
+  host, positionOverlay, QSS, kMap3DBtn theme tokens).
+- In-HUD "2D" and "⊞ Terrain" chips in the 3D view: removed (hit-tests,
+  hover cursor, switchTo2DRequested + loadTerrainRequested signals,
+  promptLoadTerrain and terrainFileLoaded plumbing). The "Loading terrain…"
+  feedback chip remains. The 3D context menu's "Load Terrain…" is now "Set
+  Draping Surface…" → onChooseDrapingSurface (persists with the project,
+  same flow as Views ▸ MAP).
+
 ## Verification
 Build green; 16/16 tests. In-app grabs with the SBP project active:
 right-panel SBP tab shows Gain/Signal only above the Apply bar (no Display,

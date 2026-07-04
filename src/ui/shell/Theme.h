@@ -148,8 +148,6 @@ inline constexpr int kChromeActionH    = 22;  // Conversation / Assistant button
 inline constexpr int kLayoutBtnW       = 40;  // layout toggle buttons (corner widget)
 
 // -- Main viewport overlay buttons (2D/3D toggle, terrain load) ---------------
-inline constexpr int kMap3DBtnW    = 40;  // 2D↔3D toggle button width
-inline constexpr int kMap3DBtnH    = 26;  // 2D↔3D toggle button height
 inline constexpr int kMap3DMargin  = 10;  // margin from viewport edge for overlay buttons
 
 // -- Acoustic viewer window geometry (WaterfallWindow + SubBottomWindow) ------

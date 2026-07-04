@@ -13,7 +13,6 @@
 
 class QLabel;
 class QStackedWidget;
-class QToolButton;
 class QPushButton;
 class QVBoxLayout;
 
@@ -75,10 +74,6 @@ public slots:
     // Show or hide the "Import Files…" hint button overlaid on the empty map.
     void setShowImportHint (bool show);
 
-    // Open a file dialog and load an XYZ/CSV terrain file into the 3D view.
-    // No-op if not in 3D mode or scene origin is not set.
-    void promptLoadTerrain();
-
     // Keep the 3D SBP curtains on the same SbpPalette as the SBP viewer.
     void setSbpCurtainPalette(int palette_index);
 
@@ -122,23 +117,17 @@ signals:
     void newProjectRequested();
     // Emitted when a recent-project entry on the empty-state launcher is clicked.
     void openProjectRequested(const QString& path);
-    // Emitted after the in-viewer Terrain prompt loads a file, so the owner can
-    // persist it as the project's draping surface.
-    void terrainFileLoaded(const QString& path);
 
 protected:
     void resizeEvent(QResizeEvent*) override;
 
 private:
     MapView3D* ensureView3D();
-    void positionOverlay();
 
     MapView*        m_view2d              = nullptr;
     MapView3D*      m_view3d              = nullptr;   // native QOpenGLWindow
     QWidget*        m_view3d_container    = nullptr;   // createWindowContainer host (stack page)
     QStackedWidget* m_stack               = nullptr;
-    QToolButton*    m_btn                 = nullptr;   // "3D" switch (2D mode only)
-    QWidget*        m_vp_overlay          = nullptr;   // floating host for m_btn (bottom-right)
     QWidget*        m_empty_state         = nullptr;   // transparent overlay: layout-centered empty-state CTA
     QPushButton*    m_import_hint_btn     = nullptr;   // button inside m_empty_state
     QWidget*        m_recent_box          = nullptr;   // Recent Projects card in the launcher

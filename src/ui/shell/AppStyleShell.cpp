@@ -118,18 +118,8 @@ QString qssShell()
         "  font-weight: 700; letter-spacing: 1.2px; background: transparent;"
         "}"
 
-        // -- Map viewport overlay button (2D→3D switch) --------------------------
-        // Floats bottom-right over the 2D map only. In 3D mode the GL view draws
-        // its own in-HUD chips (MapView3D::drawViewButtons) because the native GL
-        // window covers sibling widgets.
-        "QWidget#mapViewportOverlay { background: transparent; }"
-        "QToolButton#map3DBtn {"
-        "  background: @overlayEl; border: 1px solid rgba(255,255,255,0.14);"
-        "  border-radius: @radius2;"
-        "  color: @textSecond; font-family: @font; font-size: @fontSm; padding: @padXs @padSm;"
-        "}"
-        "QToolButton#map3DBtn:hover   { background: @overlayHov; color: @textPrimary; }"
-        "QToolButton#map3DBtn:pressed { background: @overlayMut; }"
+        // (No in-viewport 2D/3D switch — the main-toolbar checkable button is
+        // the single mode control.)
 
         // -- Empty-map launcher (welcome screen) --------------------------------
         // NOTE: literal px font sizes on purpose — @fontXxx tokens are unusable
