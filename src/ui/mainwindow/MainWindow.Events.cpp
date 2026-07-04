@@ -1,6 +1,7 @@
 // MainWindow.Events.cpp — OS-level event overrides: close, show, drag/drop, native WM.
 #include "ui/mainwindow/MainWindow.h"
 #include "app/project/Project.h"
+#include "ui/features/import/ImportController.h"
 #include "ui/shared/widgets/LayerPickerWidget.h"
 
 #include "ui/shell/AppInfo.h"
@@ -62,6 +63,19 @@ static void purgeStaleTempProjects()
 
 void MainWindow::closeEvent(QCloseEvent* event)
 {
+    // Imports still parsing? Closing used to abandon them silently, leaving
+    // dead placeholder layers in the saved project ("imported three lines,
+    // only one works"). Warn first; abandoned lines self-heal on next open.
+    if (m_import_ctrl && m_import_ctrl->importsBusy()) {
+        const auto reply = QMessageBox::warning(
+            this, tr("Imports in progress"),
+            tr("File imports are still running. Closing now abandons them —\n"
+               "unfinished lines will be re-imported the next time this\n"
+               "project is opened.\n\nClose anyway?"),
+            QMessageBox::Close | QMessageBox::Cancel, QMessageBox::Cancel);
+        if (reply == QMessageBox::Cancel) { event->ignore(); return; }
+    }
+
     auto* proj = currentProject();
     if (proj && isProjectDirty()) {
         const auto reply = QMessageBox::question(

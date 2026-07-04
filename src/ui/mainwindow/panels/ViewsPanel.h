@@ -1,7 +1,9 @@
 #pragma once
 #include <QWidget>
 
+class QCheckBox;
 class QComboBox;
+class QDoubleSpinBox;
 class QLabel;
 class QStackedWidget;
 class QToolButton;
@@ -33,7 +35,9 @@ public:
     // Sensor tabs — has_layer=false disables the controls (no active line of
     // that modality); palette_idx < 0 means "app default" (shown as such).
     void setSssLayer(bool has_layer, int palette_idx);
-    void setSbpLayer(bool has_layer, int palette_idx);
+    void setSbpLayer(bool has_layer, int palette_idx,
+                     double gain = 1.0, double contrast = 1.0,
+                     bool invert = false);
 
 signals:
     void mapPaletteSelected(int palette_idx);
@@ -42,6 +46,8 @@ signals:
     void drapingClearRequested();
     void sssPaletteSelected(int palette_idx);
     void sbpPaletteSelected(int palette_idx);
+    // SBP display controls (moved here from the right panel's Display section).
+    void sbpDisplayEdited(double gain, double contrast, bool invert);
 
 private:
     QWidget* buildMapPage();
@@ -59,8 +65,11 @@ private:
 
     QComboBox* m_sss_palette   = nullptr;
     QLabel*    m_sss_hint      = nullptr;
-    QComboBox* m_sbp_palette   = nullptr;
-    QLabel*    m_sbp_hint      = nullptr;
+    QComboBox*      m_sbp_palette  = nullptr;
+    QDoubleSpinBox* m_sbp_gain     = nullptr;
+    QDoubleSpinBox* m_sbp_contrast = nullptr;
+    QCheckBox*      m_sbp_invert   = nullptr;
+    QLabel*         m_sbp_hint     = nullptr;
 };
 
 } // namespace dolphin::ui

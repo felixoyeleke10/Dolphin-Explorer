@@ -323,7 +323,8 @@ std::string ImportService::importFile(const std::string& path,
 
 std::string ImportService::reindexLayer(const std::string& path,
                                         std::shared_ptr<Project> project,
-                                        const std::string& layer_id)
+                                        const std::string& layer_id,
+                                        const core::SpatialRef& user_crs)
 {
     if (!project || layer_id.empty()) {
         emit indexingFailed(layer_id, "Reindex requested with no project or layer ID");
@@ -376,7 +377,7 @@ std::string ImportService::reindexLayer(const std::string& path,
 
     auto* watcher = new QFutureWatcher<import_detail::ImportTaskResult>(this);
     connect(watcher, &QFutureWatcher<import_detail::ImportTaskResult>::finished, this,
-        [this, watcher, project, layer_id, source_id = layer->source_id]() {
+        [this, watcher, project, layer_id, source_id = layer->source_id, user_crs]() {
             watcher->deleteLater();
 
             import_detail::ImportTaskResult result;
@@ -393,7 +394,7 @@ std::string ImportService::reindexLayer(const std::string& path,
             }
 
             import_detail::completeReindex(this, std::move(result), project,
-                                           layer_id, source_id);
+                                           layer_id, source_id, user_crs);
         });
     watcher->setFuture(future);
 

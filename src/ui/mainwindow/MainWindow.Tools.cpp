@@ -16,7 +16,6 @@
 #include "ui/shared/panels/LineListPanel.h"
 #include "ui/shared/widgets/LayerPickerWidget.h"
 #include "ui/mainwindow/rightpanel/RightPanelHost.h"
-#include "ui/shared/panels/ContactPickingPanel.h"
 #include "ui/shell/WindowChrome.h"
 
 #include <QAbstractSpinBox>
@@ -404,10 +403,6 @@ void MainWindow::syncAnnotationToggles(bool contact_active, int feature_tool)
     else if (feature_tool == 2) to_check = m_feat_line_btn;
     else if (feature_tool == 3) to_check = m_feat_pen_btn;
     if (to_check) { QSignalBlocker sb(to_check); to_check->setChecked(true); }
-
-    if (m_modal_host) {
-        if (auto* cp = m_modal_host->contactPickingPanel()) cp->setPickActive(contact_active);
-    }
 }
 
 void MainWindow::onToolCursor()

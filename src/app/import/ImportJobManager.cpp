@@ -105,12 +105,14 @@ void ImportJobManager::importBatch(const QList<FileImportAction>& actions)
 }
 
 void ImportJobManager::reindexLayer(const std::string& source_path,
-                                    const std::string& layer_id)
+                                    const std::string& layer_id,
+                                    const core::SpatialRef& user_crs)
 {
     QueuedJob job;
     job.kind              = FileImportAction::Kind::RebuildExisting;
     job.path              = QString::fromStdString(source_path);
     job.existing_layer_id = layer_id;
+    job.source_crs        = user_crs;
     m_queue.push_back(std::move(job));
     dispatchNext();
 }
@@ -189,7 +191,7 @@ void ImportJobManager::dispatchNext()
             emit statusMessage(
                 tr("Rebuilding %1…").arg(QFileInfo(job.path).fileName()));
             m_service->reindexLayer(job.path.toStdString(), m_project,
-                                    job.existing_layer_id);
+                                    job.existing_layer_id, job.source_crs);
         } else {
             // ImportNew: layer ID is not known until onIndexingStarted fires.
             const QString ext = QFileInfo(job.path).suffix().toLower();

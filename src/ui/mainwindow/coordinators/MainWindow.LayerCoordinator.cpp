@@ -299,8 +299,6 @@ void MainWindow::onLayerSelected(const std::string& layer_id)
                     m_sbp_win->applySignalParams(layer->sbp_display_state.signal);
                 applyStoredSbpNavParams(layer->id);  // stored nav corrections
                 if (m_modal_host) {
-                    if (layer->sbp_display_state.display_customized)
-                        m_modal_host->setSbpParams(layer->sbp_display_state.display);
                     if (auto* gm = m_modal_host->sbpGainModule(); layer->sbp_display_state.gain_customized)
                         gm->setParams(layer->sbp_display_state.gain);
                     if (auto* sm = m_modal_host->sbpSignalModule(); layer->sbp_display_state.signal_customized)

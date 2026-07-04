@@ -39,7 +39,9 @@ public:
 
     void setProject(std::shared_ptr<Project> project);
     void importBatch(const QList<FileImportAction>& actions);
-    void reindexLayer(const std::string& source_path, const std::string& layer_id);
+    // user_crs: confirmed source CRS to re-apply (empty = preserve/detect).
+    void reindexLayer(const std::string& source_path, const std::string& layer_id,
+                      const core::SpatialRef& user_crs = {});
 
     int  pendingCount() const { return static_cast<int>(m_queue.size()); }
     bool busy()         const { return m_active_count > 0 || !m_queue.empty(); }

@@ -117,6 +117,21 @@ void completeImport(ImportService*                   svc,
         return;
     }
 
+    // Never commit a store path whose file has vanished between the
+    // background write and this completion (defence against any deleter —
+    // the save-time orphan purge that used to race concurrent imports is
+    // gone, but a dangling reference must not reach the manifest regardless).
+    if (!result.artifact_store_path.empty()
+        && !std::filesystem::exists(
+               std::filesystem::path(result.artifact_store_path))) {
+        releaseSourceJob(source_id);
+        project->removeLayer(layer_id);
+        emit svc->indexingFailed(layer_id,
+            "Parsed cache disappeared before it could be committed: "
+                + result.artifact_store_path);
+        return;
+    }
+
     // User-confirmed CRS overrides whatever the parser auto-detected.
     if (!user_crs.empty()) {
         result.source_spatial_ref       = user_crs;
@@ -268,7 +283,8 @@ void completeReindex(ImportService*            svc,
                      ImportTaskResult          result,
                      std::shared_ptr<Project>  project,
                      const std::string&        layer_id,
-                     const std::string&        source_id)
+                     const std::string&        source_id,
+                     const core::SpatialRef&   user_crs)
 {
     auto* dl = project->findLayer(layer_id);
     if (!dl) {
@@ -286,6 +302,36 @@ void completeReindex(ImportService*            svc,
                 ? result.error
                 : "No artifacts were indexed from the source file");
         return;
+    }
+
+    // Same store-file existence guard as completeImport (see comment there).
+    if (!result.artifact_store_path.empty()
+        && !std::filesystem::exists(
+               std::filesystem::path(result.artifact_store_path))) {
+        releaseSourceJob(source_id);
+        project->markLayerFailed(layer_id);
+        emit svc->indexingFailed(layer_id,
+            "Parsed cache disappeared before it could be committed: "
+                + result.artifact_store_path);
+        return;
+    }
+
+    // CRS resolution — a reindex must never LOSE georeferencing:
+    //  1. caller-confirmed CRS wins (self-heal passes the survey grid);
+    //  2. else a previously confirmed (exact) CRS on the layer/source is
+    //     preserved when the parser could only auto-detect ("PROJECTED:SEGY"
+    //     placeholders make every trace fail nav normalisation);
+    //  3. else the parser's detection stands.
+    if (!user_crs.empty()) {
+        result.source_spatial_ref       = user_crs;
+        result.source_spatial_ref.exact = true;
+    } else if (!result.source_spatial_ref.exact) {
+        if (dl->source_spatial_ref.exact) {
+            result.source_spatial_ref = dl->source_spatial_ref;
+        } else if (const auto* src = project->findSource(source_id);
+                   src && src->source_spatial_ref.exact) {
+            result.source_spatial_ref = src->source_spatial_ref;
+        }
     }
 
     const auto linked_layers = project->findLayersBySource(dl->source_id);

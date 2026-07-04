@@ -11,6 +11,8 @@
 #include "ui/shared/widgets/CollapsibleSection.h"
 #include "ui/shared/widgets/SidePanelShell.h"
 #include "ui/systems/DisplayStateManager.h"
+#include "ui/features/subbottom/SubBottomWindow.h"
+#include "app/display/SubBottomDisplayParams.h"
 #include "app/layers/DataLayer.h"
 
 #include <QDesktopServices>
@@ -87,8 +89,25 @@ void MainWindow::buildContextPanel(QWidget* parent)
     connect(m_views_panel, &ViewsPanel::sbpPaletteSelected, this, [this](int idx) {
         if (!m_display_state || !currentProject()) return;
         const auto* l = currentProject()->findLayer(activeLayerId());
-        if (l && l->modality == app::Modality::SubBottom)
+        if (l && l->modality == app::Modality::SubBottom) {
             m_display_state->setLayerSbpPalette(l->id, idx);
+            if (m_sbp_win) m_sbp_win->setPalette(idx);
+        }
+    });
+    // SBP display controls (moved here from the right panel's Display section):
+    // live-apply to the active sub-bottom line + persist via the authority.
+    connect(m_views_panel, &ViewsPanel::sbpDisplayEdited, this,
+            [this](double gain, double contrast, bool invert) {
+        if (!m_display_state || !currentProject()) return;
+        auto* l = currentProject()->findLayer(activeLayerId());
+        if (!l || l->modality != app::Modality::SubBottom) return;
+        SubBottomDisplayParams p = l->sbp_display_state.display;
+        p.gain            = static_cast<float>(gain);
+        p.contrast        = static_cast<float>(contrast);
+        p.polarity_invert = invert;
+        if (l->sbp_palette >= 0) p.palette_index = l->sbp_palette;
+        if (m_sbp_win) m_sbp_win->applyDisplayParams(p);
+        m_display_state->setLayerSbpDisplay(l->id, p);
     });
     connect(m_views_panel, &ViewsPanel::drapingBrowseRequested,
             this, &MainWindow::onChooseDrapingSurface);
@@ -216,7 +235,13 @@ void MainWindow::refreshViewsPanel()
     const bool sss = active && active->modality == app::Modality::Sidescan;
     const bool sbp = active && active->modality == app::Modality::SubBottom;
     m_views_panel->setSssLayer(sss, sss ? active->sss_palette : -1);
-    m_views_panel->setSbpLayer(sbp, sbp ? active->sbp_palette : -1);
+    if (sbp) {
+        const auto& d = active->sbp_display_state.display;
+        m_views_panel->setSbpLayer(true, active->sbp_palette,
+                                   d.gain, d.contrast, d.polarity_invert);
+    } else {
+        m_views_panel->setSbpLayer(false, -1);
+    }
 
     const QString drape = currentProject()
         ? QString::fromStdString(currentProject()->drapingSurface()) : QString{};

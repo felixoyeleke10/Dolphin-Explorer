@@ -13,7 +13,6 @@
 #include "ui/features/map/MapView.h"
 #include "ui/features/map/MapViewportHost.h"
 #include <algorithm>
-#include "ui/shared/panels/ContactPickingPanel.h"
 #include "ui/mainwindow/panels/InspectorPanel.h"
 #include "ui/mainwindow/rightpanel/RightPanelHost.h"
 #include "ui/mainwindow/rightpanel/PanelChatWidget.h"
@@ -42,6 +41,8 @@
 #include <QWidget>
 
 namespace {
+
+namespace Theme = dolphin::ui::Theme;   // delegate colours follow the theme mode
 
 // UserRole map for history list items:
 //   Qt::UserRole     — unused (kept for compat)
@@ -89,12 +90,14 @@ public:
         p->save();
         p->setRenderHint(QPainter::Antialiasing);
 
+        // Colours resolve through the Theme runtime getters so the delegate
+        // follows Light/Dark (dark values are identical to the old literals).
         if (idx.data(kHRoleHint).toBool()) {
             // -- Empty-state message (centred, wrapped, muted) ------------
             QFont f = opt.font;
             f.setPixelSize(11);
             p->setFont(f);
-            p->setPen(QColor("#8E8E93"));
+            p->setPen(Theme::textSubtleColor());
             p->drawText(opt.rect.adjusted(16, 0, -16, 0),
                         Qt::AlignCenter | Qt::TextWordWrap,
                         idx.data(Qt::DisplayRole).toString());
@@ -104,7 +107,7 @@ public:
             f.setPixelSize(9);
             f.setWeight(QFont::DemiBold);
             p->setFont(f);
-            p->setPen(QColor("#636366"));
+            p->setPen(Theme::textMutedColor());
             p->drawText(opt.rect.adjusted(12, 0, -8, 0),
                         Qt::AlignVCenter | Qt::AlignLeft,
                         idx.data(Qt::DisplayRole).toString().toUpper());
@@ -112,11 +115,13 @@ public:
             // -- Activity row ----------------------------------------------
             const bool sel  = opt.state & QStyle::State_Selected;
             const bool hov  = opt.state & QStyle::State_MouseOver;
+            const bool light = Theme::mode() == Theme::Mode::Light;
 
             if (sel)
                 p->fillRect(opt.rect, QColor(10, 132, 255, 28));
             else if (hov)
-                p->fillRect(opt.rect, QColor(255, 255, 255, 9));
+                p->fillRect(opt.rect, light ? QColor(0, 0, 0, 12)
+                                            : QColor(255, 255, 255, 9));
 
             // Kind dot — 4px radius circle on left margin
             const QColor dotClr = activityKindColor(idx.data(kHRoleKind).toInt());
@@ -130,7 +135,7 @@ public:
             QFont nameF = opt.font;
             nameF.setPixelSize(12);
             p->setFont(nameF);
-            p->setPen(QColor("#e5e5ea"));
+            p->setPen(Theme::textSecondColor());
             p->drawText(QRect(r.x(), r.y() + 9, r.width(), 18),
                         Qt::AlignLeft | Qt::AlignVCenter,
                         idx.data(Qt::DisplayRole).toString());
@@ -139,13 +144,13 @@ public:
             QFont timeF = opt.font;
             timeF.setPixelSize(10);
             p->setFont(timeF);
-            p->setPen(QColor("#636366"));
+            p->setPen(Theme::textMutedColor());
             p->drawText(QRect(r.x(), r.y() + 29, r.width(), 16),
                         Qt::AlignLeft | Qt::AlignVCenter,
                         idx.data(kHRoleTime).toString());
 
             // Bottom divider
-            p->setPen(QPen(QColor("#2d2d2f"), 1));
+            p->setPen(QPen(Theme::borderColor(), 1));
             p->drawLine(12, opt.rect.bottom(), opt.rect.right(), opt.rect.bottom());
         }
 
@@ -387,29 +392,9 @@ void MainWindow::buildPropertiesPanel(QWidget* parent)
     m_gain_panel        = m_modal_host->gainPanel();      // modal (Sidescan)
     m_imaging_panel     = m_modal_host->imagingPanel();   // modal (Sidescan)
 
-    // -- Annotation tool sections → map tools ------------------------------
-    // Contact Picking and Feature Drawing are universal sections (shown on every
-    // tab). They drive the 2-D map's pick/draw input modes; the contact/feature is
-    // created by the existing onContactPickedOnMap / onFeatureDrawn handlers.
-    if (auto* cp = m_modal_host->contactPickingPanel()) {
-        connect(cp, &ContactPickingPanel::pickToggled, this, [this, cp](bool on) {
-            if (on) {
-                // Contact picking from the panel happens on the 2D chart.
-                if (m_viewport_host && m_viewport_host->isMode3D())
-                    m_viewport_host->setMode3D(false);
-                m_pending_contact_class = cp->classification().toStdString();
-                onAddContact();   // single activation path: map + viewport + app state
-            } else {
-                onToolCursor();   // deactivate → back to the default Cursor/Pan tool
-            }
-        });
-        connect(cp, &ContactPickingPanel::classificationChanged, this,
-                [this](const QString& c) { m_pending_contact_class = c.toStdString(); });
-        connect(cp, &ContactPickingPanel::clearRequested, this, &MainWindow::onClearContacts);
-        // "Edit Contacts…" → the shared editor over all project contacts.
-        connect(cp, &ContactPickingPanel::editRequested, this,
-                [this]() { onContactEditRequested(0, QString{}); });
-    }
+    // (The right panel hosts no annotation sections any more — contact picking
+    // lives on the top toolbar (C) and in the viewer toolbars, feature drawing
+    // on the top toolbar. Both were removed on user direction.)
 
     // The tool sections (Gain/Imaging/Nav/Geometry, SSS + SBP) have no per-section
     // Apply buttons: they only edit values. The single shared Apply bar at the bottom

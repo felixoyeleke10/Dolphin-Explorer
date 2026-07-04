@@ -178,7 +178,12 @@ bool Project::save()
     if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) return false;
     if (file.write(data) != data.size()) { file.cancelWriting(); return false; }
     if (!file.commit()) return false;
-    purgeOrphanedCaches();
+    // NO purgeOrphanedCaches() here — save() runs after EVERY import
+    // completion, and during a multi-file import a sibling's freshly written
+    // .dlpd is not referenced by any layer until ITS completion commits the
+    // store path. Purging at save deleted those in-flight caches (multi-line
+    // SBP imports lost all but one line). Orphans are cleaned at open()
+    // instead, when no imports can be in flight.
     return true;
 }
 

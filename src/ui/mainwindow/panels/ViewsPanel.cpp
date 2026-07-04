@@ -8,7 +8,9 @@
 #include "render/sonar/SSSPalette.h"
 #include "render/sonar/SonarDisplayParams.h"
 
+#include <QCheckBox>
 #include <QComboBox>
+#include <QDoubleSpinBox>
 #include <QFontMetrics>
 #include <QGridLayout>
 #include <QLabel>
@@ -185,10 +187,49 @@ QWidget* ViewsPanel::buildSbpPage()
     gl->addWidget(makeRowLabel(tr("Palette"), page), 0, 0);
     gl->addWidget(m_sbp_palette, 0, 1);
 
+    // Display controls (moved here from the right panel's Display section) —
+    // live per-line: changes apply immediately to the active SBP line.
+    auto emitDisplay = [this]() {
+        emit sbpDisplayEdited(m_sbp_gain->value(), m_sbp_contrast->value(),
+                              m_sbp_invert->isChecked());
+    };
+
+    m_sbp_gain = new QDoubleSpinBox(page);
+    m_sbp_gain->setObjectName("viewsSpin");
+    m_sbp_gain->setFixedHeight(Theme::kSmallBtnSz + 4);
+    m_sbp_gain->setRange(0.1, 20.0);
+    m_sbp_gain->setSingleStep(0.1);
+    m_sbp_gain->setDecimals(1);
+    m_sbp_gain->setSuffix(QStringLiteral(" ×"));
+    m_sbp_gain->setToolTip(tr("Amplitude multiplier before palette mapping"));
+    connect(m_sbp_gain, qOverload<double>(&QDoubleSpinBox::valueChanged),
+            this, [emitDisplay](double) { emitDisplay(); });
+    gl->addWidget(makeRowLabel(tr("Gain"), page), 1, 0);
+    gl->addWidget(m_sbp_gain, 1, 1);
+
+    m_sbp_contrast = new QDoubleSpinBox(page);
+    m_sbp_contrast->setObjectName("viewsSpin");
+    m_sbp_contrast->setFixedHeight(Theme::kSmallBtnSz + 4);
+    m_sbp_contrast->setRange(0.5, 3.0);
+    m_sbp_contrast->setSingleStep(0.1);
+    m_sbp_contrast->setDecimals(1);
+    m_sbp_contrast->setToolTip(tr("Power-curve exponent; 1 = linear"));
+    connect(m_sbp_contrast, qOverload<double>(&QDoubleSpinBox::valueChanged),
+            this, [emitDisplay](double) { emitDisplay(); });
+    gl->addWidget(makeRowLabel(tr("Contrast"), page), 2, 0);
+    gl->addWidget(m_sbp_contrast, 2, 1);
+
+    m_sbp_invert = new QCheckBox(tr("Invert polarity"), page);
+    m_sbp_invert->setObjectName("viewsCheck");
+    m_sbp_invert->setToolTip(tr("Flip sample sign before palette mapping"));
+    connect(m_sbp_invert, &QCheckBox::toggled,
+            this, [emitDisplay](bool) { emitDisplay(); });
+    gl->addWidget(m_sbp_invert, 3, 1);
+
     m_sbp_hint = new QLabel(tr("Select a sub-bottom line to adjust it here."), page);
     m_sbp_hint->setObjectName("viewsHint");
     m_sbp_hint->setWordWrap(true);
-    gl->addWidget(m_sbp_hint, 1, 0, 1, 2);
+    gl->addWidget(m_sbp_hint, 4, 0, 1, 2);
 
     setSbpLayer(false, -1);
     return page;
@@ -234,15 +275,25 @@ void ViewsPanel::setSssLayer(bool has_layer, int palette_idx)
     }
 }
 
-void ViewsPanel::setSbpLayer(bool has_layer, int palette_idx)
+void ViewsPanel::setSbpLayer(bool has_layer, int palette_idx,
+                             double gain, double contrast, bool invert)
 {
     m_sbp_palette->setEnabled(has_layer);
+    m_sbp_gain->setEnabled(has_layer);
+    m_sbp_contrast->setEnabled(has_layer);
+    m_sbp_invert->setEnabled(has_layer);
     m_sbp_hint->setVisible(!has_layer);
     if (has_layer) {
-        const QSignalBlocker b(m_sbp_palette);
+        const QSignalBlocker b1(m_sbp_palette);
+        const QSignalBlocker b2(m_sbp_gain);
+        const QSignalBlocker b3(m_sbp_contrast);
+        const QSignalBlocker b4(m_sbp_invert);
         const int at = m_sbp_palette->findData(
             palette_idx >= 0 ? palette_idx : SbpPalette::Greyscale);
         if (at >= 0) m_sbp_palette->setCurrentIndex(at);
+        m_sbp_gain->setValue(gain);
+        m_sbp_contrast->setValue(contrast);
+        m_sbp_invert->setChecked(invert);
     }
 }
 

@@ -1,5 +1,4 @@
 #pragma once
-#include "ui/features/subbottom/panels/SubBottomDisplayPanel.h"  // SubBottomDisplayParams
 #include "app/layers/LayerUtils.h"
 #include <QVector>
 #include <QWidget>
@@ -14,19 +13,16 @@ namespace dolphin::ui {
 class IRightPanelModule;
 class CollapsibleSection;
 class InfoModule;
-class SubBottomDisplayModule;
 class SbpGainModule;
 class SbpSignalModule;
 class NavigationModule;
 class GeometryModule;
 class RadiometryModule;
 class EnhancementModule;
-class ContactPickingModule;
 class NavInfoPanel;
 class HeadingInfoPanel;
 class GainControlPanel;
 class ImagingControlPanel;
-class ContactPickingPanel;
 
 // Hosts a subset of right-panel modules as CollapsibleSections.
 // ShowMode controls which module set is created at construction time:
@@ -56,15 +52,9 @@ public:
     HeadingInfoPanel*    headingPanel(app::Modality m) const;
     GainControlPanel*    gainPanel()     const;
     ImagingControlPanel* imagingPanel()  const;
-    // Universal annotation tool sections (Contact Picking / Feature Drawing).
-    ContactPickingPanel* contactPickingPanel() const;
-
     // Palette forwarding from DisplayModule (SSS).
     int  currentPaletteIndex() const;
     void setPalette(int idx);
-
-    // SBP display params forwarding.
-    void setSbpParams(const SubBottomDisplayParams& p);
 
     // SBP processing module accessors — used by SubBottomCoordinator for signal wiring.
     SbpGainModule*   sbpGainModule()   const;
@@ -72,7 +62,6 @@ public:
 
 signals:
     void paletteChanged(int idx);
-    void sbpParamsChanged(SubBottomDisplayParams params);
 
 private:
     void addModule(IRightPanelModule* mod);
@@ -105,7 +94,6 @@ private:
 
     // QWidget modules — Qt-owned after addModule re-parents them into sections.
     InfoModule*             m_info        = nullptr;
-    SubBottomDisplayModule* m_sbp_display = nullptr;
     SbpGainModule*          m_sbp_gain    = nullptr;
     SbpSignalModule*        m_sbp_signal  = nullptr;
 
@@ -118,7 +106,6 @@ private:
     std::unique_ptr<GeometryModule>    m_geometry_sbp;
     std::unique_ptr<RadiometryModule>  m_radiometry;
     std::unique_ptr<EnhancementModule> m_enhancement;
-    std::unique_ptr<ContactPickingModule> m_contact_picking;
 
     // Parallel lists for generic setLayer / clearLayer iteration.
     QVector<IRightPanelModule*>  m_modules;

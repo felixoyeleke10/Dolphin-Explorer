@@ -436,12 +436,9 @@ void MainWindow::onPaletteChanged(int idx)
     if (m_waterfall_win)
         m_waterfall_win->setPalette(idx);
 
-    // Sync the SBP window and keep the right panel in sync.
-    if (m_sbp_win) {
+    // Sync the SBP window (the Views panel mirrors via refreshViewsPanel).
+    if (m_sbp_win)
         m_sbp_win->setPalette(idx);
-        if (m_modal_host)
-            m_modal_host->setSbpParams(m_sbp_win->displayParams());
-    }
 
     // Global map palette → through the display-state manager: it persists the choice
     // and emits displayStateChanged({}, Palette); our handler applies it to the map.

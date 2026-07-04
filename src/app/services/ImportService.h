@@ -51,9 +51,12 @@ public:
                            std::vector<core::ArtifactType> wanted_modules = {});
 
     // Rebuild the artifact index for an existing layer asynchronously.
+    // user_crs: confirmed source CRS to apply exactly (empty = keep the
+    // layer's existing exact CRS if any, else the parser's auto-detection).
     std::string reindexLayer(const std::string& path,
                              std::shared_ptr<Project> project,
-                             const std::string& layer_id);
+                             const std::string& layer_id,
+                             const core::SpatialRef& user_crs = {});
 
     // Rebuild the artifact index directly from an existing .dlpd cache without
     // re-parsing the raw source.  Used by loadProject to defer the per-layer

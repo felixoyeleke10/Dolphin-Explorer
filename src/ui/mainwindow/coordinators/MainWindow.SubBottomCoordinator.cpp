@@ -89,9 +89,6 @@ void MainWindow::onSubBottomOpen()
                                          SubBottomViewStyle style) {
                                 if (!m_sbp_win) return;
                                 m_sbp_win->applySettings(p, pw, ps, style);
-                                // Keep right panel in sync — it only syncs on window open otherwise.
-                                if (m_modal_host)
-                                    m_modal_host->setSbpParams(m_sbp_win->displayParams());
                                 // Persist per-layer SBP palette from settings dialog
                                 // through the display-state authority (marks dirty on the bus).
                                 if (!currentProject() || activeLayerId().empty()) return;
@@ -182,28 +179,9 @@ void MainWindow::onSubBottomOpen()
                     });
         }
 
-        // Right-panel Display module → SubBottomWindow: push param changes live.
-        if (m_modal_host) {
-            auto* host = m_modal_host;
-            connect(host, &RightPanelHost::sbpParamsChanged,
-                    this, [this](SubBottomDisplayParams p) {
-                        if (m_sbp_win) m_sbp_win->applyDisplayParams(p);
-                        // Persist per-layer SBP display params through the display-state
-                        // authority (writes the model + palette, emits, marks dirty).
-                        if (!currentProject() || activeLayerId().empty()) return;
-                        if (m_display_state)
-                            m_display_state->setLayerSbpDisplay(activeLayerId(), p);
-                    });
-
-            // SBP gain/signal Apply is handled by the single shared bottom Apply bar
-            // (MainWindow::applyActiveTools) — the modules only edit values and expose
-            // currentParams(); no per-section apply signals to wire here.
-
-            // SBP Navigation / Geometry panels are wired once at construction (see
-            // MainWindow.MainArea.cpp) so Apply works from the main view even when
-            // this window is closed; the handlers store per-layer params, rebuild
-            // the map profile(s), and refresh this window only if it is open.
-        }
+        // (The right-panel SBP Display section was removed — its view controls
+        // live in the left Views panel's SBP tab. SBP gain/signal Apply is the
+        // shared bottom Apply bar; Navigation/Geometry are wired at construction.)
     }
 
     // Populate the LINES list with every SBP layer in the current project.
@@ -255,15 +233,12 @@ void MainWindow::onSubBottomOpen()
                 m_sbp_win->applySignalParams(layer->sbp_display_state.signal);
             applyStoredSbpNavParams(layer->id);  // stored nav corrections
             if (m_modal_host) {
-                if (layer->sbp_display_state.display_customized)
-                    m_modal_host->setSbpParams(layer->sbp_display_state.display);
                 if (auto* gm = m_modal_host->sbpGainModule(); layer->sbp_display_state.gain_customized)
                     gm->setParams(layer->sbp_display_state.gain);
                 if (auto* sm = m_modal_host->sbpSignalModule(); layer->sbp_display_state.signal_customized)
                     sm->setParams(layer->sbp_display_state.signal);
-                // Sync to SBP window's current display settings.
-                m_modal_host->setSbpParams(m_sbp_win->displayParams());
             }
+            refreshViewsPanel();   // Views ▸ SBP mirrors this line's display params
         }
     }
 

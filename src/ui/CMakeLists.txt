@@ -371,7 +371,6 @@ add_library(dolphin-ui-mainwindow STATIC
     mainwindow/rightpanel/PanelChatWidget.cpp
     mainwindow/rightpanel/PanelChatWidget.Ollama.cpp
     mainwindow/rightpanel/RightPanel.Info.cpp
-    mainwindow/rightpanel/RightPanel.SubBottomDisplay.cpp
     mainwindow/rightpanel/RightPanel.SbpGain.cpp
     mainwindow/rightpanel/RightPanel.SbpSignal.cpp
     mainwindow/MainWindow.cpp

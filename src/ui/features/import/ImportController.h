@@ -40,7 +40,12 @@ public:
     void connectToCacheRebuilds(app::ImportService* service);
 
     void importBatch(const QList<FileImportAction>& actions);
-    void reindexLayer(const std::string& source_path, const std::string& layer_id);
+    void reindexLayer(const std::string& source_path, const std::string& layer_id,
+                      const core::SpatialRef& user_crs = {});
+
+    // True while import/reindex jobs are running or queued — used by the
+    // main-window close guard so parses aren't silently abandoned.
+    bool importsBusy() const;
 
     void onMapLoadPending();
     void onMapLoadDone();

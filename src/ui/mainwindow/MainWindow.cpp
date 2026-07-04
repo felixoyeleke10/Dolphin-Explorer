@@ -369,6 +369,39 @@ MainWindow::MainWindow(QWidget* parent)
                 buildSbpProfileMap(layer.get(), "sbp:open");
             }
         }
+
+        // Self-heal dead placeholders: a layer persisted WITHOUT its parsed
+        // data (app closed or crashed mid-import) used to sit dead in the
+        // project forever, silently — "imported three lines, only one works".
+        // Re-run the import for any such layer through the normal reindex
+        // pipeline (progress UI, failure reporting, and the cacheLayerReady
+        // map hookup all come for free). A permanently bad file fails loudly
+        // into the Problems panel instead of pretending to be a layer.
+        if (m_import_ctrl) {
+            // A placeholder never had its CRS confirmed (that happened only in
+            // the original wizard run). Recover with the source's exact CRS if
+            // stored, else the survey grid — the first exact CRS among the
+            // project's sources — mirroring how the wizard applies one CRS to
+            // a whole batch. Without this the reindex lands on the parser's
+            // "projected, unknown grid" placeholder and every trace fails nav
+            // normalisation ("No valid GPS position in any trace").
+            core::SpatialRef survey_crs;
+            for (const auto& s : proj->sources())
+                if (s.source_spatial_ref.exact) { survey_crs = s.source_spatial_ref; break; }
+
+            for (const auto& layer : proj->layers()) {
+                if (!layer) continue;
+                if (layer->index_built && !layer->artifact_index.empty()) continue;
+                const auto* src = proj->findSource(layer->source_id);
+                if (!src || src->path.empty()) continue;
+                const core::SpatialRef crs =
+                    src->source_spatial_ref.exact ? src->source_spatial_ref
+                                                  : survey_crs;
+                appendJobMessage(tr("Recovering %1 — parsed data was missing…")
+                                     .arg(QString::fromStdString(layer->label)));
+                m_import_ctrl->reindexLayer(src->path, layer->id, crs);
+            }
+        }
     });
 
     // LayerDisplayCoordinator signals.

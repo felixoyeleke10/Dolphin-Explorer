@@ -1,13 +1,11 @@
 #include "ui/mainwindow/rightpanel/RightPanelHost.h"
 #include "ui/mainwindow/rightpanel/RightPanel.Info.h"
-#include "ui/mainwindow/rightpanel/RightPanel.SubBottomDisplay.h"
 #include "ui/mainwindow/rightpanel/RightPanel.SbpGain.h"
 #include "ui/mainwindow/rightpanel/RightPanel.SbpSignal.h"
 #include "ui/mainwindow/rightpanel/RightPanel.Navigation.h"
 #include "ui/mainwindow/rightpanel/RightPanel.Geometry.h"
 #include "ui/mainwindow/rightpanel/RightPanel.Radiometry.h"
 #include "ui/mainwindow/rightpanel/RightPanel.Enhancement.h"
-#include "ui/mainwindow/rightpanel/RightPanel.ContactPicking.h"
 #include "ui/mainwindow/panels/NavInfoPanel.h"
 #include "ui/mainwindow/panels/HeadingInfoPanel.h"
 #include "ui/mainwindow/panels/GainControlPanel.h"
@@ -43,16 +41,13 @@ RightPanelHost::RightPanelHost(ShowMode mode, QWidget* parent)
         addModule(m_info);
     } else {
         // Modal modules: sensor-specific, shown/hidden by modality filter.
-        // (The SSS palette is no longer a right-panel section — it moved to the
-        // status-bar picker; see MainStatusBar.)
-        m_sbp_display = new SubBottomDisplayModule(this);
+        // Removed on user direction: SBP Display (its view controls live in
+        // the left Views panel's SBP tab) and Contact Picking (the top-toolbar
+        // Contact tool + viewer toolbars are the picking surfaces).
         m_sbp_gain    = new SbpGainModule(this);
         m_sbp_signal  = new SbpSignalModule(this);
         m_radiometry  = std::make_unique<RadiometryModule>();
         m_enhancement = std::make_unique<EnhancementModule>();
-        // Annotation tools — universal (Unknown modality), shown on every tab.
-        // (Feature drawing moved to the main toolbar — no panel section.)
-        m_contact_picking = std::make_unique<ContactPickingModule>();
         // Navigation + Geometry are per-modality: one instance per sensor tab so
         // SSS and SBP each get their own section (and their own panel for wiring).
         m_navigation_sss = std::make_unique<NavigationModule>(M::Sidescan);
@@ -60,9 +55,6 @@ RightPanelHost::RightPanelHost(ShowMode mode, QWidget* parent)
         m_geometry_sss   = std::make_unique<GeometryModule>(M::Sidescan);
         m_geometry_sbp   = std::make_unique<GeometryModule>(M::SubBottom);
 
-        // Section order per tab: processing → Navigation → Geometry (SSS palette is
-        // now the status-bar picker, so there is no SSS Display section here).
-        addModule(m_sbp_display);
         addModule(m_sbp_gain);
         addModule(m_sbp_signal);
         addModule(m_radiometry.get());
@@ -71,11 +63,6 @@ RightPanelHost::RightPanelHost(ShowMode mode, QWidget* parent)
         addModule(m_geometry_sss.get());
         addModule(m_navigation_sbp.get());
         addModule(m_geometry_sbp.get());
-        // Universal annotation sections last — present under every sensor tab + Map.
-        addModule(m_contact_picking.get());
-
-        connect(m_sbp_display, &SubBottomDisplayModule::paramsChanged,
-                this,          &RightPanelHost::sbpParamsChanged);
     }
 
     m_layout->addStretch(1);
@@ -171,12 +158,6 @@ ImagingControlPanel* RightPanelHost::imagingPanel() const
     return m_enhancement ? m_enhancement->panel() : nullptr;
 }
 
-ContactPickingPanel* RightPanelHost::contactPickingPanel() const
-{
-    return m_contact_picking ? m_contact_picking->panel() : nullptr;
-}
-
-
 // The SSS palette moved to the status-bar picker; the right panel no longer hosts a
 // palette control. These remain as no-ops so existing callers compile unchanged.
 int RightPanelHost::currentPaletteIndex() const
@@ -186,11 +167,6 @@ int RightPanelHost::currentPaletteIndex() const
 
 void RightPanelHost::setPalette(int)
 {
-}
-
-void RightPanelHost::setSbpParams(const SubBottomDisplayParams& p)
-{
-    if (m_sbp_display) m_sbp_display->setParams(p);
 }
 
 SbpGainModule* RightPanelHost::sbpGainModule() const

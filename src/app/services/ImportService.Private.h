@@ -73,6 +73,7 @@ void completeReindex(ImportService* svc,
                      ImportTaskResult result,
                      std::shared_ptr<Project> project,
                      const std::string& layer_id,
-                     const std::string& source_id);
+                     const std::string& source_id,
+                     const core::SpatialRef& user_crs = {});
 
 } // namespace dolphin::app::import_detail

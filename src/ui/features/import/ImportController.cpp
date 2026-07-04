@@ -62,6 +62,11 @@ void ExecutionController::connectToCacheRebuilds(app::ImportService* service)
             this, &ExecutionController::onCacheRebuildFailed);
 }
 
+bool ExecutionController::importsBusy() const
+{
+    return m_manager && m_manager->busy();
+}
+
 void ExecutionController::importBatch(const QList<FileImportAction>& actions)
 {
     if (!m_project) return;
@@ -76,9 +81,10 @@ void ExecutionController::importBatch(const QList<FileImportAction>& actions)
 }
 
 void ExecutionController::reindexLayer(const std::string& source_path,
-                                       const std::string& layer_id)
+                                       const std::string& layer_id,
+                                       const core::SpatialRef& user_crs)
 {
-    m_manager->reindexLayer(source_path, layer_id);
+    m_manager->reindexLayer(source_path, layer_id, user_crs);
 }
 
 void ExecutionController::onMapLoadPending()
