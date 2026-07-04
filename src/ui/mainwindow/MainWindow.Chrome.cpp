@@ -27,14 +27,7 @@ void MainWindow::setupStatusBar()
 {
     m_status_bar = new MainStatusBar(this);
     setStatusBar(m_status_bar);
-
-    // Map colour-palette picker (relocated from the right-panel Display section):
-    // user pick → global palette; seed it with the current palette. Wired here (not
-    // in setupCentralWidget) because that runs before m_status_bar exists.
-    connect(m_status_bar, &MainStatusBar::paletteRequested,
-            this, &MainWindow::onPaletteChanged);
-    if (m_display_state)
-        m_status_bar->setMapPalette(m_display_state->mapPalette());
+    // (The map palette picker lives in the left Views panel — MAP tab.)
 }
 
 void MainWindow::setupTitleBar()

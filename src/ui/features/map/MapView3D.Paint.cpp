@@ -202,20 +202,24 @@ void MapView3D::drawNavLayers()
 
 void MapView3D::drawCurtains()
 {
-    const GLsizei stride = 4 * sizeof(float);
+    const GLsizei stride = 5 * sizeof(float);   // xyz + uv
+    m_curtain_shader->setUniformValue(m_loc_curt_tex,     0);
+    m_curtain_shader->setUniformValue(m_loc_curt_palette, m_curtain_palette);
+    m_curtain_shader->setUniformValue(m_loc_curt_vexag,   m_v_exag);
     for (auto& C : m_curtain_layers) {
         if (C.vertex_count <= 0 || !C.vbo.isCreated() || !C.visible) continue;
+        if (!C.texture) continue;   // profile raster not uploaded yet
+        C.texture->bind(0);
         C.vbo.bind();
         glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, stride, nullptr);
         glEnableVertexAttribArray(0);
-        glVertexAttribPointer(1, 1, GL_FLOAT, GL_FALSE, stride,
+        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, stride,
                               reinterpret_cast<const void*>(3 * sizeof(float)));
         glEnableVertexAttribArray(1);
-        m_curtain_shader->setUniformValue(m_loc_curt_palette, C.palette_index);
-        m_curtain_shader->setUniformValue(m_loc_curt_vexag,   m_v_exag);
         glDrawArrays(GL_TRIANGLES, 0, C.vertex_count);
         glDisableVertexAttribArray(1);
         C.vbo.release();
+        C.texture->release(0);
     }
 }
 

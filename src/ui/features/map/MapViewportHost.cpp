@@ -6,8 +6,13 @@
 #include "ui/shell/Theme.h"
 
 #include <QColor>
+#include <QDateTime>
 #include <QFileDialog>
+#include <QFileInfo>
+#include <QFrame>
+#include <QIcon>
 #include <QImage>
+#include <QLocale>
 #include <QLabel>
 #include <QMessageBox>
 #include <QPushButton>
@@ -70,27 +75,65 @@ MapViewportHost::MapViewportHost(QWidget* parent)
     }
 
     // Empty-state launcher — transparent overlay covering the full viewport.
-    // Instead of a bare "no survey" message it offers the two ways forward:
-    // reopen a recent project or import files.
+    // Welcome-window composition (a la Xcode): ONE solid card carrying the app
+    // identity, primary/secondary actions, and the recent-projects list. The
+    // card is a theme surface, so text contrast never depends on the canvas
+    // colour (user-configurable, and often dark even in the light theme).
     m_empty_state      = new QWidget(this);
     auto* empty_layout = makeCompactLayout<QVBoxLayout>(m_empty_state);
-    empty_layout->addStretch(42);
+    empty_layout->addStretch(40);
 
-    m_import_hint_btn = new QPushButton(tr("Import Files…"), m_empty_state);
+    auto* card = new QFrame(m_empty_state);
+    card->setObjectName("launcherCard");
+    card->setAttribute(Qt::WA_StyledBackground, true);
+    card->setFixedWidth(420);
+    auto* cl = new QVBoxLayout(card);
+    cl->setContentsMargins(24, 30, 24, 14);
+    cl->setSpacing(0);
+
+    // Hero — logo + name + one-line identity.
+    auto* logo = new QLabel(card);
+    logo->setPixmap(QIcon(QStringLiteral(":/icons/dolphin_logo.svg")).pixmap(48, 48));
+    logo->setAlignment(Qt::AlignCenter);
+    cl->addWidget(logo, 0, Qt::AlignHCenter);
+    cl->addSpacing(10);
+
+    auto* title = new QLabel(tr("Dolphin Explorer"), card);
+    title->setObjectName("launcherTitle");
+    cl->addWidget(title, 0, Qt::AlignHCenter);
+    cl->addSpacing(2);
+
+    auto* subtitle = new QLabel(tr("Marine survey workstation"), card);
+    subtitle->setObjectName("launcherSub");
+    cl->addWidget(subtitle, 0, Qt::AlignHCenter);
+    cl->addSpacing(22);
+
+    // Actions — filled accent primary + quiet secondary.
+    auto* actions = new QWidget(card);
+    auto* al = makeCompactLayout<QHBoxLayout>(actions);
+    al->setSpacing(Theme::kSpacing3);
+    m_import_hint_btn = new QPushButton(tr("Import Files…"), actions);
     m_import_hint_btn->setObjectName("mapImportHintBtn");
+    m_import_hint_btn->setCursor(Qt::PointingHandCursor);
     connect(m_import_hint_btn, &QPushButton::clicked,
             this, &MapViewportHost::importFilesRequested);
-    empty_layout->addWidget(m_import_hint_btn, 0, Qt::AlignHCenter);
+    auto* new_proj_btn = new QPushButton(tr("New Project"), actions);
+    new_proj_btn->setObjectName("launcherNewBtn");
+    new_proj_btn->setCursor(Qt::PointingHandCursor);
+    connect(new_proj_btn, &QPushButton::clicked,
+            this, &MapViewportHost::newProjectRequested);
+    al->addWidget(m_import_hint_btn);
+    al->addWidget(new_proj_btn);
+    cl->addWidget(actions, 0, Qt::AlignHCenter);
+    cl->addSpacing(24);
 
-    // Recent Projects card — populated by setRecentProjects (hidden when empty).
-    m_recent_box = new QWidget(m_empty_state);
+    // Recent projects list — populated by setRecentProjects (hidden when empty).
+    m_recent_box = new QFrame(card);
     m_recent_box->setObjectName("mapRecentBox");
-    m_recent_box->setFixedWidth(300);
     auto* rb = new QVBoxLayout(m_recent_box);
-    rb->setContentsMargins(Theme::kSpacing3, Theme::kSpacing3,
-                           Theme::kSpacing3, Theme::kSpacing3);
+    rb->setContentsMargins(0, 0, 0, 0);
     rb->setSpacing(2);
-    auto* recent_hdr = new QLabel(tr("RECENT PROJECTS"), m_recent_box);
+    auto* recent_hdr = new QLabel(tr("RECENT"), m_recent_box);
     recent_hdr->setObjectName("mapRecentHdr");
     rb->addWidget(recent_hdr);
     m_recent_items_l = new QVBoxLayout();
@@ -98,10 +141,10 @@ MapViewportHost::MapViewportHost(QWidget* parent)
     m_recent_items_l->setSpacing(1);
     rb->addLayout(m_recent_items_l);
     m_recent_box->hide();
+    cl->addWidget(m_recent_box);
 
-    empty_layout->addSpacing(Theme::kSpacing5);
-    empty_layout->addWidget(m_recent_box, 0, Qt::AlignHCenter);
-    empty_layout->addStretch(46);
+    empty_layout->addWidget(card, 0, Qt::AlignHCenter);
+    empty_layout->addStretch(52);
 
     // Hide overlay once any 2D layer loads; restored by setShowImportHint on project change.
     connect(m_view2d, &MapView::layerDataUpdated, this, [this](const std::string&) {
@@ -389,6 +432,11 @@ void MapViewportHost::removeTerrainPath(const QString& path)
     if (m_view3d) m_view3d->removeTerrainLayer(path.toStdString());
 }
 
+void MapViewportHost::setSbpCurtainPalette(int palette_index)
+{
+    if (m_view3d) m_view3d->setCurtainPalette(palette_index);
+}
+
 void MapViewportHost::setRecentProjects(const QStringList& names,
                                         const QStringList& paths)
 {
@@ -399,15 +447,55 @@ void MapViewportHost::setRecentProjects(const QStringList& names,
         delete item;
     }
 
-    const int n = std::min({ int(names.size()), int(paths.size()), 6 });
+    const int n = std::min({ int(names.size()), int(paths.size()), 5 });
     for (int i = 0; i < n; ++i) {
-        auto* btn = new QPushButton(names[i], m_recent_box);
-        btn->setObjectName("mapRecentBtn");
-        btn->setToolTip(paths[i]);
-        btn->setCursor(Qt::PointingHandCursor);
         const QString path = paths[i];
+
+        // Row = a flat button carrying its own layout (icon chip + name +
+        // last-opened date). Children are mouse-transparent so the whole row
+        // stays one click target.
+        auto* btn = new QPushButton(m_recent_box);
+        btn->setObjectName("mapRecentBtn");
+        btn->setFlat(true);   // suppress native chrome; QSS owns the look
+        btn->setFixedHeight(46);
+        btn->setToolTip(path);
+        btn->setCursor(Qt::PointingHandCursor);
         connect(btn, &QPushButton::clicked,
                 this, [this, path]() { emit openProjectRequested(path); });
+
+        auto* rl = new QHBoxLayout(btn);
+        rl->setContentsMargins(8, 0, 10, 0);
+        rl->setSpacing(10);
+
+        auto* chip = new QLabel(btn);
+        chip->setObjectName("mapRecentChip");
+        chip->setFixedSize(28, 28);
+        chip->setAlignment(Qt::AlignCenter);
+        chip->setPixmap(Theme::icon(
+            QStringLiteral(":/icons/recent_projects.svg")).pixmap(14, 14));
+        chip->setAttribute(Qt::WA_TransparentForMouseEvents);
+
+        auto* text_col = new QWidget(btn);
+        text_col->setAttribute(Qt::WA_TransparentForMouseEvents);
+        auto* tc = makeCompactLayout<QVBoxLayout>(text_col);
+        tc->setSpacing(1);
+        auto* name_lbl = new QLabel(names[i], text_col);
+        name_lbl->setObjectName("mapRecentName");
+        const QFileInfo fi(path);
+        auto* meta_lbl = new QLabel(
+            fi.exists() ? QLocale().toString(fi.lastModified().date(),
+                                             QLocale::ShortFormat)
+                        : tr("Not found"),
+            text_col);
+        meta_lbl->setObjectName("mapRecentMeta");
+        tc->addStretch(1);
+        tc->addWidget(name_lbl);
+        tc->addWidget(meta_lbl);
+        tc->addStretch(1);
+
+        rl->addWidget(chip);
+        rl->addWidget(text_col, 1);
+
         m_recent_items_l->addWidget(btn);
     }
     m_recent_box->setVisible(n > 0);

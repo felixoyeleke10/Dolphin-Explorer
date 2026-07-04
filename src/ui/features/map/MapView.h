@@ -162,7 +162,6 @@ private:
     void paintSonarLayers   (QPainter& p) const;
     void paintGraticule     (QPainter& p) const;
     void paintNavTrack      (QPainter& p) const;
-    void paintProfileTracks (QPainter& p) const;  // colored scalar ribbon (Profile layers)
     void paintContacts      (QPainter& p) const;
     void paintFeatures      (QPainter& p) const;  // committed shapes + in-progress draft
     void paintMeasureOverlay(QPainter& p) const;

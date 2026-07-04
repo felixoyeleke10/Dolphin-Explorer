@@ -131,34 +131,51 @@ QString qssShell()
         "QToolButton#map3DBtn:hover   { background: @overlayHov; color: @textPrimary; }"
         "QToolButton#map3DBtn:pressed { background: @overlayMut; }"
 
-        // Import-hint CTA button — accented pill, centred over the empty map canvas.
+        // -- Empty-map launcher (welcome screen) --------------------------------
+        // NOTE: literal px font sizes on purpose — @fontXxx tokens are unusable
+        // in QSS (see the @font token-order note in AppStyle.cpp).
+        // Hero identity
+        "QLabel#launcherTitle {"
+        "  color: @textPrimary; font-family: @font; font-size: 22px;"
+        "  font-weight: 600; letter-spacing: 0.2px;"
+        "}"
+        "QLabel#launcherSub { color: @textDim; font-family: @font; font-size: 12px; }"
+        // Primary action — filled accent pill
         "QPushButton#mapImportHintBtn {"
-        "  background: rgba(@accentRgb,0.18); color: @textPrimary;"
-        "  border: 1px solid rgba(@accentRgb,0.40); border-radius: @radius2;"
-        "  font-family: @font; font-size: @fontBase; padding: 8px 20px;"
+        "  background: @accent; color: white; border: none; border-radius: 8px;"
+        "  font-family: @font; font-size: 12px; font-weight: 600;"
+        "  padding: 9px 26px;"
         "}"
-        "QPushButton#mapImportHintBtn:hover {"
-        "  background: rgba(@accentRgb,0.30); border-color: @accent;"
+        "QPushButton#mapImportHintBtn:hover   { background: rgba(@accentRgb,0.85); }"
+        "QPushButton#mapImportHintBtn:pressed { background: rgba(@accentRgb,0.70); }"
+        // Secondary action — quiet outline
+        "QPushButton#launcherNewBtn {"
+        "  background: transparent; color: @textSecond;"
+        "  border: 1px solid @overlayHov; border-radius: 8px;"
+        "  font-family: @font; font-size: 12px; padding: 9px 22px;"
         "}"
-        "QPushButton#mapImportHintBtn:pressed { background: rgba(@accentRgb,0.42); }"
-
-        // Empty-map launcher — Recent Projects card under the Import CTA.
-        // Solid card (not translucent): it sits on the map canvas, which can be
-        // any user-chosen colour in either theme.
-        "QWidget#mapRecentBox {"
-        "  background: @bgEl; border: 1px solid @border; border-radius: @radius3;"
+        "QPushButton#launcherNewBtn:hover {"
+        "  background: @overlayEl; color: @textPrimary; border-color: @borderMenu;"
         "}"
+        "QPushButton#launcherNewBtn:pressed { background: @overlayMut; }"
+        // Welcome card — one solid theme surface for the whole launcher, so
+        // text contrast never depends on the (user-configurable) canvas colour.
+        "QFrame#launcherCard {"
+        "  background: @bgEl; border: 1px solid @border; border-radius: 14px;"
+        "}"
+        "QFrame#mapRecentBox { background: transparent; border: none; }"
         "QLabel#mapRecentHdr {"
-        "  color: @textDim; font-family: @font; font-size: @fontXxs;"
-        "  font-weight: 600; letter-spacing: 1px; padding: 2px 6px 0 6px;"
+        "  color: @textDim; font-family: @font; font-size: 9px;"
+        "  font-weight: 600; letter-spacing: 1.2px; padding: 2px 10px 0 10px;"
         "}"
         "QPushButton#mapRecentBtn {"
-        "  background: transparent; border: none; border-radius: @radius2;"
-        "  color: @textSecond; font-family: @font; font-size: @fontSm;"
-        "  padding: 5px 8px; text-align: left;"
+        "  background: transparent; border: none; border-radius: 8px;"
         "}"
-        "QPushButton#mapRecentBtn:hover   { background: @overlayEl; color: @textPrimary; }"
+        "QPushButton#mapRecentBtn:hover   { background: @overlayEl; }"
         "QPushButton#mapRecentBtn:pressed { background: @overlayMut; }"
+        "QLabel#mapRecentChip { background: @overlayMut; border-radius: 7px; }"
+        "QLabel#mapRecentName { color: @textPrimary; font-family: @font; font-size: 12px; font-weight: 500; }"
+        "QLabel#mapRecentMeta { color: @textDim; font-family: @font; font-size: 10px; }"
 
         // Properties panel (right dock)
         "#propertiesPanel {"

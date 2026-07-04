@@ -135,44 +135,51 @@ void main() {
 // -----------------------------------------------------------------------------
 //  Curtain shader (SBP vertical profile ribbon)
 //
-//  Each quad spans surface (z=0) to bottom pick (z = -depth_m) along one
-//  segment of the nav track.  Color maps depth: blue (shallow) → red (deep).
-//  VE is applied as a uniform so the user can change it without a VBO rebuild.
+//  Textured fence: each quad spans surface (z=0) to the full profile depth
+//  along one segment of the nav track, sampling the layer's REAL profile
+//  raster (curtain_image — actual trace samples, percentile-normalized).
+//  Rows below a trace's data are transparent (discarded), so the bottom edge
+//  follows the data. The SbpPalette is applied per-fragment from a uniform —
+//  recolouring is free.  VE is a uniform so the user can change it without a
+//  VBO rebuild.
 // -----------------------------------------------------------------------------
 
 static const char* kCurtainVertSrc = R"glsl(
 #version 330 core
-layout(location = 0) in vec3  aPos;
-layout(location = 1) in float aAmp;
+layout(location = 0) in vec3 aPos;
+layout(location = 1) in vec2 aUV;
 uniform mat4  uMVP;
 uniform float uVExag;
-out float vAmp;
+out vec2 vUV;
 void main() {
-    vAmp = aAmp;
+    vUV = aUV;
     gl_Position = uMVP * vec4(aPos.xy, aPos.z * uVExag, 1.0);
 }
 )glsl";
 
 static const char* kCurtainFragSrc = R"glsl(
 #version 330 core
-in  float vAmp;
-uniform int  uPaletteIdx;
-out vec4     fragColor;
+in  vec2 vUV;
+uniform sampler2D uTex;
+uniform int       uPaletteIdx;
+out vec4          fragColor;
 
+// Mirrors SbpPalette::toRgb (0=Greyscale, 1=InvGrey, 2=Seismic-as-grey, 3=Thermal).
 vec3 applyPalette(float a, int idx) {
-    if (idx == 1) return vec3(1.0 - a, 1.0 - a, 1.0 - a);   // InvertedGrey
-    if (idx == 3) {                                            // Thermal
+    if (idx == 1) return vec3(1.0 - a);              // Inverted Grey
+    if (idx == 3) {                                   // Thermal
         float r = clamp(a * 3.0,       0.0, 1.0);
         float g = clamp(a * 3.0 - 1.0, 0.0, 1.0);
         float b = clamp(1.0 - a * 4.0, 0.0, 1.0);
         return vec3(r, g, b);
     }
-    return vec3(a, a, a);   // Greyscale (0) and Seismic (2, no polarity)
+    return vec3(a);   // Greyscale (0) and Seismic (2 — magnitude only here)
 }
 
 void main() {
-    if (vAmp < 0.005) discard;
-    fragColor = vec4(applyPalette(vAmp, uPaletteIdx), 0.85);
+    vec4 s = texture(uTex, vUV);
+    if (s.a < 0.5) discard;   // below this trace's data / gap column
+    fragColor = vec4(applyPalette(s.r, uPaletteIdx), 0.92);
 }
 )glsl";
 
@@ -320,6 +327,7 @@ void MapView3D::initializeGL()
     m_loc_curt_mvp     = m_curtain_shader->uniformLocation("uMVP");
     m_loc_curt_palette = m_curtain_shader->uniformLocation("uPaletteIdx");
     m_loc_curt_vexag   = m_curtain_shader->uniformLocation("uVExag");
+    m_loc_curt_tex     = m_curtain_shader->uniformLocation("uTex");
 
     // -- Drape shader ----------------------------------------------------------
     m_drape_shader = new QOpenGLShaderProgram(this);
@@ -528,7 +536,7 @@ void MapView3D::buildCurtainVbo(CurtainLayer3D& C)
 {
     if (C.cpu_verts.empty()) { C.dirty = false; return; }
 
-    C.vertex_count = static_cast<int>(C.cpu_verts.size()) / 4;
+    C.vertex_count = static_cast<int>(C.cpu_verts.size()) / 5;   // xyz + uv
 
     if (!C.vbo.isCreated()) {
         C.vbo.create();
@@ -538,6 +546,17 @@ void MapView3D::buildCurtainVbo(CurtainLayer3D& C)
     C.vbo.allocate(C.cpu_verts.data(),
                    static_cast<int>(C.cpu_verts.size() * sizeof(float)));
     C.vbo.release();
+
+    // Profile raster → texture (same construct-before-destroy pattern as drapes).
+    if (!C.pending_image.isNull()) {
+        auto* tex = new QOpenGLTexture(C.pending_image);
+        tex->setMinificationFilter(QOpenGLTexture::Linear);
+        tex->setMagnificationFilter(QOpenGLTexture::Linear);
+        tex->setWrapMode(QOpenGLTexture::ClampToEdge);
+        delete C.texture;
+        C.texture       = tex;
+        C.pending_image = QImage();
+    }
 
     C.cpu_verts.clear();
     C.cpu_verts.shrink_to_fit();

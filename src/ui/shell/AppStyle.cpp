@@ -43,8 +43,16 @@ QString applyTokens(QString css)
     };
 
     // Font family
+    // KNOWN TRAP (left as-is deliberately): replacing "@font" first eats the
+    // prefix of every "@fontXxx" size token ("@fontSm" → "<family>Sm"), so
+    // QSS font-size declarations using those tokens are dropped by Qt's
+    // parser and widgets fall back to the default font size. The app's look
+    // has been tuned WITH this behaviour — reordering the table retroactively
+    // applies hundreds of latent font sizes and reskins the whole app (tried
+    // 2026-07-03, immediately reverted on user feedback). If this is ever
+    // fixed, do it as a deliberate app-wide typography pass. New QSS should
+    // use literal px sizes, not @fontXxx tokens.
     css.replace(QLatin1String("@font"),           QLatin1String(kFontFamily));
-    // Font sizes — longer tokens before shorter prefixes (@fontBase before @fontB, etc.)
     css.replace(QLatin1String("@fontBase"),       QLatin1String(kFontBase));
     css.replace(QLatin1String("@fontXxs"),        QLatin1String(kFontXxs));
     css.replace(QLatin1String("@fontXs"),         QLatin1String(kFontXs));

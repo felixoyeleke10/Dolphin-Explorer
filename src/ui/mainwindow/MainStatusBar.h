@@ -54,9 +54,6 @@ public:
     void setBusyText(const QString& text);
     void clearBusyText();
 
-    // -- Map colour palette (relocated from the right-panel Display section) -
-    void setMapPalette(int idx);              // sync only — does not emit
-
     // -- Map viewport indicators ------------------------------------------
     // Called on every zoom / fit change.  metres_per_pixel and rotation_deg
     // drive the scale, zoom-level, and bearing labels.
@@ -76,7 +73,6 @@ signals:
     void scaleChangeRequested(double mpp);      // user changed scale spin box
     void rotationChangeRequested(double deg);   // user changed rotation spin box
     void crsClicked();                          // user clicked the CRS badge
-    void paletteRequested(int idx);             // user picked a map palette
 
 private:
     void rebuildAiSection();
@@ -100,9 +96,6 @@ private:
 
     QLabel*       m_lbl_crs  = nullptr;   // "⊙" globe glyph
     QPushButton*  m_vp_crs   = nullptr;   // clickable CRS badge → opens geodesy dialog
-
-    QLabel*    m_lbl_palette = nullptr;  // "Palette"
-    QSpinBox*  m_palette     = nullptr;  // map colour palette picker (up/down arrows)
 
     QWidget* m_ai_widget  = nullptr;   // composite: icon + status dot
     QLabel*  m_ai_icon    = nullptr;

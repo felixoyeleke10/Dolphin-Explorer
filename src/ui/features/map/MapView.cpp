@@ -212,8 +212,24 @@ void MapView::rebuildCombined()
             if (!m_nav_track.empty())
                 m_nav_track.push_back({std::numeric_limits<double>::quiet_NaN(),
                                        std::numeric_limits<double>::quiet_NaN()});
-            m_nav_track.insert(m_nav_track.end(),
-                               data.nav_track.begin(), data.nav_track.end());
+            // Display decimation: the combined track is repainted on every
+            // pan/zoom frame, and SBP profile tracks carry one point per trace
+            // (tens of thousands). Cap each layer's contribution; NaN segment
+            // breaks and the final point always survive. Full-resolution data
+            // stays in LayerMapData for hit-testing / 3D / stats.
+            constexpr size_t kMaxTrackPts = 3000;
+            const size_t n      = data.nav_track.size();
+            const size_t stride = std::max<size_t>(1, n / kMaxTrackPts);
+            if (stride == 1) {
+                m_nav_track.insert(m_nav_track.end(),
+                                   data.nav_track.begin(), data.nav_track.end());
+            } else {
+                for (size_t i = 0; i < n; ++i) {
+                    const QPointF& pt = data.nav_track[i];
+                    if (std::isnan(pt.x()) || i % stride == 0 || i + 1 == n)
+                        m_nav_track.push_back(pt);
+                }
+            }
         }
         m_bbox_lon_min = std::min(m_bbox_lon_min, data.lon_min);
         m_bbox_lon_max = std::max(m_bbox_lon_max, data.lon_max);

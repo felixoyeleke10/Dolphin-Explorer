@@ -242,6 +242,15 @@ struct LayerMapData {
     // Peak absolute amplitude [0,1] at the bottom pick per nav_track entry.
     // 0 = no pick or no samples.  Parallel to trace_scalar.
     std::vector<float> trace_amplitude;
+
+    // Real profile raster for the 3D curtain (SBP only): one column per
+    // nav_track entry (gap columns transparent), rows = depth 0 →
+    // curtain_depth_m. RGBA8888: R = percentile-normalized |amplitude| byte,
+    // A = 255 where the trace has a sample at that depth, 0 otherwise. The
+    // palette is applied in the curtain shader, so recolouring is a uniform
+    // change — no CPU rebuild.
+    QImage curtain_image;
+    float  curtain_depth_m = 0.f;
 };
 
 // -- Viewport state -----------------------------------------------------------

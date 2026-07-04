@@ -47,7 +47,7 @@ MapView3D::~MapView3D()
         m_grid_quad_vbo.destroy();
         m_survey_vbo.destroy();
         m_nav_merged_vbo.destroy();
-        for (auto& C : m_curtain_layers)  C.vbo.destroy();
+        for (auto& C : m_curtain_layers) { C.vbo.destroy(); delete C.texture; C.texture = nullptr; }
         for (auto& T : m_terrain_layers) { T.vbo.destroy(); T.vbo_lod.destroy(); }
         for (auto& D : m_drape_layers) {
             delete D.texture;
@@ -188,11 +188,14 @@ void MapView3D::removeSonarDrape(const std::string& layer_id)
 //  Profile curtain API (Phase 2)
 // -----------------------------------------------------------------------------
 
-void MapView3D::setProfileCurtain(const std::string& layer_id, const LayerMapData& data,
-                                   int palette_index)
+void MapView3D::setProfileCurtain(const std::string& layer_id, const LayerMapData& data)
 {
     if (!m_has_origin) return;
-    if (data.nav_track.empty() || data.trace_scalar.empty()) return;
+    // The curtain is the REAL profile raster; without it there is nothing
+    // honest to show (the old per-ping amplitude smear misrepresented the data).
+    if (data.nav_track.empty() || data.curtain_image.isNull()
+            || data.curtain_depth_m <= 0.f)
+        return;
 
     auto it = std::find_if(m_curtain_layers.begin(), m_curtain_layers.end(),
                            [&](const CurtainLayer3D& C){ return C.id == layer_id; });
@@ -202,11 +205,12 @@ void MapView3D::setProfileCurtain(const std::string& layer_id, const LayerMapDat
         it->id = layer_id;
     }
 
-    const size_t n = std::min(data.nav_track.size(), data.trace_scalar.size());
-    const bool   have_amp = (data.trace_amplitude.size() >= n);
+    const size_t n       = data.nav_track.size();
+    const float  depth_m = data.curtain_depth_m;
+    const float  u_scale = n > 1 ? 1.f / static_cast<float>(n - 1) : 1.f;
 
     std::vector<float> verts;
-    verts.reserve(n * 24);  // up to 6 vertices × 4 floats (xyzA) per segment
+    verts.reserve(n * 30);  // 6 vertices × 5 floats (xyz + uv) per segment
 
     float xmin =  std::numeric_limits<float>::max();
     float xmax = -std::numeric_limits<float>::max();
@@ -217,33 +221,28 @@ void MapView3D::setProfileCurtain(const std::string& layer_id, const LayerMapDat
     for (size_t i = 0; i + 1 < n; ++i) {
         const QPointF& ga = data.nav_track[i];
         const QPointF& gb = data.nav_track[i + 1];
-        const float    sa = data.trace_scalar[i];
-        const float    sb = data.trace_scalar[i + 1];
-
         if (std::isnan(ga.x()) || std::isnan(gb.x())) continue;
-        if (std::isnan(sa) || std::isnan(sb) || sa <= 0.f || sb <= 0.f) continue;
 
-        const float amp_a = have_amp ? data.trace_amplitude[i]     : 0.5f;
-        const float amp_b = have_amp ? data.trace_amplitude[i + 1] : 0.5f;
+        const float u_a = static_cast<float>(i)     * u_scale;
+        const float u_b = static_cast<float>(i + 1) * u_scale;
 
         // XY in local metres; Z is negative depth (not VE-scaled — shader handles VE).
+        // The quad spans the FULL profile depth; rows without data are
+        // transparent in the texture (shader discards), so the bottom edge
+        // follows the real data extent.
         const QVector3D pa = toLocal(ga.x(), ga.y(), 0.0);
         const QVector3D pb = toLocal(gb.x(), gb.y(), 0.0);
-        const float z_a = -sa;
-        const float z_b = -sb;
 
-        // Two triangles per quad (6 vertices × 4 floats: x, y, z, amplitude).
-        // Surface vertices carry amp=0 so the curtain fades at the waterline.
-        auto push4 = [&](float x, float y, float z, float a) {
-            verts.push_back(x); verts.push_back(y);
-            verts.push_back(z); verts.push_back(a);
+        auto push5 = [&](float x, float y, float z, float u, float v) {
+            verts.push_back(x); verts.push_back(y); verts.push_back(z);
+            verts.push_back(u); verts.push_back(v);
         };
-        push4(pa.x(), pa.y(), z_a, amp_a);
-        push4(pa.x(), pa.y(), 0.f, 0.f);
-        push4(pb.x(), pb.y(), z_b, amp_b);
-        push4(pa.x(), pa.y(), 0.f, 0.f);
-        push4(pb.x(), pb.y(), 0.f, 0.f);
-        push4(pb.x(), pb.y(), z_b, amp_b);
+        push5(pa.x(), pa.y(), -depth_m, u_a, 1.f);
+        push5(pa.x(), pa.y(), 0.f,      u_a, 0.f);
+        push5(pb.x(), pb.y(), -depth_m, u_b, 1.f);
+        push5(pa.x(), pa.y(), 0.f,      u_a, 0.f);
+        push5(pb.x(), pb.y(), 0.f,      u_b, 0.f);
+        push5(pb.x(), pb.y(), -depth_m, u_b, 1.f);
 
         xmin = std::min({xmin, pa.x(), pb.x()});
         xmax = std::max({xmax, pa.x(), pb.x()});
@@ -253,8 +252,8 @@ void MapView3D::setProfileCurtain(const std::string& layer_id, const LayerMapDat
     }
 
     it->cpu_verts     = std::move(verts);
-    it->z_range       = data.scalar_max > 0.f ? data.scalar_max : 1.f;
-    it->palette_index = palette_index;
+    it->pending_image = data.curtain_image;
+    it->z_range       = depth_m;
     it->bbox_xmin     = xmin;  it->bbox_xmax = xmax;
     it->bbox_ymin     = ymin;  it->bbox_ymax = ymax;
     it->dirty         = true;
@@ -286,10 +285,19 @@ void MapView3D::removeProfileCurtain(const std::string& layer_id)
         }
         makeCurrent();
         it->vbo.destroy();
+        delete it->texture;
+        it->texture = nullptr;
         doneCurrent();
     }
     m_curtain_layers.erase(it);
     m_survey_dirty = true;
+    update();
+}
+
+void MapView3D::setCurtainPalette(int palette_index)
+{
+    if (m_curtain_palette == palette_index) return;
+    m_curtain_palette = palette_index;   // shader uniform — no rebuild needed
     update();
 }
 
@@ -302,7 +310,7 @@ void MapView3D::clearScene()
     if (m_gl_ready && context() && context()->isValid()) {
         makeCurrent();
         m_nav_merged_vbo.destroy();
-        for (auto& C : m_curtain_layers)  C.vbo.destroy();
+        for (auto& C : m_curtain_layers) { C.vbo.destroy(); delete C.texture; C.texture = nullptr; }
         for (auto& T : m_terrain_layers) { T.vbo.destroy(); T.vbo_lod.destroy(); }
         for (auto& D : m_drape_layers) {
             delete D.texture;

@@ -79,6 +79,9 @@ public slots:
     // No-op if not in 3D mode or scene origin is not set.
     void promptLoadTerrain();
 
+    // Keep the 3D SBP curtains on the same SbpPalette as the SBP viewer.
+    void setSbpCurtainPalette(int palette_index);
+
     // Load / remove a bathymetry file as 3D terrain directly (no dialog).
     // Used by the Views panel's "Draping surface" setting; the file path is
     // the terrain layer ID. Works from 2D — data uploads when 3D next paints.
@@ -115,6 +118,8 @@ signals:
     void contactPickedAt(double lon, double lat);
     // Emitted when the user clicks the import hint button on the empty map.
     void importFilesRequested();
+    // Emitted when the "New Project" launcher action is clicked.
+    void newProjectRequested();
     // Emitted when a recent-project entry on the empty-state launcher is clicked.
     void openProjectRequested(const QString& path);
     // Emitted after the in-viewer Terrain prompt loads a file, so the owner can

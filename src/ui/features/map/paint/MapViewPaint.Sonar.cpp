@@ -6,6 +6,7 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <algorithm>
+#include <cmath>
 
 namespace {
 // Semi-transparent accent for the "DOLPHIN EXPLORER" watermark — accent-hued but
@@ -19,20 +20,18 @@ namespace dolphin::ui {
 
 void MapView::paintEmptyState(QPainter& p) const
 {
+    // Soft accent glow behind the launcher hero (the actionable empty state —
+    // logo, actions, Recent Projects — is the overlay in MapViewportHost).
+    // Reads on any canvas colour in either theme; deliberately faint.
     const QRect r = rect();
-
-    const int cx = r.width() / 2;
-    const int cy = r.height() / 2;
-
-    // Watermark only — the actionable empty state (Recent Projects +
-    // Import Files) is the launcher overlay in MapViewportHost, drawn on top.
-    QFont kfont("Segoe UI", 7);
-    kfont.setLetterSpacing(QFont::AbsoluteSpacing, 2.4);
-    p.setFont(kfont);
-    p.setPen(kEmptyStateAccent);
-    p.drawText(QRect(cx - 200, cy - 150, 400, 18),
-               Qt::AlignHCenter | Qt::AlignVCenter,
-               tr("DOLPHIN EXPLORER"));
+    QRadialGradient glow(QPointF(r.width() / 2.0, r.height() * 0.38),
+                         r.width() * 0.42);
+    QColor c(kEmptyStateAccent);
+    c.setAlpha(22);
+    glow.setColorAt(0.0, c);
+    c.setAlpha(0);
+    glow.setColorAt(1.0, c);
+    p.fillRect(r, glow);
 }
 
 void MapView::paintSonarLayers(QPainter& p) const
@@ -147,7 +146,25 @@ void MapView::paintSonarLayers(QPainter& p) const
         p.setRenderHint(QPainter::Antialiasing, true);
     }
 
-    // Selected layers — unified outer hull outline.
+    // Track-only layers (SBP/MAG/MBE) have no swath hull — their selection and
+    // hover feedback is the nav polyline itself, re-drawn in the outline pen.
+    auto drawTrackLine = [&](const LayerMapData& ld) {
+        QPointF prev;
+        bool    prev_ok = false;
+        for (const QPointF& gp : ld.nav_track) {
+            if (std::isnan(gp.x())) { prev_ok = false; continue; }
+            const QPointF cur = geoToPixel(gp.x(), gp.y());
+            if (prev_ok) p.drawLine(prev, cur);
+            prev    = cur;
+            prev_ok = true;
+        }
+    };
+    auto drawLayerOutline = [&](const LayerMapData& ld) {
+        if (!ld.coverage.empty()) drawMergedSwath(ld, false);
+        else if (!ld.nav_track.empty()) drawTrackLine(ld);
+    };
+
+    // Selected layers — unified outer hull outline (or the track line itself).
     if (!m_selected_layer_ids.empty()) {
         p.setRenderHint(QPainter::Antialiasing, false);
         p.setBrush(Qt::NoBrush);
@@ -155,7 +172,7 @@ void MapView::paintSonarLayers(QPainter& p) const
         for (const auto& sel_id : m_selected_layer_ids) {
             const auto it = m_layer_data.find(sel_id);
             if (it == m_layer_data.end() || !it->second.visible) continue;
-            drawMergedSwath(it->second, false);
+            drawLayerOutline(it->second);
         }
         p.setRenderHint(QPainter::Antialiasing, true);
     }
@@ -169,7 +186,7 @@ void MapView::paintSonarLayers(QPainter& p) const
             p.setRenderHint(QPainter::Antialiasing, false);
             p.setBrush(Qt::NoBrush);
             p.setPen(QPen(QColor(90, 170, 255, 170), 1.0, Qt::DashLine));
-            drawMergedSwath(it->second, false);
+            drawLayerOutline(it->second);
             p.setRenderHint(QPainter::Antialiasing, true);
         }
     }

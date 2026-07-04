@@ -119,6 +119,13 @@ void MainWindow::buildSbpProfileMap(app::DataLayer* layer, const std::string& la
                 result.track_stats.layer_visible = m_map_view->isLayerVisible(lid);
                 m_map_view->setLayerMapData(lid, result);
             }
+            // Seed the 3D curtain palette from the layer's SBP palette (the
+            // curtain itself is forwarded via layerDataUpdated → viewport host).
+            if (m_viewport_host) {
+                if (const auto* l = currentProject()->findLayer(lid))
+                    m_viewport_host->setSbpCurtainPalette(
+                        l->sbp_palette >= 0 ? l->sbp_palette : 0);
+            }
             if (m_diag_hub)
                 postSubBottomMapDiagnostics(
                     m_diag_hub, QString::fromStdString(lid), result.track_stats);

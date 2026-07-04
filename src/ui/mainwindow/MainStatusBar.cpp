@@ -2,8 +2,6 @@
 #include "ui/mainwindow/MainStatusBar.h"
 #include "ui/shared/CoordFormat.h"
 #include "ui/shell/Theme.h"
-#include "render/sonar/SSSPalette.h"
-#include "render/sonar/SonarDisplayParams.h"   // PaletteIndex::Count
 
 #include <QSpinBox>
 #include <QSignalBlocker>
@@ -62,22 +60,6 @@ public:
         const double factor = std::pow(2.0, -steps);
         setValue(std::clamp(value() * factor, minimum(), maximum()));
     }
-};
-
-// Map-palette picker styled like the Scale/Rotation spin boxes: up/down arrows step
-// through palettes (wrapping), and the field shows the palette name instead of a number.
-class PaletteSpinBox : public QSpinBox {
-public:
-    explicit PaletteSpinBox(QWidget* parent = nullptr) : QSpinBox(parent) {
-        setRange(0, PaletteIndex::Count - 1);
-        setWrapping(true);                       // ▲/▼ cycle through all palettes
-        if (lineEdit()) lineEdit()->setReadOnly(true);  // arrows/scroll only — no typing
-    }
-    QString textFromValue(int v) const override {
-        return (v >= 0 && v < PaletteIndex::Count)
-            ? QString::fromLatin1(SSSPalette::name(v)) : QString();
-    }
-    int valueFromText(const QString&) const override { return value(); }
 };
 
 static constexpr int kAiDotSz = 7;  // AI status indicator dot size
@@ -194,17 +176,7 @@ MainStatusBar::MainStatusBar(QWidget* parent)
     m_vp_crs->setToolTip(tr("Click to open Geodetic Settings"));
     connect(m_vp_crs, &QPushButton::clicked, this, &MainStatusBar::crsClicked);
 
-    // Map colour palette — spin-box picker (up/down arrows step palettes), styled to
-    // match the Scale/Rotation fields. Lives in the status bar (in-window chrome), so
-    // it never overlays the OpenGL viewport.
-    m_lbl_palette = makeFieldLabel("Palette");
-    m_palette     = new PaletteSpinBox(this);
-    m_palette->setObjectName("statusSpinBox");
-    m_palette->setMinimumWidth(124);   // fit longest palette names + arrows ("Greyscale")
-    m_palette->setToolTip(tr("Map colour palette — use arrows to change"));
-    connect(m_palette, qOverload<int>(&QSpinBox::valueChanged),
-            this, [this](int idx) { emit paletteRequested(idx); });
-    applySpinPalette(m_palette);   // match Scale/Rotation text + arrow colours
+    // (The map palette picker moved to the left Views panel — MAP tab.)
 
     // -- AI provider indicator -------------------------------------------------
     m_ai_widget = new QWidget(this);
@@ -237,22 +209,10 @@ MainStatusBar::MainStatusBar(QWidget* parent)
     addPermanentWidget(m_spin_scale);
     addPermanentWidget(m_lbl_rot);
     addPermanentWidget(m_spin_rot);
-    addPermanentWidget(m_lbl_palette);
-    addPermanentWidget(m_palette);
     addPermanentWidget(m_lbl_crs);
     addPermanentWidget(m_vp_crs);
 
     addPermanentWidget(m_ai_widget);
-}
-
-// -- Map palette ---------------------------------------------------------------
-
-void MainStatusBar::setMapPalette(int idx)
-{
-    if (!m_palette) return;
-    const QSignalBlocker b(m_palette);   // sync only — don't re-emit paletteRequested
-    if (idx >= m_palette->minimum() && idx <= m_palette->maximum())
-        m_palette->setValue(idx);
 }
 
 // -- Context -------------------------------------------------------------------

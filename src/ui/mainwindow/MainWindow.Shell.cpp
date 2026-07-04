@@ -126,6 +126,8 @@ void MainWindow::setupCentralWidget()
     // Import hint button on the empty map canvas
     connect(m_viewport_host, &MapViewportHost::importFilesRequested,
             this, &MainWindow::onImportFile);
+    connect(m_viewport_host, &MapViewportHost::newProjectRequested,
+            this, &MainWindow::onNewProject);
 
     // Empty-map launcher: recent-project entries open directly from the canvas.
     // Deferred so the mouse-release unwinds before loadProject shows/hides

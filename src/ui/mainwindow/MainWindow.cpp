@@ -83,6 +83,14 @@ MainWindow::MainWindow(QWidget* parent)
         // look differs from disk — mark it dirty so it's saved.
         if (!layer_id.isEmpty())
             markProjectDirty();
+        // SBP palette change → recolour the 3D curtains (shader uniform, free).
+        if (aspect == DisplayAspect::Palette && !layer_id.isEmpty()
+                && currentProject() && m_viewport_host) {
+            if (const auto* l = currentProject()->findLayer(layer_id.toStdString());
+                    l && l->modality == app::Modality::SubBottom)
+                m_viewport_host->setSbpCurtainPalette(
+                    l->sbp_palette >= 0 ? l->sbp_palette : 0);
+        }
         // Keep the left Views panel mirroring the authority (palette/quality
         // changes made anywhere: status bar, menu, inspector, Views itself).
         if (aspect == DisplayAspect::MapQuality || aspect == DisplayAspect::Palette)
@@ -336,22 +344,29 @@ MainWindow::MainWindow(QWidget* parent)
             onLayerSelected(first_layer_id);
         }
 
-        // …and show the whole survey as RASTER, not just the active line. For every
-        // other indexed sidescan line: draw its nav track instantly from the index
-        // (zero I/O) for immediate feedback, then load its raster as a non-active
-        // overview layer. The raster load is cache-first — a fresh .draster paints
-        // with no ping decode (instant on reopen); a cache miss builds + caches it in
-        // the background (map lane, cap 2), upgrading the track to a raster. Lines not
-        // yet indexed (footerless first open) get theirs as their reindex completes
+        // …and show the whole survey, not just the active line. For every other
+        // indexed line: draw its nav track instantly from the index (zero I/O)
+        // for immediate feedback, then load the full representation as a
+        // non-active layer — SSS: cache-first raster (map lane, cap 2);
+        // SBP: depth-coloured profile ribbon ("sbp:open" lane, cap 2 — trace
+        // reads are disk-heavy, D-14 spirit). SSS/SBP parity: before this, SBP
+        // lines stayed invisible until manually selected once. Lines not yet
+        // indexed (footerless first open) get theirs as their reindex completes
         // (cacheLayerReady). The active line still loads first (priority).
-        if (m_sss_ctrl) {
-            for (const auto& layer : proj->layers()) {
-                if (!layer || layer->id == first_layer_id) continue;
-                if (!layer->index_built || layer->artifact_index.empty()) continue;
-                if (layer->modality != app::Modality::Sidescan) continue;
+        if (m_op_mgr) m_op_mgr->setLaneCap("sbp:open", 2);
+        for (const auto& layer : proj->layers()) {
+            if (!layer || layer->id == first_layer_id) continue;
+            if (!layer->index_built || layer->artifact_index.empty()) continue;
+            if (layer->modality == app::Modality::Sidescan && m_sss_ctrl) {
                 m_sss_ctrl->showNavTrackFromIndex(layer->id, proj.get());
                 if (m_import_ctrl) m_import_ctrl->onMapLoadPending();
                 m_sss_ctrl->activateLayer(layer->id, proj.get(), /*as_active=*/false);
+            } else if (layer->modality == app::Modality::SubBottom) {
+                // showNavTrackFromIndex is modality-agnostic (reads the
+                // artifact index); the ribbon build replaces the track when done.
+                if (m_sss_ctrl)
+                    m_sss_ctrl->showNavTrackFromIndex(layer->id, proj.get());
+                buildSbpProfileMap(layer.get(), "sbp:open");
             }
         }
     });
@@ -677,6 +692,13 @@ MainWindow::MainWindow(QWidget* parent)
                         m_sss_ctrl->showNavTrackFromIndex(layer_id, currentProject());
                         m_sss_ctrl->activateLayer(layer_id, currentProject(),
                                                   /*as_active=*/false);
+                    } else if (layer->modality == M::SubBottom) {
+                        // SSS/SBP parity: a reindexed non-active SBP line shows on
+                        // the map too — instant track, then the profile ribbon.
+                        if (m_sss_ctrl)
+                            m_sss_ctrl->showNavTrackFromIndex(layer_id, currentProject());
+                        if (m_op_mgr) m_op_mgr->setLaneCap("sbp:open", 2);
+                        buildSbpProfileMap(layer, "sbp:open");
                     }
                     // Refresh the tree so the reindexed layer shows ready.
                     if (m_line_list) m_line_list->refresh();

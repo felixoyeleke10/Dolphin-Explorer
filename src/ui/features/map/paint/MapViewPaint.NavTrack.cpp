@@ -268,59 +268,10 @@ void MapView::paintNavTrack(QPainter& p) const
     drawTrackPts(m_nav_track, kNavTrackLine,   1.5f);
 }
 
-// -- paintProfileTracks --------------------------------------------------------
-//
-// Draws a per-segment colored ribbon over the nav line for Profile-kind layers.
-// Color maps bottom depth: shallow = blue, mid = green, deep = red.
-// Segments where the scalar is NaN (no bottom pick) are skipped; the white nav
-// line drawn by paintNavTrack remains visible underneath.
-
-namespace {
-
-QColor sbpDepthColor(float t)
-{
-    // Hue sweep: 240° (blue, shallow) → 120° (green) → 0° (red, deep).
-    const float hue = 240.f - std::clamp(t, 0.f, 1.f) * 240.f;
-    return QColor::fromHsvF(hue / 360.f, 0.90f, 1.0f);
-}
-
-} // namespace
-
-void MapView::paintProfileTracks(QPainter& p) const
-{
-    for (const auto& [id, ld] : m_layer_data) {
-        if (ld.kind != LayerMapKind::Profile) continue;
-        if (!ld.visible || !ld.show_nav_track)  continue;
-        if (ld.nav_track.empty() || ld.trace_scalar.empty()) continue;
-
-        const size_t n     = std::min(ld.nav_track.size(), ld.trace_scalar.size());
-        const float  range = ld.scalar_max - ld.scalar_min;
-
-        QPointF prev_px;
-        float   prev_s = std::numeric_limits<float>::quiet_NaN();
-        bool    prev_ok = false;
-
-        for (size_t i = 0; i < n; ++i) {
-            const QPointF& geo = ld.nav_track[i];
-            const float    s   = ld.trace_scalar[i];
-
-            if (std::isnan(geo.x()) || std::isnan(s)) { prev_ok = false; continue; }
-
-            const QPointF px = geoToPixel(geo.x(), geo.y());
-
-            if (prev_ok) {
-                const float smid = std::isnan(prev_s) ? s : (prev_s + s) * 0.5f;
-                const float t    = (range > 0.f) ? (smid - ld.scalar_min) / range : 0.5f;
-                p.setPen(QPen(sbpDepthColor(t), 3.f, Qt::SolidLine,
-                              Qt::RoundCap, Qt::RoundJoin));
-                p.drawLine(prev_px, px);
-            }
-
-            prev_px = px;
-            prev_s  = s;
-            prev_ok = true;
-        }
-    }
-}
+// NOTE: SBP (Profile-kind) layers used to get a per-segment depth-coloured
+// "rainbow" ribbon here (paintProfileTracks). Removed on user direction — a
+// nav line is a nav line: SBP tracks now render through the combined white
+// track like every other modality (and the per-segment QPen churn it cost on
+// every pan/zoom frame is gone). Depth stays in the SBP viewer / 3D curtains.
 
 } // namespace dolphin::ui

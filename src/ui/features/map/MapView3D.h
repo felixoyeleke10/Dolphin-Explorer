@@ -80,13 +80,17 @@ public:
     int  terrainLayerCount() const { return static_cast<int>(m_terrain_layers.size()); }
 
     // -- Profile curtain API (Phase 2) ------------------------------------
-    // Render the SBP bottom-depth scalar as a colored vertical curtain along
-    // the nav track.  data.kind must be LayerMapKind::Profile.
-    // palette_index: SbpPalette::Index (0=Greyscale, 1=InvGrey, 2=Seismic, 3=Thermal).
-    void setProfileCurtain(const std::string& layer_id, const LayerMapData& data,
-                           int palette_index = 3);
+    // Render the REAL SBP profile (data.curtain_image — actual trace samples,
+    // percentile-normalized) as a textured vertical curtain along the nav
+    // track. data.kind must be LayerMapKind::Profile. The palette is applied
+    // in the shader from the current curtain palette (setCurtainPalette), so
+    // recolouring never rebuilds geometry or textures.
+    void setProfileCurtain(const std::string& layer_id, const LayerMapData& data);
     void removeProfileCurtain(const std::string& layer_id);
     int  curtainLayerCount() const { return static_cast<int>(m_curtain_layers.size()); }
+    // SbpPalette::Index (0=Greyscale, 1=InvGrey, 2=Seismic, 3=Thermal) — keeps
+    // the 3D curtains on the same palette as the SBP viewer / Views panel.
+    void setCurtainPalette(int palette_index);
 
     // -- Sonar drape API (Phase 3) -----------------------------------------
     // Drape a sidescan preview image onto all loaded terrain meshes (or onto a
@@ -211,11 +215,12 @@ private:
     // -- Profile curtain layer (SBP Phase 2) ------------------------------
     struct CurtainLayer3D {
         std::string        id;
-        std::vector<float> cpu_verts;      // xyzA quads (4 floats/vertex), GL_TRIANGLES
+        std::vector<float> cpu_verts;      // xyzUV quads (5 floats/vertex), GL_TRIANGLES
+        QImage             pending_image;  // profile raster awaiting GL upload
         QOpenGLBuffer      vbo { QOpenGLBuffer::VertexBuffer };
+        QOpenGLTexture*    texture      = nullptr;  // created in buildCurtainVbo (GL context)
         int                vertex_count = 0;
-        float              z_range = 1.f;  // max depth in metres (> 0), for HUD legend
-        int                palette_index = 3; // SbpPalette index (Thermal by default)
+        float              z_range = 1.f;  // full profile depth in metres, for HUD legend
         float bbox_xmin = 0.f, bbox_ymin = 0.f;
         float bbox_xmax = 0.f, bbox_ymax = 0.f;
         bool  dirty   = true;
@@ -300,6 +305,8 @@ private:
     GLint m_loc_curt_mvp     = -1;
     GLint m_loc_curt_palette = -1;
     GLint m_loc_curt_vexag   = -1;
+    GLint m_loc_curt_tex     = -1;
+    int   m_curtain_palette  = 0;   // SbpPalette::Index shared by all curtains
 
     // -- Terrain shader (depth-coloured mesh + screen-space lighting) -----
     QOpenGLShaderProgram* m_terrain_shader = nullptr;

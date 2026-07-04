@@ -44,7 +44,6 @@ void MapView::paintEvent(QPaintEvent*)
         paintSonarLayers(p);
         if (m_show_grid) paintGraticule(p);
         paintNavTrack      (p);
-        paintProfileTracks (p);
         paintContacts      (p);
         paintFeatures      (p);
         paintMeasureOverlay(p);

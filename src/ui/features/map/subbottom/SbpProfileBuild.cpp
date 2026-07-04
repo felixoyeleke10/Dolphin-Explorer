@@ -8,6 +8,8 @@
 #include "core/SpatialRef.h"
 #include "geo/GeoUtils.h"
 
+#include <QColor>
+
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -40,6 +42,11 @@ LayerMapData buildSbpProfileMapData(
     core::NavPoint prev_norm_pt;
     bool have_prev = false;
 
+    // Column → source trace index for the curtain raster (-1 = gap column).
+    // Kept in lockstep with every nav_track push (repeated fixes push nothing).
+    std::vector<int> col_trace;
+    int trace_idx = -1;
+
     float  depth_min    =  std::numeric_limits<float>::max();
     float  depth_max    = -std::numeric_limits<float>::max();
     double spacing_sum  = 0.0;
@@ -50,6 +57,7 @@ LayerMapData buildSbpProfileMapData(
 
     for (const auto& trace : traces) {
         ++ld.track_stats.total_traces;
+        ++trace_idx;
 
         // -- Nav validity ------------------------------------------------------
         if (!trace.nav.valid || !geo::isFiniteCoordinate(trace.nav.lat, trace.nav.lon)) {
@@ -57,6 +65,7 @@ LayerMapData buildSbpProfileMapData(
             ld.nav_track.push_back({kDNaN, kDNaN});
             ld.trace_scalar.push_back(kFNaN);
             ld.trace_amplitude.push_back(0.f);
+            col_trace.push_back(-1);
             continue;
         }
         if (trace.nav.lat == 0.0 && trace.nav.lon == 0.0) {
@@ -64,6 +73,7 @@ LayerMapData buildSbpProfileMapData(
             ld.nav_track.push_back({kDNaN, kDNaN});
             ld.trace_scalar.push_back(kFNaN);
             ld.trace_amplitude.push_back(0.f);
+            col_trace.push_back(-1);
             continue;
         }
 
@@ -85,6 +95,7 @@ LayerMapData buildSbpProfileMapData(
             ld.nav_track.push_back({kDNaN, kDNaN});
             ld.trace_scalar.push_back(kFNaN);
             ld.trace_amplitude.push_back(0.f);
+            col_trace.push_back(-1);
             continue;
         }
 
@@ -110,11 +121,13 @@ LayerMapData buildSbpProfileMapData(
                 ld.nav_track.push_back({kDNaN, kDNaN});
                 ld.trace_scalar.push_back(kFNaN);
                 ld.trace_amplitude.push_back(0.f);
+                col_trace.push_back(-1);
                 ++ld.track_stats.large_jumps;
             }
         }
 
         ld.nav_track.push_back({norm.lon, norm.lat});
+        col_trace.push_back(trace_idx);
         ++ld.track_stats.track_points;
 
         if (!ld.track_stats.has_endpoints) {
@@ -192,6 +205,88 @@ LayerMapData buildSbpProfileMapData(
         const double pad = ld.is_projected ? kPadProjM : kPadGeo;
         ld.lon_min -= pad;  ld.lon_max += pad;
         ld.lat_min -= pad;  ld.lat_max += pad;
+    }
+
+    // -- Curtain raster: the REAL profile --------------------------------------
+    // One column per nav_track entry (texture u = i/(n-1) in the 3D curtain),
+    // rows = depth 0 → curtain_depth_m from the actual trace samples. This is
+    // what the SBP viewer shows, not a per-ping bottom-amplitude smear.
+    {
+        const size_t n_cols = col_trace.size();
+
+        // Full profile depth across used traces.
+        float depth_m = 0.f;
+        for (int ti : col_trace) {
+            if (ti < 0) continue;
+            const auto& tr = traces[static_cast<size_t>(ti)];
+            if (tr.sample_rate_hz > 0.f && !tr.samples.empty())
+                depth_m = std::max(depth_m,
+                    static_cast<float>(tr.samples.size())
+                        / tr.sample_rate_hz * kSoundHalfSpeed);
+        }
+
+        if (n_cols >= 2 && depth_m > 0.f) {
+            // Percentile normalisation (2–98%) over subsampled |amplitude| —
+            // same idea as the SSS display stretch; kills raw-unit saturation.
+            std::vector<float> mags;
+            mags.reserve(65536);
+            {
+                size_t total = 0;
+                for (int ti : col_trace)
+                    if (ti >= 0) total += traces[static_cast<size_t>(ti)].samples.size();
+                const size_t stride = std::max<size_t>(1, total / 60000);
+                size_t k = 0;
+                for (int ti : col_trace) {
+                    if (ti < 0) continue;
+                    for (float s : traces[static_cast<size_t>(ti)].samples)
+                        if (k++ % stride == 0) mags.push_back(std::abs(s));
+                }
+            }
+            float lo = 0.f, hi = 1.f;
+            if (mags.size() > 16) {
+                auto p_at = [&](double frac) {
+                    const size_t at = static_cast<size_t>(
+                        frac * static_cast<double>(mags.size() - 1));
+                    std::nth_element(mags.begin(), mags.begin() + at, mags.end());
+                    return mags[at];
+                };
+                lo = p_at(0.02);
+                hi = p_at(0.98);
+                if (hi <= lo) hi = lo + 1.f;
+            }
+
+            // Column decimation cap (texture width) + fixed row count.
+            constexpr size_t kMaxW = 4096;
+            constexpr int    kH    = 512;
+            const size_t col_step  = std::max<size_t>(1, n_cols / kMaxW);
+            const int    w         = static_cast<int>((n_cols + col_step - 1) / col_step);
+
+            QImage img(w, kH, QImage::Format_RGBA8888);
+            img.fill(Qt::transparent);
+
+            for (int x = 0; x < w; ++x) {
+                const int ti = col_trace[std::min(n_cols - 1,
+                                                  static_cast<size_t>(x) * col_step)];
+                if (ti < 0) continue;   // gap column stays transparent
+                const auto& tr = traces[static_cast<size_t>(ti)];
+                if (tr.sample_rate_hz <= 0.f || tr.samples.empty()) continue;
+
+                const float m_per_sample = kSoundHalfSpeed / tr.sample_rate_hz;
+                const int   n_samp       = static_cast<int>(tr.samples.size());
+                for (int y = 0; y < kH; ++y) {
+                    const float d   = (static_cast<float>(y) + 0.5f) / kH * depth_m;
+                    const int   idx = static_cast<int>(d / m_per_sample);
+                    if (idx >= n_samp) break;   // below this trace's data
+                    const float a = std::clamp(
+                        (std::abs(tr.samples[idx]) - lo) / (hi - lo), 0.f, 1.f);
+                    const int v = static_cast<int>(a * 255.f + 0.5f);
+                    img.setPixel(x, y, qRgba(v, v, v, 255));
+                }
+            }
+
+            ld.curtain_image   = std::move(img);
+            ld.curtain_depth_m = depth_m;
+        }
     }
 
     return ld;

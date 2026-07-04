@@ -432,11 +432,6 @@ void MainWindow::onPaletteChanged(int idx)
     if (m_inspector)
         m_inspector->setPalette(idx);
 
-    // Sync the status-bar palette picker (may be the source — setMapPalette() blocks
-    // signals so it does not re-emit).
-    if (m_status_bar)
-        m_status_bar->setMapPalette(idx);
-
     // Sync the waterfall (may be the source — setPalette checks current index first).
     if (m_waterfall_win)
         m_waterfall_win->setPalette(idx);

@@ -215,6 +215,41 @@ std::string MapView::hitTestLayer(QPoint px) const
                     return true;
             }
         }
+        // Track-only layers (SBP/MAG/MBE — no swath coverage): hit when the
+        // cursor is within a few px of the nav line, so click-select, hover,
+        // and tooltips work on them exactly like on SSS swaths.
+        if (ld.coverage.empty() && !ld.nav_track.empty()) {
+            // Cheap bbox pre-reject (inflated by the pick tolerance).
+            constexpr double kTolPx = 6.0;
+            const QPointF a = geoToPixel(ld.lon_min, ld.lat_min);
+            const QPointF b = geoToPixel(ld.lon_max, ld.lat_max);
+            if (!QRectF(a, b).normalized()
+                     .adjusted(-kTolPx, -kTolPx, kTolPx, kTolPx).contains(pxF))
+                return false;
+
+            const double tol2 = kTolPx * kTolPx;
+            QPointF prev;
+            bool    prev_ok = false;
+            for (const QPointF& gp : ld.nav_track) {
+                if (std::isnan(gp.x())) { prev_ok = false; continue; }
+                const QPointF cur = geoToPixel(gp.x(), gp.y());
+                if (prev_ok) {
+                    // Point-to-segment squared distance.
+                    const QPointF d  = cur - prev;
+                    const double  l2 = d.x() * d.x() + d.y() * d.y();
+                    double t = 0.0;
+                    if (l2 > 0.0)
+                        t = std::clamp((QPointF::dotProduct(pxF - prev, d)) / l2,
+                                       0.0, 1.0);
+                    const QPointF proj = prev + t * d;
+                    const QPointF e    = pxF - proj;
+                    if (e.x() * e.x() + e.y() * e.y() <= tol2)
+                        return true;
+                }
+                prev    = cur;
+                prev_ok = true;
+            }
+        }
         return false;
     };
 
@@ -257,6 +292,29 @@ std::vector<std::string> MapView::layersInRect(QRect px_rect) const
                     result.push_back(id);
                     return;
                 }
+            }
+        }
+        // Track-only layers (SBP/MAG/MBE): rubber-band selects the line when
+        // any track segment crosses the rect (endpoint containment plus a
+        // sampled-segment check covers thin diagonal crossings).
+        if (ld.coverage.empty() && !ld.nav_track.empty()) {
+            QPointF prev;
+            bool    prev_ok = false;
+            for (const QPointF& gp : ld.nav_track) {
+                if (std::isnan(gp.x())) { prev_ok = false; continue; }
+                const QPointF cur = geoToPixel(gp.x(), gp.y());
+                if (rectF.contains(cur)) { result.push_back(id); return; }
+                if (prev_ok && QRectF(prev, cur).normalized().intersects(rectF)) {
+                    // Segment bbox touches the rect: test the segment against
+                    // the rect polygon (exact enough at nav-point density).
+                    if (rect_poly.containsPoint((prev + cur) / 2.0, Qt::OddEvenFill)
+                            || rectF.contains(prev) || rectF.contains(cur)) {
+                        result.push_back(id);
+                        return;
+                    }
+                }
+                prev    = cur;
+                prev_ok = true;
             }
         }
     };
