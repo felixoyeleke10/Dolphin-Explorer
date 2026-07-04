@@ -1,4 +1,5 @@
 #include "ui/shared/AppCommands.h"
+#include "ui/shell/Theme.h"
 #include <QCoreApplication>
 #include <QIcon>
 
@@ -53,7 +54,7 @@ QAction* makeAction(CommandId id, QObject* parent)
     const AppCommandDef& d = appCommand(id);
     auto* act = new QAction(parent);
     if (d.icon && d.icon[0])
-        act->setIcon(QIcon(QString::fromUtf8(d.icon)));
+        act->setIcon(Theme::icon(QString::fromUtf8(d.icon)));
     act->setText(QCoreApplication::translate("AppCommands", d.label));
     const char* tip = (d.tooltip && d.tooltip[0]) ? d.tooltip : d.label;
     act->setToolTip(QCoreApplication::translate("AppCommands", tip));

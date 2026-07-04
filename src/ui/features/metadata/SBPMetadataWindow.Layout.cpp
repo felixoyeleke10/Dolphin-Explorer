@@ -45,7 +45,7 @@ void SBPMetadataWindow::buildUi()
 
         auto makeBtn = [&](const QString& icon, const QString& tip) {
             auto* btn = new QToolButton(toolbar);
-            btn->setIcon(QIcon(icon));
+            btn->setIcon(Theme::icon(icon));
             btn->setIconSize(QSize(16, 16));
             btn->setToolTip(tip);
             btn->setFixedSize(Theme::kMediumBtnSz, Theme::kMediumBtnSz);

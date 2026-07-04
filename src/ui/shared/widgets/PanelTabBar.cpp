@@ -52,6 +52,16 @@ void PanelTabBar::setCurrentId(int id)
         btn->setChecked(true);
 }
 
+void PanelTabBar::clearSelection()
+{
+    // An exclusive QButtonGroup refuses setChecked(false) on its checked
+    // button; lift exclusivity for the duration of the reset.
+    m_group->setExclusive(false);
+    for (auto* btn : m_group->buttons())
+        btn->setChecked(false);
+    m_group->setExclusive(true);
+}
+
 int PanelTabBar::currentId() const
 {
     return m_group->checkedId();

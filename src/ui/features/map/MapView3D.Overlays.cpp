@@ -92,6 +92,9 @@ void MapView3D::drawHUD(QPainter& painter)
     // -- Compass rose ----------------------------------------------------------
     drawCompassRose(painter);
 
+    // -- View buttons (bottom-right chips) ---------------------------------------
+    drawViewButtons(painter);
+
     // -- Empty state -----------------------------------------------------------
     if (m_layers.empty() && m_terrain_layers.empty()) {
         painter.setPen(QColor(Theme::kTextDim));
@@ -100,6 +103,54 @@ void MapView3D::drawHUD(QPainter& painter)
         painter.setFont(big);
         painter.drawText(QRect(0, 0, width(), height()), Qt::AlignCenter,
                          tr("No data loaded\nImport a survey to view in 3D"));
+    }
+}
+
+void MapView3D::drawViewButtons(QPainter& painter)
+{
+    // "⊞ Terrain" and "2D" chips, bottom-right — the 3D counterparts of the
+    // widget cluster the host floats over the 2D map. They must be painted
+    // in-scene: the QWindowContainer stacks this native window above all
+    // sibling widgets, so no external button can overlay the 3D viewport.
+    const int margin = Theme::kMap3DMargin;
+    const int pad_h  = 10;
+    const int chip_h = 24;
+
+    QFont f = painter.font();
+    f.setPointSizeF(f.pointSizeF() * 0.9);
+    painter.setFont(f);
+    const QFontMetrics fm(f);
+
+    auto chip = [&](const QString& text, int right_x) -> QRect {
+        const int w = fm.horizontalAdvance(text) + pad_h * 2;
+        return QRect(right_x - w, height() - chip_h - margin, w, chip_h);
+    };
+    auto drawChip = [&](const QRect& r, const QString& text, bool accent) {
+        painter.setPen(QPen(QColor(255, 255, 255, 40), 1));
+        painter.setBrush(kHudBadgeBg);
+        painter.drawRoundedRect(r, 4, 4);
+        painter.setPen(accent ? QColor(Theme::kAccentSoft)
+                              : QColor(Theme::kTextSecond));
+        painter.drawText(r, Qt::AlignCenter, text);
+    };
+
+    const QString lbl_2d      = tr("2D");
+    const QString lbl_terrain = tr("⊞ Terrain");
+
+    m_hud_2d_rect = chip(lbl_2d, width() - margin);
+    drawChip(m_hud_2d_rect, lbl_2d, /*accent=*/true);
+
+    m_hud_terrain_rect = chip(lbl_terrain, m_hud_2d_rect.left() - 6);
+    drawChip(m_hud_terrain_rect, lbl_terrain, /*accent=*/false);
+
+    if (m_terrain_loading) {
+        const QString msg = tr("Loading terrain…");
+        const QRect r = chip(msg, m_hud_terrain_rect.left() - 6);
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(kHudBadgeBg);
+        painter.drawRoundedRect(r, 4, 4);
+        painter.setPen(QColor(Theme::kTextSubtle));
+        painter.drawText(r, Qt::AlignCenter, msg);
     }
 }
 

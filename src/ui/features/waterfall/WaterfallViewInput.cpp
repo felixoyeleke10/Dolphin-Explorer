@@ -1,6 +1,7 @@
 // WaterfallViewInput.cpp — mouse, wheel, resize, and leave event handlers
 
 #include "ui/features/waterfall/WaterfallView.h"
+#include "ui/features/waterfall/painters/WaterfallOverlayPainter.h"
 
 #include <QContextMenuEvent>
 #include <QImage>
@@ -124,6 +125,7 @@ void WaterfallView::mousePressEvent(QMouseEvent* ev)
 
     if (m_feature_tool != 0 && row >= 0 && row < rowCount()) {
         // Feature draw — each click adds a geo vertex (offset like a contact pick).
+        // Pen (tool 3): begin a freehand stroke; points append on drag.
         core::SidescanChannel ch;
         float range_m = 0.f;
         if (m_renderer.xToRange(ev->pos().x(), row, m_rows,
@@ -131,6 +133,11 @@ void WaterfallView::mousePressEvent(QMouseEvent* ev)
             double lat = 0.0, lon = 0.0;
             bool   proj = false;
             if (rangeToGeo(row, ch, range_m, lat, lon, proj)) {
+                if (m_feature_tool == 3) {
+                    m_feature_pts.clear();
+                    m_feature_px.clear();
+                    m_feature_pen_down = true;
+                }
                 m_feature_pts.push_back(QPointF(lon, lat));   // (lon,lat)
                 m_feature_px.push_back(ev->pos());
                 m_feature_proj = proj;
@@ -190,6 +197,29 @@ void WaterfallView::mousePressEvent(QMouseEvent* ev)
 
 void WaterfallView::mouseMoveEvent(QMouseEvent* ev)
 {
+    // -- Feature pen (freehand) drag --------------------------------------
+    if (m_feature_pen_down && (ev->buttons() & Qt::LeftButton)) {
+        const int rh  = m_renderer.layout().row_height;
+        const int row = m_scroll.scrollRow() + (ev->pos().y() - kWfScaleBarH) / rh;
+        if (row >= 0 && row < rowCount()
+                && (m_feature_px.empty()
+                    || (ev->pos() - m_feature_px.back()).manhattanLength() >= 4)) {
+            core::SidescanChannel ch; float range_m = 0.f;
+            if (m_renderer.xToRange(ev->pos().x(), row, m_rows,
+                                     m_scroll.hZoom(), m_scroll.hPan(), ch, range_m)) {
+                double lat = 0.0, lon = 0.0; bool proj = false;
+                if (rangeToGeo(row, ch, range_m, lat, lon, proj)) {
+                    m_feature_pts.push_back(QPointF(lon, lat));
+                    m_feature_px.push_back(ev->pos());
+                    m_feature_proj = proj;
+                    m_dirty = true;
+                    update();
+                }
+            }
+        }
+        return;
+    }
+
     // -- Seabed pen drag ---------------------------------------------------
     if (m_seabed.isDragging() && (ev->buttons() & Qt::LeftButton)) {
         m_cursor_x = ev->pos().x();
@@ -288,6 +318,17 @@ void WaterfallView::mouseReleaseEvent(QMouseEvent* ev)
 
     if (m_contact_tool != 0) {
         return;  // contact pick was already handled on press — don't fire pingClicked
+    }
+    if (m_feature_pen_down) {
+        // Pen freehand finished on release → commit as a polyline.
+        m_feature_pen_down = false;
+        if (m_feature_pts.size() >= 2)
+            emit featureDrawn(m_feature_pts, /*polygon=*/false, m_feature_proj);
+        m_feature_pts.clear();
+        m_feature_px.clear();
+        m_dirty = true;
+        update();
+        return;
     }
     if (m_feature_tool != 0) {
         return;  // feature draw handled on press — don't fire pingClicked
@@ -414,19 +455,57 @@ void WaterfallView::leaveEvent(QEvent*)
 //  Feature draw — commit / cancel
 // -----------------------------------------------------------------------------
 
+void WaterfallView::commitFeatureDraft()
+{
+    // A double-click commit arrives as press (adds a vertex) + dblclick, leaving
+    // a near-duplicate final vertex (Qt allows a few px of slop between the two
+    // presses). Strip trailing near-coincident vertices for the click tools —
+    // pen points are legitimately close together and never commit this way.
+    if (m_feature_tool != 3) {
+        while (m_feature_px.size() >= 2
+               && (m_feature_px.back() - m_feature_px[m_feature_px.size() - 2])
+                      .manhattanLength() < 6) {
+            m_feature_pts.pop_back();
+            m_feature_px.pop_back();
+        }
+    }
+    const bool   polygon = (m_feature_tool == 1);
+    const size_t min_pts = polygon ? 3u : 2u;
+    if (m_feature_pts.size() >= min_pts)
+        emit featureDrawn(m_feature_pts, polygon, m_feature_proj);
+    m_feature_pts.clear();
+    m_feature_px.clear();
+    m_dirty = true;
+    update();
+}
+
 void WaterfallView::mouseDoubleClickEvent(QMouseEvent* ev)
 {
-    if (m_feature_tool != 0 && ev->button() == Qt::LeftButton) {
-        const bool   polygon = (m_feature_tool == 1);
-        const size_t min_pts = polygon ? 3u : 2u;
-        if (m_feature_pts.size() >= min_pts)
-            emit featureDrawn(m_feature_pts, polygon, m_feature_proj);
-        m_feature_pts.clear();
-        m_feature_px.clear();
-        m_dirty = true;
-        update();
+    if (m_feature_tool != 0 && m_feature_tool != 3 && ev->button() == Qt::LeftButton) {
+        commitFeatureDraft();
         ev->accept();
         return;
+    }
+
+    // No annotation tool active: double-click a contact marker → open its editor.
+    if (ev->button() == Qt::LeftButton
+            && m_contact_tool == 0 && m_feature_tool == 0 && m_seabed_tool == 0) {
+        const WfLayout& lay = m_renderer.layout();
+        uint64_t best_id   = 0;
+        int      best_dist = 12;   // hit radius (px) around the diamond marker
+        for (const WfContact& c : m_external_contacts) {
+            if (c.id == 0) continue;
+            QPoint px;
+            if (!WaterfallOverlayPainter::contactPixelPos(c, m_rows, lay, m_scroll, px))
+                continue;
+            const int d = (ev->pos() - px).manhattanLength();
+            if (d < best_dist) { best_dist = d; best_id = c.id; }
+        }
+        if (best_id != 0) {
+            emit contactEditRequested(best_id);
+            ev->accept();
+            return;
+        }
     }
     QOpenGLWidget::mouseDoubleClickEvent(ev);
 }
@@ -436,19 +515,13 @@ void WaterfallView::keyPressEvent(QKeyEvent* ev)
     if (m_feature_tool != 0 && !m_feature_pts.empty()) {
         switch (ev->key()) {
         case Qt::Key_Return:
-        case Qt::Key_Enter: {
-            const bool   polygon = (m_feature_tool == 1);
-            const size_t min_pts = polygon ? 3u : 2u;
-            if (m_feature_pts.size() >= min_pts)
-                emit featureDrawn(m_feature_pts, polygon, m_feature_proj);
-            m_feature_pts.clear();
-            m_feature_px.clear();
-            m_dirty = true; update();
+        case Qt::Key_Enter:
+            commitFeatureDraft();
             return;
-        }
         case Qt::Key_Escape:
             m_feature_pts.clear();
             m_feature_px.clear();
+            m_feature_pen_down = false;   // cancel an in-progress pen stroke too
             m_dirty = true; update();
             return;
         case Qt::Key_Backspace:
@@ -469,6 +542,7 @@ void WaterfallView::contextMenuEvent(QContextMenuEvent* event)
     if (m_feature_tool != 0 && !m_feature_pts.empty()) {
         m_feature_pts.clear();
         m_feature_px.clear();
+        m_feature_pen_down = false;   // cancel an in-progress pen stroke too
         m_dirty = true;
         update();
         event->accept();

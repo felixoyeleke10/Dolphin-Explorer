@@ -50,14 +50,14 @@ QColor sensorColor(const QString& tag)
     if (tag == QLatin1String("MAG"))  return QColor(Theme::kNodeColorAnalysis);
     if (tag == QLatin1String("MBES")) return QColor(Theme::kNodeColorEnhancement);
     if (tag == QLatin1String("RAS"))  return QColor(Theme::kNodeColorUnknown);
-    return QColor(Theme::kTextMuted);
+    return Theme::textMutedColor();
 }
 
 QColor confidenceColor(const QString& label)
 {
     if (label == QObject::tr("Certain"))  return QColor(Theme::kSuccess);
     if (label == QObject::tr("Probable")) return QColor(Theme::kCaution);
-    return QColor(Theme::kTextSubtle);
+    return Theme::textSubtleColor();
 }
 
 QString bucketKey(int facet, const core::Contact& c, app::Project* proj)

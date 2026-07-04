@@ -100,17 +100,17 @@ void CommandPaletteDialog::paintEvent(QPaintEvent*)
 
     // Single subtle shadow
     p.setPen(Qt::NoPen);
-    p.setBrush(kCardShadow);
+    p.setBrush(kCardShadow());
     p.drawRoundedRect(card.adjusted(-1, 3, 1, 6), kRadius + 1, kRadius + 1);
 
     // Card background
-    p.setBrush(kBg);
+    p.setBrush(kBg());
     p.setPen(Qt::NoPen);
     p.drawRoundedRect(card, kRadius, kRadius);
 
     // Border — 1px, slightly lighter than bg
     p.setBrush(Qt::NoBrush);
-    p.setPen(QPen(kBorderOuter, 1.0));
+    p.setPen(QPen(kBorderOuter(), 1.0));
     p.drawRoundedRect(card.adjusted(0.5, 0.5, -0.5, -0.5), kRadius, kRadius);
 }
 

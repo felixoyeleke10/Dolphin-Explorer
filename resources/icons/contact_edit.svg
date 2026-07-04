@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#aeaeb2" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <!-- Contact target (offset to make room for the pencil) -->
+  <circle cx="9.5" cy="9.5" r="7"/>
+  <circle cx="9.5" cy="9.5" r="2.4"/>
+  <line x1="9.5" y1="2.5" x2="9.5" y2="4.8"/>
+  <line x1="9.5" y1="14.2" x2="9.5" y2="16.5"/>
+  <line x1="2.5" y1="9.5" x2="4.8" y2="9.5"/>
+  <line x1="14.2" y1="9.5" x2="16.5" y2="9.5"/>
+  <!-- Pencil -->
+  <path d="M13.5 20.5 L20.5 13.5 L22 15 L15 22 L13 22.5 Z" stroke-width="1.3"/>
+</svg>

@@ -89,7 +89,7 @@ void ContactManagerWindow::buildCommandBar()
     m_act_cut->setShortcut(QKeySequence::Cut);
     connect(m_act_cut, &QAction::triggered, this, [this]() { copySelection(true); });
 
-    m_act_copy = bar->addAction(QIcon(":/icons/copy.svg"), tr("Copy"));
+    m_act_copy = bar->addAction(Theme::icon(":/icons/copy.svg"), tr("Copy"));
     m_act_copy->setShortcut(QKeySequence::Copy);
     connect(m_act_copy, &QAction::triggered, this, [this]() { copySelection(false); });
 
@@ -99,11 +99,11 @@ void ContactManagerWindow::buildCommandBar()
 
     bar->addSeparator();
 
-    m_act_rename = bar->addAction(QIcon(":/icons/renumber.svg"), tr("Rename"));
+    m_act_rename = bar->addAction(Theme::icon(":/icons/renumber.svg"), tr("Rename"));
     m_act_rename->setShortcut(QKeySequence(Qt::Key_F2));
     connect(m_act_rename, &QAction::triggered, this, [this]() { renameSelection(); });
 
-    m_act_delete = bar->addAction(QIcon(":/icons/recycle_bin.svg"), tr("Delete"));
+    m_act_delete = bar->addAction(Theme::icon(":/icons/recycle_bin.svg"), tr("Delete"));
     m_act_delete->setShortcut(QKeySequence::Delete);
     connect(m_act_delete, &QAction::triggered, this, [this]() { deleteSelection(); });
 
@@ -135,7 +135,7 @@ void ContactManagerWindow::buildCommandBar()
 
     auto* view_btn = new QToolButton(bar);
     view_btn->setText(tr("View"));
-    view_btn->setIcon(QIcon(":/icons/layout_customize.svg"));
+    view_btn->setIcon(Theme::icon(":/icons/layout_customize.svg"));
     view_btn->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
     view_btn->setPopupMode(QToolButton::InstantPopup);
     auto* view_menu = new QMenu(view_btn);
@@ -172,12 +172,12 @@ void ContactManagerWindow::buildCommandBar()
     spacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     bar->addWidget(spacer);
 
-    m_act_export = bar->addAction(QIcon(":/icons/export_csv.svg"), tr("Export"));
+    m_act_export = bar->addAction(Theme::icon(":/icons/export_csv.svg"), tr("Export"));
     m_act_export->setToolTip(tr("Export the listed contacts as CSV, PDF, or Word"));
     connect(m_act_export, &QAction::triggered, this, [this]() { exportContacts(); });
 
     auto* more_btn = new QToolButton(bar);
-    more_btn->setIcon(QIcon(":/icons/more.svg"));
+    more_btn->setIcon(Theme::icon(":/icons/more.svg"));
     more_btn->setToolButtonStyle(Qt::ToolButtonIconOnly);
     more_btn->setToolTip(tr("More commands"));
     more_btn->setPopupMode(QToolButton::InstantPopup);
@@ -192,9 +192,9 @@ void ContactManagerWindow::buildCommandBar()
     auto* sel_inv = more->addAction(tr("Invert Selection"));
     connect(sel_inv, &QAction::triggered, this, [this]() { invertSelection(); });
     more->addSeparator();
-    m_act_props = more->addAction(QIcon(":/icons/properties.svg"), tr("Properties"));
+    m_act_props = more->addAction(Theme::icon(":/icons/properties.svg"), tr("Properties"));
     connect(m_act_props, &QAction::triggered, this, [this]() {
-        const uint64_t id = currentRowId(); if (id) emit contactActivated(id); });
+        const uint64_t id = currentRowId(); if (id) openContactEditor(id); });
     more->addSeparator();
     auto* opt_menu = more->addMenu(tr("Options"));
     auto* opt_map = opt_menu->addAction(tr("Show \"Map / unlinked\" folder"));

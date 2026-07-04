@@ -8,8 +8,10 @@
 
 #include <QDateTime>
 #include <QFile>
+#include <QFileDialog>
 #include <QFileInfo>
 #include <QMarginsF>
+#include <QMessageBox>
 #include <QPageLayout>
 #include <QPageSize>
 #include <QPdfWriter>
@@ -269,6 +271,54 @@ bool writeDocx(const QString& path, const QString& title,
     zip.addFile("_rels/.rels", kRels);
     zip.addFile("word/document.xml", doc_xml.toStdString());
     return zip.writeToFile(path.toStdString());
+}
+
+// -----------------------------------------------------------------------------
+//  Interactive export — one dialog flow shared by every export entry point.
+// -----------------------------------------------------------------------------
+
+QString exportInteractive(QWidget* parent, const QString& title,
+                          const std::vector<core::Contact>& contacts,
+                          app::Project* project)
+{
+    if (contacts.empty()) {
+        QMessageBox::information(parent, QObject::tr("Export Contacts"),
+                                 QObject::tr("There are no contacts to export."));
+        return {};
+    }
+
+    const QString filter_csv  = QObject::tr("CSV (*.csv)");
+    const QString filter_pdf  = QObject::tr("PDF Document (*.pdf)");
+    const QString filter_docx = QObject::tr("Word Document (*.docx)");
+    QString selected;
+    QString path = QFileDialog::getSaveFileName(
+        parent, QObject::tr("Export Contacts"), QStringLiteral("contacts"),
+        filter_csv + QStringLiteral(";;") + filter_pdf + QStringLiteral(";;") + filter_docx,
+        &selected);
+    if (path.isEmpty()) return {};
+
+    auto ensureExt = [&](const QString& ext) {
+        if (!path.endsWith(ext, Qt::CaseInsensitive)) path += ext;
+    };
+
+    bool ok = false;
+    if (selected == filter_docx || path.endsWith(QLatin1String(".docx"), Qt::CaseInsensitive)) {
+        ensureExt(QStringLiteral(".docx"));
+        ok = writeDocx(path, title, contacts, project);
+    } else if (selected == filter_pdf || path.endsWith(QLatin1String(".pdf"), Qt::CaseInsensitive)) {
+        ensureExt(QStringLiteral(".pdf"));
+        ok = writePdf(path, title, contacts, project);
+    } else {
+        ensureExt(QStringLiteral(".csv"));
+        ok = writeCsv(path, title, contacts, project);
+    }
+
+    if (!ok) {
+        QMessageBox::warning(parent, QObject::tr("Export Contacts"),
+                             QObject::tr("Could not write the export file."));
+        return {};
+    }
+    return path;
 }
 
 } // namespace ContactReport

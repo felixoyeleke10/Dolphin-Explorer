@@ -38,7 +38,7 @@ public:
     void paintEvent(QPaintEvent*) override {
         QPainter p(this);
         p.setRenderHint(QPainter::Antialiasing);
-        p.setPen(QPen(QColor(Theme::kTextMuted), 1.5f, Qt::SolidLine,
+        p.setPen(QPen(Theme::textMutedColor(), 1.5f, Qt::SolidLine,
                       Qt::RoundCap, Qt::RoundJoin));
         if (expanded) {
             // Up chevron
@@ -146,7 +146,7 @@ void LayerPickerWidget::paintEvent(QPaintEvent*)
 
     // -- Header divider (only when expanded) -----------------------------------
     if (m_expanded) {
-        p.setPen(QPen(QColor(Theme::kBorder), 1));
+        p.setPen(QPen(Theme::borderColor(), 1));
         double y = kCollapsedH - 0.5;
         p.drawLine(QPointF(kRadius, y), QPointF(width() - kRadius, y));
     }

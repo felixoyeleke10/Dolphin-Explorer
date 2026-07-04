@@ -112,6 +112,7 @@ void BottomDockPanel::buildLayout()
     buildOutputTab(m_stack);
     buildJobsTab(m_stack);
     buildTerminalTab(m_stack);
+    buildChatTab(m_stack);
     vbox->addWidget(m_stack, 1);
 
     switchTab(m_active_tab);
@@ -123,7 +124,7 @@ void BottomDockPanel::buildHeader(QWidget* parent)
     hbox->setContentsMargins(Theme::kSpacing1, 0, Theme::kSpacing1, 0);
     hbox->setSpacing(0);
 
-    const char* kTabNames[] = { "Problems", "Output", "Jobs", "Terminal" };
+    const char* kTabNames[] = { "Problems", "Output", "Jobs", "Terminal", "Chat" };
 
     for (int i = 0; i < kTabCount; ++i) {
         auto* btn = new QToolButton(parent);
@@ -156,7 +157,7 @@ void BottomDockPanel::buildHeader(QWidget* parent)
     m_collapse_btn->setObjectName("panelCollapseBtn");
     m_collapse_btn->setAutoRaise(true);
     m_collapse_btn->setFixedSize(Theme::kMediumBtnSz, Theme::kMediumBtnSz);
-    m_collapse_btn->setIcon(QIcon(":/icons/panel_chevron.svg"));
+    m_collapse_btn->setIcon(Theme::icon(":/icons/panel_chevron.svg"));
     m_collapse_btn->setIconSize(QSize(14, 14));
     m_collapse_btn->setToolTip(tr("Minimize panel"));
     hbox->addWidget(m_collapse_btn);
@@ -165,7 +166,7 @@ void BottomDockPanel::buildHeader(QWidget* parent)
     m_close_btn->setObjectName("panelCloseBtn");
     m_close_btn->setAutoRaise(true);
     m_close_btn->setFixedSize(Theme::kMediumBtnSz, Theme::kMediumBtnSz);
-    m_close_btn->setIcon(QIcon(":/icons/panel_close.svg"));
+    m_close_btn->setIcon(Theme::icon(":/icons/panel_close.svg"));
     m_close_btn->setIconSize(QSize(14, 14));
     m_close_btn->setToolTip(tr("Close panel"));
     hbox->addWidget(m_close_btn);

@@ -45,6 +45,7 @@ struct Feature {
     double                   modified_at = 0.0;
     std::vector<std::string> tags;
     std::string              group_id;            // empty = ungrouped; references ItemGroup::id
+    bool                     visible     = true;  // shown on the map (explorer checkbox)
 };
 
 } // namespace dolphin::core

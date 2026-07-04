@@ -5,6 +5,7 @@
 #include "ui/features/contacts/ContactManagerWindow.h"
 #include "ui/features/contacts/ContactVisuals.h"
 #include "ui/features/contacts/ContactReport.h"
+#include "ui/features/contacts/ContactEditorDialog.h"
 #include "ui/shared/CoordFormat.h"
 #include "app/project/Project.h"
 #include "app/layers/DataLayer.h"
@@ -60,6 +61,22 @@ std::vector<uint64_t> ContactManagerWindow::selectedIds() const
         if (m_table->isRowHidden(idx.row())) continue;
         if (auto* it = m_table->item(idx.row(), ColLabel))
             ids.push_back(it->data(Qt::UserRole).toULongLong());
+    }
+    return ids;
+}
+
+std::vector<uint64_t> ContactManagerWindow::visibleIdsInOrder() const
+{
+    std::vector<uint64_t> ids;
+    if (m_view_mode == 1) {
+        for (int i = 0; i < m_thumbs->count(); ++i)
+            if (!m_thumbs->item(i)->isHidden())
+                ids.push_back(m_thumbs->item(i)->data(Qt::UserRole).toULongLong());
+    } else {
+        for (int row = 0; row < m_table->rowCount(); ++row)
+            if (!m_table->isRowHidden(row))
+                if (auto* it = m_table->item(row, ColLabel))
+                    ids.push_back(it->data(Qt::UserRole).toULongLong());
     }
     return ids;
 }
@@ -285,27 +302,12 @@ void ContactManagerWindow::exportContacts()
 
     // Export the visible set (current folder + search) in whichever view is active —
     // the same scope the report and the on-screen list use.
-    std::vector<uint64_t> ids;
-    if (m_view_mode == 1) {
-        for (int i = 0; i < m_thumbs->count(); ++i)
-            if (!m_thumbs->item(i)->isHidden())
-                ids.push_back(m_thumbs->item(i)->data(Qt::UserRole).toULongLong());
-    } else {
-        for (int row = 0; row < m_table->rowCount(); ++row)
-            if (!m_table->isRowHidden(row))
-                if (auto* it = m_table->item(row, ColLabel))
-                    ids.push_back(it->data(Qt::UserRole).toULongLong());
-    }
+    const std::vector<uint64_t> ids = visibleIdsInOrder();
 
     std::vector<core::Contact> rows;
     rows.reserve(ids.size());
     for (uint64_t id : ids)
         if (const auto* c = findContact(id)) rows.push_back(*c);
-
-    if (rows.empty()) {
-        QMessageBox::information(this, tr("Export Contacts"), tr("There are no contacts to export."));
-        return;
-    }
 
     // Scope title from the current folder (breadcrumb crumb, minus its count).
     QString scope = tr("All Contacts");
@@ -314,35 +316,15 @@ void ContactManagerWindow::exportContacts()
         const int paren = scope.lastIndexOf(QLatin1String(" ("));
         if (paren > 0) scope = scope.left(paren);
     }
-    const QString title = tr("Contact Report — %1").arg(scope);
+    exportContactSet(rows, tr("Contact Report — %1").arg(scope));
+}
 
-    const QString filter_csv  = tr("CSV (*.csv)");
-    const QString filter_pdf  = tr("PDF Document (*.pdf)");
-    const QString filter_docx = tr("Word Document (*.docx)");
-    QString selected;
-    QString path = QFileDialog::getSaveFileName(
-        this, tr("Export Contacts"), QStringLiteral("contacts"),
-        filter_csv + QStringLiteral(";;") + filter_pdf + QStringLiteral(";;") + filter_docx, &selected);
-    if (path.isEmpty()) return;
-
-    auto ensureExt = [&](const QString& ext) {
-        if (!path.endsWith(ext, Qt::CaseInsensitive)) path += ext;
-    };
-
-    bool ok = false;
-    if (selected == filter_docx || path.endsWith(QLatin1String(".docx"), Qt::CaseInsensitive)) {
-        ensureExt(QStringLiteral(".docx"));
-        ok = ContactReport::writeDocx(path, title, rows, m_project);
-    } else if (selected == filter_pdf || path.endsWith(QLatin1String(".pdf"), Qt::CaseInsensitive)) {
-        ensureExt(QStringLiteral(".pdf"));
-        ok = ContactReport::writePdf(path, title, rows, m_project);
-    } else {
-        ensureExt(QStringLiteral(".csv"));
-        ok = ContactReport::writeCsv(path, title, rows, m_project);
-    }
-
-    if (ok) statusBar()->showMessage(tr("Exported: %1").arg(path), 5000);
-    else    QMessageBox::warning(this, tr("Export Contacts"), tr("Could not write the export file."));
+void ContactManagerWindow::exportContactSet(const std::vector<core::Contact>& rows,
+                                            const QString& title)
+{
+    if (!m_project) return;
+    const QString path = ContactReport::exportInteractive(this, title, rows, m_project);
+    if (!path.isEmpty()) statusBar()->showMessage(tr("Exported: %1").arg(path), 5000);
 }
 
 // -- Custom groups ------------------------------------------------------------
@@ -421,6 +403,49 @@ void ContactManagerWindow::showNavContextMenu(const QPoint& global_pos, QTreeWid
         }
     }
     menu.exec(global_pos);
+}
+
+// -- Contact editor -----------------------------------------------------------
+
+void ContactManagerWindow::openContactEditor(uint64_t id)
+{
+    if (!m_project || id == 0) return;
+    if (!findContact(id)) return;
+
+    // Sync map / preview selection to the contact being edited.
+    emit contactActivated(id);
+
+    std::vector<uint64_t> ids = visibleIdsInOrder();
+    if (std::find(ids.begin(), ids.end(), id) == ids.end()) ids.push_back(id);
+
+    if (!m_editor) {
+        m_editor = new ContactEditorDialog(m_project, ids, id, this);
+        m_editor->setAttribute(Qt::WA_DeleteOnClose);
+        if (m_snapshot_provider)
+            m_editor->setSnapshotProvider(m_snapshot_provider);
+
+        // Route the editor's intents through the manager's existing undoable signals.
+        connect(m_editor, &ContactEditorDialog::contactSaveRequested, this,
+                [this](const core::Contact& before, const core::Contact& after) {
+                    emit contactsEditRequested({ before }, { after });
+                });
+        connect(m_editor, &ContactEditorDialog::removeContactRequested, this,
+                [this](uint64_t rid) { emit removeContactRequested(rid); });
+        connect(m_editor, &ContactEditorDialog::exportRequested, this,
+                [this](uint64_t rid) {
+                    // Export just the contact being edited, not the whole view.
+                    if (const auto* c = findContact(rid))
+                        exportContactSet({ *c },
+                            tr("Contact Report — %1").arg(QString::fromStdString(c->label)));
+                });
+        connect(m_editor, &ContactEditorDialog::contactActivated, this,
+                [this](uint64_t rid) { emit contactActivated(rid); });
+    } else {
+        m_editor->showContact(ids, id);
+    }
+    m_editor->show();
+    m_editor->raise();
+    m_editor->activateWindow();
 }
 
 } // namespace dolphin::ui

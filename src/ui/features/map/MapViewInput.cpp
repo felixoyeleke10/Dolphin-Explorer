@@ -3,21 +3,59 @@
 #include "ui/features/map/MapView.h"
 #include "ui/features/map/MapTypes.h"
 #include "app/project/Project.h"
+#include "app/layers/DataLayer.h"
 #include "geo/GeoUtils.h"
 
 #include <QContextMenuEvent>
+#include <QCursor>
 #include <QKeyEvent>
 #include <QMouseEvent>
+#include <QPixmap>
 #include <QPolygonF>
 #include <QRect>
 #include <QResizeEvent>
 #include <QString>
+#include <QToolTip>
 #include <QWheelEvent>
 #include <QtGlobal>   // qQNaN
 #include <algorithm>  // std::clamp, std::find
 #include <cmath>
 
 namespace dolphin::ui {
+
+namespace {
+
+// Magnifier cursor for the Zoom tool, built once from the toolbar glyph.
+QCursor zoomCursor()
+{
+    static const QCursor cur = [] {
+        QPixmap pm(QStringLiteral(":/icons/zoom.svg"));
+        if (!pm.isNull()) {
+            pm = pm.scaled(20, 20, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+            // Hotspot on the lens centre (the glyph's handle points down-right).
+            return QCursor(pm, 8, 8);
+        }
+        return QCursor(Qt::CrossCursor);
+    }();
+    return cur;
+}
+
+// The idle cursor each input mode shows. Single source of truth — used by
+// setInputMode and by the release handlers, so finishing a click/drag never
+// leaves a tool with the wrong cursor.
+QCursor cursorForMode(MapView::MapInputMode mode)
+{
+    switch (mode) {
+    case MapView::ModeSelect:
+    case MapView::ModeMeasure:
+    case MapView::ModePickContact:
+    case MapView::ModeDrawFeature: return QCursor(Qt::CrossCursor);
+    case MapView::ModeZoom:        return zoomCursor();
+    default:                       return QCursor(Qt::OpenHandCursor);
+    }
+}
+
+} // namespace
 
 // -----------------------------------------------------------------------------
 //  Input mode
@@ -41,31 +79,64 @@ void MapView::setInputMode(MapInputMode mode)
     // Drop any in-progress feature draft when the tool changes.
     m_feature_pts_geo.clear();
     m_feature_drawing = false;
+    m_feature_pen_down = false;
 
-    switch (mode) {
-    case ModeSelect:
-        setCursor(Qt::CrossCursor);
-        break;
-    case ModeZoom:
-        setCursor(Qt::SizeAllCursor);
-        break;
-    case ModeMeasure:
-    case ModePickContact:
-    case ModeDrawFeature:
-        setCursor(Qt::CrossCursor);
-        // Feature drawing needs keyboard focus for Enter/Esc/Backspace.
-        if (mode == ModeDrawFeature) setFocus(Qt::OtherFocusReason);
-        break;
-    default:
-        setCursor(Qt::OpenHandCursor);
-        break;
-    }
+    setCursor(cursorForMode(mode));
+    // Feature drawing needs keyboard focus for Enter/Esc/Backspace;
+    // measuring needs it for Esc-to-clear.
+    if (mode == ModeDrawFeature || mode == ModeMeasure)
+        setFocus(Qt::OtherFocusReason);
     update();
 }
 
-void MapView::setFeatureDrawPolygon(bool polygon)
+void MapView::setFeatureDrawKind(int kind)
 {
-    m_feature_polygon = polygon;
+    m_feature_kind = kind;
+}
+
+// -- Map-tab view options (right panel "Map" page) ---------------------------
+
+void MapView::setHoverTooltipsEnabled(bool on)
+{
+    m_hover_tooltips = on;
+    if (!on) QToolTip::hideText();
+}
+
+void MapView::setHoverHighlightEnabled(bool on)
+{
+    m_hover_highlight = on;
+    if (!on && !m_hover_layer_id.empty()) {
+        m_hover_layer_id.clear();
+        update();
+    }
+}
+
+// Hit-test the layer under the cursor for hover tooltip/highlight. Throttled
+// by movement distance — hitTestLayer walks ribbon polygons, so re-testing on
+// every 1-px move would be wasteful on large projects.
+void MapView::updateHoverState(QPoint pos, QPoint global_pos)
+{
+    if (!m_hover_tooltips && !m_hover_highlight) return;
+    if (m_input_mode != ModePan && m_input_mode != ModeSelect) return;
+    if ((pos - m_hover_test_px).manhattanLength() < 6) return;
+    m_hover_test_px = pos;
+
+    const std::string hit = hitTestLayer(pos);
+    if (hit != m_hover_layer_id) {
+        m_hover_layer_id = hit;
+        if (m_hover_highlight) update();
+
+        if (m_hover_tooltips) {
+            QString label;
+            if (!hit.empty() && m_project) {
+                if (const auto* layer = m_project->findLayer(hit))
+                    label = QString::fromStdString(layer->label.empty() ? layer->id
+                                                                        : layer->label);
+            }
+            if (label.isEmpty()) QToolTip::hideText();
+            else                 QToolTip::showText(global_pos, label, this);
+        }
+    }
 }
 
 void MapView::setSelectedFeature(uint64_t id)
@@ -77,13 +148,29 @@ void MapView::setSelectedFeature(uint64_t id)
 
 void MapView::commitFeatureDraft()
 {
-    // Polygon needs >=3 vertices to enclose area; polyline needs >=2.
-    const size_t min_pts = m_feature_polygon ? 3u : 2u;
+    // A double-click commit arrives as press (adds a vertex) + dblclick (commits),
+    // leaving a duplicate final vertex — and Qt allows a few px of slop between
+    // the two presses, so compare in pixel space. Click tools only: pen points
+    // are legitimately close together and never commit via double-click.
+    if (m_feature_kind != 3) {
+        while (m_feature_pts_geo.size() >= 2) {
+            const auto& p1 = m_feature_pts_geo[m_feature_pts_geo.size() - 1];
+            const auto& p2 = m_feature_pts_geo[m_feature_pts_geo.size() - 2];
+            const QPointF d = geoToPixel(p1.x(), p1.y()) - geoToPixel(p2.x(), p2.y());
+            if (d.manhattanLength() >= 6.0) break;
+            m_feature_pts_geo.pop_back();
+        }
+    }
+
+    // Polygon (kind 1) needs >=3 vertices to enclose area; line/pen need >=2.
+    const bool   polygon = (m_feature_kind == 1);
+    const size_t min_pts = polygon ? 3u : 2u;
     if (m_feature_pts_geo.size() >= min_pts) {
-        emit featureDrawn(m_feature_pts_geo, m_feature_polygon);
+        emit featureDrawn(m_feature_pts_geo, polygon);
     }
     m_feature_pts_geo.clear();
     m_feature_drawing = false;
+    m_feature_pen_down = false;
     update();
 }
 
@@ -91,6 +178,7 @@ void MapView::cancelFeatureDraft()
 {
     m_feature_pts_geo.clear();
     m_feature_drawing = false;
+    m_feature_pen_down = false;
     update();
 }
 
@@ -152,6 +240,8 @@ std::vector<std::string> MapView::layersInRect(QRect px_rect) const
     std::vector<std::string> result;
     const QRectF rectF(px_rect);
 
+    const QPolygonF rect_poly(rectF);
+
     auto testLayer = [&](const std::string& id, const LayerMapData& ld) {
         for (const auto& cov : ld.coverage) {
             for (const auto& ribbon : cov.ribbons) {
@@ -160,7 +250,10 @@ std::vector<std::string> MapView::layersInRect(QRect px_rect) const
                 poly.reserve(static_cast<int>(ribbon.size()));
                 for (const auto& pt : ribbon)
                     poly.append(geoToPixel(pt.x(), pt.y()));
-                if (poly.boundingRect().intersects(rectF)) {
+                // Cheap bbox pre-reject, then exact polygon∩rect — a diagonal
+                // line's bbox can cover the band without the ribbon touching it.
+                if (poly.boundingRect().intersects(rectF)
+                        && poly.intersects(rect_poly)) {
                     result.push_back(id);
                     return;
                 }
@@ -198,6 +291,17 @@ void MapView::resizeEvent(QResizeEvent* e)
 
 void MapView::mousePressEvent(QMouseEvent* event)
 {
+    // Middle-button drag pans in EVERY mode — measuring or drawing across more
+    // than one screen must not require switching back to the Cursor tool.
+    if (event->button() == Qt::MiddleButton) {
+        m_dragging      = true;
+        m_rubberbanding = false;
+        m_drag_moved    = false;
+        m_drag_start    = event->pos();
+        setCursor(Qt::ClosedHandCursor);
+        return;
+    }
+
     // Zoom mode: zoom in/out immediately on press; no drag.
     if (m_input_mode == ModeZoom) {
         if (event->button() == Qt::LeftButton)
@@ -234,12 +338,20 @@ void MapView::mousePressEvent(QMouseEvent* event)
         return;
     }
 
-    // Feature-draw mode — each left-click adds a geo vertex to the draft.
+    // Feature-draw mode.
     if (m_input_mode == ModeDrawFeature && event->button() == Qt::LeftButton) {
-        const QPointF geo = pixelToGeo(event->pos());
-        m_feature_pts_geo.push_back(geo);
         m_feature_cursor_px = event->pos();
-        m_feature_drawing   = true;
+        if (m_feature_kind == 3) {
+            // Pen: begin a freehand stroke; points are appended on drag.
+            m_feature_pts_geo.clear();
+            m_feature_pts_geo.push_back(pixelToGeo(event->pos()));
+            m_feature_drawing  = true;
+            m_feature_pen_down = true;
+        } else {
+            // Polygon / line: each click adds a vertex.
+            m_feature_pts_geo.push_back(pixelToGeo(event->pos()));
+            m_feature_drawing = true;
+        }
         update();
         return;
     }
@@ -268,6 +380,21 @@ void MapView::mousePressEvent(QMouseEvent* event)
 
 void MapView::mouseReleaseEvent(QMouseEvent* event)
 {
+    // End a middle-button pan; restore the cursor the active mode expects.
+    if (event->button() == Qt::MiddleButton) {
+        m_dragging   = false;
+        m_drag_moved = false;
+        setCursor(cursorForMode(m_input_mode));
+        return;
+    }
+
+    // Pen freehand: releasing the button finishes the stroke.
+    if (m_input_mode == ModeDrawFeature && m_feature_pen_down
+            && event->button() == Qt::LeftButton) {
+        commitFeatureDraft();
+        return;
+    }
+
     if (event->button() == Qt::LeftButton) {
         const bool was_click    = !m_drag_moved;
         const bool was_rubber   = m_rubberbanding && m_drag_moved;
@@ -276,7 +403,38 @@ void MapView::mouseReleaseEvent(QMouseEvent* event)
         m_rubberbanding = false;
         m_drag_moved    = false;
 
-        setCursor(m_input_mode == ModeSelect ? Qt::CrossCursor : Qt::OpenHandCursor);
+        // Restore the mode's idle cursor (the press may have shown ClosedHand).
+        // Must be mode-aware: Measure/Pick/Draw keep their crosshair — resetting
+        // to OpenHand here used to lose the crosshair after every tool click.
+        setCursor(cursorForMode(m_input_mode));
+
+        // Short click = hit-test select. Shared by Pan and Select: the Select
+        // tool must select on click too, not only via the rubber band.
+        auto clickSelect = [&]() {
+            const std::string hit  = hitTestLayer(event->pos());
+            const bool        ctrl = event->modifiers() & Qt::ControlModifier;
+
+            if (!hit.empty()) {
+                if (ctrl) {
+                    // Toggle this layer in the current selection set.
+                    std::vector<std::string> ids(m_selected_layer_ids.begin(),
+                                                 m_selected_layer_ids.end());
+                    auto it = std::find(ids.begin(), ids.end(), hit);
+                    if (it != ids.end()) ids.erase(it);
+                    else                 ids.push_back(hit);
+                    setSelectedLayers(ids);
+                    emit layersSelected(ids);
+                } else {
+                    setSelectedLayers({hit});
+                    emit layerClicked(hit);
+                }
+            } else if (!ctrl) {
+                // Click on empty space without Ctrl → clear selection.
+                setSelectedLayers({});
+                emit layersSelected({});
+            }
+            update();
+        };
 
         if (m_input_mode == ModeSelect) {
             if (was_rubber) {
@@ -285,34 +443,12 @@ void MapView::mouseReleaseEvent(QMouseEvent* event)
                 setSelectedLayers(ids);
                 emit layersSelected(ids);
                 update();
+            } else if (was_click) {
+                clickSelect();
             }
         } else {
             // ModePan — short click = hit test
-            if (was_click) {
-                const std::string hit  = hitTestLayer(event->pos());
-                const bool        ctrl = event->modifiers() & Qt::ControlModifier;
-
-                if (!hit.empty()) {
-                    if (ctrl) {
-                        // Toggle this layer in the current selection set.
-                        std::vector<std::string> ids(m_selected_layer_ids.begin(),
-                                                     m_selected_layer_ids.end());
-                        auto it = std::find(ids.begin(), ids.end(), hit);
-                        if (it != ids.end()) ids.erase(it);
-                        else                 ids.push_back(hit);
-                        setSelectedLayers(ids);
-                        emit layersSelected(ids);
-                    } else {
-                        setSelectedLayers({hit});
-                        emit layerClicked(hit);
-                    }
-                } else if (!ctrl) {
-                    // Click on empty space without Ctrl → clear selection.
-                    setSelectedLayers({});
-                    emit layersSelected({});
-                }
-                update();
-            }
+            if (was_click) clickSelect();
         }
     }
 }
@@ -357,8 +493,19 @@ void MapView::mouseMoveEvent(QMouseEvent* event)
 
     if (m_input_mode == ModeDrawFeature && m_feature_drawing) {
         m_feature_cursor_px = event->pos();
+        // Pen: while dragging, append freehand points (throttled by distance).
+        if (m_feature_pen_down && (event->buttons() & Qt::LeftButton)
+                && !m_feature_pts_geo.empty()) {
+            const QPointF last_px = geoToPixel(m_feature_pts_geo.back().x(),
+                                               m_feature_pts_geo.back().y());
+            if ((event->pos() - last_px.toPoint()).manhattanLength() >= 4)
+                m_feature_pts_geo.push_back(pixelToGeo(event->pos()));
+        }
         update();
     }
+
+    // Map-tab view options: hover tooltip / highlight (throttled inside).
+    updateHoverState(event->pos(), event->globalPosition().toPoint());
 
     QPointF geo = pixelToGeo(event->pos());
     emit cursorMoved(geo.x(), geo.y());
@@ -382,6 +529,13 @@ void MapView::wheelEvent(QWheelEvent* event)
 
 void MapView::leaveEvent(QEvent*)
 {
+    // Clear hover-driven visuals so nothing sticks to the last cursor position.
+    m_hover_test_px = QPoint(-9999, -9999);
+    if (!m_hover_layer_id.empty()) {
+        m_hover_layer_id.clear();
+        if (m_hover_highlight) update();
+    }
+    QToolTip::hideText();
     emit cursorMoved(qQNaN(), qQNaN());
 }
 
@@ -396,10 +550,10 @@ void MapView::mouseDoubleClickEvent(QMouseEvent* event)
         update();
         return;
     }
-    // Feature-draw mode — double-click finishes and commits the shape.
-    // (mousePressEvent already added a vertex for the first click of this pair;
-    //  the duplicate trailing point is harmless and dropped by de-duplication.)
-    if (m_input_mode == ModeDrawFeature && event->button() == Qt::LeftButton) {
+    // Polygon/line — double-click finishes and commits the shape. (Pen commits on
+    // mouse release, so it ignores double-click.)
+    if (m_input_mode == ModeDrawFeature && m_feature_kind != 3
+            && event->button() == Qt::LeftButton) {
         commitFeatureDraft();
         return;
     }
@@ -418,6 +572,18 @@ void MapView::mouseDoubleClickEvent(QMouseEvent* event)
 
 void MapView::keyPressEvent(QKeyEvent* event)
 {
+    // Measure: Esc clears the measurement (parity with right-click/double-click).
+    if (m_input_mode == ModeMeasure && event->key() == Qt::Key_Escape
+            && !m_measure_pts_geo.empty()) {
+        m_measure_pts_geo.clear();
+        m_measure_pts_px.clear();
+        m_measure_seg_dist.clear();
+        m_measure_live_dist = 0.0;
+        emit measurementUpdated(-1.0);
+        update();
+        return;
+    }
+
     if (m_input_mode == ModeDrawFeature && m_feature_drawing) {
         switch (event->key()) {
         case Qt::Key_Return:

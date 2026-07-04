@@ -32,6 +32,10 @@ public:
     // Check the tab with the given id (does not emit tabChanged).
     void setCurrentId(int id);
 
+    // Uncheck every tab (does not emit tabChanged). The group is exclusive, so
+    // this is the only way to reach the no-selection state programmatically.
+    void clearSelection();
+
     // Id of the currently checked tab, or -1 when none is checked.
     int currentId() const;
 

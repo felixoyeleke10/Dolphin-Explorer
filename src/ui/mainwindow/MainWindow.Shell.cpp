@@ -2,7 +2,7 @@
 // Panel construction is split across companion files:
 //   MainWindow.ContextPanels.cpp  — buildContextPanel, makeContextPlaceholder
 //   MainWindow.MainArea.cpp       — buildMainArea, buildPropertiesPanel
-//   MainWindow.ToolBar.cpp        — buildActivityBar, buildRightToolBar, setupToolBar
+//   MainWindow.ToolBar.cpp        — buildActivityBar, setupToolBar
 #include "ui/mainwindow/MainWindow.h"
 #include "ui/shared/UiUtils.h"
 #include "ui/mainwindow/MainStatusBar.h"
@@ -14,6 +14,7 @@
 #include "ui/features/map/MapView.h"
 #include "ui/features/map/MapViewportHost.h"
 #include "ui/mainwindow/MainStatusBar.h"
+#include "ui/shell/AppInfo.h"
 #include "ui/systems/DisplayStateManager.h"
 #include "app/project/Project.h"
 #include "geo/GeoUtils.h"
@@ -23,6 +24,7 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QListWidget>
+#include <QSettings>
 #include <QStackedWidget>
 #include <QTimer>
 #include <QToolButton>
@@ -114,8 +116,6 @@ void MainWindow::setupCentralWidget()
 
     root_layout->addWidget(m_right_edge_strip);
     root_layout->addWidget(m_props_panel);
-    m_right_tool_bar = buildRightToolBar(root);
-    root_layout->addWidget(m_right_tool_bar);
 
     // Empty-state call-to-action buttons in the left panel
     connect(m_line_list, &LineListPanel::newProjectRequested,
@@ -127,6 +127,27 @@ void MainWindow::setupCentralWidget()
     connect(m_viewport_host, &MapViewportHost::importFilesRequested,
             this, &MainWindow::onImportFile);
 
+    // Empty-map launcher: recent-project entries open directly from the canvas.
+    // Deferred so the mouse-release unwinds before loadProject shows/hides
+    // widgets (same Win32 blink guard as the old sidebar recent list).
+    connect(m_viewport_host, &MapViewportHost::openProjectRequested,
+            this, [this](const QString& path) {
+                QTimer::singleShot(0, this, [this, path]() {
+                    m_session_ctrl->openProjectPath(path.toStdString());
+                });
+            });
+    {
+        QSettings s(AppInfo::kOrgName, AppInfo::kSettingsApp);
+        refreshSidebarSections(
+            s.value(QStringLiteral("recentProjects")).toStringList());
+    }
+
+    // Terrain loaded via the 3D HUD chip → adopt as the project draping surface.
+    connect(m_viewport_host, &MapViewportHost::terrainFileLoaded,
+            this, [this](const QString& path) {
+                applyDrapingSurface(path, /*already_loaded=*/true);
+            });
+
     connect(m_line_list, &LineListPanel::layerSelected,
             this, &MainWindow::onLayerSelected);
     connect(m_line_list, &LineListPanel::contactSelected,
@@ -137,6 +158,31 @@ void MainWindow::setupCentralWidget()
     });
     connect(m_line_list, &LineListPanel::layerVisibilityChanged,
             this, &MainWindow::onLayerVisibilityChanged);
+    // Annotation visibility checkboxes — undoable, same spirit as layer toggles.
+    connect(m_line_list, &LineListPanel::contactVisibilityChanged,
+            this, [this](uint64_t id, bool visible) {
+        if (!currentProject()) return;
+        for (const auto& c : currentProject()->contacts())
+            if (c.id == id) {
+                if (c.visible == visible) return;
+                core::Contact after = c;
+                after.visible = visible;
+                m_undo_stack->push(new UpdateContactCommand(currentProject(), c, after));
+                return;
+            }
+    });
+    connect(m_line_list, &LineListPanel::featureVisibilityChanged,
+            this, [this](uint64_t id, bool visible) {
+        if (!currentProject()) return;
+        for (const auto& f : currentProject()->features())
+            if (f.id == id) {
+                if (f.visible == visible) return;
+                core::Feature after = f;
+                after.visible = visible;
+                m_undo_stack->push(new UpdateFeatureCommand(currentProject(), f, after));
+                return;
+            }
+    });
     connect(m_line_list, &LineListPanel::layerMultiSelected,
             this, [this](const std::vector<std::string>& ids) {
         if (m_viewport_host)  m_viewport_host->setSelectedLayers(ids);

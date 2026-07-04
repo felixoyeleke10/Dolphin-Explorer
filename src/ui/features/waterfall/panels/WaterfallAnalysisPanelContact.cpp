@@ -1,7 +1,6 @@
 // WaterfallAnalysisPanelContact.cpp
 //
 // buildContactSection() — CONTACT PICKING panel section.
-// buildFeatureSection() — FEATURE PICKING panel section (Phase 2 placeholder).
 //
 // Contacts are POINT picks (boulders, debris, anomalies, …).
 // Features are SHAPE annotations (polygons, polylines, freehand outlines) — Phase 2.
@@ -12,8 +11,10 @@
 
 #include <QComboBox>
 #include <QHBoxLayout>
+#include <QIcon>
 #include <QLabel>
 #include <QPushButton>
+#include <QSize>
 #include <QToolButton>
 #include <QVBoxLayout>
 
@@ -109,6 +110,30 @@ void WaterfallAnalysisPanel::buildContactSection(QVBoxLayout* vl, QWidget* conta
                 });
     }
 
+    // -- Edit button ---------------------------------------------------------
+    // Opens the shared "Edit contact details" editor (same dialog as the Contact
+    // Manager) scoped to this line's contacts. Double-clicking a contact marker
+    // on the waterfall opens the same editor focused on that contact.
+    {
+        auto* row = new QWidget;
+        auto* rl  = new QHBoxLayout(row);
+        rl->setContentsMargins(Theme::kSpacing4, Theme::kSpacing1, Theme::kSpacing4, Theme::kSpacing1);
+
+        auto* edit_btn = new QToolButton(row);
+        edit_btn->setText(tr("Edit Contacts…"));
+        edit_btn->setObjectName("wfToolBtn");
+        edit_btn->setToolTip(
+            tr("Open the contact editor for this line's contacts.\n"
+               "Tip: double-click a contact marker on the waterfall to edit that contact directly."));
+        edit_btn->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+        edit_btn->setFixedHeight(Theme::kFormBtnH);
+        rl->addWidget(edit_btn);
+        bl->addWidget(row);
+
+        connect(edit_btn, &QToolButton::clicked,
+                this, &WaterfallAnalysisPanel::editContactsRequested);
+    }
+
     // -- Clear button ------------------------------------------------------
     {
         auto* row = new QWidget;
@@ -128,119 +153,6 @@ void WaterfallAnalysisPanel::buildContactSection(QVBoxLayout* vl, QWidget* conta
 
         connect(clear_btn, &QToolButton::clicked,
                 this, &WaterfallAnalysisPanel::clearContactsRequested);
-    }
-}
-
-// -----------------------------------------------------------------------------
-//  FEATURE PICKING section — Phase 2 placeholder
-//
-//  Features are SHAPE annotations: polygons, polylines, freehand outlines.
-//  Unlike contacts (single point picks), a feature encloses or traces an area
-//  or boundary — e.g., a debris field outline, a cable corridor, a sand wave.
-// -----------------------------------------------------------------------------
-
-void WaterfallAnalysisPanel::setFeatureToolActive(int tool)
-{
-    if (m_feature_draw_btn) {
-        QSignalBlocker sb(m_feature_draw_btn);
-        m_feature_draw_btn->setChecked(tool != 0);
-    }
-}
-
-QString WaterfallAnalysisPanel::currentFeatureClassText() const
-{
-    return m_feature_class_combo ? m_feature_class_combo->currentText() : QString{};
-}
-
-void WaterfallAnalysisPanel::buildFeatureSection(QVBoxLayout* vl, QWidget* container)
-{
-    auto* bl = makeSection(tr("Feature Picking"), /*expanded=*/false, container, vl);
-
-    // Emits featureToolChanged for the current draw-button + type-combo state.
-    // tool: 0 = off, 1 = polygon, 2 = line.
-    auto emitTool = [this]() {
-        const bool on   = m_feature_draw_btn && m_feature_draw_btn->isChecked();
-        const int  type = (m_feature_type_combo && m_feature_type_combo->currentIndex() == 1)
-                              ? 2 : 1;   // 0=Polygon\u21921, 1=Line\u21922
-        emit featureToolChanged(on ? type : 0);
-    };
-
-    // -- Draw toggle -------------------------------------------------------
-    {
-        auto* row = new QWidget;
-        auto* rl  = new QHBoxLayout(row);
-        rl->setContentsMargins(Theme::kSpacing4, Theme::kSpacing3, Theme::kSpacing4, Theme::kSpacing1);
-        rl->setSpacing(Theme::kSpacing2);
-
-        m_feature_draw_btn = new QToolButton(row);
-        m_feature_draw_btn->setText(tr("Draw Feature"));
-        m_feature_draw_btn->setCheckable(true);
-        m_feature_draw_btn->setObjectName("wfToolBtn");
-        m_feature_draw_btn->setToolTip(
-            tr("Toggle feature drawing.\n"
-               "Click the waterfall to add vertices; double-click or Enter to finish, "
-               "Esc or right-click to cancel.\n"
-               "Polygon encloses an area; Line traces an open path."));
-        m_feature_draw_btn->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-        m_feature_draw_btn->setFixedHeight(Theme::kMediumBtnSz);
-        rl->addWidget(m_feature_draw_btn);
-        bl->addWidget(row);
-
-        connect(m_feature_draw_btn, &QToolButton::toggled, this, [emitTool](bool) { emitTool(); });
-    }
-
-    // -- Type combo (Polygon / Line) --------------------------------------
-    {
-        auto* row = new QWidget;
-        auto* rl  = new QHBoxLayout(row);
-        rl->setContentsMargins(Theme::kSpacing4, Theme::kSpacing1, Theme::kSpacing4, Theme::kSpacing1);
-        rl->setSpacing(Theme::kSpacing3);
-
-        auto* lbl = new QLabel(tr("Type"), row);
-        lbl->setObjectName("wfSliderLabel");
-
-        m_feature_type_combo = new QComboBox(row);
-        m_feature_type_combo->addItems({ tr("Polygon"), tr("Line") });
-        m_feature_type_combo->setObjectName("wfCombo");
-        m_feature_type_combo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-        m_feature_type_combo->setToolTip(tr("Polygon (closed area) or Line (open path)."));
-
-        rl->addWidget(lbl);
-        rl->addWidget(m_feature_type_combo);
-        bl->addWidget(row);
-
-        connect(m_feature_type_combo, QOverload<int>::of(&QComboBox::currentIndexChanged),
-                this, [emitTool](int) { emitTool(); });
-    }
-
-    // -- Classification combo ---------------------------------------------
-    {
-        auto* row = new QWidget;
-        auto* rl  = new QHBoxLayout(row);
-        rl->setContentsMargins(Theme::kSpacing4, Theme::kSpacing1, Theme::kSpacing4, 10);
-        rl->setSpacing(Theme::kSpacing3);
-
-        auto* lbl = new QLabel(tr("Classification"), row);
-        lbl->setObjectName("wfSliderLabel");
-
-        m_feature_class_combo = new QComboBox(row);
-        m_feature_class_combo->addItems({
-            tr("Unclassified"),
-            tr("Debris Field"),
-            tr("Survey Zone"),
-            tr("Exclusion Zone"),
-            tr("Cable Corridor"),
-            tr("Pipeline"),
-            tr("Boundary"),
-            tr("Sand Waves"),
-        });
-        m_feature_class_combo->setObjectName("wfCombo");
-        m_feature_class_combo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-        m_feature_class_combo->setToolTip(tr("Classification assigned to the next drawn feature."));
-
-        rl->addWidget(lbl);
-        rl->addWidget(m_feature_class_combo);
-        bl->addWidget(row);
     }
 }
 

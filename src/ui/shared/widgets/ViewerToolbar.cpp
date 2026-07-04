@@ -135,7 +135,7 @@ void ViewerToolbar::addSpacing(int px)
 QToolButton* ViewerToolbar::makeBtn(const QString& icon_path, const QString& tip)
 {
     auto* b = new QToolButton(this);
-    b->setIcon(QIcon(icon_path));
+    b->setIcon(Theme::icon(icon_path));
     b->setIconSize(QSize(kIconToolBar, kIconToolBar));
     b->setToolTip(tip);
     b->setObjectName("avQuickBtn");

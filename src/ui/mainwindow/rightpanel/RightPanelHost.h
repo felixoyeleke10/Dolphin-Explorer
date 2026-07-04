@@ -22,13 +22,11 @@ class GeometryModule;
 class RadiometryModule;
 class EnhancementModule;
 class ContactPickingModule;
-class FeatureDrawingModule;
 class NavInfoPanel;
 class HeadingInfoPanel;
 class GainControlPanel;
 class ImagingControlPanel;
 class ContactPickingPanel;
-class FeatureDrawingPanel;
 
 // Hosts a subset of right-panel modules as CollapsibleSections.
 // ShowMode controls which module set is created at construction time:
@@ -60,7 +58,6 @@ public:
     ImagingControlPanel* imagingPanel()  const;
     // Universal annotation tool sections (Contact Picking / Feature Drawing).
     ContactPickingPanel* contactPickingPanel() const;
-    FeatureDrawingPanel* featureDrawingPanel() const;
 
     // Palette forwarding from DisplayModule (SSS).
     int  currentPaletteIndex() const;
@@ -122,7 +119,6 @@ private:
     std::unique_ptr<RadiometryModule>  m_radiometry;
     std::unique_ptr<EnhancementModule> m_enhancement;
     std::unique_ptr<ContactPickingModule> m_contact_picking;
-    std::unique_ptr<FeatureDrawingModule> m_feature_drawing;
 
     // Parallel lists for generic setLayer / clearLayer iteration.
     QVector<IRightPanelModule*>  m_modules;

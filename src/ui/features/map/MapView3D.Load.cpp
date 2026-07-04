@@ -369,6 +369,9 @@ void MapView3D::loadTerrainFile(const std::string& layer_id,
     const double oy       = m_origin_y;
     const bool   is_proj  = m_is_projected;
 
+    m_terrain_loading = true;   // shows the in-HUD "Loading terrain…" chip
+    update();
+
     auto* watcher = new QFutureWatcher<TerrainBuildResult>(this);
     connect(watcher, &QFutureWatcher<TerrainBuildResult>::finished, this,
             [this, watcher, layer_id]() {
@@ -386,6 +389,7 @@ void MapView3D::loadTerrainFile(const std::string& layer_id,
 // Shared apply path for both the file and grid terrain loaders.
 void MapView3D::applyTerrainResult(const std::string& layer_id, TerrainBuildResult&& res)
 {
+    if (m_terrain_loading) { m_terrain_loading = false; update(); }
     if (!res.error.isEmpty()) {
         emit terrainLoadFinished(layer_id, false, res.error);
         return;

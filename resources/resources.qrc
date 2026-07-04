@@ -25,7 +25,11 @@
     <file>icons/reset_raw.svg</file>
     <file>icons/node_graph.svg</file>
     <file>icons/add_contact.svg</file>
+    <file>icons/contact_edit.svg</file>
     <file>icons/feature.svg</file>
+    <file>icons/draw_polygon.svg</file>
+    <file>icons/draw_line.svg</file>
+    <file>icons/draw_pen.svg</file>
     <file>icons/export_kmz.svg</file>
     <file>icons/export_csv.svg</file>
     <file>icons/clear_contacts.svg</file>
@@ -50,6 +54,8 @@
     <file>icons/panel_bottom.svg</file>
     <file>icons/panel_chevron.svg</file>
     <file>icons/spin_up.svg</file>
+    <file>icons/spin_up_light.svg</file>
+    <file>icons/spin_down_light.svg</file>
     <file>icons/spin_down.svg</file>
     <file>icons/panel_close.svg</file>
     <file>icons/layout_customize.svg</file>

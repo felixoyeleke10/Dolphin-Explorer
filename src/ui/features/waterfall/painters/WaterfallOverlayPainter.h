@@ -45,6 +45,15 @@ public:
                                     const WaterfallScrollController&   scroll,
                                     QColor fill = QColor(Theme::kWarning));
 
+    // On-screen pixel position of a contact marker (same math the painter uses).
+    // Returns false when the contact is outside the visible rows / channel width.
+    // Shared with WaterfallView's marker hit-testing (double-click → editor).
+    static bool contactPixelPos    (const WfContact&                   c,
+                                    const std::vector<PingRow>&        rows,
+                                    const WfLayout&                    lay,
+                                    const WaterfallScrollController&   scroll,
+                                    QPoint&                            out_px);
+
     static void paintScaleBar      (QPainter&                          p,
                                     const std::vector<PingRow>&        rows,
                                     const WfLayout&                    lay,

@@ -140,7 +140,7 @@ void ContactManagerWindow::rebuildNav()
 
     auto* all = new QTreeWidgetItem(m_nav);
     all->setData(0, RoleKind, NavAll);
-    all->setIcon(0, QIcon(QStringLiteral(":/icons/database.svg")));
+    all->setIcon(0, Theme::icon(QStringLiteral(":/icons/database.svg")));
     QTreeWidgetItem* to_select = all;
 
     // Build the section list unconditionally so the facet categories are always
@@ -170,7 +170,7 @@ void ContactManagerWindow::rebuildNav()
             h->setFlags(Qt::ItemIsEnabled);   // expandable but not selectable
             QFont hf = m_nav->font(); hf.setBold(true);
             h->setFont(0, hf);
-            h->setForeground(0, QColor(Theme::kTextMuted));
+            h->setForeground(0, Theme::textMutedColor());
             return h;
         };
 
@@ -302,7 +302,7 @@ void ContactManagerWindow::rebuildNav()
         const int recycled = m_project ? static_cast<int>(m_project->recycledContacts().size()) : 0;
         auto* bin = new QTreeWidgetItem(m_nav);
         bin->setText(0, tr("Recycle Bin (%1)").arg(recycled));
-        bin->setIcon(0, QIcon(QStringLiteral(":/icons/recycle_bin.svg")));
+        bin->setIcon(0, Theme::icon(QStringLiteral(":/icons/recycle_bin.svg")));
         bin->setData(0, RoleKind, NavRecycle);
         if (sel_kind == NavRecycle) to_select = bin;
     }

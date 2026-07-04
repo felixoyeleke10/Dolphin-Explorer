@@ -298,7 +298,7 @@ void ExecutionProgressDialog::updateStages()
                                        : QStringLiteral("○");
         const QColor c = (st == 2) ? QColor(Theme::kSuccess)
                        : (st == 1) ? QColor(Theme::kAccent)
-                                   : QColor(Theme::kTextMuted);
+                                   : Theme::textMutedColor();
         m_stage_lbls[idx]->setText(icon + "  " + name);
         m_stage_lbls[idx]->setStyleSheet(QString("color:%1; font-weight:%2;")
             .arg(c.name(), st == 1 ? "600" : "400"));

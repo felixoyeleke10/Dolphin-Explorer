@@ -24,21 +24,15 @@ void MapView::paintEmptyState(QPainter& p) const
     const int cx = r.width() / 2;
     const int cy = r.height() / 2;
 
+    // Watermark only — the actionable empty state (Recent Projects +
+    // Import Files) is the launcher overlay in MapViewportHost, drawn on top.
     QFont kfont("Segoe UI", 7);
     kfont.setLetterSpacing(QFont::AbsoluteSpacing, 2.4);
     p.setFont(kfont);
     p.setPen(kEmptyStateAccent);
-    p.drawText(QRect(cx - 200, cy - 46, 400, 18),
+    p.drawText(QRect(cx - 200, cy - 150, 400, 18),
                Qt::AlignHCenter | Qt::AlignVCenter,
                tr("DOLPHIN EXPLORER"));
-
-    QFont hfont("Segoe UI", 14, QFont::DemiBold);
-    p.setFont(hfont);
-    p.setPen(QColor(Theme::kTextPrimary));
-    p.drawText(QRect(cx - 200, cy - 20, 400, 32),
-               Qt::AlignHCenter | Qt::AlignVCenter,
-               tr("No survey loaded"));
-
 }
 
 void MapView::paintSonarLayers(QPainter& p) const
@@ -164,6 +158,20 @@ void MapView::paintSonarLayers(QPainter& p) const
             drawMergedSwath(it->second, false);
         }
         p.setRenderHint(QPainter::Antialiasing, true);
+    }
+
+    // Hover highlight ("Highlight items under cursor", Map tab) — soft accent
+    // outline on the layer under the cursor; skipped when already selected.
+    if (m_hover_highlight && !m_hover_layer_id.empty()
+            && !m_selected_layer_ids.count(m_hover_layer_id)) {
+        const auto it = m_layer_data.find(m_hover_layer_id);
+        if (it != m_layer_data.end() && it->second.visible) {
+            p.setRenderHint(QPainter::Antialiasing, false);
+            p.setBrush(Qt::NoBrush);
+            p.setPen(QPen(QColor(90, 170, 255, 170), 1.0, Qt::DashLine));
+            drawMergedSwath(it->second, false);
+            p.setRenderHint(QPainter::Antialiasing, true);
+        }
     }
 }
 

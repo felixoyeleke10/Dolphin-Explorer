@@ -1,4 +1,4 @@
-// MainWindow.ToolBar.cpp — buildActivityBar, buildRightToolBar, setupToolBar.
+// MainWindow.ToolBar.cpp — buildActivityBar, setupToolBar.
 #include "ui/mainwindow/MainWindow.h"
 #include "ui/shared/AppCommands.h"
 #include "ui/shared/widgets/AnimatedToolButton.h"
@@ -6,6 +6,7 @@
 #include "ui/shell/Theme.h"
 
 #include <QAction>
+#include <QApplication>
 #include <QButtonGroup>
 #include <QFrame>
 #include <QIcon>
@@ -30,7 +31,7 @@ QFrame* MainWindow::buildActivityBar(QWidget* parent)
 
     auto addBtn = [&](const char* icon, const char* tip, int panel) {
         auto* btn = new AnimatedToolButton(bar);
-        btn->setIcon(QIcon(icon));
+        btn->setIcon(Theme::icon(icon));
         btn->setIconSize(QSize(Theme::kIconSideBar, Theme::kIconSideBar));
         btn->setToolTip(tip);
         btn->setCheckable(true);
@@ -73,7 +74,7 @@ QFrame* MainWindow::buildActivityBar(QWidget* parent)
     if constexpr (kHasSecondary) {
         layout->addSpacing(2);
         auto* more_btn = new AnimatedToolButton(bar);
-        more_btn->setIcon(QIcon(":/icons/more.svg"));
+        more_btn->setIcon(Theme::icon(":/icons/more.svg"));
         more_btn->setIconSize(QSize(Theme::kIconSideBar, Theme::kIconSideBar));
         more_btn->setToolTip(tr("More panels"));
         more_btn->setFixedSize(Theme::kActivityBarW, Theme::kSideButtonH);
@@ -90,7 +91,7 @@ QFrame* MainWindow::buildActivityBar(QWidget* parent)
                 PanelEntry{Features::kPresent,     ":/icons/present.svg",  "Present",         PanelPresent},
                 PanelEntry{Features::kReport,      ":/icons/report.svg",   "Report Generator",PanelReport},
             }) {
-            auto* act = more_menu->addAction(QIcon(e.icon), tr(e.label),
+            auto* act = more_menu->addAction(Theme::icon(e.icon), tr(e.label),
                                              this, [this, panel = e.panel]{ togglePanel(panel); });
             act->setEnabled(e.enabled);
         }
@@ -101,7 +102,7 @@ QFrame* MainWindow::buildActivityBar(QWidget* parent)
     layout->addStretch();
 
     auto* btn_settings = new AnimatedToolButton(bar);
-    btn_settings->setIcon(QIcon(":/icons/settings2.svg"));
+    btn_settings->setIcon(Theme::icon(":/icons/settings2.svg"));
     btn_settings->setIconSize(QSize(Theme::kIconSideBar, Theme::kIconSideBar));
     btn_settings->setToolTip(tr("Settings"));
     btn_settings->setCheckable(true);
@@ -110,105 +111,6 @@ QFrame* MainWindow::buildActivityBar(QWidget* parent)
     connect(btn_settings, &QToolButton::clicked, this, [this]() { togglePanel(PanelSettings); });
     layout->addWidget(btn_settings);
     m_activity_btns[PanelSettings] = btn_settings;
-
-    return bar;
-}
-
-QFrame* MainWindow::buildRightToolBar(QWidget* parent)
-{
-    auto* bar = new QFrame(parent);
-    bar->setObjectName("toolBar");
-    bar->setFixedWidth(Theme::kToolBarW);
-    auto* layout = new QVBoxLayout(bar);
-    layout->setContentsMargins(0, Theme::kSpacing3, 0, Theme::kSpacing3);
-    layout->setSpacing(2);
-
-    auto makeDivider = [&]() -> QFrame* {
-        auto* d = new QFrame(bar);
-        d->setObjectName("toolbarDivider");
-        d->setFixedHeight(Theme::kSepSz);
-        return d;
-    };
-
-    // One exclusive group covers all interactive tools — exactly one active at a time.
-    auto* tool_grp = new QButtonGroup(bar);
-    tool_grp->setExclusive(true);
-
-    auto addToolBtn = [&](QToolButton*& out, const char* icon, const QString& tip,
-                          void (MainWindow::*slot)(), bool checked = false) {
-        auto* btn = new AnimatedToolButton(bar);
-        btn->setIcon(QIcon(icon));
-        btn->setIconSize(QSize(Theme::kIconSideBar, Theme::kIconSideBar));
-        btn->setToolTip(tip);
-        btn->setCheckable(true);
-        btn->setChecked(checked);
-        btn->setFixedSize(Theme::kToolBarW, Theme::kSideButtonH);
-        tool_grp->addButton(btn);
-        connect(btn, &QToolButton::clicked, this, slot);
-        layout->addWidget(btn);
-        out = btn;
-    };
-
-    // Navigation tools — mutually exclusive, Cursor active by default.
-    addToolBtn(m_cursor_btn,  ":/icons/cursor.svg",      tr("Cursor (V)     — pan and inspect"),                      &MainWindow::onToolCursor, true);
-    addToolBtn(m_select_btn,  ":/icons/select.svg",      tr("Select (S)     — click to select a layer or feature"),    &MainWindow::onToolSelect);
-    layout->addWidget(makeDivider());
-    addToolBtn(m_zoom_btn,    ":/icons/zoom.svg",         tr("Zoom (Z)       — scroll or drag to zoom the map"),        &MainWindow::onToolZoom);
-    addToolBtn(m_measure_btn, ":/icons/measure.svg",      tr("Measure (M)    — click points to measure distance"),      &MainWindow::onToolMeasure);
-    layout->addWidget(makeDivider());
-    addToolBtn(m_contact_btn, ":/icons/add_contact.svg",  tr("Contact (C)    — click map to place a contact pick.\n"
-                                                             "Stays active; switch tools to stop placing."),            &MainWindow::onAddContact);
-    // Feature drawing is a right-panel tool section (Feature Drawing), not a toolbar
-    // tool — see RightPanelHost / FeatureDrawingPanel.
-    layout->addWidget(makeDivider());
-
-    // More actions — 3D toggle plus destructive ops hidden behind ···
-    {
-        auto* btn = new AnimatedToolButton(bar);
-        btn->setIcon(QIcon(":/icons/more.svg"));
-        btn->setIconSize(QSize(Theme::kIconSideBar, Theme::kIconSideBar));
-        btn->setToolTip(tr("More actions"));
-        btn->setFixedSize(Theme::kToolBarW, Theme::kSideButtonH);
-        btn->setPopupMode(QToolButton::InstantPopup);
-
-        auto* menu = new QMenu(btn);
-        auto* act_3d = menu->addAction(
-            QIcon(":/icons/layers.svg"),
-            tr("Toggle 3D View"),
-            this, &MainWindow::onToggle3D);
-        act_3d->setToolTip(
-            tr("Switch to OpenGL terrain/sonar-drape view. Run again to return to 2D plan view."));
-        menu->addSeparator();
-        auto* act_reset = menu->addAction(
-            QIcon(":/icons/reset_raw.svg"),
-            tr("Reset to Raw Navigation"),
-            this, &MainWindow::onResetRaw);
-        act_reset->setToolTip(
-            tr("Discards all navigation corrections for the current sidescan layer\n"
-               "and reloads it with the original recorded GPS positions."));
-        auto* act_clear = menu->addAction(
-            QIcon(":/icons/clear_contacts.svg"),
-            tr("Clear All Contacts"),
-            this, &MainWindow::onClearContacts);
-        act_clear->setToolTip(tr("Removes every contact pick from this project."));
-
-        btn->setMenu(menu);
-        layout->addWidget(btn);
-    }
-
-    layout->addStretch();
-
-    // Settings — pinned at the bottom, not part of the tool group.
-    layout->addWidget(makeDivider());
-    m_settings_btn = new AnimatedToolButton(bar);
-    m_settings_btn->setIcon(QIcon(":/icons/settings2.svg"));
-    m_settings_btn->setIconSize(QSize(Theme::kIconSideBar, Theme::kIconSideBar));
-    m_settings_btn->setToolTip(tr("Settings"));
-    m_settings_btn->setCheckable(true);
-    m_settings_btn->setAutoExclusive(false);
-    m_settings_btn->setFixedSize(Theme::kToolBarW, Theme::kSideButtonH);
-    connect(m_settings_btn, &QToolButton::clicked, this, [this]() { togglePanel(PanelSettings); });
-    layout->addWidget(m_settings_btn);
 
     return bar;
 }
@@ -244,7 +146,7 @@ void MainWindow::setupToolBar()
 
     // -- Export (dropdown button) ---------------------------------------------
     m_export_btn = new QToolButton(tb);
-    m_export_btn->setIcon(QIcon(":/icons/export.svg"));
+    m_export_btn->setIcon(Theme::icon(":/icons/export.svg"));
     m_export_btn->setToolButtonStyle(Qt::ToolButtonIconOnly);
     m_export_btn->setPopupMode(QToolButton::InstantPopup);
     m_export_btn->setToolTip(tr("Export project data.\n"
@@ -272,7 +174,7 @@ void MainWindow::setupToolBar()
 
     if constexpr (Features::kDataLibrary) {
         auto* btn_db = new QToolButton(tb);
-        btn_db->setIcon(QIcon(":/icons/database.svg"));
+        btn_db->setIcon(Theme::icon(":/icons/database.svg"));
         btn_db->setToolTip(tr("Data Library — sources, layers, contacts, and project health."));
         btn_db->setToolButtonStyle(Qt::ToolButtonIconOnly);
         connect(btn_db, &QToolButton::clicked, this, &MainWindow::onDataLibraryOpen);
@@ -281,7 +183,7 @@ void MainWindow::setupToolBar()
 
     if constexpr (Features::kContacts) {
         auto* btn_contacts = new QToolButton(tb);
-        btn_contacts->setIcon(QIcon(":/icons/contacts.svg"));
+        btn_contacts->setIcon(Theme::icon(":/icons/contacts.svg"));
         btn_contacts->setToolTip(tr("Contact Manager — all contacts across SSS / SBP / MAG / MBES.\n"
                                     "Filter by sensor, search, navigate, remove, and export."));
         btn_contacts->setToolButtonStyle(Qt::ToolButtonIconOnly);
@@ -311,7 +213,7 @@ void MainWindow::setupToolBar()
     QToolButton* module_tb_btns[3] = {};
     for (int i = 0; i < 3; ++i) {
         auto* btn = new QToolButton(tb);
-        btn->setIcon(QIcon(QString::fromUtf8(appCommand(module_btns[i].id).icon)));
+        btn->setIcon(Theme::icon(QString::fromUtf8(appCommand(module_btns[i].id).icon)));
         btn->setToolTip(module_btns[i].tip);
         btn->setCheckable(module_btns[i].checkable);
         btn->setEnabled(module_btns[i].enabled);
@@ -327,20 +229,115 @@ void MainWindow::setupToolBar()
     connect(m_btn_sbp_open, &QToolButton::clicked, this, &MainWindow::onSubBottomOpen);
     connect(module_tb_btns[2], &QToolButton::clicked, this, &MainWindow::onWaterfallOpen);
 
-    // -- Map tool keyboard shortcuts ------------------------------------------
-    // ApplicationShortcut so V/S/Z/M fire even when a viewer window has focus.
-    auto addShortcut = [this](const QKeySequence& key, void (MainWindow::*slot)()) {
-        auto* act = new QAction(this);
-        act->setShortcut(key);
-        act->setShortcutContext(Qt::ApplicationShortcut);
-        addAction(act);
-        connect(act, &QAction::triggered, this, slot);
+    tb->addSeparator();
+
+    // -- Interactive map tools ---------------------------------------------------
+    // One exclusive group covers every interactive tool (nav + contact +
+    // feature drawing): exactly one active at a time app-wide.
+    if (!m_tool_grp) {
+        m_tool_grp = new QButtonGroup(this);
+        m_tool_grp->setExclusive(true);
+    }
+    auto addToolTbBtn = [&](QToolButton*& out, const char* icon, const QString& tip,
+                            void (MainWindow::*slot)(), bool checked = false) {
+        auto* btn = new QToolButton(tb);
+        btn->setIcon(Theme::icon(icon));
+        btn->setToolTip(tip);
+        btn->setCheckable(true);
+        btn->setChecked(checked);
+        btn->setToolButtonStyle(Qt::ToolButtonIconOnly);
+        m_tool_grp->addButton(btn);
+        connect(btn, &QToolButton::clicked, this, slot);
+        tb->addWidget(btn);
+        out = btn;
     };
-    addShortcut(QKeySequence("V"), &MainWindow::onToolCursor);
-    addShortcut(QKeySequence("S"), &MainWindow::onToolSelect);
-    addShortcut(QKeySequence("Z"), &MainWindow::onToolZoom);
-    addShortcut(QKeySequence("M"), &MainWindow::onToolMeasure);
-    addShortcut(QKeySequence("C"), &MainWindow::onAddContact);
+    addToolTbBtn(m_cursor_btn,  ":/icons/cursor.svg",
+        tr("Cursor (V) — pan and inspect"), &MainWindow::onToolCursor, true);
+    addToolTbBtn(m_select_btn,  ":/icons/select.svg",
+        tr("Select (S) — click to select a layer or feature"), &MainWindow::onToolSelect);
+    addToolTbBtn(m_zoom_btn,    ":/icons/zoom.svg",
+        tr("Zoom (Z) — scroll or drag to zoom the map"), &MainWindow::onToolZoom);
+    addToolTbBtn(m_measure_btn, ":/icons/measure.svg",
+        tr("Measure (M) — click points to measure distance"), &MainWindow::onToolMeasure);
+    addToolTbBtn(m_contact_btn, ":/icons/add_contact.svg",
+        tr("Contact (C) — click map to place a contact pick.\n"
+           "Stays active; switch tools to stop placing."), &MainWindow::onAddContact);
+
+    tb->addSeparator();
+
+    // -- Feature drawing tools (polygon / line / pen) ---------------------------
+    auto addFeatureBtn = [&](QToolButton*& out, const char* icon,
+                             const QString& tip, int kind) {
+        auto* btn = new QToolButton(tb);
+        btn->setIcon(Theme::icon(icon));
+        btn->setToolTip(tip);
+        btn->setCheckable(true);
+        btn->setToolButtonStyle(Qt::ToolButtonIconOnly);
+        m_tool_grp->addButton(btn);
+        connect(btn, &QToolButton::clicked, this, [this, kind]() { onDrawFeature(kind); });
+        tb->addWidget(btn);
+        out = btn;
+    };
+    addFeatureBtn(m_feat_poly_btn, ":/icons/draw_polygon.svg",
+        tr("Draw Polygon — click to add vertices; double-click or Enter closes the area.\n"
+           "Esc cancels, Backspace removes the last vertex."), 1);
+    addFeatureBtn(m_feat_line_btn, ":/icons/draw_line.svg",
+        tr("Draw Line — click to add vertices; double-click or Enter finishes.\n"
+           "Esc cancels, Backspace removes the last vertex."), 2);
+    addFeatureBtn(m_feat_pen_btn,  ":/icons/draw_pen.svg",
+        tr("Draw Freehand (Pen) — press and drag on the map; release to finish."), 3);
+
+    // -- Right-aligned overflow + settings (moved from the retired right rail) --
+    {
+        auto* spacer = new QWidget(tb);
+        spacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+        tb->addWidget(spacer);
+
+        auto* more_btn = new QToolButton(tb);
+        more_btn->setIcon(Theme::icon(":/icons/more.svg"));
+        more_btn->setToolTip(tr("More actions"));
+        more_btn->setToolButtonStyle(Qt::ToolButtonIconOnly);
+        more_btn->setPopupMode(QToolButton::InstantPopup);
+        auto* menu = new QMenu(more_btn);
+        auto* act_3d = menu->addAction(
+            Theme::icon(":/icons/layers.svg"),
+            tr("Toggle 3D View"),
+            this, &MainWindow::onToggle3D);
+        act_3d->setToolTip(
+            tr("Switch to OpenGL terrain/sonar-drape view. Run again to return to 2D plan view."));
+        menu->addSeparator();
+        auto* act_reset = menu->addAction(
+            Theme::icon(":/icons/reset_raw.svg"),
+            tr("Reset to Raw Navigation"),
+            this, &MainWindow::onResetRaw);
+        act_reset->setToolTip(
+            tr("Discards all navigation corrections for the current sidescan layer\n"
+               "and reloads it with the original recorded GPS positions."));
+        auto* act_clear = menu->addAction(
+            Theme::icon(":/icons/clear_contacts.svg"),
+            tr("Clear All Contacts"),
+            this, &MainWindow::onClearContacts);
+        act_clear->setToolTip(tr("Removes every contact pick from this project."));
+        more_btn->setMenu(menu);
+        tb->addWidget(more_btn);
+
+        m_settings_btn = new QToolButton(tb);
+        m_settings_btn->setIcon(Theme::icon(":/icons/settings2.svg"));
+        m_settings_btn->setToolTip(tr("Settings"));
+        m_settings_btn->setCheckable(true);
+        m_settings_btn->setAutoExclusive(false);
+        m_settings_btn->setToolButtonStyle(Qt::ToolButtonIconOnly);
+        connect(m_settings_btn, &QToolButton::clicked, this, [this]() { togglePanel(PanelSettings); });
+        tb->addWidget(m_settings_btn);
+    }
+
+    // -- Map tool keyboard shortcuts ------------------------------------------
+    // Single-letter tools (V/S/Z/M/C) are handled by MainWindow::eventFilter on
+    // the application, NOT by QShortcuts: Qt's shortcut map consumes plain-letter
+    // shortcuts before any focused text field sees them, which made those letters
+    // untypeable in every line edit in the app. The filter only fires when the
+    // focus widget is not accepting text (see MainWindow.Tools.cpp).
+    qApp->installEventFilter(this);
 }
 
 } // namespace dolphin::ui

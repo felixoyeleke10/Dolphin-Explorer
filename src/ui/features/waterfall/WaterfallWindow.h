@@ -105,6 +105,11 @@ signals:
                         int channel_idx,
                         const QPixmap& snapshot);
 
+    // Open the shared "Edit contact details" editor. id = specific contact
+    // (marker double-click) or 0 (panel button → first contact on this line);
+    // line_id scopes the editor's Prev/Next to this line's contacts.
+    void contactEditRequested(uint64_t id, const QString& line_id);
+
     // Fired when the user draws a polygon/polyline feature on the waterfall.
     // vertices are (lon,lat); polygon=true closes the shape. MainWindow creates the
     // core::Feature in the project.
@@ -254,6 +259,8 @@ private:
     // Converts m_project_contacts for the current layer + window to WfContacts
     // and pushes them to m_view as the external overlay.
     void refreshContactOverlay();
+    // Reflect the active feature tool on the toolbar toggles (signal-blocked).
+    void syncFeatureToolButtons(int tool);
 
     // Apply nav corrections then re-pipeline entirely off the UI thread.
     // Replaces m_raw_pings with the corrected set on completion.
@@ -289,6 +296,10 @@ private:
     QTimer*                   m_scroll_debounce  = nullptr;
     QTimer*                   m_repipe_debounce  = nullptr;  // batches rapid repipe triggers
     QToolButton*              m_btn_contact  = nullptr;  // "Add Contact" toolbar toggle
+    // Feature drawing toolbar toggles (1=polygon, 2=line, 3=pen)
+    QToolButton*              m_btn_feat_poly = nullptr;
+    QToolButton*              m_btn_feat_line = nullptr;
+    QToolButton*              m_btn_feat_pen  = nullptr;
     QComboBox*                m_freq_selector = nullptr; // frequency band picker (dual-freq only)
 
     QLabel*       m_status_left   = nullptr;   // errors / mode messages (incl. loading)

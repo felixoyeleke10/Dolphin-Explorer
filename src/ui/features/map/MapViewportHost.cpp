@@ -18,6 +18,7 @@
 #include <QToolButton>
 #include <QVBoxLayout>
 
+#include <algorithm>
 #include <functional>  // std::hash
 #include <limits>
 #include <vector>
@@ -55,50 +56,52 @@ MapViewportHost::MapViewportHost(QWidget* parent)
     m_btn->setToolTip(tr("Switch to 3D OpenGL view"));
     connect(m_btn, &QToolButton::clicked, this, [this]() { setMode3D(!m_is_3d); });
 
-    // -- Load Terrain button (visible in 3D mode only) --------------------
-    m_terrain_btn = new QToolButton(this);
-    m_terrain_btn->setText(tr("⊞ Terrain"));
-    m_terrain_btn->setObjectName("map3DTerrainBtn");
-    m_terrain_btn->setFixedHeight(Theme::kFormBtnH);
-    m_terrain_btn->setToolTip(tr("Load XYZ/CSV bathymetry file into 3D view"));
-    m_terrain_btn->hide();
-    connect(m_terrain_btn, &QToolButton::clicked, this, &MapViewportHost::promptLoadTerrain);
-
-    // Status label shown during terrain load
-    m_terrain_label = new QLabel(this);
-    m_terrain_label->setObjectName("map3DTerrainLabel");
-    m_terrain_label->hide();
-
-    // Viewport toolbar (2D/3D toggle + Terrain). These live in a real toolbar row, NOT
-    // floating over the viewport: the 3D view is a native QOpenGLWindow that renders on
-    // top of sibling widgets, so a floating button would be hidden in 3D and you could
-    // never switch back. Adding them to a layout reparents them out of the GL region.
+    // Floating "3D" button, overlaid bottom-right on the 2D map (a plain
+    // widget floats fine over the 2D view — it is not a native window).
+    // In 3D mode this is hidden: the QWindowContainer stacks the native GL
+    // window above every sibling widget (documented Qt limitation), so
+    // MapView3D draws its own "2D" / "⊞ Terrain" chips inside the HUD instead
+    // (MapView3D::drawViewButtons) — same corner, same look.
+    m_vp_overlay = new QWidget(this);
+    m_vp_overlay->setObjectName("mapViewportOverlay");
     {
-        auto* vp_tools = new QWidget(this);
-        vp_tools->setObjectName("mapViewportToolbar");
-        auto* tb = makeCompactLayout<QHBoxLayout>(vp_tools);
-        tb->setContentsMargins(Theme::kMap3DMargin, 2, Theme::kMap3DMargin, 2);
-        tb->setSpacing(Theme::kSpacing2);
-        tb->addStretch(1);
-        tb->addWidget(m_terrain_label);
-        tb->addWidget(m_terrain_btn);
+        auto* tb = makeCompactLayout<QHBoxLayout>(m_vp_overlay);
         tb->addWidget(m_btn);
-        layout->addWidget(vp_tools);
     }
 
-    // Empty-state overlay — transparent QWidget covering the full viewport.
-    // A QVBoxLayout centers the import button automatically; no manual move() needed.
+    // Empty-state launcher — transparent overlay covering the full viewport.
+    // Instead of a bare "no survey" message it offers the two ways forward:
+    // reopen a recent project or import files.
     m_empty_state      = new QWidget(this);
     auto* empty_layout = makeCompactLayout<QVBoxLayout>(m_empty_state);
-    empty_layout->addStretch(64);   // push button to ~64 % from top, clear of the painted title
+    empty_layout->addStretch(42);
 
     m_import_hint_btn = new QPushButton(tr("Import Files…"), m_empty_state);
     m_import_hint_btn->setObjectName("mapImportHintBtn");
     connect(m_import_hint_btn, &QPushButton::clicked,
             this, &MapViewportHost::importFilesRequested);
-
     empty_layout->addWidget(m_import_hint_btn, 0, Qt::AlignHCenter);
-    empty_layout->addStretch(36);
+
+    // Recent Projects card — populated by setRecentProjects (hidden when empty).
+    m_recent_box = new QWidget(m_empty_state);
+    m_recent_box->setObjectName("mapRecentBox");
+    m_recent_box->setFixedWidth(300);
+    auto* rb = new QVBoxLayout(m_recent_box);
+    rb->setContentsMargins(Theme::kSpacing3, Theme::kSpacing3,
+                           Theme::kSpacing3, Theme::kSpacing3);
+    rb->setSpacing(2);
+    auto* recent_hdr = new QLabel(tr("RECENT PROJECTS"), m_recent_box);
+    recent_hdr->setObjectName("mapRecentHdr");
+    rb->addWidget(recent_hdr);
+    m_recent_items_l = new QVBoxLayout();
+    m_recent_items_l->setContentsMargins(0, 2, 0, 0);
+    m_recent_items_l->setSpacing(1);
+    rb->addLayout(m_recent_items_l);
+    m_recent_box->hide();
+
+    empty_layout->addSpacing(Theme::kSpacing5);
+    empty_layout->addWidget(m_recent_box, 0, Qt::AlignHCenter);
+    empty_layout->addStretch(46);
 
     // Hide overlay once any 2D layer loads; restored by setShowImportHint on project change.
     connect(m_view2d, &MapView::layerDataUpdated, this, [this](const std::string&) {
@@ -143,6 +146,10 @@ MapViewportHost::MapViewportHost(QWidget* parent)
     // data only sets dirty flags, so there is no rendering cost in 2D mode. (The GL
     // context is shared app-wide via AA_ShareOpenGLContexts, set in main().)
     ensureView3D();
+
+    // The GL container's native window was just created — re-assert the
+    // overlay cluster's place at the top of the native sibling order.
+    positionOverlay();
 }
 
 MapView3D* MapViewportHost::ensureView3D()
@@ -168,8 +175,6 @@ MapView3D* MapViewportHost::ensureView3D()
 
     connect(m_view3d, &MapView3D::terrainLoadFinished, this,
             [this](const std::string& /*id*/, bool ok, const QString& err) {
-                m_terrain_label->hide();
-                m_terrain_btn->setEnabled(true);
                 if (!ok) {
                     QMessageBox::warning(this, tr("Terrain Load Error"), err);
                     return;
@@ -187,6 +192,8 @@ MapView3D* MapViewportHost::ensureView3D()
             this, &MapViewportHost::cursorMoved);
     connect(m_view3d, &MapView3D::loadTerrainRequested,
             this, &MapViewportHost::promptLoadTerrain);
+    connect(m_view3d, &MapView3D::switchTo2DRequested,
+            this, [this]() { setMode3D(false); });
     connect(m_view3d, &MapView3D::layerClicked,
             this, &MapViewportHost::layerClicked);
     connect(m_view3d, &MapView3D::layersSelected,
@@ -331,11 +338,10 @@ void MapViewportHost::setMode3D(bool on)
     } else {
         m_stack->setCurrentWidget(m_view2d);
     }
-    m_btn->setText(on ? tr("2D") : tr("3D"));
-    m_btn->setToolTip(on ? tr("Switch to 2D plan view")
-                         : tr("Switch to 3D OpenGL view"));
-    if (m_terrain_btn)
-        m_terrain_btn->setVisible(on);
+    // In 3D the native GL window would cover the floating button — hide it;
+    // the in-HUD "2D" chip (drawn by MapView3D) is the way back.
+    if (m_vp_overlay)
+        m_vp_overlay->setVisible(!on);
 
     // Push cached viewport state into the newly-active view so the status bar
     // stays accurate and the new view opens at the same scale/rotation.
@@ -359,24 +365,52 @@ void MapViewportHost::setMode3D(bool on)
 void MapViewportHost::promptLoadTerrain()
 {
     if (!m_is_3d) return;
-    auto* view3d = ensureView3D();
 
     const QString path = QFileDialog::getOpenFileName(
         this, tr("Open Bathymetry File"), {},
         tr("XYZ / CSV files (*.xyz *.csv *.txt);;All files (*)"));
     if (path.isEmpty()) return;
 
-    // Use the file path as the layer ID (unique per file)
-    const std::string lid = path.toStdString();
+    loadTerrainPath(path);
+    // Let the owner persist the choice (project draping surface).
+    emit terrainFileLoaded(path);
+}
 
-    m_terrain_btn->setEnabled(false);
-    m_terrain_label->setText(tr("Loading terrain…"));
-    m_terrain_label->adjustSize();
-    m_terrain_label->show();
-    positionOverlay();
+void MapViewportHost::loadTerrainPath(const QString& path)
+{
+    // Works from either mode: the 3D view is pre-created, data uploads when
+    // it next paints. File path doubles as the terrain layer ID.
+    // z_is_depth = true: common convention for bathy XYZ files (Z = positive depth).
+    ensureView3D()->loadTerrainFile(path.toStdString(), path, /*z_is_depth=*/true);
+}
 
-    // z_is_depth = true: common convention for bathy XYZ files (Z = positive depth)
-    view3d->loadTerrainFile(lid, path, /*z_is_depth=*/true);
+void MapViewportHost::removeTerrainPath(const QString& path)
+{
+    if (m_view3d) m_view3d->removeTerrainLayer(path.toStdString());
+}
+
+void MapViewportHost::setRecentProjects(const QStringList& names,
+                                        const QStringList& paths)
+{
+    if (!m_recent_items_l) return;
+
+    while (auto* item = m_recent_items_l->takeAt(0)) {
+        if (auto* w = item->widget()) w->deleteLater();
+        delete item;
+    }
+
+    const int n = std::min({ int(names.size()), int(paths.size()), 6 });
+    for (int i = 0; i < n; ++i) {
+        auto* btn = new QPushButton(names[i], m_recent_box);
+        btn->setObjectName("mapRecentBtn");
+        btn->setToolTip(paths[i]);
+        btn->setCursor(Qt::PointingHandCursor);
+        const QString path = paths[i];
+        connect(btn, &QPushButton::clicked,
+                this, [this, path]() { emit openProjectRequested(path); });
+        m_recent_items_l->addWidget(btn);
+    }
+    m_recent_box->setVisible(n > 0);
 }
 
 void MapViewportHost::onLayerDataLoaded(const std::string& layer_id,
@@ -541,9 +575,14 @@ void MapViewportHost::panByPixels(int dx, int dy)
 
 void MapViewportHost::positionOverlay()
 {
-    // The 2D/3D toggle, Terrain button, and load label now live in the viewport
-    // toolbar row (a real layout, not floating) — they can't float over the native
-    // 3D surface. Nothing here needs manual positioning anymore.
+    // Pin the floating control cluster to the bottom-right corner of the
+    // viewport and keep its native window above the (native) 3D surface.
+    if (!m_vp_overlay) return;
+    m_vp_overlay->adjustSize();
+    const int m = Theme::kMap3DMargin;
+    m_vp_overlay->move(width()  - m_vp_overlay->width()  - m,
+                       height() - m_vp_overlay->height() - m);
+    m_vp_overlay->raise();
 }
 
 } // namespace dolphin::ui

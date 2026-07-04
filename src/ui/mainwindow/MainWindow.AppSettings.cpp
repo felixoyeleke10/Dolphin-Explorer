@@ -6,6 +6,8 @@
 #include "ui/systems/WindowRegistry.h"
 #include "ui/features/map/MapViewportHost.h"
 #include "ui/features/waterfall/WaterfallWindow.h"
+#include "ui/shell/AppStyle.h"
+#include "ui/shell/Theme.h"
 #include "ui/shell/ViewerWindow.h"
 
 #include <cstddef>
@@ -31,6 +33,13 @@ static TooltipBlocker* s_tooltip_blocker = nullptr;
 
 void MainWindow::applyLiveSettings(const AppSettingsDialog::Settings& s)
 {
+    // Theme — palette + stylesheet + native window frames, applied immediately.
+    // Re-setting the app stylesheet re-polishes EVERY widget (expensive), so
+    // only do it when the mode actually changed.
+    const Theme::Mode want = (s.theme == 1) ? Theme::Mode::Light : Theme::Mode::Dark;
+    if (want != Theme::mode())
+        AppStyle::apply(want);
+
     // Worker thread pool — takes effect for the next job submitted.
     QThreadPool::globalInstance()->setMaxThreadCount(s.worker_threads);
 

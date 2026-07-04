@@ -58,6 +58,30 @@ void WaterfallWindow::buildToolbar()
            "Click the waterfall on a target, shadow, cable, pipeline, debris, or anomaly to place a point contact."));
     m_btn_contact->setCheckable(true);
 
+    // Feature drawing tools — polygon / line / pen on the waterfall (same icons
+    // and semantics as the main-window toolbar). Manual exclusivity: clicking
+    // the active tool again turns drawing off.
+    auto addFeatureBtn = [this](QToolButton*& out, const char* icon, const QString& tip) {
+        out = m_toolbar->addButton(icon, tip);
+        out->setCheckable(true);
+    };
+    addFeatureBtn(m_btn_feat_poly, ":/icons/draw_polygon.svg",
+        tr("Draw Polygon — click to add vertices; double-click or Enter closes the area.\n"
+           "Esc cancels, Backspace removes the last vertex."));
+    addFeatureBtn(m_btn_feat_line, ":/icons/draw_line.svg",
+        tr("Draw Line — click to add vertices; double-click or Enter finishes.\n"
+           "Esc cancels, Backspace removes the last vertex."));
+    addFeatureBtn(m_btn_feat_pen, ":/icons/draw_pen.svg",
+        tr("Draw Freehand (Pen) — press and drag on the waterfall; release to finish."));
+
+    auto* btn_contact_edit = m_toolbar->addButton(":/icons/contact_edit.svg",
+        tr("Edit contact details for this line's contacts.\n"
+           "Tip: double-click a contact marker on the waterfall to edit that contact directly."));
+    connect(btn_contact_edit, &QToolButton::clicked, this, [this]() {
+        const QString line = m_layer ? QString::fromStdString(m_layer->id) : QString{};
+        emit contactEditRequested(0, line);
+    });
+
     auto* btn_contact_mgr = m_toolbar->addButton(":/icons/contacts.svg",
         tr("Open the Contact Manager to review, group, and export all contacts."));
     connect(btn_contact_mgr, &QToolButton::clicked,
@@ -100,6 +124,11 @@ QList<CommandPaletteItem> WaterfallWindow::buildCommandItems()
     add("Tools", tr("Add Contact"), "C", "contact pick mark",
         has_layer, [this] {
             if (m_btn_contact) m_btn_contact->setChecked(!m_btn_contact->isChecked());
+        });
+    add("Tools", tr("Edit Contact Details"), "", "contact edit details editor",
+        has_layer, [this] {
+            const QString line = m_layer ? QString::fromStdString(m_layer->id) : QString{};
+            emit contactEditRequested(0, line);
         });
     add("Tools", tr("Contact Manager"), "", "contacts manager review group export",
         true, [this] { emit contactManagerRequested(); });

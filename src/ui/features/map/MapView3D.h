@@ -141,6 +141,11 @@ signals:
     void terrainLoadFinished(const std::string& layer_id, bool success,
                              const QString& error_msg);
     void loadTerrainRequested();
+    // Emitted when the user clicks the in-HUD "2D" chip. The 2D/3D switch UI
+    // must be drawn INSIDE the GL scene while in 3D: the QWindowContainer
+    // stacks this native window above every sibling widget, so no external
+    // button can float over the viewport (documented Qt limitation).
+    void switchTo2DRequested();
     // Emitted once after initializeGL with GPU renderer/version/max-texture-size.
     void gpuInfo(const QString& renderer, const QString& version, int max_tex_size);
     // Emitted for each shader that fails to compile or link during initializeGL.
@@ -262,6 +267,7 @@ private:
     void drawHUD(QPainter& painter);
     void drawCompassRose(QPainter& painter);
     void drawScaleBar3D(QPainter& painter);
+    void drawViewButtons(QPainter& painter);   // in-HUD "⊞ Terrain" / "2D" chips
 
     void drawLines(QOpenGLBuffer& vbo, int count,
                    const QColor& color, float line_width = 1.f);
@@ -354,6 +360,11 @@ private:
     QElapsedTimer m_fps_timer;
     float         m_fps_avg     = 0.f;
     int           m_fps_frames  = 0;
+
+    // In-HUD view buttons (bottom-right chips) — hit-tested in mousePressEvent.
+    QRect m_hud_2d_rect;
+    QRect m_hud_terrain_rect;
+    bool  m_terrain_loading = false;
 
     // -- Camera ------------------------------------------------------------
     Camera3D m_camera;

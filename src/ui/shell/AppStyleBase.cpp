@@ -94,6 +94,7 @@ QString qssBase()
         "  border: none; width: 20px;"
         "  subcontrol-origin: padding; subcontrol-position: right center;"
         "}"
+        "QComboBox::down-arrow { image: url(:/icons/spin_down.svg); width: 8px; height: 6px; }"
         "QComboBox QAbstractItemView {"
         "  background: @bgCard; border: 1px solid @borderMenu;"
         "  color: @textPrimary; selection-background-color: rgba(@accentRgb,0.3);"
@@ -115,6 +116,33 @@ QString qssBase()
         "}"
         "QCheckBox::indicator:disabled { background: rgba(255,255,255,0.03); border-color: rgba(255,255,255,0.07); }"
         "QCheckBox:disabled { color: @textDisabled; }"
+
+        // -- Item-view check indicators (explorer tree, tables, lists) ---------
+        // Item checkboxes are drawn by the view, not by QCheckBox — without these
+        // rules they fall back to the unstyled Fusion indicator (dark box that
+        // reads wrong in both themes). Mirror the QCheckBox treatment exactly.
+        "QTreeView::indicator, QTreeWidget::indicator,"
+        "QListView::indicator, QListWidget::indicator,"
+        "QTableView::indicator, QTableWidget::indicator {"
+        "  width: 13px; height: 13px; border-radius: @radius1;"
+        "  border: 1px solid rgba(255,255,255,0.18); background: @overlayMut;"
+        "}"
+        "QTreeView::indicator:hover, QTreeWidget::indicator:hover,"
+        "QListView::indicator:hover, QListWidget::indicator:hover,"
+        "QTableView::indicator:hover, QTableWidget::indicator:hover {"
+        "  border-color: rgba(255,255,255,0.35);"
+        "}"
+        "QTreeView::indicator:checked, QTreeWidget::indicator:checked,"
+        "QListView::indicator:checked, QListWidget::indicator:checked,"
+        "QTableView::indicator:checked, QTableWidget::indicator:checked {"
+        "  background: @accent; border-color: @accent;"
+        "  image: url(:/icons/check_white.svg);"
+        "}"
+        "QTreeView::indicator:disabled, QTreeWidget::indicator:disabled,"
+        "QListView::indicator:disabled, QListWidget::indicator:disabled,"
+        "QTableView::indicator:disabled, QTableWidget::indicator:disabled {"
+        "  background: rgba(255,255,255,0.03); border-color: rgba(255,255,255,0.07);"
+        "}"
 
         // -- QRadioButton (global base) ---------------------------------------
         "QRadioButton {"

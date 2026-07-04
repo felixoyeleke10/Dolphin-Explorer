@@ -1,6 +1,7 @@
 // DataLibraryWindow.cpp — constructor, page switching, modality filter, project binding.
 
 #include "ui/features/datalibrary/DataLibraryWindow.h"
+#include "ui/shell/Theme.h"
 #include "ui/shared/UiUtils.h"
 #include "app/project/Project.h"
 #include "app/layers/DataLayer.h"
@@ -19,7 +20,7 @@ DataLibraryWindow::DataLibraryWindow(QWidget* parent)
     : QMainWindow(parent)
 {
     setWindowTitle(tr("Data Library"));
-    setWindowIcon(QIcon(QStringLiteral(":/icons/database.svg")));
+    setWindowIcon(Theme::icon(QStringLiteral(":/icons/database.svg")));
     setMinimumSize(1000, 500);
     resize(1300, 720);
 

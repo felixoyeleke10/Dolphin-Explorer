@@ -15,7 +15,13 @@
 #include "core/Contact.h"
 #include "ui/shared/panels/LineListPanel.h"
 #include "ui/shared/widgets/LayerPickerWidget.h"
+#include "ui/mainwindow/rightpanel/RightPanelHost.h"
+#include "ui/shared/panels/ContactPickingPanel.h"
+#include "ui/shell/WindowChrome.h"
 
+#include <QAbstractSpinBox>
+#include <QApplication>
+#include <QComboBox>
 #include <QDir>
 #include <QDateTime>
 #include <QFile>
@@ -23,9 +29,13 @@
 #include <QFileInfo>
 #include <QIcon>
 #include <QImage>
+#include <QKeyEvent>
+#include <QLineEdit>
 #include <QMessageBox>
 #include <QPainter>
 #include <QPixmap>
+#include <QPlainTextEdit>
+#include <QTextEdit>
 #include <QTextStream>
 #include <QToolButton>
 #include <vector>
@@ -342,11 +352,70 @@ void MainWindow::onMergeLayers(const std::vector<std::string>& layer_ids)
 
 // -- Tool stubs ----------------------------------------------------------------
 
+bool MainWindow::eventFilter(QObject* obj, QEvent* ev)
+{
+    // Dark native title bars, app-wide: every top-level window (viewers, the
+    // contact editor/manager, settings dialogs, …) gets the DWM dark frame the
+    // moment it first shows — the white Windows frame clashes with the theme.
+    if (ev->type() == QEvent::Show) {
+        if (auto* w = qobject_cast<QWidget*>(obj); w && w->isWindow())
+            applyDarkTitleBar(w);
+    }
+
+    // Single-letter tool keys (V/S/Z/M/C), app-wide so they also work from the
+    // viewer windows — but NEVER while the user is typing or a dialog is open.
+    if (ev->type() == QEvent::KeyPress) {
+        auto* ke = static_cast<QKeyEvent*>(ev);
+        if (ke->modifiers() == Qt::NoModifier
+                && !QApplication::activeModalWidget()
+                && !QApplication::activePopupWidget()) {
+            QWidget* fw = QApplication::focusWidget();
+            const bool typing = fw
+                && (qobject_cast<QLineEdit*>(fw)
+                    || qobject_cast<QTextEdit*>(fw)
+                    || qobject_cast<QPlainTextEdit*>(fw)
+                    || qobject_cast<QAbstractSpinBox*>(fw)
+                    || (qobject_cast<QComboBox*>(fw)
+                        && static_cast<QComboBox*>(fw)->isEditable()));
+            if (!typing) {
+                switch (ke->key()) {
+                case Qt::Key_V: onToolCursor();  return true;
+                case Qt::Key_S: onToolSelect();  return true;
+                case Qt::Key_Z: onToolZoom();    return true;
+                case Qt::Key_M: onToolMeasure(); return true;
+                case Qt::Key_C: onAddContact();  return true;
+                default: break;
+                }
+            }
+        }
+    }
+    return QMainWindow::eventFilter(obj, ev);
+}
+
+void MainWindow::syncAnnotationToggles(bool contact_active, int feature_tool)
+{
+    // Every interactive tool (nav, contact, polygon/line/pen) now lives in the
+    // one exclusive toolbar group — checking the active tool's button is enough;
+    // the group unchecks the previous one. Both-inactive means a nav-tool
+    // handler is taking over and checks its own button.
+    QToolButton* to_check = nullptr;
+    if (contact_active)         to_check = m_contact_btn;
+    else if (feature_tool == 1) to_check = m_feat_poly_btn;
+    else if (feature_tool == 2) to_check = m_feat_line_btn;
+    else if (feature_tool == 3) to_check = m_feat_pen_btn;
+    if (to_check) { QSignalBlocker sb(to_check); to_check->setChecked(true); }
+
+    if (m_modal_host) {
+        if (auto* cp = m_modal_host->contactPickingPanel()) cp->setPickActive(contact_active);
+    }
+}
+
 void MainWindow::onToolCursor()
 {
     if (m_map_view) m_map_view->setInputMode(MapView::ModePan);
     if (m_viewport_host) m_viewport_host->setToolMode(ToolMode::Pan);
     if (m_cursor_btn) { QSignalBlocker sb(m_cursor_btn); m_cursor_btn->setChecked(true); }
+    syncAnnotationToggles(false, 0);
     m_app_state->setToolMode(ToolMode::Pan);
 }
 
@@ -355,6 +424,7 @@ void MainWindow::onToolSelect()
     if (m_map_view) m_map_view->setInputMode(MapView::ModeSelect);
     if (m_viewport_host) m_viewport_host->setToolMode(ToolMode::Select);
     if (m_select_btn) { QSignalBlocker sb(m_select_btn); m_select_btn->setChecked(true); }
+    syncAnnotationToggles(false, 0);
     m_app_state->setToolMode(ToolMode::Select);
 }
 
@@ -363,6 +433,7 @@ void MainWindow::onToolZoom()
     if (m_map_view) m_map_view->setInputMode(MapView::ModeZoom);
     if (m_viewport_host) m_viewport_host->setToolMode(ToolMode::Zoom);
     if (m_zoom_btn) { QSignalBlocker sb(m_zoom_btn); m_zoom_btn->setChecked(true); }
+    syncAnnotationToggles(false, 0);
     m_app_state->setToolMode(ToolMode::Zoom);
 }
 
@@ -371,6 +442,7 @@ void MainWindow::onToolMeasure()
     if (m_map_view) m_map_view->setInputMode(MapView::ModeMeasure);
     if (m_viewport_host) m_viewport_host->setToolMode(ToolMode::Measure);
     if (m_measure_btn) { QSignalBlocker sb(m_measure_btn); m_measure_btn->setChecked(true); }
+    syncAnnotationToggles(false, 0);
     m_app_state->setToolMode(ToolMode::Measure);
     appendJobMessage(tr("Click to add points. Right-click or double-click to reset."));
 }
@@ -391,11 +463,14 @@ void MainWindow::onAddContact()
 {
     if (!currentProject()) {
         appendJobMessage(tr("Open a project before placing contacts."));
+        // The toolbar click already checked the Contact button (exclusive group);
+        // fall back to the default tool so the UI doesn't claim an inactive mode.
+        onToolCursor();
         return;
     }
     if (m_map_view) m_map_view->setInputMode(MapView::ModePickContact);
     if (m_viewport_host) m_viewport_host->setToolMode(ToolMode::ContactPick);
-    if (m_contact_btn) { QSignalBlocker sb(m_contact_btn); m_contact_btn->setChecked(true); }
+    syncAnnotationToggles(true, 0);   // contact on, feature off, toolbar btn checked
     m_app_state->setToolMode(ToolMode::ContactPick);
     appendJobMessage(tr("Click on the map to place a contact. Press V or another tool to stop."));
 }
@@ -445,25 +520,31 @@ void MainWindow::onContactPickedOnMap(double lon, double lat)
         tr("Contact %1 placed").arg(label));
 }
 
-void MainWindow::onDrawFeature(bool polygon, const QString& classification)
+void MainWindow::onDrawFeature(int tool)
 {
     if (!currentProject()) {
         appendJobMessage(tr("Open a project before drawing features."));
+        // The toolbar click already checked the feature button (exclusive
+        // group); fall back to the default tool so the UI stays honest.
+        onToolCursor();
+        return;
+    }
+    if (tool == 0) {   // deactivate → back to the default Cursor/Pan tool
+        onToolCursor();
         return;
     }
     // Feature drawing happens on the 2D chart; leave 3D mode if active.
     if (m_viewport_host && m_viewport_host->isMode3D())
         m_viewport_host->setMode3D(false);
-    m_pending_feature_class = classification.toStdString();
     if (m_map_view) {
-        m_map_view->setFeatureDrawPolygon(polygon);
+        m_map_view->setFeatureDrawKind(tool);
         m_map_view->setInputMode(MapView::ModeDrawFeature);
     }
-    appendJobMessage(polygon
-        ? tr("Draw polygon: click to add points, double-click or Enter to finish, "
-             "Esc or right-click to cancel.")
-        : tr("Draw line: click to add points, double-click or Enter to finish, "
-             "Esc or right-click to cancel."));
+    syncAnnotationToggles(false, tool);   // feature on, contact off
+    appendJobMessage(
+        tool == 1 ? tr("Polygon: click points, double-click or Enter to close, Esc to cancel.")
+      : tool == 2 ? tr("Line: click points, double-click or Enter to finish, Esc to cancel.")
+                  : tr("Pen: press and drag to draw freehand; release to finish."));
 }
 
 void MainWindow::onFeatureDrawn(const std::vector<QPointF>& lonlat_vertices, bool polygon)
@@ -472,7 +553,6 @@ void MainWindow::onFeatureDrawn(const std::vector<QPointF>& lonlat_vertices, boo
 
     core::Feature f;
     f.type = polygon ? core::FeatureType::Polygon : core::FeatureType::Polyline;
-    f.classification = m_pending_feature_class;
     f.spatial_ref = currentProject()->displaySpatialRef();
     f.vertices.reserve(lonlat_vertices.size());
     for (const QPointF& v : lonlat_vertices)

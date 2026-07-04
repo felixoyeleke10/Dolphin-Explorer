@@ -31,8 +31,8 @@ constexpr QRgb kClrReady   = 0xff28a745u;
 constexpr QRgb kClrFailed  = 0xffdc3545u;
 constexpr QRgb kClrPending = 0xfffd7e14u;
 
-QColor mutedText() { return QColor(Theme::kTextMuted); }
-QColor softText()  { return QColor(Theme::kTextSoft); }
+QColor mutedText() { return Theme::textMutedColor(); }
+QColor softText()  { return Theme::textSoftColor(); }
 
 // Resolve a tag id to its palette color. Falls back to hash-derived hue for
 // any id not in the palette (e.g. old text tags loaded from disk).
@@ -242,7 +242,9 @@ void LineListPanel::buildContactsSection(QTreeWidgetItem* parent)
             if (c.group_id != grp.id) continue;
             auto* item = new QTreeWidgetItem(
                 gi, QStringList{contactDisplayText(c, m_project, true)});
-            item->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
+            item->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable
+                           | Qt::ItemIsUserCheckable);
+            item->setCheckState(0, c.visible ? Qt::Checked : Qt::Unchecked);
             setItemType(item, ItemType::Contact);
             item->setData(0, kRoleId, static_cast<qulonglong>(c.id));
             item->setForeground(0, softText());
@@ -258,7 +260,9 @@ void LineListPanel::buildContactsSection(QTreeWidgetItem* parent)
         if (!c.group_id.empty()) continue;
         auto* item = new QTreeWidgetItem(
             sec, QStringList{contactDisplayText(c, m_project, true)});
-        item->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
+        item->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable
+                       | Qt::ItemIsUserCheckable);
+        item->setCheckState(0, c.visible ? Qt::Checked : Qt::Unchecked);
         setItemType(item, ItemType::Contact);
         item->setData(0, kRoleId, static_cast<qulonglong>(c.id));
         item->setForeground(0, softText());
@@ -280,7 +284,9 @@ void LineListPanel::buildFeaturesSection(QTreeWidgetItem* parent)
     }
     for (const auto& f : features) {
         auto* item = new QTreeWidgetItem(sec, QStringList{featureDisplayText(f)});
-        item->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
+        item->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable
+                       | Qt::ItemIsUserCheckable);
+        item->setCheckState(0, f.visible ? Qt::Checked : Qt::Unchecked);
         setItemType(item, ItemType::Feature);
         item->setData(0, kRoleId, static_cast<qulonglong>(f.id));
         item->setForeground(0, softText());
@@ -455,7 +461,9 @@ void LineListPanel::refreshContacts()
                     if (c.group_id != grp.id) continue;
                     auto* item = new QTreeWidgetItem(
                         gi, QStringList{contactDisplayText(c, m_project, true)});
-                    item->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
+                    item->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable
+                                   | Qt::ItemIsUserCheckable);
+                    item->setCheckState(0, c.visible ? Qt::Checked : Qt::Unchecked);
                     setItemType(item, ItemType::Contact);
                     item->setData(0, kRoleId, static_cast<qulonglong>(c.id));
                     item->setForeground(0, softText());
@@ -469,7 +477,9 @@ void LineListPanel::refreshContacts()
                 if (!c.group_id.empty()) continue;
                 auto* item = new QTreeWidgetItem(
                     sec, QStringList{contactDisplayText(c, m_project, true)});
-                item->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
+                item->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable
+                               | Qt::ItemIsUserCheckable);
+                item->setCheckState(0, c.visible ? Qt::Checked : Qt::Unchecked);
                 setItemType(item, ItemType::Contact);
                 item->setData(0, kRoleId, static_cast<qulonglong>(c.id));
                 item->setForeground(0, softText());
@@ -508,7 +518,9 @@ void LineListPanel::refreshFeatures()
         } else {
             for (const auto& f : features) {
                 auto* item = new QTreeWidgetItem(sec, QStringList{featureDisplayText(f)});
-                item->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
+                item->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable
+                               | Qt::ItemIsUserCheckable);
+                item->setCheckState(0, f.visible ? Qt::Checked : Qt::Unchecked);
                 setItemType(item, ItemType::Feature);
                 item->setData(0, kRoleId, static_cast<qulonglong>(f.id));
                 item->setForeground(0, softText());
@@ -517,6 +529,59 @@ void LineListPanel::refreshFeatures()
     }
     m_rebuilding = false;
     applyFilter(m_search->text());
+}
+
+void LineListPanel::refreshContactRow(uint64_t contact_id)
+{
+    if (!m_project) return;
+    const core::Contact* c = nullptr;
+    for (const auto& cc : m_project->contacts())
+        if (cc.id == contact_id) { c = &cc; break; }
+    if (!c) { refreshContacts(); return; }   // removed / unknown — rebuild
+
+    QTreeWidgetItemIterator it(m_tree);
+    while (*it) {
+        if (itemTypeOf(*it) == ItemType::Contact
+                && (*it)->data(0, kRoleId).toULongLong() == contact_id) {
+            m_rebuilding = true;
+            {
+                QSignalBlocker sb(m_tree);
+                (*it)->setText(0, contactDisplayText(*c, m_project, true));
+                (*it)->setCheckState(0, c->visible ? Qt::Checked : Qt::Unchecked);
+                applyContactTagDecoration(*it, *c);
+            }
+            m_rebuilding = false;
+            return;
+        }
+        ++it;
+    }
+    refreshContacts();   // row not found (e.g. group moved) — full rebuild
+}
+
+void LineListPanel::refreshFeatureRow(uint64_t feature_id)
+{
+    if (!m_project) return;
+    const core::Feature* f = nullptr;
+    for (const auto& ff : m_project->features())
+        if (ff.id == feature_id) { f = &ff; break; }
+    if (!f) { refreshFeatures(); return; }
+
+    QTreeWidgetItemIterator it(m_tree);
+    while (*it) {
+        if (itemTypeOf(*it) == ItemType::Feature
+                && (*it)->data(0, kRoleId).toULongLong() == feature_id) {
+            m_rebuilding = true;
+            {
+                QSignalBlocker sb(m_tree);
+                (*it)->setText(0, featureDisplayText(*f));
+                (*it)->setCheckState(0, f->visible ? Qt::Checked : Qt::Unchecked);
+            }
+            m_rebuilding = false;
+            return;
+        }
+        ++it;
+    }
+    refreshFeatures();
 }
 
 void LineListPanel::refreshLayer(const std::string& id)

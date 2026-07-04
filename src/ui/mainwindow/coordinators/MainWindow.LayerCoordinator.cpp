@@ -17,6 +17,7 @@
 #include "ui/mainwindow/rightpanel/RightPanel.SbpSignal.h"
 #include "ui/shared/panels/LineListPanel.h"
 #include "ui/shared/widgets/LayerPickerWidget.h"
+#include "ui/shared/widgets/PanelTabBar.h"
 #include "ui/features/waterfall/WaterfallWindow.h"
 #include "ui/features/subbottom/SubBottomWindow.h"
 #include "ui/features/map/MapView.h"
@@ -236,10 +237,11 @@ void MainWindow::onLayerSelected(const std::string& layer_id)
         using M = app::Modality;
         auto tab = layer->modality;
         if (tab != M::Sidescan && tab != M::SubBottom && tab != M::Magnetometer)
-            tab = M::Unknown;  // Map tab for Multibeam, Raster, etc.
+            tab = M::Unknown;  // Multibeam, Raster, etc. → no tab, universal sections only
         refreshSensorTab(tab);
     }
     updateToolsApplyBar();   // show the shared Apply bar for SSS/SBP layers only
+    refreshViewsPanel();     // left Views panel tracks the active layer's palettes
 
     // Always bring the Properties tab into view when a layer is selected.
     if (layer && m_props_stack && m_props_stack->currentIndex() != 0) {
@@ -583,16 +585,13 @@ void MainWindow::onRunSelectedLayer()
 void MainWindow::refreshSensorTab(app::Modality m)
 {
     using M = app::Modality;
-    for (auto* btn : { m_tab_sss, m_tab_sbp, m_tab_map, m_tab_mag })
-        if (btn) btn->blockSignals(true);
-
-    if (m_tab_sss) m_tab_sss->setChecked(m == M::Sidescan);
-    if (m_tab_sbp) m_tab_sbp->setChecked(m == M::SubBottom);
-    if (m_tab_map) m_tab_map->setChecked(m == M::Unknown);
-    if (m_tab_mag) m_tab_mag->setChecked(m == M::Magnetometer);
-
-    for (auto* btn : { m_tab_sss, m_tab_sbp, m_tab_map, m_tab_mag })
-        if (btn) btn->blockSignals(false);
+    // Uncheck-all first: the bar's group is exclusive, so plain setChecked(false)
+    // cannot clear a checked tab. Unknown (no sensor) leaves no tab checked —
+    // the modal host then shows only the universal sections.
+    if (m_sensor_bar) m_sensor_bar->clearSelection();
+    if      (m == M::Sidescan     && m_tab_sss) m_tab_sss->setChecked(true);
+    else if (m == M::SubBottom    && m_tab_sbp) m_tab_sbp->setChecked(true);
+    else if (m == M::Magnetometer && m_tab_mag) m_tab_mag->setChecked(true);
 
     if (m_modal_host)
         m_modal_host->setModalityFilter(m);
@@ -612,24 +611,20 @@ void MainWindow::refreshInspectorModalities()
     const bool has_sss = mods.contains(M::Sidescan);
     const bool has_sbp = mods.contains(M::SubBottom);
     const bool has_mag = mods.contains(M::Magnetometer);
-    const bool has_any = !mods.isEmpty();   // any layer → there's a map to show
 
-    // Show a sensor tab only when the project actually contains that modality, and
-    // the Map tab only when there's at least one layer on the map. No point dangling
-    // unusable tabs — an empty project shows no sensor tabs at all. A visible tab must
-    // also be enabled (the tabs start disabled at construction), or it cannot take the
-    // checked state and the Map tab stays selected while its sections show greyed.
+    // Show a sensor tab only when the project actually contains that modality.
+    // No point dangling unusable tabs — a project without sensor data hides the
+    // whole strip (the universal sections below stay). A visible tab must also
+    // be enabled (the tabs start disabled at construction) or it cannot take
+    // the checked state.
     auto setTab = [](QToolButton* b, bool on) { if (b) { b->setVisible(on); b->setEnabled(on); } };
     setTab(m_tab_sss, has_sss);
     setTab(m_tab_sbp, has_sbp);
     setTab(m_tab_mag, has_mag);
-    setTab(m_tab_map, has_any);
+    if (m_sensor_bar) m_sensor_bar->setVisible(has_sss || has_sbp || has_mag);
 
     // The tab that should be active for the current selection: the active layer's
-    // sensor when it has one, else Map. (The Map tab has no sections of its own — it
-    // would otherwise show every available sensor, so leaving it selected while an
-    // SSS layer is active makes the SSS sections appear under the wrong tab and read
-    // as unusable.)
+    // sensor when it has one, else none (universal sections only).
     M want = M::Unknown;
     if (currentProject() && !activeLayerId().empty()) {
         if (const auto* l = currentProject()->findLayer(activeLayerId())) {
@@ -650,10 +645,11 @@ void MainWindow::refreshInspectorModalities()
         (cur == M::Sidescan     && has_sss) ||
         (cur == M::SubBottom    && has_sbp) ||
         (cur == M::Magnetometer && has_mag) ||
-        (cur == M::Unknown      && has_any);
+        (cur == M::Unknown);   // no selection is always a valid state
 
-    // Retarget when the current tab is no longer usable, or when Map is selected
-    // while a sensor layer is active. A still-valid manual sensor choice is left be.
+    // Retarget when the current tab is no longer usable, or when nothing is
+    // selected while a sensor layer is active. A still-valid manual sensor
+    // choice is left be.
     if (!cur_visible || (cur == M::Unknown && want != M::Unknown))
         refreshSensorTab(want);
 

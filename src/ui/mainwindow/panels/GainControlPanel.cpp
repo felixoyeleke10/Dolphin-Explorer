@@ -4,8 +4,10 @@
 #include "ui/shell/Theme.h"
 
 #include <QCheckBox>
+#include <QComboBox>
 #include <QFrame>
 #include <QHBoxLayout>
+#include <QLabel>
 #include <QPushButton>
 #include <QScrollArea>
 #include <QSignalBlocker>
@@ -80,12 +82,85 @@ GainControlPanel::GainControlPanel(QWidget* parent) : QWidget(parent)
     auto* agc_l = new QVBoxLayout(agc_rows);
     agc_l->setContentsMargins(Theme::kSpacing4, 0, 0, 0);
     agc_l->setSpacing(3);
-    m_agc_strength = new WfValueRow(tr("Strength"), 0.0, 100.0, 50.0, 5.0, 0, "%", agc_rows);
+
+    // Mode (Global / Variable)
+    {
+        auto* row = new QWidget(agc_rows);
+        auto* rl  = new QHBoxLayout(row);
+        rl->setContentsMargins(0, 0, 0, 0);
+        rl->setSpacing(Theme::kSpacing3);
+        auto* lbl = new QLabel(tr("Mode"), row);
+        lbl->setObjectName("wfSliderLabel");
+        m_agc_mode = new QComboBox(row);
+        m_agc_mode->addItems({ tr("Global"), tr("Variable") });
+        m_agc_mode->setObjectName("wfCombo");
+        m_agc_mode->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+        m_agc_mode->setToolTip(
+            tr("Global: one gain model for the loaded line; best first choice.\n"
+               "Variable: adapts along-track using a moving window."));
+        rl->addWidget(lbl); rl->addWidget(m_agc_mode);
+        agc_l->addWidget(row);
+    }
+
+    m_agc_strength = new WfValueRow(tr("Strength"), 0.0, 100.0, 50.0, 1.0, 0, "%", agc_rows);
     m_agc_strength->setToolTip(
-        tr("AGC correction strength (0 % = off, 100 % = full normalisation).\n"
-           "Start at 50 %. High values aggressively flatten brightness differences;\n"
-           "low values apply subtle along-track levelling."));
+        tr("How strongly AGC normalises brightness.\n"
+           "Start at 50 %. Reduce if shadows/contrast look flattened; increase if the line is still uneven."));
     agc_l->addWidget(m_agc_strength);
+
+    // Along-Track Window — Variable mode only
+    m_agc_along_track_row = new QWidget(agc_rows);
+    m_agc_along_track_row->setVisible(false);
+    {
+        auto* atl = new QVBoxLayout(m_agc_along_track_row);
+        atl->setContentsMargins(0, 0, 0, 0);
+        atl->setSpacing(3);
+        m_agc_along_track = new WfValueRow(tr("Along-Track Window"), 10, 500, 50, 5, 0,
+                                           " pings", m_agc_along_track_row);
+        m_agc_along_track->setToolTip(
+            tr("Pings used by Variable AGC to estimate local gain.\n"
+               "Start at 50. Smaller follows rapid changes; larger is smoother."));
+        atl->addWidget(m_agc_along_track);
+    }
+    agc_l->addWidget(m_agc_along_track_row);
+
+    // Smoothing type (Mean / Median)
+    {
+        auto* row = new QWidget(agc_rows);
+        auto* rl  = new QHBoxLayout(row);
+        rl->setContentsMargins(0, 0, 0, 0);
+        rl->setSpacing(Theme::kSpacing3);
+        auto* lbl = new QLabel(tr("Smoothing Type"), row);
+        lbl->setObjectName("wfSliderLabel");
+        m_agc_smooth_type = new QComboBox(row);
+        m_agc_smooth_type->addItems({ tr("Mean"), tr("Median") });
+        m_agc_smooth_type->setObjectName("wfCombo");
+        m_agc_smooth_type->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+        m_agc_smooth_type->setToolTip(
+            tr("Mean: smoother estimate for clean data.\n"
+               "Median: more robust with bright targets, spikes, or dropouts."));
+        rl->addWidget(lbl); rl->addWidget(m_agc_smooth_type);
+        agc_l->addWidget(row);
+    }
+
+    m_agc_smooth_win = new WfValueRow(tr("Smoothing Window"), 1, 50, 5, 1, 0, "", agc_rows);
+    m_agc_smooth_win->setToolTip(
+        tr("Smooths the AGC gain curve across range samples.\n"
+           "Start at 5. Increase if patchy; decrease if detail smears."));
+    agc_l->addWidget(m_agc_smooth_win);
+
+    m_agc_edge_skip = new WfValueRow(tr("Edge Skip"), 0, 500, 50, 5, 0, " smpl", agc_rows);
+    m_agc_edge_skip->setToolTip(
+        tr("Samples near nadir ignored while estimating AGC.\n"
+           "Start at 50 to avoid the water column/nadir dominating the gain estimate."));
+    agc_l->addWidget(m_agc_edge_skip);
+
+    m_agc_noise_floor = new WfValueRow(tr("Noise Floor"), 0, 20, 2, 1, 0, "%", agc_rows);
+    m_agc_noise_floor->setToolTip(
+        tr("Lowest percentage treated as noise during AGC.\n"
+           "Start at 2 %. Increase if low-level noise is amplified."));
+    agc_l->addWidget(m_agc_noise_floor);
+
     vl->addWidget(agc_rows);
 
     // -- ARC -------------------------------------------------------------------
@@ -124,6 +199,8 @@ GainControlPanel::GainControlPanel(QWidget* parent) : QWidget(parent)
     // writeInto(). No per-section Apply buttons.
     connect(m_tvg_en, &QCheckBox::toggled, this, &GainControlPanel::updateControlStates);
     connect(m_agc_en, &QCheckBox::toggled, this, &GainControlPanel::updateControlStates);
+    connect(m_agc_mode, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, [this](int) { updateControlStates(); });
     connect(m_arc_en, &QCheckBox::toggled, this, &GainControlPanel::updateControlStates);
 
     setParams(m_params);
@@ -135,8 +212,16 @@ void GainControlPanel::writeInto(WaterfallParams& p) const
     p.tvg.spreading  = static_cast<float>(m_tvg_spread->value());
     p.tvg.absorption = static_cast<float>(m_tvg_absorb->value());
 
-    p.agc.enabled  = m_agc_en->isChecked();
-    p.agc.strength = static_cast<float>(m_agc_strength->value() / 100.0);
+    p.agc.enabled           = m_agc_en->isChecked();
+    p.agc.mode              = (m_agc_mode->currentIndex() == 1)
+                            ? AgcMode::Variable : AgcMode::Global;
+    p.agc.strength          = static_cast<float>(m_agc_strength->value() / 100.0);
+    p.agc.along_track_win   = m_agc_along_track->intValue();
+    p.agc.smoothing_type    = (m_agc_smooth_type->currentIndex() == 1)
+                            ? AgcSmoothingType::Median : AgcSmoothingType::Mean;
+    p.agc.smoothing_win     = m_agc_smooth_win->intValue();
+    p.agc.edge_skip_samples = m_agc_edge_skip->intValue();
+    p.agc.noise_floor_pct   = static_cast<float>(m_agc_noise_floor->value());
 
     p.arc.enabled     = m_arc_en->isChecked();
     p.arc.exponent    = static_cast<float>(m_arc_exp->value());
@@ -148,7 +233,9 @@ void GainControlPanel::setParams(const WaterfallParams& p)
     m_params = p;
 
     const QSignalBlocker b1(m_tvg_en),    b2(m_tvg_spread), b3(m_tvg_absorb);
-    const QSignalBlocker b4(m_agc_en),    b5(m_agc_strength);
+    const QSignalBlocker b4(m_agc_en),    b5(m_agc_strength), b5b(m_agc_mode);
+    const QSignalBlocker b5c(m_agc_along_track), b5d(m_agc_smooth_type);
+    const QSignalBlocker b5e(m_agc_smooth_win),  b5f(m_agc_edge_skip), b5g(m_agc_noise_floor);
     const QSignalBlocker b6(m_arc_en),    b7(m_arc_exp), b8(m_arc_gain_cap);
 
     m_tvg_en->setChecked(p.tvg.enabled);
@@ -156,7 +243,13 @@ void GainControlPanel::setParams(const WaterfallParams& p)
     m_tvg_absorb->setValue(p.tvg.absorption);
 
     m_agc_en->setChecked(p.agc.enabled);
+    m_agc_mode->setCurrentIndex(p.agc.mode == AgcMode::Variable ? 1 : 0);
     m_agc_strength->setValue(static_cast<double>(p.agc.strength) * 100.0);
+    m_agc_along_track->setValue(p.agc.along_track_win);
+    m_agc_smooth_type->setCurrentIndex(p.agc.smoothing_type == AgcSmoothingType::Median ? 1 : 0);
+    m_agc_smooth_win->setValue(p.agc.smoothing_win);
+    m_agc_edge_skip->setValue(p.agc.edge_skip_samples);
+    m_agc_noise_floor->setValue(p.agc.noise_floor_pct);
 
     m_arc_en->setChecked(p.arc.enabled);
     m_arc_exp->setValue(p.arc.exponent);
@@ -169,7 +262,17 @@ void GainControlPanel::updateControlStates()
 {
     m_tvg_spread->setEnabled(m_tvg_en->isChecked());
     m_tvg_absorb->setEnabled(m_tvg_en->isChecked());
-    m_agc_strength->setEnabled(m_agc_en->isChecked());
+
+    const bool agc = m_agc_en->isChecked();
+    m_agc_mode->setEnabled(agc);
+    m_agc_strength->setEnabled(agc);
+    m_agc_smooth_type->setEnabled(agc);
+    m_agc_smooth_win->setEnabled(agc);
+    m_agc_edge_skip->setEnabled(agc);
+    m_agc_noise_floor->setEnabled(agc);
+    m_agc_along_track->setEnabled(agc);
+    m_agc_along_track_row->setVisible(agc && m_agc_mode->currentIndex() == 1);
+
     m_arc_exp->setEnabled(m_arc_en->isChecked());
     m_arc_gain_cap->setEnabled(m_arc_en->isChecked());
 }

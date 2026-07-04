@@ -118,9 +118,11 @@ QString qssShell()
         "  font-weight: 700; letter-spacing: 1.2px; background: transparent;"
         "}"
 
-        // -- Map viewport overlay buttons (2D/3D toggle + terrain load) ---------
-        // Floating pill buttons overlaid on the map canvas — dark semi-transparent
-        // background so they read against both sea and terrain imagery.
+        // -- Map viewport overlay button (2D→3D switch) --------------------------
+        // Floats bottom-right over the 2D map only. In 3D mode the GL view draws
+        // its own in-HUD chips (MapView3D::drawViewButtons) because the native GL
+        // window covers sibling widgets.
+        "QWidget#mapViewportOverlay { background: transparent; }"
         "QToolButton#map3DBtn {"
         "  background: @overlayEl; border: 1px solid rgba(255,255,255,0.14);"
         "  border-radius: @radius2;"
@@ -128,20 +130,6 @@ QString qssShell()
         "}"
         "QToolButton#map3DBtn:hover   { background: @overlayHov; color: @textPrimary; }"
         "QToolButton#map3DBtn:pressed { background: @overlayMut; }"
-
-        "QToolButton#map3DTerrainBtn {"
-        "  background: @overlayEl; border: 1px solid rgba(255,255,255,0.14);"
-        "  border-radius: @radius2;"
-        "  color: @textSecond; font-family: @font; font-size: @fontSm; padding: @padXs @padSm;"
-        "}"
-        "QToolButton#map3DTerrainBtn:hover    { background: @overlayHov; color: @textPrimary; }"
-        "QToolButton#map3DTerrainBtn:pressed  { background: @overlayMut; }"
-        "QToolButton#map3DTerrainBtn:disabled { color: @textDisabled; }"
-
-        "QLabel#map3DTerrainLabel {"
-        "  color: @textSubtle; font-family: @font; font-size: @fontXs;"
-        "  background: @overlayMut; border-radius: @radius1; padding: @padXs @padSm;"
-        "}"
 
         // Import-hint CTA button — accented pill, centred over the empty map canvas.
         "QPushButton#mapImportHintBtn {"
@@ -153,6 +141,24 @@ QString qssShell()
         "  background: rgba(@accentRgb,0.30); border-color: @accent;"
         "}"
         "QPushButton#mapImportHintBtn:pressed { background: rgba(@accentRgb,0.42); }"
+
+        // Empty-map launcher — Recent Projects card under the Import CTA.
+        // Solid card (not translucent): it sits on the map canvas, which can be
+        // any user-chosen colour in either theme.
+        "QWidget#mapRecentBox {"
+        "  background: @bgEl; border: 1px solid @border; border-radius: @radius3;"
+        "}"
+        "QLabel#mapRecentHdr {"
+        "  color: @textDim; font-family: @font; font-size: @fontXxs;"
+        "  font-weight: 600; letter-spacing: 1px; padding: 2px 6px 0 6px;"
+        "}"
+        "QPushButton#mapRecentBtn {"
+        "  background: transparent; border: none; border-radius: @radius2;"
+        "  color: @textSecond; font-family: @font; font-size: @fontSm;"
+        "  padding: 5px 8px; text-align: left;"
+        "}"
+        "QPushButton#mapRecentBtn:hover   { background: @overlayEl; color: @textPrimary; }"
+        "QPushButton#mapRecentBtn:pressed { background: @overlayMut; }"
 
         // Properties panel (right dock)
         "#propertiesPanel {"
@@ -453,70 +459,96 @@ QString qssShell()
         "QPushButton#convSendBtn:hover   { background: rgba(@accentRgb,0.30); color: @textPrimary; }"
         "QPushButton#convSendBtn:pressed { background: rgba(@accentRgb,0.12); }"
 
-        // -- Embedded panel chat (right panel Chats tab) -----------------------
+        // -- Assistant console (bottom dock Chat tab) --------------------------
+        // Reads as a query console in the Problems/Output/Jobs/Terminal family:
+        // thin header strip, mono `›` query lines, answer blocks with an accent
+        // left rule, terminal-style prompt input. No bubbles.
         "QWidget#panelChat { background: @bgPanel; }"
-        // Header
-        "QWidget#panelChatHdr { background: @bgEl; border-bottom: 1px solid @border; }"
-        "QLabel#panelChatIcon  { color: @accentSoft; font-size: @fontMd; padding: 0 2px 0 0; }"
-        "QLabel#panelChatTitle { color: @textSecond; font-family: @font; font-size: @fontBase; font-weight: 600; }"
-        "QPushButton#panelChatNewBtn {"
-        "  background: @overlayMut; border: 1px solid @overlayHov; border-radius: @radius2;"
-        "  color: @textSubtle; font-family: @font; font-size: @fontXs; padding: 0 7px;"
+        // Header strip (same family as #terminalHeader)
+        "QWidget#panelChatHdr { background: @bg; border-bottom: 1px solid @border; }"
+        "QLabel#panelChatTitle { color: @textMuted; font-family: @font; font-size: @fontSm; font-weight: 600; }"
+        "QLabel#panelChatBadge {"
+        "  color: @textDim; font-family: Consolas, 'Cascadia Code', monospace;"
+        "  font-size: @fontXxs; border: 1px solid @overlayHov; border-radius: @radius2;"
+        "  padding: 1px 5px;"
         "}"
-        "QPushButton#panelChatNewBtn:hover   { background: @overlayEl; color: @textSecond; }"
-        "QPushButton#panelChatNewBtn:pressed { background: @overlayMut; }"
-        // Model selector combo
+        "QPushButton#panelChatClearBtn {"
+        "  background: transparent; border: none;"
+        "  color: @textMuted; font-family: @font; font-size: @fontXs; padding: 0 6px;"
+        "}"
+        "QPushButton#panelChatClearBtn:hover   { color: @textPrimary; }"
+        "QPushButton#panelChatClearBtn:pressed { color: @textSubtle; }"
+        // Model selector combo — flat, header-toolbar style
         "QComboBox#panelChatModelCombo {"
-        "  background: @overlayMut; border: 1px solid @overlayHov; border-radius: @radius2;"
-        "  color: @textSubtle; font-family: @font; font-size: @fontXs;"
+        "  background: transparent; border: 1px solid transparent; border-radius: @radius2;"
+        "  color: @textMuted; font-family: @font; font-size: @fontXs;"
         "  padding: 0 18px 0 7px; text-align: left; min-width: 56px;"
         "}"
-        "QComboBox#panelChatModelCombo:hover  { background: @overlayEl; color: @textSecond; border-color: @overlayActive; }"
+        "QComboBox#panelChatModelCombo:hover  { color: @textSecond; border-color: @overlayHov; }"
         "QComboBox#panelChatModelCombo:focus  { border-color: rgba(@accentRgb,0.40); }"
         "QComboBox#panelChatModelCombo::drop-down { border: none; width: 16px; subcontrol-origin: padding; subcontrol-position: right center; }"
+        "QComboBox#panelChatModelCombo::down-arrow { image: url(:/icons/spin_down.svg); width: 8px; height: 6px; }"
         "QComboBox#panelChatModelCombo QAbstractItemView {"
         "  background: @bgCard; border: 1px solid @borderMenu;"
         "  color: @textPrimary; selection-background-color: rgba(@accentRgb,0.25);"
         "  outline: none; padding: 2px 0; font-family: @font; font-size: @fontSm;"
         "}"
-        // Sep + scroll
-        "QFrame#panelChatSep { background: @border; border: none; }"
+        // Transcript
         "QScrollArea#panelChatScroll { background: transparent; border: none; }"
         "QScrollArea#panelChatScroll > QWidget > QWidget { background: @bgPanel; }"
         "QWidget#panelChatMessages { background: @bgPanel; }"
-        // Empty state
-        "QWidget#panelChatEmpty { background: transparent; }"
-        "QLabel#panelChatEmptyIcon  { color: @accentSoft; font-size: 22px; }"
-        "QLabel#panelChatEmptyTitle { color: @textSecond; font-family: @font; font-size: @fontMd; font-weight: 600; }"
-        "QLabel#panelChatEmptySub   { color: @textDim; font-family: @font; font-size: @fontSm; }"
-        // Suggestion chips
-        "QWidget#panelChatChips { background: transparent; }"
-        "QPushButton#panelChatChip {"
-        "  background: @overlayMut; border: 1px solid @overlayHov; border-radius: @radius3;"
-        "  color: @textSubtle; font-family: @font; font-size: @fontXs; padding: 6px 8px;"
-        "  text-align: left;"
+        "QLabel#chatQueryGlyph {"
+        "  color: @accent; font-family: Consolas, 'Cascadia Code', monospace;"
+        "  font-size: @fontSm; font-weight: bold;"
         "}"
-        "QPushButton#panelChatChip:hover   { background: @overlayEl; color: @textSecond; border-color: @overlayActive; }"
-        "QPushButton#panelChatChip:pressed { background: @overlayMut; }"
-        // Input container
-        "QFrame#panelChatInputBox {"
-        "  background: @bgEl;"
-        "  border-top: 1px solid @border;"
+        "QLabel#chatQueryText {"
+        "  color: @textPrimary; font-family: Consolas, 'Cascadia Code', monospace;"
+        "  font-size: @fontSm;"
+        "}"
+        "QLabel#chatTimestamp {"
+        "  color: @textDim; font-family: Consolas, 'Cascadia Code', monospace;"
+        "  font-size: @fontXxs;"
+        "}"
+        "QFrame#chatAnswerBlock {"
+        "  background: transparent; border: none;"
+        "  border-left: 2px solid rgba(@accentRgb,0.45);"
+        "}"
+        "QLabel#chatAnswerText { color: @textSecond; font-family: @font; font-size: @fontSm; }"
+        // Banner (empty) state — console MOTD, not a chat splash
+        "QWidget#panelChatEmpty { background: transparent; }"
+        "QLabel#chatBannerTitle {"
+        "  color: @textMuted; font-family: @font; font-size: @fontXs;"
+        "  font-weight: 600; letter-spacing: 1px;"
+        "}"
+        "QLabel#chatBannerSub { color: @textDim; font-family: @font; font-size: @fontSm; }"
+        "QPushButton#chatSuggestBtn {"
+        "  background: transparent; border: none;"
+        "  color: @textSubtle; font-family: Consolas, 'Cascadia Code', monospace;"
+        "  font-size: @fontSm; padding: 2px 0; text-align: left;"
+        "}"
+        "QPushButton#chatSuggestBtn:hover   { color: @accent; }"
+        "QPushButton#chatSuggestBtn:pressed { color: @accentSoft; }"
+        // Input row (same family as #terminalInputRow)
+        "QFrame#panelChatInputRow { background: @bg; border-top: 1px solid @border; }"
+        "QLabel#panelChatPrompt {"
+        "  color: @accent; font-family: Consolas, monospace;"
+        "  font-weight: bold; font-size: @fontMd;"
         "}"
         "QTextEdit#panelChatInput {"
-        "  background: @overlayEl; border: 1px solid @overlayHov; border-radius: @radius3;"
-        "  color: @textSecond; font-family: @font; font-size: @fontBase; padding: 4px 8px;"
+        "  background: transparent; border: none; border-radius: 0;"
+        "  color: @textPrimary; font-family: Consolas, 'Cascadia Code', monospace;"
+        "  font-size: @fontSm; padding: 2px 0;"
         "  selection-background-color: rgba(@accentRgb,0.25);"
         "}"
-        "QTextEdit#panelChatInput:focus { border-color: rgba(@accentRgb,0.40); }"
-        "QLabel#panelChatHint { color: @textDim; font-family: @font; font-size: @fontXxs; }"
+        "QTextEdit#panelChatInput:disabled { color: @textMuted; }"
         "QPushButton#panelChatSendBtn {"
-        "  background: rgba(@accentRgb,0.20); border: none; border-radius: @radius3;"
-        "  color: @accentSoft; font-size: 14px; font-weight: 600;"
+        "  background: transparent; border: none;"
+        "  color: @accent; font-family: @font; font-size: @fontXs; font-weight: 600;"
+        "  padding: 0 6px;"
         "}"
-        "QPushButton#panelChatSendBtn:enabled:hover   { background: rgba(@accentRgb,0.35); color: @textPrimary; }"
-        "QPushButton#panelChatSendBtn:enabled:pressed { background: rgba(@accentRgb,0.12); }"
-        "QPushButton#panelChatSendBtn:disabled { background: @overlayMut; color: @textDim; }"
+        "QPushButton#panelChatSendBtn:enabled:hover   { color: @accentSoft; }"
+        "QPushButton#panelChatSendBtn:enabled:pressed { color: @textSubtle; }"
+        "QPushButton#panelChatSendBtn:disabled { color: @textDim; }"
 
     );
 }

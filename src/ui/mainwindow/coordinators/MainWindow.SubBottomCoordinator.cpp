@@ -165,6 +165,8 @@ void MainWindow::onSubBottomOpen()
                 this, &MainWindow::onWaterfallFeatureCreated);  // identical handling
         connect(m_sbp_win, &SubBottomWindow::clearAllContactsRequested,
                 this, &MainWindow::onClearContacts);
+        connect(m_sbp_win, &SubBottomWindow::contactEditRequested,
+                this, &MainWindow::onContactEditRequested);
         // Busy-state → status-bar spinner. Cancellation is owned by
         // OperationManager (the window's load/process ops are keyed), so no
         // external-token registration is needed.
@@ -240,6 +242,7 @@ void MainWindow::onSubBottomOpen()
             m_sbp_win->setLayer(layer, m_import_service,
                                 src ? src->path : std::string{},
                                 src ? src->size_bytes : 0);
+            m_sbp_win->setProjectContacts(currentProject()->contacts());
             // Restore per-layer SBP display params; palette always wins if set.
             if (layer->sbp_display_state.display_customized)
                 m_sbp_win->applyDisplayParams(layer->sbp_display_state.display);

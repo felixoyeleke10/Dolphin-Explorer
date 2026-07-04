@@ -204,6 +204,9 @@ signals:
     // polygon=true closes the shape. The window attaches classification + line.
     void featureDrawn(const std::vector<QPointF>& lonlat_vertices, bool polygon,
                       bool is_projected);
+    // Double-click on a project-contact marker (no tool active) — open the
+    // "Edit contact details" editor for this contact.
+    void contactEditRequested(uint64_t contact_id);
     // Scroll position changed — drives the external QScrollBar
     void scrollChanged(int scroll_row, int total_rows, int visible_rows);
     // Scroll attempt past data boundary; direction = -1 (top) or +1 (bottom)
@@ -231,6 +234,11 @@ private slots:
 private:
     // Recompute WfLayout from current widget dimensions; called on resize.
     void updateLayout();
+
+    // Commit the in-progress feature draft (double-click / Enter). Strips the
+    // near-duplicate final vertex a double-click's own press adds, enforces the
+    // minimum vertex count, emits featureDrawn, and clears the draft.
+    void commitFeatureDraft();
 
     // Single-argument wrappers around the anonymous free functions in
     // WaterfallViewProcessing.cpp — use m_params implicitly so that
@@ -312,10 +320,11 @@ private:
     ContactClass m_contact_class = ContactClass::Unknown;  // applied to next pick
 
     // -- Feature draw tool state (polygon/polyline) ------------------------
-    int                  m_feature_tool = 0;   // 0=none, 1=polygon, 2=line
+    int                  m_feature_tool = 0;   // 0=none, 1=polygon, 2=line, 3=pen
     std::vector<QPointF> m_feature_pts;        // committed vertices (lon,lat)
     std::vector<QPoint>  m_feature_px;         // matching screen points for the draft
     bool                 m_feature_proj = false;  // is_projected of the draft rows
+    bool                 m_feature_pen_down = false;  // pen freehand capture in progress
     int  m_cursor_x = -1;
     int  m_cursor_y = -1;
     int   m_last_w   = -1;   // cached width to detect resize in paintEvent

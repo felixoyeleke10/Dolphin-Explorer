@@ -21,9 +21,13 @@ static constexpr int    kThumbD    = 16;   // thumb diameter
 static constexpr int    kThumbInset = 2;   // gap between thumb and track edge
 
 // -- Colors --------------------------------------------------------------------
-static const QColor kLabelCol   { QLatin1String(Theme::kTextSubtle) };  // #8e8e93
+static QColor kLabelCol() { return Theme::textSubtleColor(); }  // mode-aware
 static const QColor kAccent     { QLatin1String(Theme::kAccent) };       // #0a84ff
-static const QColor kTrackOff   { 255, 255, 255,  38 };  // white 15% — rendering constant
+static QColor kTrackOff()
+{
+    return Theme::mode() == Theme::Mode::Light ? QColor(0, 0, 0, 30)
+                                               : QColor(255, 255, 255, 38);
+}
 static const QColor kThumbShadow{   0,   0,   0,  40 };  // black 16% — rendering constant
 static constexpr int kTrackHoverBoost = 18;  // alpha increment when hovered-off
 
@@ -73,16 +77,16 @@ void WfToggleRow::paintEvent(QPaintEvent*)
         return a + qRound((b - a) * t);
     };
     const QColor trackCol(
-        lerp(kTrackOff.red(),   kAccent.red(),   m_anim_pos),
-        lerp(kTrackOff.green(), kAccent.green(), m_anim_pos),
-        lerp(kTrackOff.blue(),  kAccent.blue(),  m_anim_pos),
-        lerp(kTrackOff.alpha(), kAccent.alpha(), m_anim_pos)
+        lerp(kTrackOff().red(),   kAccent.red(),   m_anim_pos),
+        lerp(kTrackOff().green(), kAccent.green(), m_anim_pos),
+        lerp(kTrackOff().blue(),  kAccent.blue(),  m_anim_pos),
+        lerp(kTrackOff().alpha(), kAccent.alpha(), m_anim_pos)
     );
 
     // Subtle hover brightening when off
     QColor bg = trackCol;
     if (m_hovered && m_anim_pos < 0.5)
-        bg = QColor(kTrackOff.red(), kTrackOff.green(), kTrackOff.blue(),
+        bg = QColor(kTrackOff().red(), kTrackOff().green(), kTrackOff().blue(),
                     qMin(trackCol.alpha() + kTrackHoverBoost, 255));
 
     p.setPen(Qt::NoPen);
@@ -105,7 +109,7 @@ void WfToggleRow::paintEvent(QPaintEvent*)
     QFont f = font();
     f.setPixelSize(11);
     p.setFont(f);
-    p.setPen(kLabelCol);
+    p.setPen(kLabelCol());
 
     const int lw = track.left() - kLabelL - 6;
     p.drawText(QRect(kLabelL, 0, lw, height()),

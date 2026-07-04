@@ -46,7 +46,7 @@ void MainWindow::setupMenuBar()
     help->addAction(act_about);
 
     auto* logo_lbl = new QLabel(menuBar());
-    logo_lbl->setPixmap(QIcon(":/icons/dolphin_logo.svg").pixmap(QSize(18, 18)));
+    logo_lbl->setPixmap(Theme::icon(":/icons/dolphin_logo.svg").pixmap(QSize(18, 18)));
     logo_lbl->setContentsMargins(Theme::kSpacing3, 0, Theme::kSpacing2, 0);
     logo_lbl->setToolTip(tr("Dolphin Explorer"));
     menuBar()->setCornerWidget(logo_lbl, Qt::TopLeftCorner);
@@ -97,7 +97,7 @@ void MainWindow::buildFileMenu()
     file->addSeparator();
 
     QMenu* imp = file->addMenu(
-        QIcon(QString::fromUtf8(appCommand(CommandId::ImportFile).icon)), tr("&Import"));
+        Theme::icon(QString::fromUtf8(appCommand(CommandId::ImportFile).icon)), tr("&Import"));
 
     // Each modality submenu preselects that family in the import wizard; the wizard
     // still detects what each file actually contains and lets the user confirm.
@@ -128,7 +128,7 @@ void MainWindow::buildFileMenu()
     imp->addAction(tr("Browse All Formats\u2026"),   this, importAs({}));
 
     file->addSeparator();
-    QMenu* exp = file->addMenu(QIcon(":/icons/export.svg"), tr("E&xport"));
+    QMenu* exp = file->addMenu(Theme::icon(":/icons/export.svg"), tr("E&xport"));
     exp->addAction(tr("Export &Manager…"), this, &MainWindow::onExportManagerOpen);
     exp->addSeparator();
     // Export formats are Phase 2 — listed for discoverability but not yet active.
@@ -237,9 +237,9 @@ void MainWindow::buildProcessingMenu()
     proc->addAction(tr("&Bake Corrections into Data…"),
                     this, &MainWindow::onBakeCorrections);
     proc->addSeparator();
-    proc->addAction(QIcon(":/icons/nav_editor.svg"),
+    proc->addAction(Theme::icon(":/icons/nav_editor.svg"),
         tr("&Navigation Processing…"), this, &MainWindow::onRenumberContacts);
-    proc->addAction(QIcon(":/icons/seabed_track.svg"),
+    proc->addAction(Theme::icon(":/icons/seabed_track.svg"),
         tr("&Heading / Georeference…"), this, &MainWindow::onLineProps);
     proc->addSeparator();
     auto* act_reset = makeAction(CommandId::ResetRaw, this);
@@ -261,16 +261,8 @@ void MainWindow::buildViewMenu()
 {
     QMenu* view = menuBar()->addMenu(tr("&View"));
 
-    auto* act_toolbar = view->addAction(tr("Tool Bar (Right)"));
-    act_toolbar->setCheckable(true);
-    act_toolbar->setChecked(rightToolBarVisible());
-    connect(act_toolbar, &QAction::triggered, this, [this, act_toolbar]() {
-        setRightToolBarVisible(act_toolbar->isChecked());
-    });
-
     auto* act_props = view->addAction(tr("Properties Panel"));
     act_props->setCheckable(true);
-    act_props->setChecked(m_props_open);
     connect(act_props, &QAction::triggered, this, [this, act_props]() {
         setPropertiesOpen(act_props->isChecked());
     });
@@ -312,8 +304,7 @@ void MainWindow::buildViewMenu()
             sonar_menu->addSeparator();
     }
 
-    connect(view, &QMenu::aboutToShow, this, [this, act_toolbar, act_props]() {
-        act_toolbar->setChecked(rightToolBarVisible());
+    connect(view, &QMenu::aboutToShow, this, [this, act_props]() {
         act_props->setChecked(m_props_open);
 
         // Sync quality checkmarks with the display-state authority.

@@ -85,6 +85,13 @@ void Project::setName(const std::string& name)
     emit modified();
 }
 
+void Project::setDrapingSurface(const std::string& path)
+{
+    if (path == m_draping_surface) return;
+    m_draping_surface = path;
+    emit modified();
+}
+
 void Project::setCrs(const std::string& epsg)
 {
     const core::SpatialRef ref = geo::spatialRefFromId(epsg);

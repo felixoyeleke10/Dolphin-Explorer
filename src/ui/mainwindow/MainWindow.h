@@ -12,6 +12,7 @@
 #include <vector>
 #include "ui/shared/dialogs/CommandPaletteDialog.h"
 #include "app/project/Project.h"
+#include "core/Contact.h"
 #include "core/SpatialRef.h"
 #include "ui/bottom/DiagnosticsHub.h"
 #include "ui/features/map/MapTypes.h"
@@ -81,6 +82,9 @@ class ViewportCoordinator;
 class ConversationPanel;
 class CommandBar;
 class PanelChatWidget;
+class MapDisplayPanel;
+class PanelTabBar;
+class ViewsPanel;
 class DataLibraryWindow;
 class GainControlPanel;
 class HeadingInfoPanel;
@@ -103,6 +107,10 @@ protected:
     void resizeEvent(QResizeEvent* event) override;
     bool nativeEvent(const QByteArray& event_type, void* message,
                      qintptr* result) override;
+    // Application-level filter for the single-letter tool keys (V/S/Z/M/C).
+    // QShortcuts would consume these before focused text fields see them,
+    // making the letters untypeable app-wide — the filter yields to text input.
+    bool eventFilter(QObject* obj, QEvent* ev) override;
 
 private slots:
     // Project — thin delegates to m_session_ctrl
@@ -141,9 +149,8 @@ private slots:
     void onToolMeasure();
     void onMeasurementUpdated(double metres);
     void onContactPickedOnMap(double lon, double lat);
-    // Activate the map feature-draw tool (polygon=true closes the shape).
-    // classification is applied to the feature committed by this draw session.
-    void onDrawFeature(bool polygon, const QString& classification = {});
+    // Activate the map feature-draw tool: 1=polygon, 2=line, 3=pen (freehand).
+    void onDrawFeature(int tool);
     // Commit a drawn shape (lon/lat vertices) as a new project feature.
     void onFeatureDrawn(const std::vector<QPointF>& lonlat_vertices, bool polygon);
     void onWaterfallOpen();
@@ -189,6 +196,18 @@ private slots:
 
     // Contact / layer stubs
     void onAddContact();
+    // Open the shared "Edit contact details" editor. id = contact to focus
+    // (0 → first in scope); line_id scopes Prev/Next to that line's contacts
+    // (empty → the focused contact's line, or all contacts). Used by the
+    // viewers' Edit buttons and contact-marker double-clicks.
+    void onContactEditRequested(uint64_t id, const QString& line_id);
+    // Fetch-from-source: render a snapshot patch from the cached source pings
+    // for a waterfall pick with no persisted PNG, persist it, and return it.
+    QPixmap fetchContactSnapshot(const core::Contact& c);
+    // Keep the Contact Picking / Feature Drawing section toggles (and the toolbar
+    // Contact button) in sync with the active map tool — exactly one annotation tool
+    // active at a time, cleared when a non-annotation tool is chosen.
+    void syncAnnotationToggles(bool contact_active, int feature_tool);
     void onLineProps();
     void onResetRaw();
     void onRenumberContacts();
@@ -281,7 +300,6 @@ private:
     void     buildContextPanel(QWidget* parent);
     QWidget* buildMainArea(QWidget* parent);
     void     buildPropertiesPanel(QWidget* parent);
-    QFrame*  buildRightToolBar(QWidget* parent);
 
     void rebuildRecentMenu();
     // Display name for a recent-project path: the open project's (live) name when it
@@ -329,6 +347,14 @@ private:
 
     QWidget* makeContextPlaceholder(const QString& title, const QString& body);
     void     refreshSidebarSections(const QStringList& paths);
+    // Sync the Views panel with the display-state authority, the active
+    // layer's palettes, and the project's draping surface.
+    void     refreshViewsPanel();
+    void     onChooseDrapingSurface();
+    void     onClearDrapingSurface();
+    // Single mutate point for the draping surface: swaps the 3D terrain,
+    // persists to the project, refreshes the Views panel readout.
+    void     applyDrapingSurface(const QString& path, bool already_loaded = false);
     void     refreshRecycleBin();
 
     DiagnosticsHub*   m_diag_hub     = nullptr;
@@ -368,9 +394,8 @@ private:
     // Map sonar preview quality actions (index == MapSonarQuality int value)
     std::array<QAction*, 6> m_act_map_quality{};
 
-    // Classification applied to the feature drawn / contact picked by the current
-    // map draw session (set from the Feature Drawing / Contact Picking sections).
-    std::string m_pending_feature_class;
+    // Classification applied to the contact picked by the current map pick session
+    // (set from the Contact Picking section). Feature drawing has no classification.
     std::string m_pending_contact_class;
 
     // Undo / redo
@@ -389,6 +414,12 @@ private:
     QToolButton* m_zoom_btn            = nullptr;
     QToolButton* m_measure_btn         = nullptr;
     QToolButton* m_contact_btn         = nullptr;
+    // Feature drawing tools — toolbar buttons (1=polygon, 2=line, 3=pen).
+    QToolButton* m_feat_poly_btn       = nullptr;
+    QToolButton* m_feat_line_btn       = nullptr;
+    QToolButton* m_feat_pen_btn        = nullptr;
+    // Exclusive group over all interactive tool buttons (nav + contact + feature).
+    QButtonGroup* m_tool_grp           = nullptr;
     QToolButton* m_settings_btn        = nullptr;
     QToolButton* m_btn_sbp_open        = nullptr;
     std::vector<QAction*> m_export_actions;
@@ -414,11 +445,14 @@ private:
     // Properties panel (right-side dock)
     bool                m_props_open      = true;
     bool                m_props_collapsed = false;
-    int                 m_props_width     = 260;       // user-resizable
+    // Default matches the LEFT block's total width (activity bar 42 + context
+    // panel 260) so the two sides read balanced now that the right tool rail
+    // is gone. User-resizable; persisted as ui/propsWidth.
+    int                 m_props_width     = 302;
     QLabel*             m_props_title         = nullptr;
     QToolButton*        m_props_collapse_btn  = nullptr;
     QToolButton*        m_props_tab_tools     = nullptr;
-    QToolButton*        m_props_tab_chats     = nullptr;
+    QToolButton*        m_props_tab_map       = nullptr;
     QToolButton*        m_props_tab_history   = nullptr;
     QStackedWidget*     m_props_stack         = nullptr;
     QSplitter*          m_props_splitter      = nullptr;
@@ -468,13 +502,14 @@ private:
     ImagingControlPanel* m_imaging_panel     = nullptr;
 
     QScrollArea*        m_props_scroll    = nullptr;
-    PanelChatWidget*    m_chat_widget     = nullptr;
+    PanelChatWidget*    m_chat_widget       = nullptr;   // lives in the bottom dock's Chat tab
+    MapDisplayPanel*    m_map_display_panel = nullptr;   // right panel "Map" page
 
-    // Sensor/modality tab bar (bottom of Properties page, outside scroll area)
-    QWidget*     m_sensor_bar = nullptr;
+    // Sensor/modality tab bar (bottom of Properties page, outside scroll area).
+    // No tab checked = no sensor layer active; universal sections still show.
+    PanelTabBar* m_sensor_bar = nullptr;
     QToolButton* m_tab_sss   = nullptr;
     QToolButton* m_tab_sbp   = nullptr;
-    QToolButton* m_tab_map   = nullptr;
     QToolButton* m_tab_mag   = nullptr;
 
     // Fixed left dock — project / files / layers / contacts tree
@@ -482,7 +517,8 @@ private:
     QLabel*           m_context_title            = nullptr;
     QToolButton*      m_context_collapse_btn     = nullptr;
     bool              m_context_collapsed        = false;
-    QListWidget*      m_sidebar_recent_list      = nullptr;
+    ViewsPanel*       m_views_panel              = nullptr;   // left "Views" section (MAP|SSS|SBP)
+    QString           m_loaded_draping;                       // terrain path currently in the 3D view
     QListWidget*      m_recycle_list             = nullptr;   // contact recycle bin (sidebar)
 
     // Geodesy standalone window (lazy-created on first open)
@@ -521,6 +557,8 @@ private:
     ProcessingWindow*  m_processing_win  = nullptr;
     QPointer<QWidget>  m_metadata_win;               // MetadataWindow (lazy-created)
     QPointer<QWidget>  m_contact_mgr_win;            // ContactManagerWindow (lazy-created)
+    QPointer<QDialog>  m_contact_editor;             // shared ContactEditorDialog (lazy-created)
+    bool m_viewer_contacts_sync_pending = false;     // coalesces viewer overlay resyncs
     QPointer<QWidget>  m_export_win;                 // ExportManagerWindow (lazy-created)
 
     // Conversation panel (floating overlay below the unified bar)

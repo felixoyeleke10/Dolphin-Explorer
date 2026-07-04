@@ -43,7 +43,6 @@ WaterfallAnalysisPanel::WaterfallAnalysisPanel(QWidget* parent)
     buildImageSection      (vl, container);
     buildSeabedSection     (vl, container);
     buildContactSection    (vl, container);
-    buildFeatureSection    (vl, container);
     buildProcessingSection (vl, container);
     buildNavSection        (vl, container);
     vl->addStretch();

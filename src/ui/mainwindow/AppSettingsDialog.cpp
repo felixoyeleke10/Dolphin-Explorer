@@ -67,7 +67,7 @@ AppSettingsDialog::AppSettingsDialog(const Settings& current, QWidget* parent)
     for (int i = 0; i < 7; ++i) {
         auto* btn = new QToolButton(sidebar);
         btn->setText(tr(kPageLabels[i]));
-        btn->setIcon(QIcon(QString::fromLatin1(kPageIcons[i])));
+        btn->setIcon(Theme::icon(QString::fromLatin1(kPageIcons[i])));
         btn->setIconSize(QSize(15, 15));
         btn->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
         btn->setCheckable(true);

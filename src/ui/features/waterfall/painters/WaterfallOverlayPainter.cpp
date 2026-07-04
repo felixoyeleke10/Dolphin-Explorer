@@ -150,15 +150,14 @@ void WaterfallOverlayPainter::paintSeabedOverlay(
 //  Contact overlay — yellow diamond marker at each picked contact position
 // -----------------------------------------------------------------------------
 
-void WaterfallOverlayPainter::paintContactOverlay(
-    QPainter&                      p,
-    const std::vector<WfContact>&  contacts,
+bool WaterfallOverlayPainter::contactPixelPos(
+    const WfContact&               c,
     const std::vector<PingRow>&    rows,
     const WfLayout&                lay,
     const WaterfallScrollController& scroll,
-    QColor fill)
+    QPoint&                        out_px)
 {
-    if (contacts.empty() || rows.empty()) return;
+    if (rows.empty()) return false;
 
     const int   rh      = lay.row_height;
     const int   nadir   = lay.nadir_x;
@@ -171,6 +170,45 @@ void WaterfallOverlayPainter::paintContactOverlay(
     const int   first   = scroll.scrollRow();
     const int   last    = first + img_h / rh;
 
+    if (c.row_idx < first || c.row_idx >= last) return false;
+    if (c.row_idx >= static_cast<int>(rows.size())) return false;
+
+    const PingRow& pr = rows[c.row_idx];
+    if (pr.slant_range_m <= 0.f) return false;
+
+    const int y = kWfScaleBarH + (c.row_idx - first) * rh + rh / 2;
+
+    // Map range_m → sample index → pixel x
+    int x = -1;
+    if (c.ch == core::SidescanChannel::Port && !pr.port.empty()) {
+        const int   ns = static_cast<int>(pr.port.size());
+        const float z  = (h_zoom > 0.f) ? h_zoom
+                       : (port_w > 0 ? float(port_w) / ns : 1.f);
+        const int   si = static_cast<int>(c.range_m / pr.slant_range_m * (ns - 1));
+        x = sampleToPixelPort(si, z, h_pan, nadir);
+    } else if (c.ch == core::SidescanChannel::Starboard && !pr.stbd.empty()) {
+        const int   ns = static_cast<int>(pr.stbd.size());
+        const float z  = (h_zoom > 0.f) ? h_zoom
+                       : (stbd_w > 0 ? float(stbd_w) / ns : 1.f);
+        const int   si = static_cast<int>(c.range_m / pr.slant_range_m * (ns - 1));
+        x = sampleToPixelStbd(si, z, h_pan, nadir);
+    }
+
+    if (x < kWfRulerW || x >= w) return false;
+    out_px = QPoint(x, y);
+    return true;
+}
+
+void WaterfallOverlayPainter::paintContactOverlay(
+    QPainter&                      p,
+    const std::vector<WfContact>&  contacts,
+    const std::vector<PingRow>&    rows,
+    const WfLayout&                lay,
+    const WaterfallScrollController& scroll,
+    QColor fill)
+{
+    if (contacts.empty() || rows.empty()) return;
+
     p.save();
     p.setRenderHint(QPainter::Antialiasing);
 
@@ -178,31 +216,10 @@ void WaterfallOverlayPainter::paintContactOverlay(
     static constexpr int kR = 6;
 
     for (const WfContact& c : contacts) {
-        if (c.row_idx < first || c.row_idx >= last) continue;
-        if (c.row_idx >= static_cast<int>(rows.size())) continue;
-
-        const PingRow& pr = rows[c.row_idx];
-        if (pr.slant_range_m <= 0.f) continue;
-
-        const int y = kWfScaleBarH + (c.row_idx - first) * rh + rh / 2;
-
-        // Map range_m → sample index → pixel x
-        int x = -1;
-        if (c.ch == core::SidescanChannel::Port && !pr.port.empty()) {
-            const int   ns = static_cast<int>(pr.port.size());
-            const float z  = (h_zoom > 0.f) ? h_zoom
-                           : (port_w > 0 ? float(port_w) / ns : 1.f);
-            const int   si = static_cast<int>(c.range_m / pr.slant_range_m * (ns - 1));
-            x = sampleToPixelPort(si, z, h_pan, nadir);
-        } else if (c.ch == core::SidescanChannel::Starboard && !pr.stbd.empty()) {
-            const int   ns = static_cast<int>(pr.stbd.size());
-            const float z  = (h_zoom > 0.f) ? h_zoom
-                           : (stbd_w > 0 ? float(stbd_w) / ns : 1.f);
-            const int   si = static_cast<int>(c.range_m / pr.slant_range_m * (ns - 1));
-            x = sampleToPixelStbd(si, z, h_pan, nadir);
-        }
-
-        if (x < kWfRulerW || x >= w) continue;
+        QPoint px;
+        if (!contactPixelPos(c, rows, lay, scroll, px)) continue;
+        const int x = px.x();
+        const int y = px.y();
 
         // Draw: dark halo diamond, then bright yellow fill diamond
         const QPointF pts[4] = {

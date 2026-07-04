@@ -20,7 +20,6 @@
 #include <QPushButton>
 #include <QScrollArea>
 #include <QSpinBox>
-#include <QStandardItemModel>
 #include <QSysInfo>
 #include <QThread>
 #include <QVBoxLayout>
@@ -150,11 +149,10 @@ QWidget* AppSettingsDialog::buildAppearancePage()
 
     m_theme_combo = new QComboBox(page);
     m_theme_combo->addItem(tr("Dark  (default)"));
-    m_theme_combo->addItem(tr("Light  (coming soon)"));
-    if (auto* model = qobject_cast<QStandardItemModel*>(m_theme_combo->model())) {
-        if (auto* item = model->item(1))
-            item->setFlags(item->flags() & ~Qt::ItemIsEnabled);
-    }
+    m_theme_combo->addItem(tr("Light"));
+    m_theme_combo->setToolTip(
+        tr("Interface theme. Applies immediately.\n"
+           "Sonar imagery and the map canvas stay dark in both themes."));
     fl->addRow(tr("Theme:"), m_theme_combo);
 
     m_density_combo = new QComboBox(page);
@@ -183,7 +181,7 @@ QWidget* AppSettingsDialog::buildAppearancePage()
     vl->addLayout(bfl);
 
     auto* restart_hint = new QLabel(
-        tr("Theme, density, and font-size changes take effect on next launch."), page);
+        tr("Theme applies immediately. Density and font-size changes take effect on next launch."), page);
     restart_hint->setObjectName("fieldHint");
     restart_hint->setWordWrap(true);
     vl->addSpacing(10);
@@ -504,7 +502,8 @@ QWidget* AppSettingsDialog::buildMapPage()
            "For data already in a projected CRS, the projected values are always shown."));
     gfl->addRow(tr("Coord labels:"), m_grat_coord_combo);
 
-    addHint(gfl, tr("All presets are optimised for sonar data readability. Changes take effect immediately."), page);
+    addHint(gfl, tr("Dark backgrounds give the best sonar mosaic contrast; light backgrounds suit "
+                    "chart-style review. Changes take effect immediately."), page);
     vl->addLayout(gfl);
 
     vl->addStretch();

@@ -76,10 +76,9 @@ public:
     std::string hitTestLayer(QPoint px) const;
     void setSelectedContact(uint64_t id);
     void setSelectedFeature(uint64_t id);
-    // Feature drawing: in ModeDrawFeature each left-click adds a geo vertex,
-    // double-click / Enter commits, Esc / right-click cancels. polygon=true closes
-    // the shape (area); polygon=false leaves it open (polyline).
-    void setFeatureDrawPolygon(bool polygon);
+    // Feature drawing kind: 1=polygon, 2=line (both click-to-add-vertex, double-click/
+    // Enter commits, Esc/right-click cancels), 3=pen (press-drag-release freehand).
+    void setFeatureDrawKind(int kind);
     void setShowGrid          (bool show);
     void setMapBgColor        (QColor c);
     void setGridColor         (QColor c);
@@ -100,6 +99,12 @@ public:
     void panByPixels     (int dx, int dy);      // nudge pan offset by screen pixels
     void setRotationDeg  (double deg);          // rotate canvas (0 = north-up)
     QRectF layerPaintRect (const std::string& id) const;
+
+    // -- Map-tab view options (right panel "Map" page) -----------------------
+    // Hover tooltips: layer label shown near the cursor while hovering coverage.
+    void setHoverTooltipsEnabled(bool on);
+    // Hover highlight: soft outline around the layer under the cursor.
+    void setHoverHighlightEnabled(bool on);
 
     // Read back stored layer map data (used by MapViewportHost to forward to 3D view).
     const LayerMapData* layerData(const std::string& id) const;
@@ -217,8 +222,16 @@ private:
     std::vector<QPointF> m_feature_pts_geo;          // confirmed vertices (lon,lat)
     QPoint               m_feature_cursor_px;         // live cursor pixel
     bool                 m_feature_drawing  = false;  // a draft is in progress
-    bool                 m_feature_polygon  = true;   // closed area vs open polyline
+    int                  m_feature_kind     = 1;      // 1=polygon, 2=line, 3=pen
+    bool                 m_feature_pen_down = false;   // pen freehand capture in progress
     uint64_t             m_selected_feature_id = 0;
+
+    // -- Map-tab view options ----------------------------------------------
+    void updateHoverState(QPoint pos, QPoint global_pos);
+    bool        m_hover_tooltips  = false;
+    bool        m_hover_highlight = false;
+    std::string m_hover_layer_id;                  // layer under the cursor
+    QPoint      m_hover_test_px   { -9999, -9999 };// last pos hit-tested (throttle)
 
     // -- Measure tool state (multi-point polyline) -----------------------------
     std::vector<QPointF> m_measure_pts_geo;              // confirmed anchor points (lon, lat)

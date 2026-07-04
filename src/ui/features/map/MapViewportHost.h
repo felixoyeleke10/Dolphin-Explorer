@@ -5,6 +5,7 @@
 #include <QColor>
 #include <QImage>
 #include <QString>
+#include <QStringList>
 #include <QWidget>
 #include <string>
 #include <unordered_map>
@@ -14,6 +15,7 @@ class QLabel;
 class QStackedWidget;
 class QToolButton;
 class QPushButton;
+class QVBoxLayout;
 
 namespace dolphin::ui {
 
@@ -77,6 +79,16 @@ public slots:
     // No-op if not in 3D mode or scene origin is not set.
     void promptLoadTerrain();
 
+    // Load / remove a bathymetry file as 3D terrain directly (no dialog).
+    // Used by the Views panel's "Draping surface" setting; the file path is
+    // the terrain layer ID. Works from 2D — data uploads when 3D next paints.
+    void loadTerrainPath  (const QString& path);
+    void removeTerrainPath(const QString& path);
+
+    // Populate the empty-state launcher's Recent Projects card (parallel lists;
+    // at most 6 shown). Clears the card when the lists are empty.
+    void setRecentProjects(const QStringList& names, const QStringList& paths);
+
     // Forward the active tool mode to the 3D view.  The 3D view uses the mode
     // to change its cursor and to decide what a left-click does (select vs.
     // place contact).  The 2D view handles its own InputMode via MapView directly.
@@ -103,6 +115,11 @@ signals:
     void contactPickedAt(double lon, double lat);
     // Emitted when the user clicks the import hint button on the empty map.
     void importFilesRequested();
+    // Emitted when a recent-project entry on the empty-state launcher is clicked.
+    void openProjectRequested(const QString& path);
+    // Emitted after the in-viewer Terrain prompt loads a file, so the owner can
+    // persist it as the project's draping surface.
+    void terrainFileLoaded(const QString& path);
 
 protected:
     void resizeEvent(QResizeEvent*) override;
@@ -115,11 +132,12 @@ private:
     MapView3D*      m_view3d              = nullptr;   // native QOpenGLWindow
     QWidget*        m_view3d_container    = nullptr;   // createWindowContainer host (stack page)
     QStackedWidget* m_stack               = nullptr;
-    QToolButton*    m_btn                 = nullptr;   // 2D / 3D toggle
-    QToolButton*    m_terrain_btn         = nullptr;   // Load Terrain (3D mode only)
-    QLabel*         m_terrain_label       = nullptr;   // "Loading…" feedback
+    QToolButton*    m_btn                 = nullptr;   // "3D" switch (2D mode only)
+    QWidget*        m_vp_overlay          = nullptr;   // floating host for m_btn (bottom-right)
     QWidget*        m_empty_state         = nullptr;   // transparent overlay: layout-centered empty-state CTA
     QPushButton*    m_import_hint_btn     = nullptr;   // button inside m_empty_state
+    QWidget*        m_recent_box          = nullptr;   // Recent Projects card in the launcher
+    QVBoxLayout*    m_recent_items_l      = nullptr;   // rows inside m_recent_box
     bool            m_is_3d               = false;
     QWidget*        m_transition_cover    = nullptr;
 

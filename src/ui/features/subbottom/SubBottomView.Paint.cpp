@@ -2,6 +2,7 @@
 
 #include "ui/features/subbottom/SubBottomView.h"
 #include "ui/features/subbottom/SubBottomPalette.h"
+#include "ui/shell/Theme.h"
 #include <QPainter>
 #include <QPaintEvent>
 #include <QPolygon>
@@ -173,8 +174,70 @@ void SubBottomView::paintEvent(QPaintEvent*)
         p.restore();
     }
 
+    // -- Project contact markers --------------------------------------------
+    paintContactMarks(p);
+
     // -- Feature draw draft ------------------------------------------------
     paintAnnotationDraft(p);
+}
+
+bool SubBottomView::contactMarkPixelPos(const ContactMark& m, QPoint& out_px) const
+{
+    if (m.trace_idx < 0 || m.trace_idx >= traceCount() || m_px_per_trace <= 0)
+        return false;
+    const int col = m.trace_idx - m_first_trace;
+    const int x   = col * m_px_per_trace + m_px_per_trace / 2;
+    if (x < 0 || x >= width()) return false;
+
+    const auto& trace = m_traces[m.trace_idx];
+    if (trace.sample_rate_hz <= 0.f || m_px_per_sample <= 0.f) return false;
+    const int y = static_cast<int>(m.depth_s * trace.sample_rate_hz * m_px_per_sample);
+    if (y < 0 || y >= height()) return false;
+
+    out_px = QPoint(x, y);
+    return true;
+}
+
+void SubBottomView::paintContactMarks(QPainter& p) const
+{
+    if (m_external_contacts.empty() || m_traces.empty()) return;
+
+    // Same visual language as the waterfall's contact overlay: dark halo diamond
+    // under a warning-yellow fill diamond (SBP/SSS parity).
+    const QColor fill(Theme::kWarning);
+    const QColor halo(0, 0, 0, 100);
+    static constexpr int kR = 6;
+
+    p.save();
+    p.setRenderHint(QPainter::Antialiasing, true);
+
+    for (const ContactMark& m : m_external_contacts) {
+        QPoint px;
+        if (!contactMarkPixelPos(m, px)) continue;
+        const int x = px.x();
+        const int y = px.y();
+
+        const QPointF halo_pts[4] = {
+            {double(x),          double(y - kR - 1)},
+            {double(x + kR + 1), double(y)         },
+            {double(x),          double(y + kR + 1)},
+            {double(x - kR - 1), double(y)         },
+        };
+        p.setBrush(halo);
+        p.setPen(Qt::NoPen);
+        p.drawPolygon(halo_pts, 4);
+
+        const QPointF pts[4] = {
+            {double(x),      double(y - kR)},
+            {double(x + kR), double(y)     },
+            {double(x),      double(y + kR)},
+            {double(x - kR), double(y)     },
+        };
+        p.setBrush(fill);
+        p.setPen(QPen(fill.darker(150), 1));
+        p.drawPolygon(pts, 4);
+    }
+    p.restore();
 }
 
 void SubBottomView::paintAnnotationDraft(QPainter& p) const
@@ -192,6 +255,17 @@ void SubBottomView::paintAnnotationDraft(QPainter& p) const
 
     QPolygon chain;
     for (const QPoint& pt : m_feature_px) chain << pt;
+
+    // Pen (freehand): just stroke the captured path, no fill / live segment / dots.
+    if (m_feature_tool == 3) {
+        if (chain.size() >= 2) {
+            p.setPen(QPen(line, 1.5));
+            p.setBrush(Qt::NoBrush);
+            p.drawPolyline(chain);
+        }
+        p.restore();
+        return;
+    }
 
     if (polygon && chain.size() >= 2 && m_cursor_x >= 0) {
         QPolygon closed = chain;

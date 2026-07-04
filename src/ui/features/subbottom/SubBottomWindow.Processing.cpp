@@ -195,6 +195,7 @@ void SubBottomWindow::onProcDebounce()
         },
         [this](std::vector<core::SubBottomTrace> result) {
             m_view->setTraces(std::move(result));
+            refreshContactOverlay();   // markers need the loaded traces for placement
             setDataState(ViewerDataState::Ready);
         },
         "sbpwin:proc",

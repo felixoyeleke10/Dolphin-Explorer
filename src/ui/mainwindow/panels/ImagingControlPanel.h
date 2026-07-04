@@ -36,16 +36,21 @@ private:
     WfValueRow* m_arn_strength = nullptr;   // 0-1
     WfValueRow* m_arn_gain_cap = nullptr;   // dB
 
-    // Destripe
+    // Destripe (full parity with the waterfall)
     QCheckBox*  m_destripe_en      = nullptr;
+    WfValueRow* m_destripe_window  = nullptr;  // pings
+    WfValueRow* m_destripe_subdiv  = nullptr;  // range subdivisions
     WfValueRow* m_destripe_capping = nullptr;  // correction factor cap
 
     // Beam Pattern Normalisation
     QCheckBox*  m_bpn_en       = nullptr;
     WfValueRow* m_bpn_strength = nullptr;   // 0–1
+    WfValueRow* m_bpn_smooth   = nullptr;   // smoothing radius (samples)
 
     // ML Enhance (CLAHE)
     QCheckBox*  m_ml_en         = nullptr;
+    WfValueRow* m_ml_tile_pings = nullptr;  // along-track tile height
+    WfValueRow* m_ml_tile_samps = nullptr;  // across-track tile width
     WfValueRow* m_ml_clip_limit = nullptr;  // 1–8
 
     WaterfallParams m_params;

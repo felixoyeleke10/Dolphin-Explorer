@@ -109,7 +109,7 @@ void CollapsibleSection::setIcon(const QString& icon_path)
         auto* hl = qobject_cast<QHBoxLayout*>(m_header->layout());
         if (hl) hl->insertWidget(1, m_icon);  // between arrow and title
     }
-    m_icon->setPixmap(QIcon(icon_path).pixmap(kIconSz, kIconSz));
+    m_icon->setPixmap(Theme::icon(icon_path).pixmap(kIconSz, kIconSz));
 }
 
 void CollapsibleSection::setContent(QWidget* content)
@@ -194,7 +194,7 @@ void CollapsibleSection::setApplicable(bool applicable, const QString& hint)
     m_header->style()->polish(m_header);
 
     if (!applicable) {
-        m_arrow->setPixmap(makeLockPixmap(QColor(Theme::kTextDisabled), 11));
+        m_arrow->setPixmap(makeLockPixmap(Theme::textDisabledColor(), 11));
         if (m_content) m_content->setVisible(false);
         setMaximumHeight(QWIDGETSIZE_MAX);
 

@@ -66,11 +66,16 @@ public:
 
     struct MapBgPreset { const char* name; const char* hex; };
     static constexpr MapBgPreset kMapBgPresets[] = {
+        // Dark presets — best for sonar mosaic contrast.
         { "Dark",       "#111113" },
         { "Deep Blue",  "#0a1a2e" },
         { "Slate",      "#1c2433" },
         { "Charcoal",   "#1a1a1a" },
         { "Night",      "#000000" },
+        // Light presets — chart-style viewing / light theme.
+        { "White",      "#fafafa" },
+        { "Light Grey", "#e8e8ec" },
+        { "Chart Paper","#f4f1e6" },
     };
 
     struct MapGridPreset { const char* name; const char* line2d; const char* minor3d; const char* major3d; };

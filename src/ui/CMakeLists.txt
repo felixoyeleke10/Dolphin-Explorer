@@ -23,6 +23,8 @@ add_library(dolphin-ui-style STATIC
     shell/AppStyleDialogs.cpp
     shell/AppStyleAcousticViews.cpp
     shell/AppStyleNodeGraph.cpp
+    shell/Theme.cpp
+    shell/WindowChrome.cpp
 )
 # No Q_OBJECT in any style source — skip AutoMoc to avoid moc predefs
 # generation failures with certain CMake/MinGW toolchain combinations.
@@ -102,10 +104,13 @@ add_library(dolphin-ui-contacts STATIC
     features/contacts/ContactManagerWindow.Commands.cpp
     features/contacts/ContactVisuals.cpp
     features/contacts/ContactReport.cpp
+    features/contacts/ContactSnapshotView.cpp
+    features/contacts/ContactEditorDialog.cpp
 )
 target_include_directories(dolphin-ui-contacts PUBLIC ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(dolphin-ui-contacts
     PRIVATE dolphin-app
+            dolphin-geo
             dolphin-util
             dolphin-ui-shared
     PUBLIC  Qt6::Widgets
@@ -409,10 +414,13 @@ add_library(dolphin-ui-mainwindow STATIC
     mainwindow/panels/HeadingInfoPanel.cpp
     mainwindow/panels/GainControlPanel.cpp
     mainwindow/panels/ImagingControlPanel.cpp
+    mainwindow/panels/MapDisplayPanel.cpp
+    mainwindow/panels/ViewsPanel.cpp
 )
 target_include_directories(dolphin-ui-mainwindow PUBLIC ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(dolphin-ui-mainwindow
     PRIVATE dolphin-app
+            dolphin-render
             dolphin-ui-systems
             dolphin-ui-style
             dolphin-ui-shared

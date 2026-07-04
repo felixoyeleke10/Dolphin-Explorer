@@ -1,9 +1,12 @@
 #pragma once
 #include <QMainWindow>
 #include <QList>
+#include <QPixmap>
+#include <QPointer>
 #include <QString>
 #include <QVector>
 #include <cstdint>
+#include <functional>
 #include <set>
 #include <vector>
 #include "core/Contact.h"
@@ -24,6 +27,8 @@ namespace dolphin::app { class Project; }
 
 namespace dolphin::ui {
 
+class ContactEditorDialog;
+
 // Cross-modality contact manager, designed like Windows File Explorer: a nav
 // tree (left), a content area that switches between a details table and a
 // thumbnail grid (centre), and a preview/details pane (right), with an Explorer
@@ -36,6 +41,11 @@ public:
     void setProject(app::Project* project);   // nullptr on close
     void refresh();
     void selectContact(uint64_t id);
+
+    // Fetch-from-source snapshot fallback, forwarded to the contact editor
+    // (set by MainWindow, which owns the ImportService).
+    void setSnapshotProvider(std::function<QPixmap(const core::Contact&)> fn)
+        { m_snapshot_provider = std::move(fn); }
 
 signals:
     void contactActivated(uint64_t id);
@@ -77,7 +87,11 @@ private:
 
     uint64_t              currentRowId() const;
     std::vector<uint64_t> selectedIds() const;
+    std::vector<uint64_t> visibleIdsInOrder() const;   // current view order, hidden skipped
     const core::Contact*  findContact(uint64_t id) const;
+
+    // Full "Edit contact details" modal editor (double-click / Properties).
+    void openContactEditor(uint64_t id);
 
     void copySelection(bool cut);
     void pasteClipboard();
@@ -87,6 +101,8 @@ private:
     void invertSelection();
 
     void exportContacts();   // CSV / PDF / Word export of the visible contacts
+    // Shared writer behind every export path (visible set, single contact, …).
+    void exportContactSet(const std::vector<core::Contact>& rows, const QString& title);
 
     // Recycle bin.
     bool isViewingRecycleBin() const;
@@ -157,6 +173,9 @@ private:
 
     bool m_show_map_folder = true;
     bool m_confirm_delete  = false;
+
+    QPointer<ContactEditorDialog> m_editor;   // one editor at a time
+    std::function<QPixmap(const core::Contact&)> m_snapshot_provider;
 };
 
 } // namespace dolphin::ui

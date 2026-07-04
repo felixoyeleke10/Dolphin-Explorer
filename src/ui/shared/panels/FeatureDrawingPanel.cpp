@@ -1,110 +1,74 @@
-// FeatureDrawingPanel.cpp — reusable "Feature Drawing" tool-section content.
+// FeatureDrawingPanel.cpp — reusable "Feature Drawing" tool row (Polygon/Line/Pen).
 #include "ui/shared/panels/FeatureDrawingPanel.h"
 #include "ui/shell/Theme.h"
 
-#include <QComboBox>
 #include <QHBoxLayout>
-#include <QLabel>
+#include <QIcon>
 #include <QSignalBlocker>
 #include <QToolButton>
-#include <QVBoxLayout>
 
 namespace dolphin::ui {
 
 FeatureDrawingPanel::FeatureDrawingPanel(QWidget* parent)
     : QWidget(parent)
 {
-    auto* vl = new QVBoxLayout(this);
-    vl->setContentsMargins(Theme::kSpacing3, Theme::kSpacing2,
-                           Theme::kSpacing3, Theme::kSpacing2);
-    vl->setSpacing(Theme::kSpacing2);
+    auto* row = new QHBoxLayout(this);
+    row->setContentsMargins(Theme::kSpacing3, Theme::kSpacing2,
+                            Theme::kSpacing3, Theme::kSpacing2);
+    row->setSpacing(Theme::kSpacing2);
 
-    // -- Draw toggle -------------------------------------------------------
-    m_draw_btn = new QToolButton(this);
-    m_draw_btn->setText(tr("Draw Feature"));
-    m_draw_btn->setCheckable(true);
-    m_draw_btn->setObjectName("wfToolBtn");
-    m_draw_btn->setToolTip(
-        tr("Toggle feature drawing.\n"
-           "Click the view to add vertices; double-click or Enter to finish, "
-           "Esc or right-click to cancel.\nPolygon encloses an area; Line traces a path."));
-    m_draw_btn->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    m_draw_btn->setFixedHeight(Theme::kMediumBtnSz);
-    vl->addWidget(m_draw_btn);
-    connect(m_draw_btn, &QToolButton::toggled, this, [this](bool) { emitTool(); });
+    auto makeTool = [this](const char* icon, const QString& tip) {
+        auto* b = new QToolButton(this);
+        b->setIcon(Theme::icon(icon));
+        b->setIconSize(QSize(Theme::kIconToolBar, Theme::kIconToolBar));
+        b->setCheckable(true);
+        b->setObjectName("wfToolBtn");
+        b->setToolTip(tip);
+        b->setFixedHeight(Theme::kMediumBtnSz);
+        b->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+        return b;
+    };
 
-    // -- Type --------------------------------------------------------------
-    {
-        auto* row = new QWidget(this);
-        auto* rl  = new QHBoxLayout(row);
-        rl->setContentsMargins(0, 0, 0, 0);
-        rl->setSpacing(Theme::kSpacing3);
+    m_poly = makeTool(":/icons/draw_polygon.svg",
+        tr("Polygon — click to add vertices, double-click or Enter to close the area."));
+    m_line = makeTool(":/icons/draw_line.svg",
+        tr("Line — click to add vertices, double-click or Enter to finish."));
+    m_pen  = makeTool(":/icons/draw_pen.svg",
+        tr("Pen — press and drag to draw a freehand line; release to finish."));
 
-        auto* lbl = new QLabel(tr("Type"), row);
-        lbl->setObjectName("wfSliderLabel");
+    row->addWidget(m_poly);
+    row->addWidget(m_line);
+    row->addWidget(m_pen);
 
-        m_type_combo = new QComboBox(row);
-        m_type_combo->addItems({ tr("Polygon"), tr("Line") });
-        m_type_combo->setObjectName("wfCombo");
-        m_type_combo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-        m_type_combo->setToolTip(tr("Polygon (closed area) or Line (open path)."));
-
-        rl->addWidget(lbl);
-        rl->addWidget(m_type_combo);
-        vl->addWidget(row);
-
-        connect(m_type_combo, QOverload<int>::of(&QComboBox::currentIndexChanged),
-                this, [this](int) { emitTool(); });
-    }
-
-    // -- Classification ----------------------------------------------------
-    {
-        auto* row = new QWidget(this);
-        auto* rl  = new QHBoxLayout(row);
-        rl->setContentsMargins(0, 0, 0, 0);
-        rl->setSpacing(Theme::kSpacing3);
-
-        auto* lbl = new QLabel(tr("Classification"), row);
-        lbl->setObjectName("wfSliderLabel");
-
-        m_class_combo = new QComboBox(row);
-        m_class_combo->addItems({
-            tr("Unclassified"), tr("Debris Field"), tr("Survey Zone"),
-            tr("Exclusion Zone"), tr("Cable Corridor"), tr("Pipeline"),
-            tr("Boundary"), tr("Sand Waves"),
+    // Manual exclusivity: activating one clears the others; clicking the active one
+    // again turns drawing off. (QButtonGroup exclusive can't un-check by click.)
+    auto wire = [this](QToolButton* btn, int kind) {
+        connect(btn, &QToolButton::toggled, this, [this, btn, kind](bool on) {
+            if (on) {
+                for (QToolButton* b : { m_poly, m_line, m_pen }) {
+                    if (b == btn) continue;
+                    QSignalBlocker sb(b);
+                    b->setChecked(false);
+                }
+                emit toolChanged(kind);
+            } else if (!m_poly->isChecked() && !m_line->isChecked() && !m_pen->isChecked()) {
+                emit toolChanged(0);
+            }
         });
-        m_class_combo->setObjectName("wfCombo");
-        m_class_combo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-        m_class_combo->setToolTip(tr("Classification assigned to the next drawn feature."));
+    };
+    wire(m_poly, 1);
+    wire(m_line, 2);
+    wire(m_pen,  3);
+}
 
-        rl->addWidget(lbl);
-        rl->addWidget(m_class_combo);
-        vl->addWidget(row);
-
-        connect(m_class_combo, &QComboBox::currentTextChanged,
-                this, &FeatureDrawingPanel::classificationChanged);
+void FeatureDrawingPanel::setActiveTool(int tool)
+{
+    QToolButton* btns[] = { m_poly, m_line, m_pen };
+    for (int i = 0; i < 3; ++i) {
+        if (!btns[i]) continue;
+        QSignalBlocker sb(btns[i]);
+        btns[i]->setChecked(tool == i + 1);
     }
-}
-
-void FeatureDrawingPanel::emitTool()
-{
-    const bool on   = m_draw_btn && m_draw_btn->isChecked();
-    const int  type = (m_type_combo && m_type_combo->currentIndex() == 1) ? 2 : 1;
-    emit toolChanged(on ? type : 0);
-}
-
-void FeatureDrawingPanel::setDrawActive(bool active)
-{
-    if (!m_draw_btn) return;
-    QSignalBlocker sb(m_draw_btn);
-    m_draw_btn->setChecked(active);
-}
-
-QString FeatureDrawingPanel::classification() const
-{
-    if (!m_class_combo) return {};
-    const QString t = m_class_combo->currentText();
-    return (t == tr("Unclassified")) ? QString{} : t;
 }
 
 } // namespace dolphin::ui

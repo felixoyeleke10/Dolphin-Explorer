@@ -3,7 +3,9 @@
 #include <QWidget>
 
 class QCheckBox;
+class QComboBox;
 class QPushButton;
+class QWidget;
 
 namespace dolphin::ui {
 
@@ -35,9 +37,16 @@ private:
     WfValueRow* m_tvg_spread = nullptr;   // dB/decade
     WfValueRow* m_tvg_absorb = nullptr;   // dB/m
 
-    // AGC
-    QCheckBox*  m_agc_en       = nullptr;
-    WfValueRow* m_agc_strength = nullptr; // %
+    // AGC — full control set (parity with the waterfall Image Processing section)
+    QCheckBox*  m_agc_en           = nullptr;
+    QComboBox*  m_agc_mode         = nullptr;  // 0=Global, 1=Variable
+    WfValueRow* m_agc_strength     = nullptr;  // %
+    QWidget*    m_agc_along_track_row = nullptr;  // visible only in Variable mode
+    WfValueRow* m_agc_along_track  = nullptr;  // pings
+    QComboBox*  m_agc_smooth_type  = nullptr;  // 0=Mean, 1=Median
+    WfValueRow* m_agc_smooth_win   = nullptr;  // samples
+    WfValueRow* m_agc_edge_skip    = nullptr;  // samples
+    WfValueRow* m_agc_noise_floor  = nullptr;  // %
 
     // ARC
     QCheckBox*  m_arc_en       = nullptr;

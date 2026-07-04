@@ -101,11 +101,11 @@ QWidget* ExportManagerWindow::buildNavPane()
         auto* it = new QTreeWidgetItem(m_nav);
         it->setText(0, ts[i].enabled ? ts[i].title
                                      : ts[i].title + tr("  · soon"));
-        it->setIcon(0, QIcon(ts[i].icon));
+        it->setIcon(0, Theme::icon(ts[i].icon));
         it->setData(0, Qt::UserRole, i);
         if (!ts[i].enabled) {
             it->setFlags(it->flags() & ~Qt::ItemIsSelectable);
-            it->setForeground(0, QColor(Theme::kTextDisabled));
+            it->setForeground(0, Theme::textDisabledColor());
         }
     }
     return m_nav;
@@ -204,7 +204,7 @@ void ExportManagerWindow::selectTarget(int index)
     const Target& t = ts[index];
     m_title->setText(t.title);
     m_desc->setText(t.desc);
-    m_pv_icon->setPixmap(QIcon(t.icon).pixmap(64, 64));
+    m_pv_icon->setPixmap(Theme::icon(t.icon).pixmap(64, 64));
     m_pv_title->setText(t.title);
 
     int idx = 0;

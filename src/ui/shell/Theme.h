@@ -6,7 +6,46 @@
 // All other widget code that needs a colour or geometry should reference
 // these constants so the whole application can be re-skinned from one place.
 
+class QColor;
+class QIcon;
+class QString;
+
 namespace dolphin::ui::Theme {
+
+// -- Theme mode (runtime) -------------------------------------------------------
+// The k* constants below are the DARK palette (the design-system source of
+// truth). The LIGHT palette lives in AppStyle.cpp's token table; QSS-driven
+// chrome re-skins from it at runtime. Custom-painted surfaces (sonar imagery,
+// map canvas, GL views) intentionally stay dark in both modes — standard for
+// hydrographic software.
+enum class Mode { Dark = 0, Light = 1 };
+Mode mode();              // current mode (defaults to Dark)
+void setMode(Mode m);     // set by AppStyle::apply — do not call directly
+
+// Mode-aware icon loader. The SVG icon set is authored with the dark-theme
+// stroke (#aeaeb2); in light mode this re-tints to the light icon stroke at
+// load time. Cached per mode — use instead of QIcon(":/icons/…") everywhere.
+QIcon icon(const QString& resource);
+
+// Mode-aware runtime colours for custom-painted CHROME (labels, tree items,
+// plot axes, section headers). QSS-styled widgets resolve through AppStyle's
+// token table; painters must use these instead of the k* constants so light
+// mode reads correctly. Imagery canvases (map, waterfall, SBP, node graph)
+// intentionally keep the dark k* constants.
+QColor textPrimaryColor();
+QColor textSecondColor();
+QColor textSubtleColor();
+QColor textMutedColor();
+QColor textSoftColor();
+QColor textDimColor();
+QColor textDisabledColor();
+QColor iconStrokeColor();
+QColor borderColor();
+QColor borderMenuColor();
+QColor bgColor();
+QColor bgElevatedColor();
+QColor bgPanelColor();
+QColor bgCardColor();
 
 // -- Font ---------------------------------------------------------------------
 // Full fallback stack so the app renders correctly on macOS and Linux too.

@@ -2,6 +2,7 @@
 // Layout constants, colors, item roles, and PaletteDelegate
 // shared by CommandPaletteDelegate.cpp and CommandPaletteDialog.cpp.
 #include "ui/shared/dialogs/CommandPaletteDialog.h"
+#include "ui/shell/Theme.h"
 
 #include <QColor>
 #include <QStyledItemDelegate>
@@ -28,20 +29,24 @@ enum {
 };
 
 // -- Colors --------------------------------------------------------------------
-// Command palette uses its own dark palette — intentionally distinct from the
-// shell theme so the overlay reads as a separate floating surface.
-inline const QColor kBg          { 0x1e, 0x1e, 0x1e };
-inline const QColor kBorderOuter { 0x45, 0x45, 0x45 };
-inline const QColor kAccent      { 0x00, 0x7a, 0xcc };   // focus indicator
-inline const QColor kSelBg       { 0x09, 0x47, 0x71 };   // active selection
-inline const QColor kTextPrimary { 0xcc, 0xcc, 0xcc };
-inline const QColor kTextSubtle  { 0x85, 0x85, 0x85 };
-inline const QColor kTextMuted   { 0x55, 0x55, 0x55 };
-inline const QColor kDisabledFg  { 0x44, 0x44, 0x44 };
-inline const QColor kHdrBg       { 0x25, 0x25, 0x25 };   // category header bg
-inline const QColor kHdrSep      {255, 255, 255,  8};    // subtle top separator for category headers
-inline const QColor kRowSelBg    {255, 255, 255, 10};    // selected row highlight tint
-inline const QColor kCardShadow  {  0,   0,   0, 38};    // floating card drop-shadow
+// Command palette uses its own compact palette — intentionally distinct from
+// the shell theme so the overlay reads as a separate floating surface. Every
+// colour resolves through Theme::mode() so the palette follows Light/Dark.
+inline bool paletteLight() { return Theme::mode() == Theme::Mode::Light; }
+inline QColor pc(QColor dark, QColor light) { return paletteLight() ? light : dark; }
+
+inline QColor kBg()          { return pc({0x1e,0x1e,0x1e}, {0xff,0xff,0xff}); }
+inline QColor kBorderOuter() { return pc({0x45,0x45,0x45}, {0xc4,0xc4,0xc9}); }
+inline QColor kAccent()      { return pc({0x00,0x7a,0xcc}, {0x00,0x7a,0xcc}); }  // focus indicator
+inline QColor kSelBg()       { return pc({0x09,0x47,0x71}, {0xcc,0xe0,0xf5}); }  // active selection
+inline QColor kTextPrimary() { return pc({0xcc,0xcc,0xcc}, {0x1c,0x1c,0x1e}); }
+inline QColor kTextSubtle()  { return pc({0x85,0x85,0x85}, {0x54,0x54,0x5a}); }
+inline QColor kTextMuted()   { return pc({0x55,0x55,0x55}, {0x7a,0x7a,0x80}); }
+inline QColor kDisabledFg()  { return pc({0x44,0x44,0x44}, {0xb8,0xb8,0xbd}); }
+inline QColor kHdrBg()       { return pc({0x25,0x25,0x25}, {0xf2,0xf2,0xf4}); }  // category header bg
+inline QColor kHdrSep()      { return pc({255,255,255, 8}, {0,0,0, 12}); }       // header top separator
+inline QColor kRowSelBg()    { return pc({255,255,255,10}, {0,0,0, 14}); }       // hover/selected row tint
+inline QColor kCardShadow()  { return QColor(0, 0, 0, 38); }                     // drop-shadow (both modes)
 
 QColor categoryDot(const QString& cat);
 

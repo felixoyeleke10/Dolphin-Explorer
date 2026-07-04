@@ -130,6 +130,8 @@ bool Project::fromJson(const std::string& json)
     processing_graph = pipeline::NodeGraph{};
     if (root.has("project_graph"))
         processing_graph.fromJson(root.get("project_graph").dump());
+    m_draping_surface = root.has("draping_surface")
+        ? root.get("draping_surface").asString() : std::string{};
 
     // Sources
     m_sources.clear();
@@ -528,6 +530,16 @@ bool Project::fromJson(const std::string& json)
             c.range_m    = jc.get("length_m").asFloat();       // legacy key
         c.width_m        = jc.get("width_m").asFloat();
         c.height_m       = jc.get("height_m").asFloat();
+        c.length_m       = jc.get("object_length_m").asFloat();
+        c.shadow_m       = jc.get("shadow_m").asFloat();
+        c.burial_depth_m = jc.get("burial_depth_m").asFloat();
+        c.height_not_measurable = jc.get("height_not_measurable").asBool();
+        c.symbol         = jc.get("symbol").asString();
+        c.color_rgb      = static_cast<uint32_t>(jc.get("color_rgb").asDouble());
+        c.use_for_report = jc.get("use_for_report").asBool();
+        // Absent key (older projects) must default to visible.
+        c.visible        = jc.get("visible").isNull() ? true
+                         : jc.get("visible").asBool();
         c.artifact_id    = static_cast<uint64_t>(jc.get("artifact_id").asDouble());
         c.sample_idx     = static_cast<uint32_t>(jc.get("sample_idx").asDouble());
         c.line_id        = jc.get("line_id").asString();
@@ -578,6 +590,7 @@ bool Project::fromJson(const std::string& json)
         for (const auto& jt : jf.get("tags").elements())
             f.tags.push_back(jt.asString());
         f.group_id = jf.get("group_id").asString();
+        f.visible  = jf.get("visible").isNull() ? true : jf.get("visible").asBool();
         if (f.id > max_feat_id) max_feat_id = f.id;
         m_features.push_back(std::move(f));
     }

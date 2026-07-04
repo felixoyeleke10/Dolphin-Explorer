@@ -142,13 +142,13 @@ static std::pair<double,double> dataRange(const QVector<double>& v)
 
 void SSSMetadataPlotWidget::paintBackground(QPainter& p, const QRect& plot) const
 {
-    p.fillRect(rect(), QColor(Theme::kBg));
-    p.fillRect(plot, QColor(Theme::kBgPanel));
+    p.fillRect(rect(), Theme::bgColor());
+    p.fillRect(plot, Theme::bgPanelColor());
 }
 
 void SSSMetadataPlotWidget::paintGrid(QPainter& p, const QRect& plot, int nx, int ny) const
 {
-    p.setPen(QPen(QColor(Theme::kBorder), 1, Qt::DotLine));
+    p.setPen(QPen(Theme::borderColor(), 1, Qt::DotLine));
     for (int i = 0; i <= nx; ++i) {
         int gx = plot.left() + i * plot.width() / nx;
         p.drawLine(gx, plot.top(), gx, plot.bottom());
@@ -161,7 +161,7 @@ void SSSMetadataPlotWidget::paintGrid(QPainter& p, const QRect& plot, int nx, in
 
 void SSSMetadataPlotWidget::paintAxes(QPainter& p, const QRect& plot) const
 {
-    p.setPen(QPen(QColor(Theme::kBorder), 1));
+    p.setPen(QPen(Theme::borderColor(), 1));
     p.drawLine(plot.bottomLeft(), plot.bottomRight());
     p.drawLine(plot.bottomLeft(), plot.topLeft());
 }
@@ -169,7 +169,7 @@ void SSSMetadataPlotWidget::paintAxes(QPainter& p, const QRect& plot) const
 void SSSMetadataPlotWidget::paintXTicks(QPainter& p, const PlotMetrics& m, int nx) const
 {
     p.setFont(QFont("Segoe UI", 7));
-    p.setPen(QColor(Theme::kTextMuted));
+    p.setPen(Theme::textMutedColor());
     for (int i = 0; i <= nx; ++i) {
         double t   = double(i) / nx;
         double val = m.xmin + t * (m.xmax - m.xmin);
@@ -183,7 +183,7 @@ void SSSMetadataPlotWidget::paintYTicks(QPainter& p, const PlotMetrics& m, int n
 {
     const int ml = m.area.left();
     p.setFont(QFont("Segoe UI", 7));
-    p.setPen(QColor(Theme::kTextMuted));
+    p.setPen(Theme::textMutedColor());
     for (int i = 0; i <= ny; ++i) {
         double t   = double(i) / ny;
         double val = m.ymin + t * (m.ymax - m.ymin);
@@ -196,7 +196,7 @@ void SSSMetadataPlotWidget::paintYTicks(QPainter& p, const PlotMetrics& m, int n
 
 void SSSMetadataPlotWidget::paintEmptyHint(QPainter& p, const QRect& plot) const
 {
-    p.setPen(QColor(Theme::kTextDim));
+    p.setPen(Theme::textDimColor());
     p.setFont(QFont("Segoe UI", 9));
     p.drawText(plot, Qt::AlignCenter,
                m_mode == SSSChartMode::Line
@@ -366,7 +366,7 @@ void SSSMetadataPlotWidget::paintEvent(QPaintEvent*)
         paintScatter(p, m);
         paintXTicks(p, m, 5);
         p.setFont(QFont("Segoe UI", 8));
-        p.setPen(QColor(Theme::kTextSubtle));
+        p.setPen(Theme::textSubtleColor());
         p.drawText(QRect(plot.left(), height() - 14, plot.width(), 14),
                    Qt::AlignHCenter, m_x_label);
         p.save();
@@ -378,7 +378,7 @@ void SSSMetadataPlotWidget::paintEvent(QPaintEvent*)
         paintHistogram(p, m);
         paintXTicks(p, m, 5);
         p.setFont(QFont("Segoe UI", 8));
-        p.setPen(QColor(Theme::kTextSubtle));
+        p.setPen(Theme::textSubtleColor());
         p.drawText(QRect(plot.left(), height() - 14, plot.width(), 14),
                    Qt::AlignHCenter, m_hist_label);
     }

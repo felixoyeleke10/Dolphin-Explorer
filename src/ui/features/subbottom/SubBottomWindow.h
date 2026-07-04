@@ -8,6 +8,7 @@
 #include "ui/shared/dialogs/CommandPaletteDialog.h"
 #include "ui/shared/widgets/ViewerToolbar.h"
 #include "ui/shell/ViewerWindow.h"
+#include "core/Contact.h"
 #include "core/SubBottomTrace.h"
 #include <QPointF>
 #include <QString>
@@ -37,7 +38,6 @@ namespace dolphin::ui {
 class SubBottomInspectorPanel;
 class SubBottomView;
 class ContactPickingPanel;
-class FeatureDrawingPanel;
 
 // -----------------------------------------------------------------------------
 //  SubBottomWindow — top-level window for sub-bottom profiler (SBP) display.
@@ -77,6 +77,11 @@ public:
     const std::string& currentLayerId() const;
 
     void setProjectLayers(const std::vector<std::pair<std::string, std::string>>& layers);
+
+    // Full project contact list, kept in sync by MainWindow via the event bus.
+    // The window filters to the loaded line and shows marker diamonds on the
+    // section (parity with the waterfall's contact overlay).
+    void setProjectContacts(std::vector<core::Contact> contacts);
 
     // Settings dialog accessors — read current panel/view state.
     SubBottomDisplayParams displayParams() const;
@@ -147,6 +152,10 @@ signals:
                         const QString& line_id);
     // "Clear All Contacts" pressed in the Contact Picking section.
     void clearAllContactsRequested();
+    // Open the shared "Edit contact details" editor. id = specific contact
+    // (marker double-click) or 0 (panel button → first contact on this line);
+    // line_id scopes the editor's Prev/Next to this line's contacts.
+    void contactEditRequested(uint64_t id, const QString& line_id);
 
 private slots:
     void onScrollbarMoved(int first_trace);
@@ -160,6 +169,11 @@ private:
     // Cancels any in-flight task, then arms m_proc_debounce so rapid calls
     // (e.g. slider drags) collapse into a single pipeline run.
     void scheduleProcessing();
+
+    // Converts m_project_contacts for the loaded line into view ContactMarks.
+    void refreshContactOverlay();
+    // Reflect the active feature tool on the toolbar toggles (signal-blocked).
+    void syncFeatureToolButtons(int tool);
 
     void setDataState(ViewerDataState s) {
         if (m_data_state != s) { m_data_state = s; emit dataStateChanged(s); }
@@ -179,8 +193,10 @@ private:
     ViewerToolbar*           m_toolbar             = nullptr;
     QToolButton*             m_btn_bottom_track_tb = nullptr;
     ContactPickingPanel*     m_contact_panel       = nullptr;
-    FeatureDrawingPanel*     m_feature_panel       = nullptr;
-    QString                  m_feature_class;      // applied to next drawn feature
+    // Feature drawing toolbar toggles (1=polygon, 2=line, 3=pen)
+    QToolButton*             m_btn_feat_poly       = nullptr;
+    QToolButton*             m_btn_feat_line       = nullptr;
+    QToolButton*             m_btn_feat_pen        = nullptr;
 
     QLabel*        m_status_left   = nullptr;
     QLabel*        m_status_right  = nullptr;
@@ -188,6 +204,7 @@ private:
     QTimer*        m_proc_debounce = nullptr;  // batches rapid processing triggers
 
     // -- Data -------------------------------------------------------------
+    std::vector<core::Contact> m_project_contacts;  // full list, synced via the bus
     app::DataLayer*     m_layer             = nullptr;
     app::ImportService* m_import_service    = nullptr;
     std::string         m_source_path;

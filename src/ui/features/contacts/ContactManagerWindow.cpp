@@ -4,6 +4,7 @@
 // constants + delegates live in ContactVisuals.{h,cpp}.
 #include "ui/features/contacts/ContactManagerWindow.h"
 #include "ui/features/contacts/ContactVisuals.h"
+#include "ui/features/contacts/ContactEditorDialog.h"
 #include "ui/shell/Theme.h"
 #include "app/project/Project.h"
 
@@ -159,9 +160,9 @@ ContactManagerWindow::ContactManagerWindow(QWidget* parent)
     connect(m_table, &QTableWidget::itemSelectionChanged, this, onSelChanged);
     connect(m_thumbs, &QListWidget::itemSelectionChanged, this, onSelChanged);
     connect(m_table, &QTableWidget::cellDoubleClicked, this, [this](int, int) {
-        const uint64_t id = currentRowId(); if (id) emit contactActivated(id); });
+        const uint64_t id = currentRowId(); if (id) openContactEditor(id); });
     connect(m_thumbs, &QListWidget::itemDoubleClicked, this, [this](QListWidgetItem* it) {
-        if (it) emit contactActivated(it->data(Qt::UserRole).toULongLong()); });
+        if (it) openContactEditor(it->data(Qt::UserRole).toULongLong()); });
 
     auto showCtxMenu = [this](const QPoint& globalPos) {
         const bool has = !selectedIds().empty();
@@ -256,6 +257,7 @@ void ContactManagerWindow::refresh()
     updateCommandState();
     updateStatus();
     updatePreview();
+    if (m_editor) m_editor->refresh(m_project);
 }
 
 } // namespace dolphin::ui

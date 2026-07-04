@@ -70,6 +70,8 @@ void MainWindow::onWaterfallOpen()
                 this, &MainWindow::onWaterfallFeatureCreated);
         connect(m_waterfall_win, &WaterfallWindow::clearAllContactsRequested,
                 this, &MainWindow::onClearContacts);
+        connect(m_waterfall_win, &WaterfallWindow::contactEditRequested,
+                this, &MainWindow::onContactEditRequested);
         connect(m_waterfall_win, &WaterfallWindow::paramsApplied,
                 this, &MainWindow::onWaterfallParamsApplied);
         connect(m_waterfall_win, &WaterfallWindow::applyToAllRequested,

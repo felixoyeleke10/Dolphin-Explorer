@@ -103,6 +103,7 @@ void WaterfallView::clear()
     m_feature_tool = 0;
     m_feature_pts.clear();
     m_feature_px.clear();
+    m_feature_pen_down = false;
     m_dirty              = true;
     m_gl_data_dirty      = true;
     m_amp_profile_dirty  = true;
@@ -122,6 +123,7 @@ void WaterfallView::setSeabedTool(int tool)
         m_feature_tool = 0;
         m_feature_pts.clear();
         m_feature_px.clear();
+        m_feature_pen_down = false;
     }
     if (tool != 1) {
         m_seabed.endDrag();
@@ -144,6 +146,7 @@ void WaterfallView::setContactTool(int tool)
         m_feature_tool = 0;
         m_feature_pts.clear();
         m_feature_px.clear();
+        m_feature_pen_down = false;
     }
     update();
 }
@@ -154,6 +157,7 @@ void WaterfallView::setFeatureTool(int tool)
     // Switching tool (or off) discards any in-progress draft.
     m_feature_pts.clear();
     m_feature_px.clear();
+    m_feature_pen_down = false;
     if (tool != 0) {
         m_contact_tool = 0;
         m_seabed_tool  = 0;
@@ -177,6 +181,7 @@ void WaterfallView::refreshExternalContacts(const std::vector<core::Contact>& co
 
     for (const auto& c : contacts) {
         WfContact wfc;
+        wfc.id = c.id;   // lets marker double-click open this contact in the editor
 
         // A waterfall pick always has a slant range (the pick requires range_m > 0);
         // map/externally-placed contacts have range_m == 0. Discriminating on range_m

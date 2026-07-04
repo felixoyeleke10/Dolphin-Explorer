@@ -43,6 +43,7 @@ void MapView::paintFeatures(QPainter& p) const
         p.setFont(font);
 
         for (const auto& f : m_project->features()) {
+            if (!f.visible) continue;   // hidden via the explorer checkbox
             if (f.vertices.size() < 2) continue;
 
             QPolygonF poly;
@@ -104,6 +105,9 @@ void MapView::paintFeatures(QPainter& p) const
         for (const auto& g : m_feature_pts_geo)
             draft.append(geoToPixel(g.x(), g.y()));
 
+        const bool polygon = (m_feature_kind == 1);
+        const bool pen     = (m_feature_kind == 3);
+
         // Confirmed chain (solid).
         if (draft.size() >= 2) {
             p.setPen(QPen(kDraftLine, 1.5));
@@ -111,8 +115,13 @@ void MapView::paintFeatures(QPainter& p) const
             p.drawPolyline(draft);
         }
 
+        if (pen) {
+            // Freehand stroke — just the traced polyline, no click helpers.
+            return;
+        }
+
         // Polygon: translucent fill preview once it encloses area.
-        if (m_feature_polygon && draft.size() >= 3) {
+        if (polygon && draft.size() >= 3) {
             QPolygonF closed = draft;
             closed.append(QPointF(m_feature_cursor_px));
             p.setPen(Qt::NoPen);
@@ -125,7 +134,7 @@ void MapView::paintFeatures(QPainter& p) const
         p.drawLine(draft.back(), QPointF(m_feature_cursor_px));
 
         // Polygon: dashed closing segment back to the first vertex.
-        if (m_feature_polygon && draft.size() >= 2)
+        if (polygon && draft.size() >= 2)
             p.drawLine(QPointF(m_feature_cursor_px), draft.front());
 
         // Vertex dots.

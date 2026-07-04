@@ -37,6 +37,7 @@ void SubBottomView::clear()
     m_feature_tool = 0;
     m_feature_pts.clear();
     m_feature_px.clear();
+    m_feature_pen_down = false;
     m_image_dirty = true;
     m_image       = QImage{};
     update();

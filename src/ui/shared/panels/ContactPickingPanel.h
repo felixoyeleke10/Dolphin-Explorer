@@ -25,6 +25,8 @@ signals:
     void pickToggled(bool active);
     void classificationChanged(const QString& classification);
     void clearRequested();
+    // "Edit Contacts…" pressed — open the shared "Edit contact details" editor.
+    void editRequested();
 
 private:
     QToolButton* m_pick_btn   = nullptr;

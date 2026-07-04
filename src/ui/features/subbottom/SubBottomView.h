@@ -6,6 +6,7 @@
 #include <QPointF>
 #include <QString>
 #include <QWidget>
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -78,6 +79,15 @@ public:
     void setFeatureTool(int tool);
     void setContactClass(const QString& cls) { m_contact_class = cls.toStdString(); }
 
+    // Project-contact marker overlay (parity with the waterfall's diamonds).
+    // trace_idx is the absolute trace; depth_s the two-way travel time.
+    struct ContactMark {
+        int      trace_idx = 0;
+        float    depth_s   = 0.f;
+        uint64_t id        = 0;   // project contact id
+    };
+    void setExternalContacts(std::vector<ContactMark> marks);
+
 signals:
     void scrollChanged(int first_trace, int total_traces, int visible_traces);
     void scaleChanged (int px_per_trace, float px_per_sample);
@@ -90,12 +100,16 @@ signals:
     // Feature (polygon/polyline) drawn; vertices are (lon,lat) from trace nav.
     void featureDrawn(const std::vector<QPointF>& lonlat_vertices, bool polygon,
                       bool is_projected);
+    // Double-click on a project-contact marker (no tool active) — open the
+    // "Edit contact details" editor for this contact.
+    void contactEditRequested(uint64_t contact_id);
 
 protected:
     void paintEvent        (QPaintEvent*        e) override;
     void resizeEvent       (QResizeEvent*       e) override;
     void mousePressEvent   (QMouseEvent*        e) override;
     void mouseMoveEvent    (QMouseEvent*        e) override;
+    void mouseReleaseEvent (QMouseEvent*        e) override;
     void mouseDoubleClickEvent(QMouseEvent*     e) override;
     void keyPressEvent     (QKeyEvent*          e) override;
     void wheelEvent        (QWheelEvent*        e) override;
@@ -110,6 +124,13 @@ private:
     bool   traceGeoAt(QPoint pos, int& trace_idx, float& depth_s,
                       double& lat, double& lon, bool& is_projected) const;
     void   paintAnnotationDraft(QPainter& p) const;
+    void   paintContactMarks(QPainter& p) const;
+    // On-screen pixel position of a contact marker; false when off-screen.
+    bool   contactMarkPixelPos(const ContactMark& m, QPoint& out_px) const;
+    // Commit the feature draft (double-click / Enter): strips the near-duplicate
+    // final vertex a double-click's own press adds, enforces the minimum vertex
+    // count, emits featureDrawn, and clears the draft.
+    void   commitFeatureDraft();
 
     std::vector<core::SubBottomTrace> m_traces;
 
@@ -132,10 +153,12 @@ private:
     // -- Annotation tool state ---------------------------------------------
     int                  m_contact_tool = 0;   // 0=none, 1=pick
     std::string          m_contact_class;       // applied to next contact pick
-    int                  m_feature_tool = 0;    // 0=none, 1=polygon, 2=line
+    int                  m_feature_tool = 0;    // 0=none, 1=polygon, 2=line, 3=pen
     std::vector<QPointF> m_feature_pts;         // committed vertices (lon,lat)
     std::vector<QPoint>  m_feature_px;          // matching screen points for the draft
     bool                 m_feature_proj = false;
+    bool                 m_feature_pen_down = false;  // pen freehand capture in progress
+    std::vector<ContactMark> m_external_contacts;      // project contacts on this line
 
     QImage m_image;
     bool   m_image_dirty     = true;

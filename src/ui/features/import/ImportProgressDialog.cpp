@@ -198,7 +198,7 @@ void ExecutionProgressDialog::buildStageChips(int n)
         if (i > 0) {
             auto* arrow = new QLabel(QStringLiteral("→"), m_stage_box);
             arrow->setStyleSheet(QString("color:%1;")
-                .arg(QColor(Theme::kTextMuted).name()));
+                .arg(Theme::textMutedColor().name()));
             m_stage_lay->addWidget(arrow);
         }
         auto* chip = new QLabel(m_stage_box);

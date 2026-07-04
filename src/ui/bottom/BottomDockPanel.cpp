@@ -4,6 +4,7 @@
 // Problems tab + slots        → BottomDockPanel.Problems.cpp
 // Output / Jobs / Terminal    → BottomDockPanel.OutputJobs.cpp
 #include "ui/bottom/BottomDockPanel.h"
+#include "ui/shell/Theme.h"
 
 #include <QIcon>
 #include <QPixmap>
@@ -17,7 +18,7 @@ namespace dolphin::ui {
 static void applyChevronState(QToolButton* btn, bool collapsed)
 {
     if (!btn) return;
-    QPixmap px = QIcon(":/icons/panel_chevron.svg").pixmap(14, 14);
+    QPixmap px = Theme::icon(":/icons/panel_chevron.svg").pixmap(14, 14);
     if (collapsed) {
         // Rotate 180° so chevron points up when panel is minimised
         btn->setIcon(QIcon(px.transformed(QTransform().rotate(180))));

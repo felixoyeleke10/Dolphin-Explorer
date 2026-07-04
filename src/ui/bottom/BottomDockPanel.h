@@ -14,7 +14,7 @@ namespace dolphin::ui { class TerminalWidget; }
 
 namespace dolphin::ui {
 
-// Bottom dock panel with Problems / Output / Jobs / Terminal tabs.
+// Bottom dock panel with Problems / Output / Jobs / Terminal / Chat tabs.
 // Docks at the bottom of the main area; collapsible; height is user-resizable.
 //
 // Usage:
@@ -30,6 +30,11 @@ public:
 
     // Forwards to the Terminal tab's working directory.
     void setWorkingDirectory(const QString& dir);
+
+    // Inject the AI chat widget into the Chat tab. The widget is owned by the
+    // panel afterwards. Injection (rather than construction here) keeps this
+    // layer free of a dependency on the mainwindow lib that owns the chat.
+    void setChatWidget(QWidget* w);
 
     void saveState() const;
     void restoreState();
@@ -58,6 +63,7 @@ private:
     void buildOutputTab(QWidget* parent);
     void buildJobsTab(QWidget* parent);
     void buildTerminalTab(QWidget* parent);
+    void buildChatTab(QWidget* parent);
 
     void switchTab(int idx);
     void updateBadge(int tab_idx, int count, bool is_error = false);
@@ -76,7 +82,7 @@ private:
 
     // Header widgets
     QWidget*          m_header       = nullptr;
-    static constexpr int kTabCount   = 4;
+    static constexpr int kTabCount   = 5;
     std::array<QToolButton*, kTabCount> m_tab_btns{};
     std::array<QLabel*,      kTabCount> m_badges{};
     QToolButton*      m_collapse_btn = nullptr;
@@ -93,6 +99,7 @@ private:
     QPlainTextEdit*   m_out_edit     = nullptr;
     QListWidget*      m_job_list     = nullptr;
     TerminalWidget*   m_terminal     = nullptr;
+    QWidget*          m_chat_host    = nullptr;   // container the chat widget is injected into
 
     int               m_active_tab   = 1;  // default: Output
     bool              m_jobs_refresh_pending = false;  // coalescing guard

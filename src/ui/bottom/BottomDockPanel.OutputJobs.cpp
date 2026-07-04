@@ -3,6 +3,7 @@
 #include "ui/bottom/TerminalWidget.h"
 #include "ui/shell/Theme.h"
 
+#include <QVBoxLayout>
 #include <QApplication>
 #include <QClipboard>
 #include <QDateTime>
@@ -91,6 +92,26 @@ void BottomDockPanel::setWorkingDirectory(const QString& dir)
 {
     if (m_terminal)
         m_terminal->setWorkingDirectory(dir);
+}
+
+void BottomDockPanel::buildChatTab(QWidget* parent)
+{
+    // Empty host — MainWindow injects the PanelChatWidget via setChatWidget()
+    // (the chat lives in the mainwindow lib, which this layer must not link).
+    m_chat_host = new QWidget;
+    auto* l = new QVBoxLayout(m_chat_host);
+    l->setContentsMargins(0, 0, 0, 0);
+    l->setSpacing(0);
+
+    if (auto* s = qobject_cast<QStackedWidget*>(parent))
+        s->addWidget(m_chat_host);
+}
+
+void BottomDockPanel::setChatWidget(QWidget* w)
+{
+    if (!m_chat_host || !w) return;
+    w->setParent(m_chat_host);
+    m_chat_host->layout()->addWidget(w);
 }
 
 void BottomDockPanel::populateFromHub()

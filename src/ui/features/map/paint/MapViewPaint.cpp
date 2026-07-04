@@ -11,6 +11,8 @@
 #include "ui/features/map/MapView.h"
 
 #include <QPainter>
+#include <QPainterPath>
+#include <QRadialGradient>
 
 namespace dolphin::ui {
 

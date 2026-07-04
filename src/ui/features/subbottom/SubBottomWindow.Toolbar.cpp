@@ -41,8 +41,29 @@ void SubBottomWindow::buildToolbar()
     btn_measure->setEnabled(false);
     btn_zoom->setEnabled(false);
 
-    // Contact + feature picking are right-panel tool sections (Contact Picking /
-    // Feature Drawing), not toolbar tools — see SubBottomWindow.cpp.
+    // Feature drawing tools — polygon / line / pen on the section (same icons
+    // and semantics as the main-window and waterfall toolbars). Contact picking
+    // remains a right-panel section; contact editing is the button below.
+    auto addFeatureBtn = [this](QToolButton*& out, const char* icon, const QString& tip) {
+        out = m_toolbar->addButton(icon, tip);
+        out->setCheckable(true);
+    };
+    addFeatureBtn(m_btn_feat_poly, ":/icons/draw_polygon.svg",
+        tr("Draw Polygon — click to add vertices; double-click or Enter closes the area.\n"
+           "Esc cancels, Backspace removes the last vertex."));
+    addFeatureBtn(m_btn_feat_line, ":/icons/draw_line.svg",
+        tr("Draw Line — click to add vertices; double-click or Enter finishes.\n"
+           "Esc cancels, Backspace removes the last vertex."));
+    addFeatureBtn(m_btn_feat_pen, ":/icons/draw_pen.svg",
+        tr("Draw Freehand (Pen) — press and drag on the section; release to finish."));
+
+    auto* btn_contact_edit = m_toolbar->addButton(":/icons/contact_edit.svg",
+        tr("Edit contact details for this line's contacts.\n"
+           "Tip: double-click a contact marker on the section to edit that contact directly."));
+    connect(btn_contact_edit, &QToolButton::clicked, this, [this]() {
+        const QString line = m_layer ? QString::fromStdString(m_layer->id) : QString{};
+        emit contactEditRequested(0, line);
+    });
 
     qobject_cast<QVBoxLayout*>(layout())->insertWidget(0, m_toolbar);
 }
@@ -74,6 +95,12 @@ QList<CommandPaletteItem> SubBottomWindow::buildCommandItems()
     addCmd(CommandId::NewProject,  true, [this] { emit newFileRequested();  });
     addCmd(CommandId::OpenProject, true, [this] { emit openFileRequested(); });
     addCmd(CommandId::SaveProject, true, [this] { emit saveFileRequested(); });
+
+    add("Tools", tr("Edit Contact Details"), "", "contact edit details editor",
+        has_layer, [this] {
+            const QString line = m_layer ? QString::fromStdString(m_layer->id) : QString{};
+            emit contactEditRequested(0, line);
+        });
 
     add("View", tr("Zoom In (Traces)"),  "+", "zoom in horizontal",
         has_layer, [this] { m_view->setPxPerTrace(m_view->pxPerTrace() + 1); });

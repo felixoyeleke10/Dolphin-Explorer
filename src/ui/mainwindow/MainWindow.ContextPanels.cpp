@@ -5,11 +5,16 @@
 #include "ui/shared/UiUtils.h"
 #include "ui/shell/AppInfo.h"
 #include "ui/shell/Theme.h"
+#include "ui/mainwindow/panels/ViewsPanel.h"
+#include "ui/features/map/MapViewportHost.h"
 #include "ui/shared/panels/LineListPanel.h"
 #include "ui/shared/widgets/CollapsibleSection.h"
 #include "ui/shared/widgets/SidePanelShell.h"
+#include "ui/systems/DisplayStateManager.h"
+#include "app/layers/DataLayer.h"
 
 #include <QDesktopServices>
+#include <QFileDialog>
 #include <QFileInfo>
 #include <QFrame>
 #include <QHBoxLayout>
@@ -43,7 +48,7 @@ void MainWindow::buildContextPanel(QWidget* parent)
     hdr_icon->setFixedSize(14, 14);
     hdr_icon->setScaledContents(true);
     hdr_icon->setAttribute(Qt::WA_TransparentForMouseEvents);
-    hdr_icon->setPixmap(QIcon(QStringLiteral(":/icons/explorer.svg")).pixmap(14, 14));
+    hdr_icon->setPixmap(Theme::icon(QStringLiteral(":/icons/explorer.svg")).pixmap(14, 14));
     hdr_l->addWidget(hdr_icon);
     hdr_l->addSpacing(4);
     m_context_title = new QLabel(tr("File Explorer"), hdr);
@@ -59,67 +64,39 @@ void MainWindow::buildContextPanel(QWidget* parent)
     m_line_list = new LineListPanel(body, LineListPanel::ContentMode::Explorer);
     layout->addWidget(m_line_list, 1);
 
-    // -- Recent Projects section -----------------------------------------------
-    auto* recent_sec = new CollapsibleSection(tr("Recent Projects"), body);
-    recent_sec->setIcon(QStringLiteral(":/icons/recent_projects.svg"));
-    m_sidebar_recent_list = new QListWidget(recent_sec);
-    m_sidebar_recent_list->setObjectName("emptyStateRecentList");
-    m_sidebar_recent_list->setFrameShape(QFrame::NoFrame);
-    m_sidebar_recent_list->setMaximumHeight(8 * 24);
-    m_sidebar_recent_list->setContextMenuPolicy(Qt::CustomContextMenu);
+    // -- Views section (SeaView-style per-viewer display settings) --------------
+    // Recent Projects moved to the empty-map launcher (MapViewportHost); this
+    // slot now hosts MAP | SSS | SBP display controls, incl. the 3D draping
+    // surface — so the 3D view no longer has to beg for terrain data.
+    auto* views_sec = new CollapsibleSection(tr("Views"), body);
+    views_sec->setIcon(QStringLiteral(":/icons/layers.svg"));
+    m_views_panel = new ViewsPanel(views_sec);
 
-    connect(m_sidebar_recent_list, &QListWidget::itemClicked,
-            this, [this](QListWidgetItem* item) {
-                // Defer so the mouse-release event fully unwinds before loadProject
-                // starts calling setVisible() inside bindProjectUi().  On Windows,
-                // ShowWindow mid-click-handler flushes the Win32 message queue and
-                // can cause the main window to blink or lose focus.
-                const QString path = item->data(Qt::UserRole).toString();
-                QTimer::singleShot(0, this, [this, path]() {
-                    m_session_ctrl->openProjectPath(path.toStdString());
-                });
-            });
+    connect(m_views_panel, &ViewsPanel::mapPaletteSelected, this, [this](int idx) {
+        if (m_display_state) m_display_state->setMapPalette(idx);
+    });
+    connect(m_views_panel, &ViewsPanel::mapQualitySelected, this, [this](int q) {
+        onMapSonarQuality(static_cast<MapSonarQuality>(q));
+    });
+    connect(m_views_panel, &ViewsPanel::sssPaletteSelected, this, [this](int idx) {
+        if (!m_display_state || !currentProject()) return;
+        const auto* l = currentProject()->findLayer(activeLayerId());
+        if (l && l->modality == app::Modality::Sidescan)
+            m_display_state->setLayerSssPalette(l->id, idx);
+    });
+    connect(m_views_panel, &ViewsPanel::sbpPaletteSelected, this, [this](int idx) {
+        if (!m_display_state || !currentProject()) return;
+        const auto* l = currentProject()->findLayer(activeLayerId());
+        if (l && l->modality == app::Modality::SubBottom)
+            m_display_state->setLayerSbpPalette(l->id, idx);
+    });
+    connect(m_views_panel, &ViewsPanel::drapingBrowseRequested,
+            this, &MainWindow::onChooseDrapingSurface);
+    connect(m_views_panel, &ViewsPanel::drapingClearRequested,
+            this, &MainWindow::onClearDrapingSurface);
 
-    connect(m_sidebar_recent_list, &QListWidget::customContextMenuRequested,
-            this, [this](const QPoint& pos) {
-                QListWidgetItem* item = m_sidebar_recent_list->itemAt(pos);
-                const QString path = item ? item->data(Qt::UserRole).toString() : QString{};
-
-                QMenu menu(m_sidebar_recent_list);
-
-                if (item) {
-                    menu.addAction(tr("Open"), this, [this, path]() {
-                        QTimer::singleShot(0, this, [this, path]() {
-                            m_session_ctrl->openProjectPath(path.toStdString());
-                        });
-                    });
-                    menu.addAction(tr("Open Project Folder"), this, [path]() {
-                        QDesktopServices::openUrl(
-                            QUrl::fromLocalFile(QFileInfo(path).absolutePath()));
-                    });
-                    menu.addSeparator();
-                    menu.addAction(tr("Remove from Recent"), this, [this, path]() {
-                        QSettings s(AppInfo::kOrgName, AppInfo::kSettingsApp);
-                        QStringList list = s.value(QStringLiteral("recentProjects")).toStringList();
-                        list.removeAll(path);
-                        s.setValue(QStringLiteral("recentProjects"), list);
-                        refreshSidebarSections(list);
-                        rebuildRecentMenu();
-                    });
-                    menu.addSeparator();
-                }
-
-                menu.addAction(tr("Clear All Recent"), this, [this]() {
-                    QSettings s(AppInfo::kOrgName, AppInfo::kSettingsApp);
-                    s.remove(QStringLiteral("recentProjects"));
-                    refreshSidebarSections({});
-                    rebuildRecentMenu();
-                });
-
-                menu.exec(m_sidebar_recent_list->viewport()->mapToGlobal(pos));
-            });
-    recent_sec->setContent(m_sidebar_recent_list);
-    layout->addWidget(recent_sec);
+    views_sec->setContent(m_views_panel);
+    layout->addWidget(views_sec);
 
     // -- Recycle Bin section ---------------------------------------------------
     // Soft-deleted contacts (the same project recycle bin the Contact Manager
@@ -174,13 +151,13 @@ void MainWindow::buildContextPanel(QWidget* parent)
 
 void MainWindow::refreshSidebarSections(const QStringList& paths)
 {
-    if (!m_sidebar_recent_list) return;
-    m_sidebar_recent_list->clear();
-    for (const QString& path : paths) {
-        auto* item = new QListWidgetItem(recentDisplayName(path), m_sidebar_recent_list);
-        item->setData(Qt::UserRole, path);
-        item->setToolTip(path);
-    }
+    // Recent projects live on the empty-map launcher now.
+    if (!m_viewport_host) return;
+    QStringList names;
+    names.reserve(paths.size());
+    for (const QString& path : paths)
+        names << recentDisplayName(path);
+    m_viewport_host->setRecentProjects(names, paths);
 }
 
 void MainWindow::refreshRecycleBin()
@@ -221,6 +198,61 @@ QWidget* MainWindow::makeContextPlaceholder(const QString& title, const QString&
     layout->addWidget(body_lbl);
     layout->addStretch();
     return page;
+}
+
+// -- Views panel sync + draping surface -----------------------------------------
+
+void MainWindow::refreshViewsPanel()
+{
+    if (!m_views_panel) return;
+
+    if (m_display_state) {
+        m_views_panel->setMapPalette(m_display_state->mapPalette());
+        m_views_panel->setMapQuality(static_cast<int>(m_display_state->mapQuality()));
+    }
+
+    const app::DataLayer* active = currentProject()
+        ? currentProject()->findLayer(activeLayerId()) : nullptr;
+    const bool sss = active && active->modality == app::Modality::Sidescan;
+    const bool sbp = active && active->modality == app::Modality::SubBottom;
+    m_views_panel->setSssLayer(sss, sss ? active->sss_palette : -1);
+    m_views_panel->setSbpLayer(sbp, sbp ? active->sbp_palette : -1);
+
+    const QString drape = currentProject()
+        ? QString::fromStdString(currentProject()->drapingSurface()) : QString{};
+    m_views_panel->setDrapingSurface(
+        drape.isEmpty() ? QString{} : QFileInfo(drape).fileName());
+}
+
+void MainWindow::onChooseDrapingSurface()
+{
+    if (!currentProject()) return;
+    const QString path = QFileDialog::getOpenFileName(
+        this, tr("Choose Draping Surface"), {},
+        tr("XYZ / CSV files (*.xyz *.csv *.txt);;All files (*)"));
+    if (!path.isEmpty()) applyDrapingSurface(path);
+}
+
+void MainWindow::onClearDrapingSurface()
+{
+    applyDrapingSurface({});
+}
+
+void MainWindow::applyDrapingSurface(const QString& path, bool already_loaded)
+{
+    if (m_viewport_host && m_loaded_draping != path) {
+        if (!m_loaded_draping.isEmpty())
+            m_viewport_host->removeTerrainPath(m_loaded_draping);
+        if (!path.isEmpty() && !already_loaded)
+            m_viewport_host->loadTerrainPath(path);
+    }
+    m_loaded_draping = path;
+
+    if (currentProject())
+        currentProject()->setDrapingSurface(path.toStdString());
+    if (m_views_panel)
+        m_views_panel->setDrapingSurface(
+            path.isEmpty() ? QString{} : QFileInfo(path).fileName());
 }
 
 } // namespace dolphin::ui

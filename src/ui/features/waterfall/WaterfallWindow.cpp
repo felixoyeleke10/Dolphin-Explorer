@@ -48,7 +48,7 @@ WaterfallWindow::WaterfallWindow(AppState* app_state, QWidget* parent)
     , m_app_state(app_state)
 {
     setWindowTitle(tr("Waterfall — Dolphin Explorer"));
-    setWindowIcon(QIcon(":/icons/waterfall.svg"));
+    setWindowIcon(Theme::icon(":/icons/waterfall.svg"));
     setMinimumSize(kMinW, kMinH);
     resize(kInitW, kInitH);
     setAttribute(Qt::WA_DeleteOnClose, false);
@@ -190,6 +190,7 @@ WaterfallWindow::WaterfallWindow(AppState* app_state, QWidget* parent)
     connect(m_analysis, &WaterfallAnalysisPanel::seabedToolChanged,
             this, [this](int tool) {
                 m_view->setSeabedTool(tool);
+                if (tool != 0) syncFeatureToolButtons(0);
                 static const char* kHints[] = {
                     nullptr,
                     QT_TR_NOOP("Seabed — Pen: drag the seabed line to reshape it"),
@@ -218,7 +219,7 @@ WaterfallWindow::WaterfallWindow(AppState* app_state, QWidget* parent)
                 }
                 if (tool != 0) {
                     m_analysis->setSeabedToolActive(0);
-                    m_analysis->setFeatureToolActive(0);
+                    syncFeatureToolButtons(0);
                 }
             });
 
@@ -227,18 +228,60 @@ WaterfallWindow::WaterfallWindow(AppState* app_state, QWidget* parent)
                 m_view->setContactTool(checked ? 1 : 0);
                 if (m_analysis) {
                     m_analysis->setContactPickActive(checked);
-                    if (checked) {
+                    if (checked)
                         m_analysis->setSeabedToolActive(0);
-                        m_analysis->setFeatureToolActive(0);
-                    }
                 }
+                if (checked) syncFeatureToolButtons(0);
                 m_status_left->setText(
                     checked ? tr("Contact — click on the waterfall to place a point pick")
                             : QString{});
             });
 
+    // Feature drawing toolbar toggles: manual exclusivity among the three;
+    // clicking the active tool again turns drawing off. Activating one
+    // deactivates contact/seabed (the view setter enforces it; the UI mirrors).
+    {
+        auto wireFeature = [this](QToolButton* btn, int kind) {
+            connect(btn, &QToolButton::toggled, this, [this, btn, kind](bool on) {
+                if (on) {
+                    syncFeatureToolButtons(kind);          // uncheck the other two
+                    m_view->setFeatureTool(kind);
+                    if (m_btn_contact) { QSignalBlocker sb(m_btn_contact); m_btn_contact->setChecked(false); }
+                    if (m_analysis) {
+                        m_analysis->setContactPickActive(false);
+                        m_analysis->setSeabedToolActive(0);
+                    }
+                    m_status_left->setText(
+                        kind == 1 ? tr("Polygon: click points, double-click or Enter to close, Esc to cancel.")
+                      : kind == 2 ? tr("Line: click points, double-click or Enter to finish, Esc to cancel.")
+                                  : tr("Pen: press and drag to draw freehand; release to finish."));
+                } else if (!m_btn_feat_poly->isChecked() && !m_btn_feat_line->isChecked()
+                           && !m_btn_feat_pen->isChecked()) {
+                    m_view->setFeatureTool(0);
+                    m_status_left->setText(QString{});
+                }
+            });
+        };
+        wireFeature(m_btn_feat_poly, 1);
+        wireFeature(m_btn_feat_line, 2);
+        wireFeature(m_btn_feat_pen,  3);
+    }
+
     connect(m_analysis, &WaterfallAnalysisPanel::contactClassChanged,
             m_view, &WaterfallView::setContactClass);
+
+    // Marker double-click → the shared "Edit contact details" editor.
+    connect(m_view, &WaterfallView::contactEditRequested,
+            this, [this](uint64_t id) {
+                const QString line = m_layer ? QString::fromStdString(m_layer->id) : QString{};
+                emit contactEditRequested(id, line);
+            });
+    // "Edit Contacts…" in the Contact Picking section → first contact on this line.
+    connect(m_analysis, &WaterfallAnalysisPanel::editContactsRequested,
+            this, [this]() {
+                const QString line = m_layer ? QString::fromStdString(m_layer->id) : QString{};
+                emit contactEditRequested(0, line);
+            });
 
     connect(m_analysis, &WaterfallAnalysisPanel::clearContactsRequested,
             this, [this]() {
@@ -247,28 +290,13 @@ WaterfallWindow::WaterfallWindow(AppState* app_state, QWidget* parent)
                 emit clearAllContactsRequested();
             });
 
-    // -- Feature drawing ---------------------------------------------------
-    connect(m_analysis, &WaterfallAnalysisPanel::featureToolChanged,
-            this, [this](int tool) {
-                m_view->setFeatureTool(tool);
-                if (tool != 0) {
-                    m_view->setContactTool(0);
-                    if (m_btn_contact) { QSignalBlocker sb(m_btn_contact); m_btn_contact->setChecked(false); }
-                    if (m_analysis) m_analysis->setContactPickActive(false);
-                }
-                m_status_left->setText(
-                    tool == 0 ? QString{}
-                              : tr("Feature — click to add vertices, double-click or Enter to finish"));
-            });
 
     connect(m_view, &WaterfallView::featureDrawn,
             this, [this](const std::vector<QPointF>& verts, bool polygon, bool is_projected) {
-                QString cls = m_analysis ? m_analysis->currentFeatureClassText() : QString{};
-                if (cls == tr("Unclassified")) cls.clear();
                 const QString line_id = m_layer ? QString::fromStdString(m_layer->id) : QString{};
                 m_status_left->setText(
                     tr("Feature drawn — %1 vertices").arg(static_cast<int>(verts.size())));
-                emit featureCreated(verts, polygon, is_projected, cls, line_id);
+                emit featureCreated(verts, polygon, is_projected, QString{}, line_id);
             });
 
     connect(m_analysis, &WaterfallAnalysisPanel::navProcessThisLineRequested,
@@ -378,6 +406,17 @@ void WaterfallWindow::setProjectLayers(
 void WaterfallWindow::setActiveLine(const std::string& id)
 {
     if (m_inspector) m_inspector->setActiveLine(id);
+}
+
+
+void WaterfallWindow::syncFeatureToolButtons(int tool)
+{
+    QToolButton* btns[] = { m_btn_feat_poly, m_btn_feat_line, m_btn_feat_pen };
+    for (int i = 0; i < 3; ++i) {
+        if (!btns[i]) continue;
+        QSignalBlocker sb(btns[i]);
+        btns[i]->setChecked(tool == i + 1);
+    }
 }
 
 } // namespace dolphin::ui

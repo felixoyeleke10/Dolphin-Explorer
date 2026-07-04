@@ -28,6 +28,7 @@
 #include "ui/mainwindow/AppSettingsDialog.h"
 #include "ui/shell/AppInfo.h"
 #include <QApplication>
+#include <QTimer>
 #include <QProgressBar>
 #include <QPushButton>
 #include <QSettings>
@@ -41,7 +42,9 @@ static constexpr int kMinH = 900;
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent)
 {
-    qApp->setStyleSheet(AppStyle::sheet());
+    // Palette + stylesheet are applied once by AppStyle::apply() in main.cpp
+    // (from the persisted theme setting) — re-applying here would force a
+    // second full-widget re-polish at startup.
 
     setWindowTitle(tr("Dolphin Explorer"));
     setMinimumSize(kMinW, kMinH);
@@ -80,6 +83,10 @@ MainWindow::MainWindow(QWidget* parent)
         // look differs from disk — mark it dirty so it's saved.
         if (!layer_id.isEmpty())
             markProjectDirty();
+        // Keep the left Views panel mirroring the authority (palette/quality
+        // changes made anywhere: status bar, menu, inspector, Views itself).
+        if (aspect == DisplayAspect::MapQuality || aspect == DisplayAspect::Palette)
+            refreshViewsPanel();
     });
     connect(m_app_state, &AppState::settingsChanged,
             this, &MainWindow::applyLiveSettings);
@@ -399,12 +406,14 @@ MainWindow::MainWindow(QWidget* parent)
                 m_line_list, &LineListPanel::refreshContacts);
         connect(m_event_bus, &ProjectEventBus::contactRemoved,
                 m_line_list, &LineListPanel::refreshContacts);
+        connect(m_event_bus, &ProjectEventBus::contactUpdated,
+                m_line_list, &LineListPanel::refreshContactRow);
         connect(m_event_bus, &ProjectEventBus::featureAdded,
                 m_line_list, &LineListPanel::refreshFeatures);
         connect(m_event_bus, &ProjectEventBus::featureRemoved,
                 m_line_list, &LineListPanel::refreshFeatures);
         connect(m_event_bus, &ProjectEventBus::featureUpdated,
-                m_line_list, &LineListPanel::refreshFeatures);
+                m_line_list, &LineListPanel::refreshFeatureRow);
     }
     if (m_map_view) {
         connect(m_event_bus, &ProjectEventBus::layersReordered,
@@ -412,6 +421,8 @@ MainWindow::MainWindow(QWidget* parent)
         connect(m_event_bus, &ProjectEventBus::contactAdded,
                 m_map_view, static_cast<void (QWidget::*)()>(&QWidget::update));
         connect(m_event_bus, &ProjectEventBus::contactRemoved,
+                m_map_view, static_cast<void (QWidget::*)()>(&QWidget::update));
+        connect(m_event_bus, &ProjectEventBus::contactUpdated,
                 m_map_view, static_cast<void (QWidget::*)()>(&QWidget::update));
         connect(m_event_bus, &ProjectEventBus::featureAdded,
                 m_map_view, static_cast<void (QWidget::*)()>(&QWidget::update));
@@ -430,19 +441,30 @@ MainWindow::MainWindow(QWidget* parent)
             this, [this]() { refreshRecycleBin(); });
     connect(m_event_bus, &ProjectEventBus::projectReplaced,
             this, [this](app::Project*) { refreshRecycleBin(); });
-    // Waterfall contact overlay — window may not exist yet.
-    connect(m_event_bus, &ProjectEventBus::contactAdded,
-            this, [this](const core::Contact&) {
-                if (m_waterfall_win && m_event_bus->project())
-                    m_waterfall_win->setProjectContacts(
-                        m_event_bus->project()->contacts());
+    // Viewer contact overlays (waterfall + SBP) — windows may not exist yet.
+    // One resync covers add / remove / edit so the markers never go stale.
+    {
+        // Coalesced: overlay re-derivation walks all contacts (and, for
+        // unlinked ones, scans loaded rows), so rapid bursts — checkbox
+        // toggling, multi-delete — collapse into one resync.
+        auto sync_viewer_contacts = [this]() {
+            if (m_viewer_contacts_sync_pending) return;
+            m_viewer_contacts_sync_pending = true;
+            QTimer::singleShot(50, this, [this]() {
+                m_viewer_contacts_sync_pending = false;
+                if (!m_event_bus->project()) return;
+                const auto& contacts = m_event_bus->project()->contacts();
+                if (m_waterfall_win) m_waterfall_win->setProjectContacts(contacts);
+                if (m_sbp_win)       m_sbp_win->setProjectContacts(contacts);
             });
-    connect(m_event_bus, &ProjectEventBus::contactRemoved,
-            this, [this](uint64_t) {
-                if (m_waterfall_win && m_event_bus->project())
-                    m_waterfall_win->setProjectContacts(
-                        m_event_bus->project()->contacts());
-            });
+        };
+        connect(m_event_bus, &ProjectEventBus::contactAdded,
+                this, [sync_viewer_contacts](const core::Contact&) { sync_viewer_contacts(); });
+        connect(m_event_bus, &ProjectEventBus::contactRemoved,
+                this, [sync_viewer_contacts](uint64_t) { sync_viewer_contacts(); });
+        connect(m_event_bus, &ProjectEventBus::contactUpdated,
+                this, [sync_viewer_contacts](uint64_t) { sync_viewer_contacts(); });
+    }
     // Node graph — null-guarded; window is lazy-created.
     if constexpr (Features::kNodeGraph) {
         connect(m_event_bus, &ProjectEventBus::layerReady,
@@ -726,7 +748,11 @@ MainWindow::MainWindow(QWidget* parent)
     if (settings.contains("ui/propsOpen"))
         setPropertiesOpen(settings.value("ui/propsOpen").toBool());
     if (settings.contains("ui/propsWidth")) {
-        m_props_width = settings.value("ui/propsWidth").toInt();
+        // Migration: 260 was the default before the right tool rail was
+        // retired — only honour persisted widths the user explicitly widened;
+        // otherwise adopt the new, larger default (302).
+        const int stored = settings.value("ui/propsWidth").toInt();
+        if (stored > 260) m_props_width = stored;
         if (m_props_panel) m_props_panel->setFixedWidth(m_props_width);
     }
     if (settings.contains("ui/toolbarVisible"))

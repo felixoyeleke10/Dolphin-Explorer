@@ -62,6 +62,23 @@ void MainWindow::bindProjectUi()
     if (m_viewport_host)
         m_viewport_host->setShowImportHint(!raw || raw->layers().empty());
 
+    // Swap the 3D draping surface to the new project's stored one. clearScene
+    // above already dropped old terrain on close; track state accordingly.
+    {
+        const QString stored = raw
+            ? QString::fromStdString(raw->drapingSurface()) : QString{};
+        if (m_viewport_host && m_loaded_draping != stored) {
+            if (!m_loaded_draping.isEmpty() && raw)
+                m_viewport_host->removeTerrainPath(m_loaded_draping);
+            m_loaded_draping.clear();
+            if (!stored.isEmpty() && QFileInfo::exists(stored)) {
+                m_viewport_host->loadTerrainPath(stored);
+                m_loaded_draping = stored;
+            }
+        }
+    }
+    refreshViewsPanel();
+
     // broadcast(ProjectReplaced) above already calls deactivate(true) on the
     // SSS controller via onViewerRefresh — no explicit deactivate needed here.
 

@@ -141,6 +141,55 @@ static void testSerializationRoundTrip()
     CHECK(labels.size() == 4);   // C001, C002(recycled), C003, C00x — all distinct
 }
 
+// 5. Editor attribute fields survive a save/open round-trip.
+static void testEditorFieldsRoundTrip()
+{
+    QTemporaryDir tmp; CHECK(tmp.isValid()); if (!tmp.isValid()) return;
+    const std::string manifest = (tmp.path() + "/P.dlp").toStdString();
+
+    uint64_t id = 0;
+    {
+        auto p = Project::create("P", manifest);
+        Contact c;
+        c.lat = 1.0; c.lon = 2.0;
+        c.classification = "Boulder";
+        c.confidence     = dolphin::core::Confidence::Certain;
+        c.height_m       = 3.5f;
+        c.height_not_measurable = true;
+        c.shadow_m       = 12.25f;
+        c.width_m        = 4.0f;
+        c.range_m        = 41.0f;     // pick slant range (measured, not editable)
+        c.length_m       = 9.5f;      // object length ("Length" in the editor)
+        c.depth_m        = 37.5f;
+        c.burial_depth_m = 1.75f;
+        c.symbol         = "diamond";
+        c.color_rgb      = 0xFF3366CCu;
+        c.use_for_report = true;
+        c.notes          = "clear target";
+        c.tags           = { "priority", "revisit" };
+        p->addContact(c);
+        id = p->contacts().back().id;
+        CHECK(p->save());
+    }
+
+    auto p = Project::open(manifest);
+    CHECK(p != nullptr); if (!p) return;
+    const Contact* c = find(p->contacts(), id);
+    CHECK(c != nullptr); if (!c) return;
+    CHECK(c->classification == "Boulder");
+    CHECK(c->confidence == dolphin::core::Confidence::Certain);
+    CHECK(c->height_not_measurable == true);
+    CHECK(c->shadow_m == 12.25f);
+    CHECK(c->range_m == 41.0f);      // range and length stay distinct fields
+    CHECK(c->length_m == 9.5f);
+    CHECK(c->burial_depth_m == 1.75f);
+    CHECK(c->symbol == "diamond");
+    CHECK(c->color_rgb == 0xFF3366CCu);
+    CHECK(c->use_for_report == true);
+    CHECK(c->notes == "clear target");
+    CHECK(c->tags.size() == 2);
+}
+
 int main(int argc, char** argv)
 {
     QCoreApplication app(argc, argv);
@@ -148,6 +197,7 @@ int main(int argc, char** argv)
     testExplicitLabelPreserved();
     testRecycleBin();
     testSerializationRoundTrip();
+    testEditorFieldsRoundTrip();
     std::printf("\n%d passed, %d failed\n", g_pass, g_fail);
     return g_fail == 0 ? 0 : 1;
 }

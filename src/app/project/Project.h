@@ -136,6 +136,11 @@ public:
     bool               hasMixedProjectedSources() const;
     void               setCrs(const std::string& epsg);
 
+    // 3D draping/terrain surface: absolute path of the bathymetry file
+    // (XYZ/CSV) rendered as terrain in the 3D view. Empty = none.
+    const std::string& drapingSurface() const { return m_draping_surface; }
+    void               setDrapingSurface(const std::string& path);
+
     // Temporary (unsaved) projects exist only for the current session.
     // The cache folder is cleaned up when the user explicitly deletes the session,
     // or after a configurable idle period.  Saving promotes the project to a
@@ -165,6 +170,7 @@ signals:
 private:
     std::string                           m_name;
     std::string                           m_manifest_path;
+    std::string                           m_draping_surface;
     core::SpatialRef                      m_display_spatial_ref = core::makeWgs84SpatialRef();
     bool                                  m_is_temp = false;
     std::vector<ProjectSource>            m_sources;

@@ -11,7 +11,6 @@
 #include "ui/features/subbottom/panels/SubBottomInspectorPanel.h"
 #include "ui/features/subbottom/panels/SubBottomDisplayPanel.h"
 #include "ui/shared/panels/ContactPickingPanel.h"
-#include "ui/shared/panels/FeatureDrawingPanel.h"
 #include "ui/shared/widgets/CollapsibleSection.h"
 #include "ui/shared/widgets/CommandBar.h"
 #include "ui/shell/Theme.h"
@@ -44,7 +43,7 @@ SubBottomWindow::SubBottomWindow(AppState* app_state, QWidget* parent)
     , m_app_state(app_state)
 {
     setWindowTitle(tr("Sub-Bottom Viewer — Dolphin Explorer"));
-    setWindowIcon(QIcon(":/icons/bottom_track.svg"));
+    setWindowIcon(Theme::icon(":/icons/bottom_track.svg"));
     setMinimumSize(kMinW, kMinH);
     setAttribute(Qt::WA_DeleteOnClose, false);
 
@@ -116,12 +115,6 @@ SubBottomWindow::SubBottomWindow(AppState* app_state, QWidget* parent)
         contact_sec->setContent(m_contact_panel);
         rc->addWidget(contact_sec);
 
-        m_feature_panel = new FeatureDrawingPanel(right_col);
-        auto* feature_sec = new CollapsibleSection(tr("Feature Drawing"), right_col);
-        feature_sec->setIcon(QStringLiteral(":/icons/feature.svg"));
-        feature_sec->setContent(m_feature_panel);
-        rc->addWidget(feature_sec);
-
         rc->addStretch(1);
         content->addWidget(right_col);
     }
@@ -152,6 +145,7 @@ SubBottomWindow::SubBottomWindow(AppState* app_state, QWidget* parent)
                 m_view->setDisplayParams(p.palette_index, p.gain, p.contrast,
                                          p.polarity_invert, p.show_bottom_track);
                 m_sound_half_speed = p.sound_speed_ms / 2.f;
+                refreshContactOverlay();   // marker depth_s depends on sound speed
                 if (m_btn_bottom_track_tb)
                     m_btn_bottom_track_tb->setChecked(p.show_bottom_track);
                 // Refresh the sound-speed label in the inspector
@@ -195,24 +189,50 @@ SubBottomWindow::SubBottomWindow(AppState* app_state, QWidget* parent)
     // Annotation tool sections → view tools (mutually exclusive).
     connect(m_contact_panel, &ContactPickingPanel::pickToggled, this, [this](bool on) {
         if (m_view) m_view->setContactTool(on ? 1 : 0);
-        if (on && m_feature_panel) m_feature_panel->setDrawActive(false);
+        if (on) syncFeatureToolButtons(0);
         if (m_status_left)
             m_status_left->setText(on
                 ? tr("Contact — click the section to place a point pick") : QString{});
     });
+
+    // Feature drawing toolbar toggles: manual exclusivity among the three;
+    // clicking the active tool again turns drawing off. Activating one
+    // deactivates contact picking (the view setter enforces it; the UI mirrors).
+    {
+        auto wireFeature = [this](QToolButton* btn, int kind) {
+            connect(btn, &QToolButton::toggled, this, [this, kind](bool on) {
+                if (on) {
+                    syncFeatureToolButtons(kind);          // uncheck the other two
+                    if (m_view) m_view->setFeatureTool(kind);
+                    if (m_contact_panel) m_contact_panel->setPickActive(false);
+                    if (m_status_left)
+                        m_status_left->setText(
+                            kind == 1 ? tr("Polygon: click points, double-click or Enter to close, Esc to cancel.")
+                          : kind == 2 ? tr("Line: click points, double-click or Enter to finish, Esc to cancel.")
+                                      : tr("Pen: press and drag to draw freehand; release to finish."));
+                } else if (!m_btn_feat_poly->isChecked() && !m_btn_feat_line->isChecked()
+                           && !m_btn_feat_pen->isChecked()) {
+                    if (m_view) m_view->setFeatureTool(0);
+                    if (m_status_left) m_status_left->setText(QString{});
+                }
+            });
+        };
+        wireFeature(m_btn_feat_poly, 1);
+        wireFeature(m_btn_feat_line, 2);
+        wireFeature(m_btn_feat_pen,  3);
+    }
     connect(m_contact_panel, &ContactPickingPanel::clearRequested,
             this, &SubBottomWindow::clearAllContactsRequested);
-    connect(m_feature_panel, &FeatureDrawingPanel::toolChanged, this, [this](int tool) {
-        if (m_view) m_view->setFeatureTool(tool);
-        m_feature_class = m_feature_panel->classification();
-        if (tool != 0 && m_contact_panel) m_contact_panel->setPickActive(false);
-        if (m_status_left)
-            m_status_left->setText(tool == 0 ? QString{}
-                : tr("Feature — click to add vertices, double-click or Enter to finish"));
+    // "Edit Contacts…" → the shared "Edit contact details" editor for this line.
+    connect(m_contact_panel, &ContactPickingPanel::editRequested, this, [this]() {
+        const QString line = m_layer ? QString::fromStdString(m_layer->id) : QString{};
+        emit contactEditRequested(0, line);
     });
-    connect(m_feature_panel, &FeatureDrawingPanel::classificationChanged, this,
-            [this](const QString& c) { m_feature_class = c; });
-
+    // Marker double-click → the shared editor focused on that contact.
+    connect(m_view, &SubBottomView::contactEditRequested, this, [this](uint64_t id) {
+        const QString line = m_layer ? QString::fromStdString(m_layer->id) : QString{};
+        emit contactEditRequested(id, line);
+    });
     // Annotation tools — forward picks/draws up to MainWindow (project owner).
     connect(m_view, &SubBottomView::contactPicked,
             this, [this](int trace_idx, float depth_s, double lat, double lon,
@@ -233,7 +253,7 @@ SubBottomWindow::SubBottomWindow(AppState* app_state, QWidget* parent)
                 if (m_status_left)
                     m_status_left->setText(
                         tr("Feature drawn — %1 vertices").arg(static_cast<int>(verts.size())));
-                emit featureCreated(verts, polygon, is_projected, m_feature_class, line_id);
+                emit featureCreated(verts, polygon, is_projected, QString{}, line_id);
             });
 
     // Restore view scale and overlay style from persisted QSettings.
@@ -287,6 +307,29 @@ void SubBottomWindow::setProjectLayers(
     const std::vector<std::pair<std::string, std::string>>& layers)
 {
     if (m_inspector) m_inspector->setProjectLayers(layers);
+}
+
+void SubBottomWindow::setProjectContacts(std::vector<core::Contact> contacts)
+{
+    m_project_contacts = std::move(contacts);
+    refreshContactOverlay();
+}
+
+void SubBottomWindow::refreshContactOverlay()
+{
+    if (!m_view || !m_layer) return;
+    std::vector<SubBottomView::ContactMark> marks;
+    for (const auto& c : m_project_contacts) {
+        if (c.line_id != m_layer->id) continue;   // only this line's contacts
+        if (!c.visible) continue;                  // hidden via the explorer checkbox
+        SubBottomView::ContactMark m;
+        m.id        = c.id;
+        m.trace_idx = static_cast<int>(c.artifact_id);
+        // Invert the pick conversion: depth_m = travel time × half sound-speed.
+        m.depth_s   = (m_sound_half_speed > 0.f) ? c.depth_m / m_sound_half_speed : 0.f;
+        marks.push_back(m);
+    }
+    m_view->setExternalContacts(std::move(marks));
 }
 
 SubBottomDisplayParams SubBottomWindow::displayParams() const
@@ -404,6 +447,17 @@ void SubBottomWindow::onContextMenu(const QPoint& global_pos)
         emit settingsRequested();
     });
     menu.exec(global_pos);
+}
+
+
+void SubBottomWindow::syncFeatureToolButtons(int tool)
+{
+    QToolButton* btns[] = { m_btn_feat_poly, m_btn_feat_line, m_btn_feat_pen };
+    for (int i = 0; i < 3; ++i) {
+        if (!btns[i]) continue;
+        QSignalBlocker sb(btns[i]);
+        btns[i]->setChecked(tool == i + 1);
+    }
 }
 
 } // namespace dolphin::ui

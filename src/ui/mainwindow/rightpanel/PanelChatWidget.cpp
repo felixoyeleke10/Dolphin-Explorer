@@ -1,6 +1,12 @@
-// PanelChatWidget.cpp — the chat panel chrome: construction, input handling,
-// the empty state, and message-bubble rendering. The local Ollama backend
-// (setup chain, streaming, process management) lives in PanelChatWidget.Ollama.cpp.
+// PanelChatWidget.cpp — the assistant console chrome: construction, input
+// handling, the banner state, and transcript rendering. The local Ollama
+// backend (setup chain, streaming, process management) lives in
+// PanelChatWidget.Ollama.cpp.
+//
+// Design: this pane lives in the bottom dock next to Problems / Output /
+// Jobs / Terminal and reads as a query console, not a consumer chat app —
+// no bubbles or avatars. Queries are monospace `›` prompt lines with a
+// timestamp; answers are full-width blocks set off by an accent left rule.
 #include "ui/mainwindow/rightpanel/PanelChatWidget.h"
 #include "ui/shared/UiUtils.h"
 #include "ui/shell/Theme.h"
@@ -8,7 +14,6 @@
 #include <QComboBox>
 #include <QEvent>
 #include <QFrame>
-#include <QGridLayout>
 #include <QHBoxLayout>
 #include <QJsonArray>
 #include <QKeyEvent>
@@ -20,6 +25,7 @@
 #include <QScrollBar>
 #include <QTextDocument>
 #include <QTextEdit>
+#include <QTime>
 #include <QTimer>
 #include <QVBoxLayout>
 
@@ -27,9 +33,8 @@
 
 namespace dolphin::ui {
 
-static constexpr int kBubbleMaxW = 210;
-static constexpr int kInputMinH  = 30;
-static constexpr int kInputMaxH  = 68;
+static constexpr int kInputMinH = 26;
+static constexpr int kInputMaxH = 68;
 
 struct ModelEntry { const char* label; const char* id; };
 static const ModelEntry kModels[] = {
@@ -50,7 +55,7 @@ PanelChatWidget::PanelChatWidget(QWidget* parent) : QWidget(parent)
 
     auto* root = makeCompactLayout<QVBoxLayout>(this);
 
-    // -- Header ----------------------------------------------------------------
+    // -- Header strip (matches the Terminal pane's header) -----------------------
     auto* hdr = new QWidget(this);
     hdr->setObjectName("panelChatHdr");
     hdr->setFixedHeight(Theme::kPanelHdrH);
@@ -58,11 +63,12 @@ PanelChatWidget::PanelChatWidget(QWidget* parent) : QWidget(parent)
     hl->setContentsMargins(Theme::kSpacing4, 0, Theme::kSpacing3, 0);
     hl->setSpacing(Theme::kSpacing2);
 
-    auto* icon = new QLabel(QStringLiteral("✶"), hdr);
-    icon->setObjectName("panelChatIcon");
-
-    auto* title = new QLabel(tr("Dolphin AI"), hdr);
+    auto* title = new QLabel(tr("Assistant"), hdr);
     title->setObjectName("panelChatTitle");
+
+    auto* badge = new QLabel(tr("on-device"), hdr);
+    badge->setObjectName("panelChatBadge");
+    badge->setToolTip(tr("Runs a local model via Ollama — no data leaves this machine."));
 
     m_model_combo = new QComboBox(hdr);
     m_model_combo->setObjectName("panelChatModelCombo");
@@ -75,27 +81,21 @@ PanelChatWidget::PanelChatWidget(QWidget* parent) : QWidget(parent)
     connect(m_model_combo, &QComboBox::currentIndexChanged,
             this, [this] { m_confirmed_model.clear(); });
 
-    auto* new_btn = new QPushButton(tr("New"), hdr);
-    new_btn->setObjectName("panelChatNewBtn");
-    new_btn->setFixedHeight(Theme::kSmallBtnSz);
-    new_btn->setCursor(Qt::PointingHandCursor);
-    new_btn->setToolTip(tr("Start a new conversation"));
-    connect(new_btn, &QPushButton::clicked, this, &PanelChatWidget::clearChat);
+    auto* clear_btn = new QPushButton(tr("Clear"), hdr);
+    clear_btn->setObjectName("panelChatClearBtn");
+    clear_btn->setFixedHeight(Theme::kSmallBtnSz);
+    clear_btn->setCursor(Qt::PointingHandCursor);
+    clear_btn->setToolTip(tr("Clear the transcript and start over"));
+    connect(clear_btn, &QPushButton::clicked, this, &PanelChatWidget::clearChat);
 
-    hl->addWidget(icon);
     hl->addWidget(title);
+    hl->addWidget(badge);
     hl->addStretch(1);
     hl->addWidget(m_model_combo);
-    hl->addWidget(new_btn);
+    hl->addWidget(clear_btn);
     root->addWidget(hdr);
 
-    // -- Separator -------------------------------------------------------------
-    auto* sep = new QFrame(this);
-    sep->setObjectName("panelChatSep");
-    sep->setFixedHeight(Theme::kSepSz);
-    root->addWidget(sep);
-
-    // -- Message scroll area ---------------------------------------------------
+    // -- Transcript scroll area --------------------------------------------------
     m_scroll = new QScrollArea(this);
     m_scroll->setObjectName("panelChatScroll");
     m_scroll->setWidgetResizable(true);
@@ -106,54 +106,47 @@ PanelChatWidget::PanelChatWidget(QWidget* parent) : QWidget(parent)
     auto* msg_widget = new QWidget;
     msg_widget->setObjectName("panelChatMessages");
     m_msg_layout = new QVBoxLayout(msg_widget);
-    m_msg_layout->setContentsMargins(10, 12, 10, 12);
-    m_msg_layout->setSpacing(8);
+    m_msg_layout->setContentsMargins(Theme::kSpacing4, Theme::kSpacing3,
+                                     Theme::kSpacing4, Theme::kSpacing3);
+    m_msg_layout->setSpacing(4);
 
     buildEmptyState(m_msg_layout);
 
     m_scroll->setWidget(msg_widget);
     root->addWidget(m_scroll, 1);
 
-    // -- Input separator -------------------------------------------------------
-    auto* sep2 = new QFrame(this);
-    sep2->setObjectName("panelChatSep");
-    sep2->setFixedHeight(Theme::kSepSz);
-    root->addWidget(sep2);
-
-    // -- Input area ------------------------------------------------------------
-    auto* input_box = new QFrame(this);
-    input_box->setObjectName("panelChatInputBox");
-    auto* il = new QVBoxLayout(input_box);
-    il->setContentsMargins(Theme::kSpacing3, Theme::kSpacing2,
+    // -- Input row (terminal-style prompt line) -----------------------------------
+    auto* input_row = new QFrame(this);
+    input_row->setObjectName("panelChatInputRow");
+    auto* il = new QHBoxLayout(input_row);
+    il->setContentsMargins(Theme::kSpacing4, Theme::kSpacing2,
                            Theme::kSpacing3, Theme::kSpacing2);
-    il->setSpacing(Theme::kSpacing1);
+    il->setSpacing(Theme::kSpacing2);
 
-    m_input = new QTextEdit(input_box);
+    auto* prompt = new QLabel(QStringLiteral("›"), input_row);
+    prompt->setObjectName("panelChatPrompt");
+    prompt->setAlignment(Qt::AlignTop);
+    prompt->setContentsMargins(0, 3, 0, 0);
+
+    m_input = new QTextEdit(input_row);
     m_input->setObjectName("panelChatInput");
-    m_input->setPlaceholderText(tr("Ask anything about your data…"));
+    m_input->setPlaceholderText(
+        tr("Ask about your survey data — Enter to send, Shift+Enter for a new line"));
     m_input->setFixedHeight(kInputMinH);
     m_input->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     m_input->installEventFilter(this);
 
-    auto* btn_row = makeCompactLayout<QHBoxLayout>();
-
-    auto* hint_lbl = new QLabel(tr("Shift+⏎ new line"), input_box);
-    hint_lbl->setObjectName("panelChatHint");
-
-    m_send_btn = new QPushButton(QStringLiteral("↑"), input_box);
+    m_send_btn = new QPushButton(tr("Send"), input_row);
     m_send_btn->setObjectName("panelChatSendBtn");
-    m_send_btn->setFixedSize(26, 26);
+    m_send_btn->setFixedHeight(Theme::kSmallBtnSz);
     m_send_btn->setCursor(Qt::PointingHandCursor);
     m_send_btn->setEnabled(false);
     connect(m_send_btn, &QPushButton::clicked, this, &PanelChatWidget::onSend);
 
-    btn_row->addWidget(hint_lbl);
-    btn_row->addStretch(1);
-    btn_row->addWidget(m_send_btn);
-
-    il->addWidget(m_input);
-    il->addLayout(btn_row);
-    root->addWidget(input_box);
+    il->addWidget(prompt);
+    il->addWidget(m_input, 1);
+    il->addWidget(m_send_btn, 0, Qt::AlignBottom);
+    root->addWidget(input_row);
 
     connect(m_input->document(), &QTextDocument::contentsChanged, this, [this] {
         const int doc_h = static_cast<int>(m_input->document()->size().height()) + 2;
@@ -162,10 +155,6 @@ PanelChatWidget::PanelChatWidget(QWidget* parent) : QWidget(parent)
         m_send_btn->setEnabled(!m_reply && !m_pull_reply &&
                                !m_input->toPlainText().trimmed().isEmpty());
     });
-
-    appendMessage(tr("Hi! Ask me about your survey data, processing results, "
-                     "nav corrections, or display settings. Ollama runs locally "
-                     "— no internet required."), false);
 }
 
 PanelChatWidget::~PanelChatWidget()
@@ -202,83 +191,132 @@ void PanelChatWidget::setInputEnabled(bool enabled)
     if (enabled) m_input->setFocus();
 }
 
-void PanelChatWidget::appendStreamingBubble()
+// -- Transcript rows -------------------------------------------------------------
+
+// Answer block: full-width text set off by an accent left rule (see QSS).
+// Returns the row; *out_label receives the text label for streaming updates.
+static QWidget* makeAnswerRow(const QString& text, QLabel** out_label)
 {
+    // Full-width block, like the Output/Terminal panes next door. The accent
+    // left rule (QSS) is what separates answers from queries — not a bubble.
     auto* row = new QWidget;
     auto* rl  = makeCompactLayout<QHBoxLayout>(row);
 
-    m_stream_label = new QLabel(QStringLiteral("▍"));
-    m_stream_label->setWordWrap(true);
-    m_stream_label->setMaximumWidth(kBubbleMaxW);
-    m_stream_label->setAttribute(Qt::WA_StyledBackground, true);
-    m_stream_label->setObjectName("convBubbleAI");
+    auto* block = new QFrame(row);
+    block->setObjectName("chatAnswerBlock");
+    block->setAttribute(Qt::WA_StyledBackground, true);
+    auto* bl = new QVBoxLayout(block);
+    bl->setContentsMargins(10, 2, 4, 2);
+    bl->setSpacing(0);
 
-    rl->addWidget(m_stream_label);
-    rl->addStretch();
+    auto* lbl = new QLabel(text, block);
+    lbl->setObjectName("chatAnswerText");
+    lbl->setWordWrap(true);
+    lbl->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    bl->addWidget(lbl);
 
+    rl->addWidget(block, 1);
+
+    if (out_label) *out_label = lbl;
+    return row;
+}
+
+void PanelChatWidget::appendStreamingBubble()
+{
+    auto* row = makeAnswerRow(QStringLiteral("▍"), &m_stream_label);
     m_stream_row = row;
     m_msg_layout->insertWidget(m_msg_layout->count() - 1, row);
     scrollToBottom();
 }
 
-// -- Empty state ---------------------------------------------------------------
+void PanelChatWidget::appendMessage(const QString& text, bool is_user)
+{
+    if (m_msg_count == 0 && m_empty_state) clearEmptyState();
+    ++m_msg_count;
+
+    QWidget* row = nullptr;
+    if (is_user) {
+        // Query line: `›` prompt + monospace text + timestamp, like a log entry.
+        row      = new QWidget;
+        auto* rl = new QHBoxLayout(row);
+        rl->setContentsMargins(0, m_msg_count > 1 ? 10 : 0, 0, 0);
+        rl->setSpacing(Theme::kSpacing2);
+
+        auto* glyph = new QLabel(QStringLiteral("›"), row);
+        glyph->setObjectName("chatQueryGlyph");
+        glyph->setAlignment(Qt::AlignTop);
+
+        auto* lbl = new QLabel(text, row);
+        lbl->setObjectName("chatQueryText");
+        lbl->setWordWrap(true);
+        lbl->setTextInteractionFlags(Qt::TextSelectableByMouse);
+
+        auto* time_lbl = new QLabel(QTime::currentTime().toString(
+                                        QStringLiteral("hh:mm:ss")), row);
+        time_lbl->setObjectName("chatTimestamp");
+        time_lbl->setAlignment(Qt::AlignTop);
+
+        rl->addWidget(glyph);
+        rl->addWidget(lbl, 1);
+        rl->addWidget(time_lbl);
+    } else {
+        row = makeAnswerRow(text, nullptr);
+    }
+
+    m_msg_layout->insertWidget(m_msg_layout->count() - 1, row);
+    scrollToBottom();
+}
+
+// -- Banner (empty) state --------------------------------------------------------
 
 void PanelChatWidget::buildEmptyState(QVBoxLayout* into)
 {
     m_empty_state = new QWidget;
     m_empty_state->setObjectName("panelChatEmpty");
     auto* vl = new QVBoxLayout(m_empty_state);
-    vl->setContentsMargins(Theme::kSpacing4, 0, Theme::kSpacing4, 0);
+    vl->setContentsMargins(0, Theme::kSpacing2, 0, 0);
     vl->setSpacing(0);
 
-    auto* icon_lbl = new QLabel(QStringLiteral("✶"), m_empty_state);
-    icon_lbl->setObjectName("panelChatEmptyIcon");
-    icon_lbl->setAlignment(Qt::AlignCenter);
-
-    auto* title_lbl = new QLabel(tr("Ask me anything"), m_empty_state);
-    title_lbl->setObjectName("panelChatEmptyTitle");
-    title_lbl->setAlignment(Qt::AlignCenter);
+    // Console-style banner, top-left aligned — reads like a tool's MOTD, not
+    // a chat splash screen.
+    auto* title_lbl = new QLabel(tr("SURVEY ASSISTANT"), m_empty_state);
+    title_lbl->setObjectName("chatBannerTitle");
 
     auto* sub_lbl = new QLabel(
-        tr("About your data, processing steps,\ndisplay settings, or nav corrections."),
+        tr("Local model via Ollama — runs entirely on this machine.\n"
+           "Ask about survey data, processing steps, nav corrections, "
+           "or display settings."),
         m_empty_state);
-    sub_lbl->setObjectName("panelChatEmptySub");
-    sub_lbl->setAlignment(Qt::AlignCenter);
+    sub_lbl->setObjectName("chatBannerSub");
     sub_lbl->setWordWrap(true);
 
-    auto* chips = new QWidget(m_empty_state);
-    chips->setObjectName("panelChatChips");
-    auto* gl = makeCompactLayout<QGridLayout>(chips, Theme::kSpacing2);
+    vl->addWidget(title_lbl);
+    vl->addSpacing(4);
+    vl->addWidget(sub_lbl);
+    vl->addSpacing(Theme::kSpacing4);
 
-    struct Chip { const char* label; const char* prompt; };
-    static const Chip kChips[] = {
-        { "Describe this layer",  "Describe the current layer and what data it contains."  },
-        { "Data quality check",   "What data quality issues should I look out for?"        },
-        { "Explain nav errors",   "Explain the navigation corrections shown in this file." },
-        { "Export options",       "What export formats are available and when to use each?" },
+    struct Suggestion { const char* label; const char* prompt; };
+    static const Suggestion kSuggestions[] = {
+        { "Describe this layer",       "Describe the current layer and what data it contains."  },
+        { "Check data quality",        "What data quality issues should I look out for?"        },
+        { "Explain nav corrections",   "Explain the navigation corrections shown in this file." },
+        { "Compare export formats",    "What export formats are available and when to use each?" },
     };
-    for (int i = 0; i < 4; ++i) {
-        auto* btn = new QPushButton(tr(kChips[i].label), chips);
-        btn->setObjectName("panelChatChip");
+    for (const auto& s : kSuggestions) {
+        auto* btn = new QPushButton(
+            QStringLiteral("›  ") + tr(s.label), m_empty_state);
+        btn->setObjectName("chatSuggestBtn");
         btn->setCursor(Qt::PointingHandCursor);
-        const QString prompt = tr(kChips[i].prompt);
+        btn->setFlat(true);
+        const QString prompt = tr(s.prompt);
         connect(btn, &QPushButton::clicked, this, [this, prompt] {
             clearEmptyState();
             m_input->setPlainText(prompt);
             onSend();
         });
-        gl->addWidget(btn, i / 2, i % 2);
+        vl->addWidget(btn, 0, Qt::AlignLeft);
     }
 
-    vl->addWidget(icon_lbl);
-    vl->addSpacing(6);
-    vl->addWidget(title_lbl);
-    vl->addSpacing(4);
-    vl->addWidget(sub_lbl);
-    vl->addSpacing(Theme::kSpacing5);
-    vl->addWidget(chips);
-
-    into->addStretch(1);
     into->addWidget(m_empty_state);
     into->addStretch(1);
 }
@@ -315,29 +353,6 @@ void PanelChatWidget::clearChat()
     m_full_response.clear();
     setInputEnabled(true);
     buildEmptyState(m_msg_layout);
-}
-
-// -- Message append ------------------------------------------------------------
-
-void PanelChatWidget::appendMessage(const QString& text, bool is_user)
-{
-    if (m_msg_count == 0 && m_empty_state) clearEmptyState();
-    ++m_msg_count;
-
-    auto* row = new QWidget;
-    auto* rl  = makeCompactLayout<QHBoxLayout>(row);
-
-    auto* lbl = new QLabel(text);
-    lbl->setWordWrap(true);
-    lbl->setMaximumWidth(kBubbleMaxW);
-    lbl->setAttribute(Qt::WA_StyledBackground, true);
-    lbl->setObjectName(is_user ? "convBubbleUser" : "convBubbleAI");
-
-    if (is_user) { rl->addStretch(); rl->addWidget(lbl); }
-    else         { rl->addWidget(lbl); rl->addStretch(); }
-
-    m_msg_layout->insertWidget(m_msg_layout->count() - 1, row);
-    scrollToBottom();
 }
 
 void PanelChatWidget::scrollToBottom()

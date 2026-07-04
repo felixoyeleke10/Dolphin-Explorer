@@ -216,6 +216,25 @@ private:
 // Undoable edit of a single contact's fields (rename, favourite tag, group
 // assignment — all of which are Project::updateContact). Stores the full before
 // and after so redo/undo just re-apply the matching snapshot. The id is stable.
+// Undoable feature edit (visibility toggle, future property edits).
+class UpdateFeatureCommand final : public QUndoCommand {
+public:
+    UpdateFeatureCommand(app::Project* project, core::Feature before, core::Feature after)
+        : QUndoCommand(QStringLiteral("Edit Feature"))
+        , m_project(project)
+        , m_before(std::move(before))
+        , m_after(std::move(after))
+    {}
+
+    void redo() override { m_project->updateFeature(m_after); }
+    void undo() override { m_project->updateFeature(m_before); }
+
+private:
+    app::Project* m_project;
+    core::Feature m_before;
+    core::Feature m_after;
+};
+
 class UpdateContactCommand final : public QUndoCommand {
 public:
     UpdateContactCommand(app::Project* project, core::Contact before, core::Contact after)

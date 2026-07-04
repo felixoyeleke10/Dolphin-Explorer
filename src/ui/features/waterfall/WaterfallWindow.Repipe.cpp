@@ -43,7 +43,7 @@ void WaterfallWindow::refreshContactOverlay()
     if (!m_view || !m_layer) return;
     std::vector<core::Contact> filtered;
     for (const auto& c : m_project_contacts)
-        if (c.line_id.empty() || c.line_id == m_layer->id)
+        if (c.visible && (c.line_id.empty() || c.line_id == m_layer->id))
             filtered.push_back(c);
     m_view->refreshExternalContacts(filtered, m_window_first_row);
 }

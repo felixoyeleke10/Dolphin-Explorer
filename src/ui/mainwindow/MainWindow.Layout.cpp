@@ -35,7 +35,7 @@ void MainWindow::resizeEvent(QResizeEvent* event)
     adjustPropsSplit();   // keep the upper pane hugging its content as the window grows
 }
 
-// Make the upper (Properties/Chats/History) pane only as tall as the page it's
+// Make the upper (Properties/Map/History) pane only as tall as the page it's
 // currently showing, and hand all remaining height to the lower sensor shell.
 // Short property lists no longer leave a dead gap above the sensor tabs; long
 // content still scrolls inside the upper pane's own scroll area.
@@ -53,14 +53,22 @@ void MainWindow::adjustPropsSplit()
     const int lower_min = 160;
 
     int upper_want;
-    if (m_props_stack->currentIndex() == 0 && m_inspector) {
+    const int page = m_props_stack->currentIndex();
+    if (page == 0 && m_inspector) {
         // Properties tab: header (tab bar) + the current page's real content.
         int header_h = 0;
         if (m_props_tab_tools && m_props_tab_tools->parentWidget())
             header_h = m_props_tab_tools->parentWidget()->sizeHint().height();
         upper_want = header_h + m_inspector->contentHeight() + 8 /* chrome */;
+    } else if (page == 1 && m_props_stack->currentWidget()) {
+        // Map settings: a compact form — size to its content like Properties.
+        int header_h = 0;
+        if (m_props_tab_tools && m_props_tab_tools->parentWidget())
+            header_h = m_props_tab_tools->parentWidget()->sizeHint().height();
+        upper_want = header_h
+                   + m_props_stack->currentWidget()->sizeHint().height() + 8;
     } else {
-        // Chats / History want room to work — give them the lion's share.
+        // History wants room to work — give it the lion's share.
         upper_want = avail * 6 / 10;
     }
 

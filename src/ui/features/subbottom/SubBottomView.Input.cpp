@@ -20,6 +20,7 @@ void SubBottomView::setContactTool(int tool)
         m_feature_tool = 0;
         m_feature_pts.clear();
         m_feature_px.clear();
+        m_feature_pen_down = false;
     }
     update();
 }
@@ -29,10 +30,17 @@ void SubBottomView::setFeatureTool(int tool)
     m_feature_tool = tool;
     m_feature_pts.clear();
     m_feature_px.clear();
+    m_feature_pen_down = false;
     if (tool != 0) {
         m_contact_tool = 0;
         setFocus(Qt::OtherFocusReason);   // receive Enter/Esc/Backspace
     }
+    update();
+}
+
+void SubBottomView::setExternalContacts(std::vector<ContactMark> marks)
+{
+    m_external_contacts = std::move(marks);
     update();
 }
 
@@ -71,6 +79,11 @@ void SubBottomView::mousePressEvent(QMouseEvent* e)
 
     if (m_feature_tool != 0 && traceGeoAt(e->pos(), ti, depth_s, lat, lon, proj)) {
         if (lat != 0.0 || lon != 0.0) {
+            if (m_feature_tool == 3) {   // pen: begin a freehand stroke
+                m_feature_pts.clear();
+                m_feature_px.clear();
+                m_feature_pen_down = true;
+            }
             m_feature_pts.push_back(QPointF(lon, lat));   // (lon,lat)
             m_feature_px.push_back(e->pos());
             m_feature_proj = proj;
@@ -82,18 +95,68 @@ void SubBottomView::mousePressEvent(QMouseEvent* e)
     e->ignore();
 }
 
-void SubBottomView::mouseDoubleClickEvent(QMouseEvent* e)
+void SubBottomView::mouseReleaseEvent(QMouseEvent* e)
 {
-    if (m_feature_tool != 0 && e->button() == Qt::LeftButton) {
-        const bool   polygon = (m_feature_tool == 1);
-        const size_t min_pts = polygon ? 3u : 2u;
-        if (m_feature_pts.size() >= min_pts)
-            emit featureDrawn(m_feature_pts, polygon, m_feature_proj);
+    if (m_feature_pen_down && e->button() == Qt::LeftButton) {
+        m_feature_pen_down = false;
+        if (m_feature_pts.size() >= 2)
+            emit featureDrawn(m_feature_pts, /*polygon=*/false, m_feature_proj);
         m_feature_pts.clear();
         m_feature_px.clear();
         update();
         e->accept();
         return;
+    }
+    QWidget::mouseReleaseEvent(e);
+}
+
+void SubBottomView::commitFeatureDraft()
+{
+    // A double-click commit arrives as press (adds a vertex) + dblclick, leaving
+    // a near-duplicate final vertex (Qt allows a few px of slop between the two
+    // presses). Strip trailing near-coincident vertices for the click tools —
+    // pen points are legitimately close together and never commit this way.
+    if (m_feature_tool != 3) {
+        while (m_feature_px.size() >= 2
+               && (m_feature_px.back() - m_feature_px[m_feature_px.size() - 2])
+                      .manhattanLength() < 6) {
+            m_feature_pts.pop_back();
+            m_feature_px.pop_back();
+        }
+    }
+    const bool   polygon = (m_feature_tool == 1);
+    const size_t min_pts = polygon ? 3u : 2u;
+    if (m_feature_pts.size() >= min_pts)
+        emit featureDrawn(m_feature_pts, polygon, m_feature_proj);
+    m_feature_pts.clear();
+    m_feature_px.clear();
+    update();
+}
+
+void SubBottomView::mouseDoubleClickEvent(QMouseEvent* e)
+{
+    if (m_feature_tool != 0 && m_feature_tool != 3 && e->button() == Qt::LeftButton) {
+        commitFeatureDraft();
+        e->accept();
+        return;
+    }
+
+    // No annotation tool active: double-click a contact marker → open its editor.
+    if (e->button() == Qt::LeftButton && m_contact_tool == 0 && m_feature_tool == 0) {
+        uint64_t best_id   = 0;
+        int      best_dist = 12;   // hit radius (px) around the diamond marker
+        for (const ContactMark& m : m_external_contacts) {
+            if (m.id == 0) continue;
+            QPoint px;
+            if (!contactMarkPixelPos(m, px)) continue;
+            const int d = (e->pos() - px).manhattanLength();
+            if (d < best_dist) { best_dist = d; best_id = m.id; }
+        }
+        if (best_id != 0) {
+            emit contactEditRequested(best_id);
+            e->accept();
+            return;
+        }
     }
     QWidget::mouseDoubleClickEvent(e);
 }
@@ -103,19 +166,13 @@ void SubBottomView::keyPressEvent(QKeyEvent* e)
     if (m_feature_tool != 0 && !m_feature_pts.empty()) {
         switch (e->key()) {
         case Qt::Key_Return:
-        case Qt::Key_Enter: {
-            const bool   polygon = (m_feature_tool == 1);
-            const size_t min_pts = polygon ? 3u : 2u;
-            if (m_feature_pts.size() >= min_pts)
-                emit featureDrawn(m_feature_pts, polygon, m_feature_proj);
-            m_feature_pts.clear();
-            m_feature_px.clear();
-            update();
+        case Qt::Key_Enter:
+            commitFeatureDraft();
             return;
-        }
         case Qt::Key_Escape:
             m_feature_pts.clear();
             m_feature_px.clear();
+            m_feature_pen_down = false;   // cancel an in-progress pen stroke too
             update();
             return;
         case Qt::Key_Backspace:
@@ -135,6 +192,19 @@ void SubBottomView::mouseMoveEvent(QMouseEvent* e)
     m_cursor_x = e->pos().x();
     m_cursor_y = e->pos().y();
     update();
+
+    // Pen freehand: append points while dragging (throttled to ~4 px).
+    if (m_feature_pen_down && (e->buttons() & Qt::LeftButton)) {
+        const bool far = m_feature_px.empty()
+            || (e->pos() - m_feature_px.back()).manhattanLength() >= 4;
+        int ti2; float depth2; double lat2, lon2; bool proj2;
+        if (far && traceGeoAt(e->pos(), ti2, depth2, lat2, lon2, proj2)
+            && (lat2 != 0.0 || lon2 != 0.0)) {
+            m_feature_pts.push_back(QPointF(lon2, lat2));
+            m_feature_px.push_back(e->pos());
+            m_feature_proj = proj2;
+        }
+    }
 
     if (m_traces.empty() || m_px_per_trace <= 0) return;
 
@@ -199,6 +269,7 @@ void SubBottomView::contextMenuEvent(QContextMenuEvent* e)
     if (m_feature_tool != 0 && !m_feature_pts.empty()) {
         m_feature_pts.clear();
         m_feature_px.clear();
+        m_feature_pen_down = false;   // cancel an in-progress pen stroke too
         update();
         e->accept();
         return;

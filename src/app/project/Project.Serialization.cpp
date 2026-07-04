@@ -90,6 +90,8 @@ std::string Project::toJson() const
     root["crs"]     = util::JsonValue(m_display_spatial_ref.id);
     root["display_spatial_ref"] = spatialRefToJson(m_display_spatial_ref);
     root["project_graph"] = util::parseJson(processing_graph.toJson());
+    if (!m_draping_surface.empty())
+        root["draping_surface"] = util::JsonValue(m_draping_surface);
 
     // Sources
     util::JsonValue sources_arr = util::JsonValue::array();
@@ -295,6 +297,16 @@ std::string Project::toJson() const
         jc["range_m"]        = util::JsonValue(std::isfinite(c.range_m)  ? static_cast<double>(c.range_m)  : 0.0);
         jc["width_m"]        = util::JsonValue(std::isfinite(c.width_m)  ? static_cast<double>(c.width_m)  : 0.0);
         jc["height_m"]       = util::JsonValue(std::isfinite(c.height_m) ? static_cast<double>(c.height_m) : 0.0);
+        // "object_length_m", not "length_m": the legacy "length_m" key held slant
+        // range and still maps to range_m on read — reusing it would corrupt reads.
+        jc["object_length_m"] = util::JsonValue(std::isfinite(c.length_m) ? static_cast<double>(c.length_m) : 0.0);
+        jc["shadow_m"]       = util::JsonValue(std::isfinite(c.shadow_m) ? static_cast<double>(c.shadow_m) : 0.0);
+        jc["burial_depth_m"] = util::JsonValue(std::isfinite(c.burial_depth_m) ? static_cast<double>(c.burial_depth_m) : 0.0);
+        jc["height_not_measurable"] = util::JsonValue(c.height_not_measurable);
+        jc["symbol"]         = util::JsonValue(c.symbol);
+        jc["color_rgb"]      = util::JsonValue(static_cast<double>(c.color_rgb));
+        jc["use_for_report"] = util::JsonValue(c.use_for_report);
+        jc["visible"]        = util::JsonValue(c.visible);
         jc["artifact_id"]    = util::JsonValue(static_cast<double>(c.artifact_id));
         jc["sample_idx"]     = util::JsonValue(static_cast<double>(c.sample_idx));
         jc["line_id"]        = util::JsonValue(c.line_id);
@@ -344,6 +356,7 @@ std::string Project::toJson() const
             ftags.push(util::JsonValue(t));
         jf["tags"]     = std::move(ftags);
         jf["group_id"] = util::JsonValue(f.group_id);
+        jf["visible"]  = util::JsonValue(f.visible);
         return jf;
     };
     util::JsonValue features_arr = util::JsonValue::array();

@@ -12,6 +12,7 @@
 #include "ui/bottom/RuntimeLogBridge.h"
 #include "ui/mainwindow/MainWindow.h"
 #include "ui/shell/AppInfo.h"
+#include "ui/shell/AppStyle.h"
 #include "pipeline/NodeRegistry.h"
 #ifdef _WIN32
 #include <windows.h>
@@ -188,25 +189,14 @@ int main(int argc, char* argv[])
     app.setOrganizationName(AppInfo::kOrgName);
     app.setStyle(QStyleFactory::create("Fusion"));
 
-    // Dark palette — macOS system dark
-    QPalette dark;
-    dark.setColor(QPalette::Window,          QColor(0x1c, 0x1c, 0x1e));
-    dark.setColor(QPalette::WindowText,      QColor(0xf2, 0xf2, 0xf7));
-    dark.setColor(QPalette::Base,            QColor(0x1c, 0x1c, 0x1e));
-    dark.setColor(QPalette::AlternateBase,   QColor(0x28, 0x28, 0x2a));
-    dark.setColor(QPalette::ToolTipBase,     QColor(0x2c, 0x2c, 0x2e));
-    dark.setColor(QPalette::ToolTipText,     QColor(0xf2, 0xf2, 0xf7));
-    dark.setColor(QPalette::Text,            QColor(0xf2, 0xf2, 0xf7));
-    dark.setColor(QPalette::Button,          QColor(0x2c, 0x2c, 0x2e));
-    dark.setColor(QPalette::ButtonText,      QColor(0xf2, 0xf2, 0xf7));
-    dark.setColor(QPalette::BrightText,      Qt::white);
-    dark.setColor(QPalette::Link,            QColor(0x0a, 0x84, 0xff));
-    dark.setColor(QPalette::Highlight,       QColor(0x0a, 0x84, 0xff));
-    dark.setColor(QPalette::HighlightedText, Qt::white);
-    dark.setColor(QPalette::Mid,             QColor(0x38, 0x38, 0x3a));
-    dark.setColor(QPalette::Dark,            QColor(0x11, 0x11, 0x13));
-    dark.setColor(QPalette::Shadow,          QColor(0x00, 0x00, 0x00));
-    app.setPalette(dark);
+    // Theme (palette + stylesheet) from the persisted setting — 0=Dark, 1=Light.
+    // AppStyle owns both palettes and the QSS; see ui/shell/AppStyle.cpp.
+    {
+        QSettings theme_settings(AppInfo::kOrgName, AppInfo::kSettingsApp);
+        const int theme_mode = theme_settings.value("app/theme", 0).toInt();
+        dolphin::ui::AppStyle::apply(theme_mode == 1 ? dolphin::ui::Theme::Mode::Light
+                                                     : dolphin::ui::Theme::Mode::Dark);
+    }
 
     MainWindow window;
 

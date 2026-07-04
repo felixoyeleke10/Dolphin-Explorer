@@ -8,7 +8,6 @@
 #include "ui/mainwindow/rightpanel/RightPanel.Radiometry.h"
 #include "ui/mainwindow/rightpanel/RightPanel.Enhancement.h"
 #include "ui/mainwindow/rightpanel/RightPanel.ContactPicking.h"
-#include "ui/mainwindow/rightpanel/RightPanel.FeatureDrawing.h"
 #include "ui/mainwindow/panels/NavInfoPanel.h"
 #include "ui/mainwindow/panels/HeadingInfoPanel.h"
 #include "ui/mainwindow/panels/GainControlPanel.h"
@@ -52,8 +51,8 @@ RightPanelHost::RightPanelHost(ShowMode mode, QWidget* parent)
         m_radiometry  = std::make_unique<RadiometryModule>();
         m_enhancement = std::make_unique<EnhancementModule>();
         // Annotation tools — universal (Unknown modality), shown on every tab.
+        // (Feature drawing moved to the main toolbar — no panel section.)
         m_contact_picking = std::make_unique<ContactPickingModule>();
-        m_feature_drawing = std::make_unique<FeatureDrawingModule>();
         // Navigation + Geometry are per-modality: one instance per sensor tab so
         // SSS and SBP each get their own section (and their own panel for wiring).
         m_navigation_sss = std::make_unique<NavigationModule>(M::Sidescan);
@@ -74,7 +73,6 @@ RightPanelHost::RightPanelHost(ShowMode mode, QWidget* parent)
         addModule(m_geometry_sbp.get());
         // Universal annotation sections last — present under every sensor tab + Map.
         addModule(m_contact_picking.get());
-        addModule(m_feature_drawing.get());
 
         connect(m_sbp_display, &SubBottomDisplayModule::paramsChanged,
                 this,          &RightPanelHost::sbpParamsChanged);
@@ -178,10 +176,6 @@ ContactPickingPanel* RightPanelHost::contactPickingPanel() const
     return m_contact_picking ? m_contact_picking->panel() : nullptr;
 }
 
-FeatureDrawingPanel* RightPanelHost::featureDrawingPanel() const
-{
-    return m_feature_drawing ? m_feature_drawing->panel() : nullptr;
-}
 
 // The SSS palette moved to the status-bar picker; the right panel no longer hosts a
 // palette control. These remain as no-ops so existing callers compile unchanged.

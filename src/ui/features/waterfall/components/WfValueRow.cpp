@@ -1,6 +1,7 @@
 // WfValueRow.cpp — custom parameter row: arrows / drag / click-to-type / wheel-locked
 
 #include "ui/features/waterfall/components/WfValueRow.h"
+#include "ui/shell/Theme.h"
 
 #include <QEnterEvent>
 #include <QKeyEvent>
@@ -27,27 +28,34 @@ static constexpr int    kDragPx   = 3;    // drag dead-zone (px)
 static constexpr int    kRepeat0  = 450;  // ms before auto-repeat starts
 static constexpr int    kRepeatN  = 70;   // ms between repeat ticks
 
-// -- Theme colours (from Theme.h) ---------------------------------------------
-static const QColor kLabelCol       { 0x8e, 0x8e, 0x93      };  // kTextSubtle
-static const QColor kValueCol       { 0xe5, 0xe5, 0xea      };  // kTextSecond
+// -- Theme colours — mode-aware (custom-painted widget) -------------------------
+// mono(): the white-alpha overlay convention of the dark theme flips to
+// black-alpha on light surfaces (same rule the QSS token pass applies).
+static QColor mono(int a_dark, int a_light)
+{
+    return Theme::mode() == Theme::Mode::Light ? QColor(0, 0, 0, a_light)
+                                               : QColor(255, 255, 255, a_dark);
+}
+static QColor kLabelCol()        { return Theme::textSubtleColor(); }
+static QColor kValueCol()        { return Theme::textSecondColor(); }
 static const QColor kAccent         {  10,  132, 255        };
-// Pill background states
+// Pill background states (accent tints work on both themes)
 static const QColor kPillDragBg     {  10,  132, 255,  30   };  // accent tint while dragging
 static const QColor kPillDragBorder {  10,  132, 255, 200   };  // accent border while dragging
-static const QColor kPillHoverBg    { 255,  255, 255,  18   };  // hover
-static const QColor kPillHoverBorder{ 255,  255, 255,  30   };
-static const QColor kPillDefaultBg  { 255,  255, 255,  11   };  // idle
-static const QColor kPillDefaultBdr { 255,  255, 255,  18   };
+static QColor kPillHoverBg()     { return mono(18, 14); }
+static QColor kPillHoverBorder() { return mono(30, 42); }
+static QColor kPillDefaultBg()   { return mono(11,  8); }
+static QColor kPillDefaultBdr()  { return mono(18, 28); }
 // Arrow area
 static const QColor kArrowPressBg   {  10,  132, 255,  55   };  // pressed tint
-static const QColor kArrowHoverBg   { 255,  255, 255,  22   };  // hover tint
+static QColor kArrowHoverBg()    { return mono(22, 16); }
 static const QColor kArrowPressCol  {  10,  132, 255, 255   };  // triangle when pressed
-static const QColor kArrowHoverCol  { 255,  255, 255, 210   };  // triangle when hovered
-static const QColor kArrowOnPillCol { 255,  255, 255, 110   };  // triangle normal (on-pill)
-static const QColor kArrowOffCol    { 255,  255, 255,  65   };  // triangle when pill not hovered
+static QColor kArrowHoverCol()   { return mono(210, 200); }
+static QColor kArrowOnPillCol()  { return mono(110, 150); }
+static QColor kArrowOffCol()     { return mono(65, 100); }
 // Pill/arrow divider line
-static const QColor kSepOnPill      { 255,  255, 255,  18   };  // separator on hover
-static const QColor kSepOff         { 255,  255, 255,  10   };  // separator at rest
+static QColor kSepOnPill()       { return mono(18, 26); }
+static QColor kSepOff()          { return mono(10, 16); }
 
 // -----------------------------------------------------------------------------
 //  Construction
@@ -195,11 +203,11 @@ void WfValueRow::paintEvent(QPaintEvent*)
         bg     = kPillDragBg;
         border = kPillDragBorder;
     } else if (onPill) {
-        bg     = kPillHoverBg;
-        border = kPillHoverBorder;
+        bg     = kPillHoverBg();
+        border = kPillHoverBorder();
     } else {
-        bg     = kPillDefaultBg;
-        border = kPillDefaultBdr;
+        bg     = kPillDefaultBg();
+        border = kPillDefaultBdr();
     }
     p.setPen(QPen(border, 1.0));
     p.setBrush(bg);
@@ -214,7 +222,7 @@ void WfValueRow::paintEvent(QPaintEvent*)
 
         auto arrowBg = [&](bool hov, bool prs) -> QColor {
             if (prs) return kArrowPressBg;
-            if (hov) return kArrowHoverBg;
+            if (hov) return kArrowHoverBg();
             return Qt::transparent;
         };
 
@@ -239,7 +247,7 @@ void WfValueRow::paintEvent(QPaintEvent*)
     // -- Separator line between value and arrow column ---------------------
     {
         const int sx = arrArea.left();
-        p.setPen(onPill ? kSepOnPill : kSepOff);
+        p.setPen(onPill ? kSepOnPill() : kSepOff());
         p.drawLine(sx, pill.top() + 4, sx, pill.bottom() - 4);
     }
 
@@ -251,7 +259,7 @@ void WfValueRow::paintEvent(QPaintEvent*)
 
         const int   lw = pill.left() - kLabelL - 6;
         const QRect lr(kLabelL, 0, lw, height());
-        p.setPen(kLabelCol);
+        p.setPen(kLabelCol());
         p.drawText(lr, Qt::AlignLeft | Qt::AlignVCenter,
                    p.fontMetrics().elidedText(m_label, Qt::ElideRight, lw));
     }
@@ -261,7 +269,7 @@ void WfValueRow::paintEvent(QPaintEvent*)
         QFont f = font();
         f.setPixelSize(11);
         p.setFont(f);
-        p.setPen(kValueCol);
+        p.setPen(kValueCol());
         p.drawText(valArea.adjusted(5, 0, -6, 0),
                    Qt::AlignRight | Qt::AlignVCenter,
                    formatValue());
@@ -276,8 +284,8 @@ void WfValueRow::paintEvent(QPaintEvent*)
 
         auto arrowCol = [&](bool hov, bool prs) -> QColor {
             if (prs) return kArrowPressCol;
-            if (hov) return kArrowHoverCol;
-            return onPill ? kArrowOnPillCol : kArrowOffCol;
+            if (hov) return kArrowHoverCol();
+            return onPill ? kArrowOnPillCol() : kArrowOffCol();
         };
 
         p.setPen(Qt::NoPen);

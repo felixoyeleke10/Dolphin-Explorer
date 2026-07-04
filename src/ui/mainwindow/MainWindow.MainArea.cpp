@@ -12,11 +12,12 @@
 #include "ui/shared/widgets/SidePanelShell.h"
 #include "ui/features/map/MapView.h"
 #include "ui/features/map/MapViewportHost.h"
+#include <algorithm>
 #include "ui/shared/panels/ContactPickingPanel.h"
-#include "ui/shared/panels/FeatureDrawingPanel.h"
 #include "ui/mainwindow/panels/InspectorPanel.h"
 #include "ui/mainwindow/rightpanel/RightPanelHost.h"
 #include "ui/mainwindow/rightpanel/PanelChatWidget.h"
+#include "ui/mainwindow/panels/MapDisplayPanel.h"
 #include "ui/mainwindow/panels/NavInfoPanel.h"
 #include "ui/mainwindow/panels/HeadingInfoPanel.h"
 #include "ui/mainwindow/panels/GainControlPanel.h"
@@ -169,6 +170,11 @@ QWidget* MainWindow::buildMainArea(QWidget* parent)
     m_bottom_panel = new BottomDockPanel(m_diag_hub, area);
     layout->addWidget(m_bottom_panel, 0);  // no stretch — panel controls its own height
 
+    // AI chat lives in the bottom dock (Problems / Output / Jobs / Terminal / Chat).
+    // Injected here because the dock layer must not link the mainwindow lib.
+    m_chat_widget = new PanelChatWidget(m_bottom_panel);
+    m_bottom_panel->setChatWidget(m_chat_widget);
+
     // Background Tasks panel: embedded as a child overlay of the viewport (anchored
     // bottom-centre), NOT a top-level window. A popup over the frameless main window
     // blinks it when shown during project open; an in-window overlay cannot.
@@ -206,14 +212,14 @@ void MainWindow::buildPropertiesPanel(QWidget* parent)
     m_props_splitter = splitter;
 
     // =====================================================================
-    // UPPER SHELL — Properties | Chats | History + generic content
+    // UPPER SHELL — Properties | Map | History + generic content
     // =====================================================================
     auto* upper = new SidePanelShell(splitter);
 
-    // -- Tab bar — Properties | Chats | History ---------------------------
+    // -- Tab bar — Properties | Map | History ------------------------------
     auto* upper_tabs = new PanelTabBar(upper);
     m_props_tab_tools   = upper_tabs->addTab(tr("Properties"), 0);
-    m_props_tab_chats   = upper_tabs->addTab(tr("Chats"),      1);
+    m_props_tab_map     = upper_tabs->addTab(tr("Map"),        1);
     m_props_tab_history = upper_tabs->addTab(tr("History"),    2);
     m_props_tab_tools->setChecked(true);
     connect(upper_tabs, &PanelTabBar::tabChanged,
@@ -242,9 +248,36 @@ void MainWindow::buildPropertiesPanel(QWidget* parent)
     }
     m_props_stack->addWidget(m_props_scroll);   // index 0
 
-    // Page 1 — Chats: embedded AI conversation
-    m_chat_widget = new PanelChatWidget(m_props_stack);
-    m_props_stack->addWidget(m_chat_widget);    // index 1
+    // Page 1 — Map: view working options (tooltips, hover highlight, camera
+    // azimuth/height, mosaic spotlight). buildMainArea ran first, so the
+    // viewport host exists for wiring.
+    m_map_display_panel = new MapDisplayPanel(m_props_stack);
+    m_props_stack->addWidget(m_map_display_panel);   // index 1
+    {
+        auto* mp = m_map_display_panel;
+        connect(mp, &MapDisplayPanel::tooltipsToggled, this, [this](bool on) {
+            if (m_map_view) m_map_view->setHoverTooltipsEnabled(on);
+        });
+        connect(mp, &MapDisplayPanel::hoverHighlightToggled, this, [this](bool on) {
+            if (m_map_view) m_map_view->setHoverHighlightEnabled(on);
+        });
+        connect(mp, &MapDisplayPanel::azimuthEdited, this, [this](double deg) {
+            if (m_viewport_host) m_viewport_host->setRotationDeg(deg);
+        });
+        // Height (m) ↔ scale uses the host's own 3D approximation
+        // (distance ≈ mpp · viewport_h / 2), so spin and camera stay consistent.
+        connect(mp, &MapDisplayPanel::heightEdited, this, [this](double h) {
+            if (!m_viewport_host) return;
+            const int vh = std::max(1, m_viewport_host->height());
+            m_viewport_host->setViewportScale(2.0 * h / vh);
+        });
+        connect(m_viewport_host, &MapViewportHost::viewportChanged, mp,
+                [this, mp](double mpp, double rot) {
+                    const int vh = m_viewport_host ? std::max(1, m_viewport_host->height()) : 1;
+                    mp->setCameraReadout(rot, mpp * vh / 2.0);
+                });
+        mp->broadcastState();   // push persisted view options into the map view
+    }
 
     // Page 2 — History: recently inspected layers
     m_props_history_list = new QListWidget(m_props_stack);
@@ -262,21 +295,22 @@ void MainWindow::buildPropertiesPanel(QWidget* parent)
     // =====================================================================
     auto* lower = new SidePanelShell(splitter);
 
-    // Sensor tab bar — SSS | SBP | Map | MAG
+    // Sensor tab bar — SSS | SBP | MAG. No Map tab: the universal sections
+    // (Contact Picking) show under every tab and with no tab checked, and map
+    // settings live in the upper Properties | Map | History strip. No tab is
+    // checked until a sensor layer exists.
     auto* sensor_tabs = new PanelTabBar(lower);
     m_sensor_bar = sensor_tabs;
     m_tab_sss = sensor_tabs->addTab(tr("SSS"), 0);
     m_tab_sbp = sensor_tabs->addTab(tr("SBP"), 1);
-    m_tab_map = sensor_tabs->addTab(tr("Map"), 2);
-    m_tab_mag = sensor_tabs->addTab(tr("MAG"), 3);
+    m_tab_mag = sensor_tabs->addTab(tr("MAG"), 2);
 
-    m_tab_map->setChecked(true);
     m_tab_sss->setEnabled(false);
     m_tab_sbp->setEnabled(false);
     m_tab_mag->setEnabled(false);
 
     using M = app::Modality;
-    static const M kTabModality[] = { M::Sidescan, M::SubBottom, M::Unknown, M::Magnetometer };
+    static const M kTabModality[] = { M::Sidescan, M::SubBottom, M::Magnetometer };
     connect(sensor_tabs, &PanelTabBar::tabChanged, this, [this](int id) {
         refreshSensorTab(kTabModality[id]);
     });
@@ -359,28 +393,22 @@ void MainWindow::buildPropertiesPanel(QWidget* parent)
     // created by the existing onContactPickedOnMap / onFeatureDrawn handlers.
     if (auto* cp = m_modal_host->contactPickingPanel()) {
         connect(cp, &ContactPickingPanel::pickToggled, this, [this, cp](bool on) {
-            if (!m_map_view) return;
             if (on) {
+                // Contact picking from the panel happens on the 2D chart.
                 if (m_viewport_host && m_viewport_host->isMode3D())
                     m_viewport_host->setMode3D(false);
                 m_pending_contact_class = cp->classification().toStdString();
-                m_map_view->setInputMode(MapView::ModePickContact);
+                onAddContact();   // single activation path: map + viewport + app state
             } else {
-                m_map_view->setInputMode(MapView::ModePan);
+                onToolCursor();   // deactivate → back to the default Cursor/Pan tool
             }
         });
         connect(cp, &ContactPickingPanel::classificationChanged, this,
                 [this](const QString& c) { m_pending_contact_class = c.toStdString(); });
         connect(cp, &ContactPickingPanel::clearRequested, this, &MainWindow::onClearContacts);
-    }
-    if (auto* fp = m_modal_host->featureDrawingPanel()) {
-        connect(fp, &FeatureDrawingPanel::toolChanged, this, [this, fp](int tool) {
-            if (!m_map_view) return;
-            if (tool == 0) { m_map_view->setInputMode(MapView::ModePan); return; }
-            onDrawFeature(tool == 1, fp->classification());  // 1=polygon, 2=line
-        });
-        connect(fp, &FeatureDrawingPanel::classificationChanged, this,
-                [this](const QString& c) { m_pending_feature_class = c.toStdString(); });
+        // "Edit Contacts…" → the shared editor over all project contacts.
+        connect(cp, &ContactPickingPanel::editRequested, this,
+                [this]() { onContactEditRequested(0, QString{}); });
     }
 
     // The tool sections (Gain/Imaging/Nav/Geometry, SSS + SBP) have no per-section

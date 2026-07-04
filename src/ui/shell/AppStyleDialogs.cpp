@@ -458,6 +458,111 @@ QString qssDialogs()
         "QWidget#panelBody { background: @bgPanel; }"
 
         // ---------------------------------------------------------------------
+        // Contact Editor — "Edit contact details" (ce* namespace)
+        // ---------------------------------------------------------------------
+
+        "QDialog#contactEditor { background: @bg; }"
+
+        "QLabel#ceFieldLabel { color: @textSubtle; font-family: @font; font-size: @fontSm; }"
+        "QLabel#ceEcho      { color: @textMuted;  font-family: @font; font-size: @fontSm; }"
+        "QLabel#ceFooter    { color: @textMuted;  font-family: @font; font-size: @fontSm; }"
+        "QLabel#ceSection {"
+        "  color: @textMuted; font-family: @font; font-size: @fontXs; font-weight: 600;"
+        "  letter-spacing: 0.5px; padding-top: 4px;"
+        "}"
+        "QFrame#ceDivider { background: @border; max-height: 1px; min-height: 1px; border: none; }"
+
+        // Text / numeric / combo fields — one shared card treatment.
+        "QLineEdit#ceField, QDoubleSpinBox#ceSpin, QComboBox#ceCombo, QPlainTextEdit#ceText {"
+        "  background: @bgCard; border: 1px solid @borderMenu; border-radius: 5px;"
+        "  color: @textPrimary; font-family: @font; font-size: @fontSm;"
+        "  padding: 2px 6px; min-height: 20px;"
+        "  selection-background-color: rgba(@accentRgb,0.4);"
+        "}"
+        "QLineEdit#ceField:focus, QDoubleSpinBox#ceSpin:focus,"
+        "QComboBox#ceCombo:focus, QPlainTextEdit#ceText:focus {"
+        "  border-color: rgba(@accentRgb,0.55);"
+        "}"
+        "QLineEdit#ceField:disabled, QDoubleSpinBox#ceSpin:disabled {"
+        "  color: @textDisabled; background: rgba(255,255,255,0.02);"
+        "}"
+
+        // Keep the value clear of the stepper column.
+        "QDoubleSpinBox#ceSpin { padding-right: 18px; }"
+        "QDoubleSpinBox#ceSpin::up-button {"
+        "  subcontrol-origin: border; subcontrol-position: top right;"
+        "  width: 16px; border: none; background: transparent; margin: 1px 1px 0 0;"
+        "}"
+        "QDoubleSpinBox#ceSpin::down-button {"
+        "  subcontrol-origin: border; subcontrol-position: bottom right;"
+        "  width: 16px; border: none; background: transparent; margin: 0 1px 1px 0;"
+        "}"
+        "QDoubleSpinBox#ceSpin::up-button:hover, QDoubleSpinBox#ceSpin::down-button:hover {"
+        "  background: @overlayHov; border-radius: 2px;"
+        "}"
+        "QDoubleSpinBox#ceSpin::up-arrow   { image: url(:/icons/spin_up.svg);   width: 7px; height: 5px; }"
+        "QDoubleSpinBox#ceSpin::down-arrow { image: url(:/icons/spin_down.svg); width: 7px; height: 5px; }"
+
+        "QComboBox#ceCombo::drop-down {"
+        "  border: none; width: 18px; subcontrol-origin: padding; subcontrol-position: right center;"
+        "}"
+        "QComboBox#ceCombo::down-arrow { image: url(:/icons/spin_down.svg); width: 8px; height: 6px; }"
+        "QComboBox#ceCombo QAbstractItemView {"
+        "  background: @bgCard; border: 1px solid @borderMenu; border-radius: 8px;"
+        "  color: @textPrimary; selection-background-color: rgba(@accentRgb,0.3);"
+        "  padding: 4px 0; font-size: @fontSm;"
+        "}"
+
+        "QListWidget#ceTags {"
+        "  background: @bgCard; border: 1px solid @borderMenu; border-radius: 5px;"
+        "  color: @textSecond; font-family: @font; font-size: @fontSm; padding: 2px;"
+        "}"
+        "QListWidget#ceTags::item { padding: 1px 6px; border-radius: @radius1; }"
+        "QListWidget#ceTags::item:hover    { background: @overlayMut; }"
+        "QListWidget#ceTags::item:selected { background: rgba(@accentRgb,0.22); color: @textPrimary; }"
+
+        // Small square helper buttons (add tag / clear tags) + colour swatch.
+        "QToolButton#ceMiniBtn {"
+        "  background: @bgCard; border: 1px solid @borderMenu; border-radius: 5px;"
+        "  color: @textSecond; font-family: @font; font-size: @fontSm;"
+        "  min-width: 22px; min-height: 20px;"
+        "}"
+        "QToolButton#ceMiniBtn:hover   { border-color: rgba(255,255,255,0.25); color: @textPrimary; }"
+        "QToolButton#ceMiniBtn:pressed { background: @overlayMut; }"
+        "QPushButton#ceColorBtn {"
+        "  background: @bgCard; border: 1px solid @borderMenu; border-radius: 5px;"
+        "  color: @textSecond; font-family: @font; font-size: @fontXs; padding: 1px 6px;"
+        "}"
+        "QPushButton#ceColorBtn:hover { border-color: rgba(255,255,255,0.25); }"
+
+        // Image pane: framed viewer card.
+        "QFrame#ceImageFrame {"
+        "  background: #121214; border: 1px solid @border; border-radius: @radius3;"
+        "}"
+
+        // Command row: Prev/Next nav + danger delete; Close reuses #dlgBtnOk.
+        "QToolButton#ceNavBtn {"
+        "  background: @overlayEl; border: 1px solid @borderMenu; border-radius: @radius3;"
+        "  color: @textSecond; font-family: @font; font-size: @fontBase; padding: 4px 14px;"
+        "}"
+        "QToolButton#ceNavBtn:hover    { border-color: rgba(255,255,255,0.25); color: @textPrimary; }"
+        "QToolButton#ceNavBtn:pressed  { background: @overlayMut; }"
+        "QToolButton#ceNavBtn:disabled { color: @textDisabled; border-color: @border; }"
+        "QLabel#ceNavTitle { color: @textSecond; font-family: @font; font-size: @fontSm; }"
+        "QPushButton#ceDeleteBtn {"
+        "  background: transparent; border: 1px solid rgba(@dangerRgb,0.45); border-radius: @radius3;"
+        "  color: @dangerBright; font-family: @font; font-size: @fontBase; padding: 4px 16px;"
+        "}"
+        "QPushButton#ceDeleteBtn:hover   { background: rgba(@dangerRgb,0.14); border-color: rgba(@dangerRgb,0.70); }"
+        "QPushButton#ceDeleteBtn:pressed { background: rgba(@dangerRgb,0.08); }"
+        "QPushButton#ceExportBtn {"
+        "  background: @overlayEl; border: 1px solid @borderMenu; border-radius: @radius3;"
+        "  color: @textSecond; font-family: @font; font-size: @fontSm; padding: 3px 12px;"
+        "}"
+        "QPushButton#ceExportBtn:hover   { border-color: rgba(255,255,255,0.25); color: @textPrimary; }"
+        "QPushButton#ceExportBtn:pressed { background: @overlayMut; }"
+
+        // ---------------------------------------------------------------------
         // Import / Correction Dialogs (shared patterns)
         // ---------------------------------------------------------------------
 
@@ -586,11 +691,6 @@ QString qssDialogs()
         // CRS required warning label in ImportDialog
         "QLabel#dlgCrsRequired {"
         "  color: @caution; font-family: @font; font-size: @fontSm;"
-        "}"
-
-        // Terrain status label overlaid on the 3D map viewport
-        "QLabel#map3DTerrainLabel {"
-        "  background: rgba(0,0,0,140); color: @success; padding: @padXs @padMd;"
         "}"
 
         // ---------------------------------------------------------------------

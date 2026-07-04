@@ -158,12 +158,26 @@ void LineListPanel::onItemChanged(QTreeWidgetItem* item, int column)
 {
     if (m_rebuilding) return;
     if (column != 0 || !item) return;
-    if (itemTypeOf(item) != ItemType::Layer) return;
-    const std::string layer_id = item->data(0, kRoleId).toString().toStdString();
+
     const bool visible = (item->checkState(0) == Qt::Checked);
-    // Do NOT set layer->visible here — onLayerVisibilityChanged reads the old state
-    // from the layer to build the undo command. Mutating first would make old == new.
-    emit layerVisibilityChanged(layer_id, visible);
+    switch (itemTypeOf(item)) {
+    case ItemType::Layer: {
+        const std::string layer_id = item->data(0, kRoleId).toString().toStdString();
+        // Do NOT set layer->visible here — onLayerVisibilityChanged reads the old
+        // state from the layer to build the undo command. Mutating first would
+        // make old == new.
+        emit layerVisibilityChanged(layer_id, visible);
+        break;
+    }
+    case ItemType::Contact:
+        emit contactVisibilityChanged(item->data(0, kRoleId).toULongLong(), visible);
+        break;
+    case ItemType::Feature:
+        emit featureVisibilityChanged(item->data(0, kRoleId).toULongLong(), visible);
+        break;
+    default:
+        break;
+    }
 }
 
 void LineListPanel::setActiveLayer(const std::string& layer_id)

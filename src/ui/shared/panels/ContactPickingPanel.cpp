@@ -61,6 +61,20 @@ ContactPickingPanel::ContactPickingPanel(QWidget* parent)
                 this, &ContactPickingPanel::classificationChanged);
     }
 
+    // -- Edit ----------------------------------------------------------------
+    // Opens the shared "Edit contact details" editor (same dialog everywhere:
+    // Contact Manager, SSS waterfall, SBP viewer, main window).
+    {
+        auto* edit_btn = new QToolButton(this);
+        edit_btn->setText(tr("Edit Contacts…"));
+        edit_btn->setObjectName("wfToolBtn");
+        edit_btn->setToolTip(tr("Open the contact editor to review and edit contact details."));
+        edit_btn->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+        edit_btn->setFixedHeight(Theme::kFormBtnH);
+        vl->addWidget(edit_btn);
+        connect(edit_btn, &QToolButton::clicked, this, &ContactPickingPanel::editRequested);
+    }
+
     // -- Clear -------------------------------------------------------------
     {
         auto* clear_btn = new QToolButton(this);

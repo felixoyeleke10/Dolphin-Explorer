@@ -35,6 +35,7 @@ void MapView::paintContacts(QPainter& p) const
         const core::SpatialRef display_ref = m_project->displaySpatialRef();
 
         for (const auto& c : m_project->contacts()) {
+            if (!c.visible) continue;   // hidden via the explorer checkbox
             if (c.lat == 0.0 && c.lon == 0.0) continue;
 
             double disp_lon = c.lon, disp_lat = c.lat;

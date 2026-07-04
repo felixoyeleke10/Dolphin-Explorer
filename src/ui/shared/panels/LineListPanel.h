@@ -61,6 +61,10 @@ public:
     void updateLayerLabel(const std::string& id, const std::string& label);
     void refreshContacts();
     void refreshFeatures();
+    // In-place single-row updates (visibility toggle, rename) — a full section
+    // rebuild on every contactUpdated made rapid checkbox toggling lag.
+    void refreshContactRow(uint64_t contact_id);
+    void refreshFeatureRow(uint64_t feature_id);
     void refreshLayer(const std::string& id);
 
 signals:
@@ -71,6 +75,9 @@ signals:
     void featureSelected            (uint64_t feature_id);
     void layerVisibilityChanged     (const std::string& layer_id, bool visible);
     void navTrackVisibilityChanged  (const std::string& layer_id, bool visible);
+    // Explorer checkbox toggles — map/overlay visibility for annotations.
+    void contactVisibilityChanged   (uint64_t contact_id, bool visible);
+    void featureVisibilityChanged   (uint64_t feature_id, bool visible);
 
     // Context menu — project root actions
     void renameProjectRequested      ();

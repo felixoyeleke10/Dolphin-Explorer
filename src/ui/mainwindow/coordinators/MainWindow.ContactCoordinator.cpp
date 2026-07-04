@@ -5,21 +5,28 @@
 #include "ui/mainwindow/commands/LayerCommands.h"
 #include "ui/mainwindow/panels/InspectorPanel.h"
 #include "ui/features/contacts/ContactManagerWindow.h"
+#include "ui/features/contacts/ContactEditorDialog.h"
+#include "ui/features/contacts/ContactReport.h"
 #include "ui/features/contacts/ContactVisuals.h"
 #include "ui/features/map/MapView.h"
 #include "ui/systems/ProjectEventBus.h"
 #include "app/project/Project.h"
 #include "app/layers/DataLayer.h"
+#include "app/services/ImportService.h"
 #include "core/Contact.h"
+#include "core/SidescanPing.h"
 #include "core/SpatialRef.h"
 
 #include <QDir>
 #include <QFileInfo>
+#include <QImage>
 #include <QPixmap>
 #include <QStackedWidget>
 #include <QString>
 #include <QToolButton>
 #include <QVector>
+#include <algorithm>
+#include <cmath>
 
 namespace dolphin::ui {
 
@@ -157,11 +164,202 @@ void MainWindow::onContactPicked(double lat, double lon,
         .arg(lat, 0, 'f', 6).arg(lon, 0, 'f', 6));
 }
 
+namespace {
+
+// Render a grayscale patch of source pings around a waterfall pick — the
+// fetch-from-source fallback when no snapshot PNG was captured at pick time.
+// Loads a bounded window from the parsed-artifact cache (index-first policy:
+// never a full-file decode) and applies a 2–98 % percentile stretch.
+QPixmap renderContactSourcePatch(app::ImportService* svc, app::Project* proj,
+                                 const core::Contact& c)
+{
+    if (!svc || !proj || c.range_m <= 0.f || c.line_id.empty()) return {};
+    auto* layer = proj->findLayer(c.line_id);
+    if (!layer || !layer->index_built) return {};
+    const auto* src = proj->findSource(layer->source_id);
+    if (!src) return {};
+
+    const auto want = (c.sample_idx == 0) ? core::SidescanChannel::Port
+                                          : core::SidescanChannel::Starboard;
+
+    // The waterfall row pairs port+starboard pings, so the channel-ping index
+    // is ~2× the row; fall back to the raw row for single-channel sources.
+    std::vector<core::SidescanPing> rows;
+    for (const int64_t center : { static_cast<int64_t>(c.artifact_id) * 2,
+                                  static_cast<int64_t>(c.artifact_id) }) {
+        auto win = svc->loadSidescanWindow(layer, src->path, center, 360);
+        std::vector<core::SidescanPing> filt;
+        for (auto& p : win)
+            if (p.channel == want && !p.samples.empty()) filt.push_back(std::move(p));
+        if (filt.size() > rows.size()) rows = std::move(filt);
+        if (rows.size() >= 120) break;
+    }
+    if (rows.size() < 8) return {};
+
+    constexpr int kSide = 160;
+    const int H  = std::min<int>(kSide, static_cast<int>(rows.size()));
+    const int r0 = (static_cast<int>(rows.size()) - H) / 2;
+    const auto& ctr = rows[rows.size() / 2];
+
+    // Sample index of the pick range on the centre ping.
+    const int ns_ctr = static_cast<int>(ctr.samples.size());
+    int si0 = 0;
+    {
+        float best = 1e30f;
+        for (int i = 0; i < ns_ctr; ++i) {
+            const float d = std::fabs(ctr.samples[i].range_m - c.range_m);
+            if (d < best) { best = d; si0 = i; }
+        }
+    }
+    const int   span = std::min(ns_ctr, 480);          // samples across the patch
+    const float step = static_cast<float>(span) / kSide;
+
+    // Map pixels → sample indices (port mirrors: range grows leftwards).
+    std::vector<int> idx(static_cast<size_t>(kSide) * H, -1);
+    std::vector<uint16_t> amps;
+    amps.reserve(idx.size());
+    for (int y = 0; y < H; ++y) {
+        const auto& p  = rows[r0 + y];
+        const int   ns = static_cast<int>(p.samples.size());
+        for (int x = 0; x < kSide; ++x) {
+            const int off = static_cast<int>((x - kSide / 2) * step);
+            const int si  = (want == core::SidescanChannel::Port) ? si0 - off : si0 + off;
+            if (si < 0 || si >= ns) continue;
+            idx[static_cast<size_t>(y) * kSide + x] = si;
+            amps.push_back(p.samples[si].amplitude);
+        }
+    }
+    if (amps.size() < 64) return {};
+
+    auto pct = [&](double q) {
+        const size_t k = static_cast<size_t>(q * (amps.size() - 1));
+        std::nth_element(amps.begin(), amps.begin() + k, amps.end());
+        return static_cast<float>(amps[k]);
+    };
+    const float lo = pct(0.02);
+    float       hi = pct(0.98);
+    if (hi <= lo) hi = lo + 1.f;
+
+    QImage img(kSide, H, QImage::Format_Grayscale8);
+    img.fill(12);
+    for (int y = 0; y < H; ++y) {
+        uchar* line = img.scanLine(y);
+        const auto& p = rows[r0 + y];
+        for (int x = 0; x < kSide; ++x) {
+            const int si = idx[static_cast<size_t>(y) * kSide + x];
+            if (si < 0) continue;
+            const float a = (static_cast<float>(p.samples[si].amplitude) - lo) / (hi - lo);
+            line[x] = static_cast<uchar>(std::clamp(a, 0.f, 1.f) * 255.f);
+        }
+    }
+    return QPixmap::fromImage(img);
+}
+
+} // namespace
+
+QPixmap MainWindow::fetchContactSnapshot(const core::Contact& c)
+{
+    QPixmap pm = renderContactSourcePatch(m_import_service, currentProject(), c);
+    if (!pm.isNull()) {
+        // Persist so the next open (and the Contact Manager thumbnails) reuse it.
+        const QString path = cmvis::contactSnapshotPath(currentProject(), c.id);
+        if (!path.isEmpty()) {
+            QFileInfo fi(path);
+            QDir().mkpath(fi.absolutePath());
+            pm.save(path, "PNG");
+        }
+    }
+    return pm;
+}
+
+void MainWindow::onContactEditRequested(uint64_t id, const QString& line_id)
+{
+    if (!currentProject()) return;
+
+    // Resolve the Prev/Next scope: the given line's contacts, else the focused
+    // contact's line, else every contact in the project (project order).
+    std::string line = line_id.toStdString();
+    if (line.empty() && id != 0)
+        for (const auto& c : currentProject()->contacts())
+            if (c.id == id) { line = c.line_id; break; }
+
+    std::vector<uint64_t> ids;
+    for (const auto& c : currentProject()->contacts())
+        if (line.empty() || c.line_id == line) ids.push_back(c.id);
+    if (ids.empty() && !line.empty())   // line has none — fall back to all
+        for (const auto& c : currentProject()->contacts()) ids.push_back(c.id);
+    if (ids.empty()) {
+        appendJobMessage(tr("No contacts to edit — place a contact pick first."));
+        return;
+    }
+
+    if (std::find(ids.begin(), ids.end(), id) == ids.end()) id = ids.front();
+
+    auto* editor = qobject_cast<ContactEditorDialog*>(m_contact_editor.data());
+    if (!editor) {
+        editor = new ContactEditorDialog(currentProject(), ids, id, this);
+        editor->setAttribute(Qt::WA_DeleteOnClose);
+        // Contacts without a persisted snapshot get one rendered from source.
+        editor->setSnapshotProvider(
+            [this](const core::Contact& c) { return fetchContactSnapshot(c); });
+        m_contact_editor = editor;
+
+        // Undoable edit / delete routed straight onto the undo stack.
+        connect(editor, &ContactEditorDialog::contactSaveRequested, this,
+                [this](const core::Contact& before, const core::Contact& after) {
+                    if (currentProject())
+                        m_undo_stack->push(new UpdateContactCommand(currentProject(), before, after));
+                });
+        connect(editor, &ContactEditorDialog::removeContactRequested, this,
+                [this](uint64_t rid) {
+                    if (currentProject())
+                        m_undo_stack->push(new RecycleContactCommand(currentProject(), rid));
+                });
+        // Stepping through contacts syncs the map / inspector selection.
+        connect(editor, &ContactEditorDialog::contactActivated,
+                this, &MainWindow::onContactSelected);
+        // Export just the contact being edited (same flow as the manager).
+        connect(editor, &ContactEditorDialog::exportRequested, this,
+                [this, editor](uint64_t rid) {
+                    if (!currentProject()) return;
+                    for (const auto& c : currentProject()->contacts())
+                        if (c.id == rid) {
+                            ContactReport::exportInteractive(
+                                editor, tr("Contact Report — %1")
+                                            .arg(QString::fromStdString(c.label)),
+                                { c }, currentProject());
+                            return;
+                        }
+                });
+
+        // Keep the editor live across external changes (undo, manager edits, …).
+        if (m_event_bus) {
+            auto resync = [this, editor]() { editor->refresh(currentProject()); };
+            connect(m_event_bus, &ProjectEventBus::contactUpdated, editor,
+                    [resync](uint64_t) { resync(); });
+            connect(m_event_bus, &ProjectEventBus::contactRemoved, editor,
+                    [resync](uint64_t) { resync(); });
+            connect(m_event_bus, &ProjectEventBus::contactAdded, editor,
+                    [resync](const core::Contact&) { resync(); });
+            connect(m_event_bus, &ProjectEventBus::projectReplaced, editor,
+                    [resync](app::Project*) { resync(); });
+        }
+    } else {
+        editor->showContact(ids, id);
+    }
+    editor->show();
+    editor->raise();
+    editor->activateWindow();
+}
+
 void MainWindow::onContactManagerOpen()
 {
     if (!m_contact_mgr_win) {
         auto* win = new ContactManagerWindow(nullptr);
         win->setAttribute(Qt::WA_DeleteOnClose);
+        // The manager's editor fetches missing snapshots from source too.
+        win->setSnapshotProvider(
+            [this](const core::Contact& c) { return fetchContactSnapshot(c); });
         m_contact_mgr_win = win;
 
         // Select a row → navigate (map highlight + inspector detail for editing).

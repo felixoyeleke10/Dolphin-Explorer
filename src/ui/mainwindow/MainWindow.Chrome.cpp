@@ -98,7 +98,7 @@ void MainWindow::setupTitleBar()
 
         auto* btn_chat = new QPushButton(uni);
         btn_chat->setObjectName("uniBarBtn");
-        btn_chat->setIcon(QIcon(QStringLiteral(":/icons/chat.svg")));
+        btn_chat->setIcon(Theme::icon(QStringLiteral(":/icons/chat.svg")));
         btn_chat->setIconSize(QSize(15, 15));
         btn_chat->setFixedSize(Theme::kChromeConvBtnW, Theme::kCmdBarH);
         btn_chat->setFlat(true);
@@ -148,7 +148,7 @@ void MainWindow::setupTitleBar()
                               bool checkable) -> QPushButton* {
         auto* btn = new QPushButton(corner);
         btn->setObjectName("layoutToggleBtn");
-        btn->setIcon(QIcon(QString::fromLatin1(icon_path)));
+        btn->setIcon(Theme::icon(QString::fromLatin1(icon_path)));
         btn->setIconSize(QSize(18, 18));
         btn->setFixedSize(Theme::kLayoutBtnW, Theme::kWinBtnH);
         btn->setFlat(true);
