@@ -16,6 +16,7 @@
 #include "app/layers/DataLayer.h"
 #include "core/ArtifactIndex.h"
 #include "core/Artifact.h"
+#include "util/Json.h"
 
 #include <QCoreApplication>
 #include <QDir>
@@ -26,6 +27,8 @@
 #include <cassert>
 #include <cmath>
 #include <cstdio>
+#include <fstream>
+#include <sstream>
 #include <string>
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -374,6 +377,54 @@ static void testDisplayStatePersistence()
     CHECK(ll->sbp_palette == 2);
 }
 
+// 9b. Map opacity round-trip (v11) — a customised value is written and
+//     restored; an untouched (opaque) layer omits the field entirely so old
+//     manifests stay minimal, and still reads back as 1.0.
+static void testMapOpacityPersistence()
+{
+    QTemporaryDir tmp;
+    CHECK(tmp.isValid());
+    if (!tmp.isValid()) return;
+
+    const std::string manifest = (tmp.path() + "/opacity.dlp").toStdString();
+    auto proj = dolphin::app::Project::create("opacity", manifest);
+    CHECK(proj != nullptr);
+    if (!proj) return;
+
+    auto* src     = proj->addSource("/fake/survey.xtf", "xtf");
+    auto* faded   = proj->addLayer(src->id, "faded");
+    auto* opaque  = proj->addLayer(src->id, "opaque");
+    CHECK(faded != nullptr && opaque != nullptr);
+    if (!faded || !opaque) return;
+    injectIndexEntry(faded);
+    injectIndexEntry(opaque);
+
+    faded->map_opacity        = 0.35f;
+    faded->map_blend_mode     = 2;      // Lighten
+    faded->map_clip_polygons  = true;
+    faded->map_show_beams     = true;
+    // opaque stays at the 1.0f / Blend(0) / false defaults.
+
+    CHECK(proj->save());
+
+    auto loaded = dolphin::app::Project::open(manifest);
+    CHECK(loaded != nullptr);
+    if (!loaded) return;
+    const auto* lf = loaded->findLayer(faded->id);
+    const auto* lo = loaded->findLayer(opaque->id);
+    CHECK(lf != nullptr && lo != nullptr);
+    if (!lf || !lo) return;
+
+    CHECK(std::fabs(lf->map_opacity - 0.35f) < 1e-3f);
+    CHECK(lf->map_blend_mode == 2);
+    CHECK(lf->map_clip_polygons);
+    CHECK(lf->map_show_beams);
+    CHECK(std::fabs(lo->map_opacity - 1.0f) < 1e-3f);
+    CHECK(lo->map_blend_mode == 0);
+    CHECK(!lo->map_clip_polygons);
+    CHECK(!lo->map_show_beams);
+}
+
 // 10. Nav-correction state round-trip — the model-owned nav_state / nav_customized
 //     (shared by SSS + SBP) survive save → reopen. An untouched layer stays
 //     uncustomized (nav_state is only written when nav_customized).
@@ -501,6 +552,117 @@ static void testFeaturePersistence()
     CHECK(loaded->features().back().id > line_id);
 }
 
+// 12. Schema version guard — a manifest written by a NEWER app version is
+//     refused with a user-presentable reason (never silently misparsed); a
+//     legacy low-version manifest still opens; the writer stamps the current
+//     kSchemaVersion.
+static void testSchemaVersionGuard()
+{
+    using dolphin::app::Project;
+
+    QTemporaryDir tmp;
+    CHECK(tmp.isValid());
+    if (!tmp.isValid()) return;
+
+    auto writeManifest = [&](const QString& name, int version) {
+        const QString path = tmp.path() + "/" + name;
+        QFile f(path);
+        CHECK(f.open(QIODevice::WriteOnly | QIODevice::Text));
+        f.write(QStringLiteral(
+            "{\"version\": %1, \"name\": \"guard\", \"crs\": \"EPSG:4326\","
+            " \"sources\": [], \"layers\": []}").arg(version).toUtf8());
+        f.close();
+        return path.toStdString();
+    };
+
+    // Future version → refused, with a reason mentioning the newer version.
+    std::string err;
+    auto future = Project::open(
+        writeManifest("future.dlp", Project::kSchemaVersion + 1), &err);
+    CHECK(future == nullptr);
+    CHECK(err.find("newer version") != std::string::npos);
+
+    // Legacy v1 → still opens (migration path, not rejection).
+    std::string legacy_err;
+    auto legacy = Project::open(writeManifest("legacy.dlp", 1), &legacy_err);
+    CHECK(legacy != nullptr);
+    CHECK(legacy_err.empty());
+
+    // Writer stamps the current schema version.
+    const std::string manifest = (tmp.path() + "/stamp.dlp").toStdString();
+    auto proj = Project::create("stamp", manifest);
+    CHECK(proj != nullptr && proj->save());
+    std::ifstream in(manifest);
+    std::ostringstream ss;
+    ss << in.rdbuf();
+    const auto root = dolphin::util::parseJson(ss.str());
+    CHECK(root.get("version").asInt() == Project::kSchemaVersion);
+}
+
+// 13. SSS/SBP display-param structs round-trip — gain/contrast/invert and the
+//     customized flags survive save → reopen (regression net for the
+//     DisplayStateManager migration; complements test 9's palette fields).
+static void testDisplayParamsRoundTrip()
+{
+    QTemporaryDir tmp;
+    CHECK(tmp.isValid());
+    if (!tmp.isValid()) return;
+
+    const std::string manifest = (tmp.path() + "/params.dlp").toStdString();
+    auto proj = dolphin::app::Project::create("params", manifest);
+    CHECK(proj != nullptr);
+    if (!proj) return;
+
+    auto* src   = proj->addSource("/fake/survey.sgy", "segy");
+    auto* layer = proj->addLayer(src->id, "line1");
+    CHECK(layer != nullptr);
+    if (!layer) return;
+    injectIndexEntry(layer);
+
+    auto& d = layer->sbp_display_state;
+    d.display_customized       = true;
+    d.gain_customized          = true;
+    d.signal_customized        = true;
+    d.display.gain             = 2.5f;
+    d.display.contrast         = 1.4f;
+    d.display.polarity_invert  = true;
+    d.display.show_bottom_track = false;
+    d.display.sound_speed_ms   = 1520.0f;
+    d.gain.static_gain_en      = true;
+    d.gain.static_gain_db      = 6.0f;
+    d.gain.agc_en              = true;
+    d.gain.agc_window          = 128;
+    d.signal.envelope_en       = true;
+    d.signal.bandpass_en       = true;
+    d.signal.bp_lo_hz          = 500.0f;
+    d.signal.bp_hi_hz          = 8000.0f;
+
+    CHECK(proj->save());
+
+    auto loaded = dolphin::app::Project::open(manifest);
+    CHECK(loaded != nullptr);
+    if (!loaded) return;
+    const auto* ll = loaded->findLayer(layer->id);
+    CHECK(ll != nullptr);
+    if (!ll) return;
+
+    const auto& r = ll->sbp_display_state;
+    CHECK(r.display_customized && r.gain_customized && r.signal_customized);
+    CHECK(std::fabs(r.display.gain - 2.5f) < 1e-4f);
+    CHECK(std::fabs(r.display.contrast - 1.4f) < 1e-4f);
+    CHECK(r.display.polarity_invert);
+    CHECK(!r.display.show_bottom_track);
+    CHECK(std::fabs(r.display.sound_speed_ms - 1520.0f) < 1e-2f);
+    CHECK(r.gain.static_gain_en);
+    CHECK(std::fabs(r.gain.static_gain_db - 6.0f) < 1e-4f);
+    CHECK(r.gain.agc_en);
+    CHECK(r.gain.agc_window == 128);
+    CHECK(r.signal.envelope_en);
+    CHECK(r.signal.bandpass_en);
+    CHECK(std::fabs(r.signal.bp_lo_hz - 500.0f) < 1e-2f);
+    CHECK(std::fabs(r.signal.bp_hi_hz - 8000.0f) < 1e-2f);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 //  Entry point
 // ─────────────────────────────────────────────────────────────────────────────
@@ -518,8 +680,11 @@ int main(int argc, char** argv)
     testDpcacheFormatAccepted();
     testLayerRemoval();
     testDisplayStatePersistence();
+    testMapOpacityPersistence();
     testNavStatePersistence();
     testFeaturePersistence();
+    testSchemaVersionGuard();
+    testDisplayParamsRoundTrip();
 
     std::printf("\n%d passed, %d failed\n", g_pass, g_fail);
     return (g_fail == 0) ? 0 : 1;

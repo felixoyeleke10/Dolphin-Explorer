@@ -248,7 +248,7 @@ void MainWindow::onLayerSelected(const std::string& layer_id)
         refreshSensorTab(tab);
     }
     updateToolsApplyBar();   // show the shared Apply bar for SSS/SBP layers only
-    refreshViewsPanel();     // left Views panel tracks the active layer's palettes
+    refreshViewsPanel(true); // left Views panel follows the active layer's modality
 
     // Always bring the Properties tab into view when a layer is selected.
     if (layer && m_props_stack && m_props_stack->currentIndex() != 0) {
@@ -627,6 +627,9 @@ void MainWindow::refreshInspectorModalities()
     setTab(m_tab_sbp, has_sbp);
     setTab(m_tab_mag, has_mag);
     if (m_sensor_bar) m_sensor_bar->setVisible(has_sss || has_sbp || has_mag);
+    // With the universal sections gone, the whole lower shell is empty when no
+    // sensor modality exists — hide it rather than leaving a bare header strip.
+    if (m_sensor_shell) m_sensor_shell->setVisible(has_sss || has_sbp || has_mag);
 
     // The tab that should be active for the current selection: the active layer's
     // sensor when it has one, else none (universal sections only).

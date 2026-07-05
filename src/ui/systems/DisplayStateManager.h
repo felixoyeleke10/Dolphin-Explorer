@@ -28,6 +28,7 @@ enum class DisplayAspect {
     Channel,        // SSS display channel (port/stbd/both)
     NavOverlay,     // nav-correction / overlay choices
     Visibility,     // layer shown/hidden on the map
+    Opacity,        // layer map transparency (mosaic + 3D drape)
 
     // Per-view (layer_id empty) — state this manager OWNS
     MapQuality,     // map sonar preview tier (Off/CoverageOnly/Low/Medium/High)
@@ -88,6 +89,10 @@ public:
     // Each typed setter writes the model field, marks the project dirty, and emits
     // displayStateChanged(layer_id, <aspect>). Returns false if the layer is gone.
     bool setLayerVisible   (const std::string& layer_id, bool visible);
+    bool setLayerOpacity   (const std::string& layer_id, float opacity);  // [0,1]
+    bool setLayerBlendMode (const std::string& layer_id, int blend_mode); // 0..3, 2D mosaic
+    bool setLayerClipPolygons(const std::string& layer_id, bool clip);    // 2D mosaic
+    bool setLayerShowBeams (const std::string& layer_id, bool show);      // 2D mosaic
     bool setLayerSssPalette(const std::string& layer_id, int palette_idx);
     bool setLayerSbpPalette(const std::string& layer_id, int palette_idx);
 

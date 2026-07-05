@@ -1,10 +1,14 @@
 // MapViewPaint.Sonar.cpp — empty state, sonar images, coverage ribbons.
 #include "ui/features/map/MapView.h"
 #include "app/project/Project.h"
+#include "core/Feature.h"
+#include "core/SpatialRef.h"
+#include "geo/GeoUtils.h"
 #include "ui/shell/Theme.h"
 
 #include <QPainter>
 #include <QPainterPath>
+#include <QPolygonF>
 #include <algorithm>
 #include <cmath>
 
@@ -49,6 +53,39 @@ void MapView::paintSonarLayers(QPainter& p) const
             for (const auto& [lid, ld] : m_layer_data)
                 if (ld.visible) fn(ld);
         }
+    };
+
+    // Clip mask from the project's drawn polygons, in pixel space, built lazily
+    // and cached for this paint (only when a layer requests clip-to-polygons).
+    // Empty path (no polygons yet) means "don't clip" so an enabled toggle with
+    // nothing drawn never blanks the whole mosaic.
+    bool  clip_built = false;
+    QPainterPath clip_path;
+    auto sonarClipPath = [&]() -> const QPainterPath& {
+        if (clip_built) return clip_path;
+        clip_built = true;
+        if (!m_project) return clip_path;
+        const core::SpatialRef display_ref = m_project->displaySpatialRef();
+        for (const auto& f : m_project->features()) {
+            if (!f.visible || f.type != core::FeatureType::Polygon) continue;
+            if (f.vertices.size() < 3) continue;
+            QPolygonF poly;
+            poly.reserve(static_cast<int>(f.vertices.size()));
+            for (const auto& v : f.vertices) {
+                double lon = v.lon, lat = v.lat;
+                if (core::spatialRefIsProjected(f.spatial_ref)) {
+                    core::NavPoint nav; nav.lat = v.lat; nav.lon = v.lon;
+                    nav.valid = true; nav.spatial_ref = f.spatial_ref;
+                    nav.is_projected = true;
+                    core::NavPoint norm;
+                    if (!geo::normalizeNavForMap(nav, display_ref, norm)) continue;
+                    lon = norm.lon; lat = norm.lat;
+                }
+                poly.append(geoToPixel(lon, lat));
+            }
+            if (poly.size() >= 3) clip_path.addPolygon(poly);
+        }
+        return clip_path;
     };
 
     // Merged port+starboard swath polygon renderer.
@@ -126,9 +163,33 @@ void MapView::paintSonarLayers(QPainter& p) const
             if (ld.preview_image.isNull()) return;
             const QPointF tl = geoToPixel(ld.lon_min, ld.lat_max);
             const QPointF br = geoToPixel(ld.lon_max, ld.lat_min);
-            p.setOpacity(0.88);
+            // Clip this layer's mosaic to the drawn polygons (show inside) when
+            // enabled and at least one polygon exists.
+            bool clipped = false;
+            if (ld.clip_polygons) {
+                const QPainterPath& cp = sonarClipPath();
+                if (!cp.isEmpty()) { p.save(); p.setClipPath(cp); clipped = true; }
+            }
+            // Blend mode controls how this layer composites over layers already
+            // drawn beneath it (visible where surveys overlap):
+            //   0 Blend    — SourceOver at 0.88 (basemap shows through slightly)
+            //   1 Cover up — SourceOver opaque (top fully covers)
+            //   2 Lighten  — keep the brighter pixel
+            //   3 Darken   — keep the darker pixel
+            switch (ld.blend_mode) {
+                case 1: p.setCompositionMode(QPainter::CompositionMode_SourceOver);
+                        p.setOpacity(1.0 * static_cast<qreal>(ld.opacity)); break;
+                case 2: p.setCompositionMode(QPainter::CompositionMode_Lighten);
+                        p.setOpacity(static_cast<qreal>(ld.opacity)); break;
+                case 3: p.setCompositionMode(QPainter::CompositionMode_Darken);
+                        p.setOpacity(static_cast<qreal>(ld.opacity)); break;
+                default: p.setCompositionMode(QPainter::CompositionMode_SourceOver);
+                        p.setOpacity(0.88 * static_cast<qreal>(ld.opacity)); break;
+            }
             p.drawImage(QRectF(tl, br), ld.preview_image);
             p.setOpacity(1.0);
+            p.setCompositionMode(QPainter::CompositionMode_SourceOver);
+            if (clipped) p.restore();
         });
         p.setRenderHint(QPainter::Antialiasing, true);
     }
@@ -144,6 +205,34 @@ void MapView::paintSonarLayers(QPainter& p) const
             drawMergedSwath(ld, true);
         });
         p.setRenderHint(QPainter::Antialiasing, true);
+    }
+
+    // Side-scan beams — the across-track fan (nadir → swath edge per ping),
+    // drawn over the mosaic when enabled. Each coverage ribbon is a closed
+    // polygon [inner_0..inner_{m-1}, outer_{m-1}..outer_0]; beam i is the line
+    // inner[i] → outer[i] (= ribbon[i] → ribbon[n-1-i]). Decimated so the fan
+    // reads as beams rather than a solid fill.
+    {
+        const QColor kBeam(120, 235, 255, 70);
+        p.setPen(QPen(kBeam, 0.7));
+        p.setBrush(Qt::NoBrush);
+        forEachVisibleLayer([&](const LayerMapData& ld) {
+            if (!ld.show_beams) return;
+            for (const auto& cov : ld.coverage) {
+                for (const auto& ribbon : cov.ribbons) {
+                    const int n = static_cast<int>(ribbon.size());
+                    if (n < 4) continue;
+                    const int m = n / 2;                       // edge points per side
+                    const int step = std::max(1, m / 60);      // ~60 beams / ribbon
+                    for (int i = 0; i < m; i += step) {
+                        const QPointF a = geoToPixel(ribbon[i].x(), ribbon[i].y());
+                        const QPointF b = geoToPixel(ribbon[n - 1 - i].x(),
+                                                     ribbon[n - 1 - i].y());
+                        p.drawLine(a, b);
+                    }
+                }
+            }
+        });
     }
 
     // Track-only layers (SBP/MAG/MBE) have no swath hull — their selection and

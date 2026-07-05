@@ -37,8 +37,19 @@ public:
     static std::shared_ptr<Project> create(const std::string& name,
                                             const std::string& manifest_path);
 
-    // Open an existing .dlp project file (also accepts legacy .pelagic)
-    static std::shared_ptr<Project> open(const std::string& manifest_path);
+    // Manifest schema version: written by toJson(), the newest fromJson() can
+    // read. Bump on ANY serialization change and add a read-side migration
+    // branch in Project.Serialization.Read.cpp (see the v5 gate there).
+    // Manifests with a HIGHER version are refused at open (forward-compat
+    // guard) rather than silently misparsed.
+    // v11: optional per-layer "map_opacity" (defaults to 1.0 when absent).
+    static constexpr int kSchemaVersion = 11;
+
+    // Open an existing .dlp project file (also accepts legacy .pelagic).
+    // Returns nullptr on failure; if `error` is given, it receives a
+    // user-presentable reason when one is known (e.g. newer-version manifest).
+    static std::shared_ptr<Project> open(const std::string& manifest_path,
+                                         std::string* error = nullptr);
 
     bool save();
     bool saveAs(const std::string& new_path);
@@ -188,6 +199,9 @@ private:
 
     std::string toJson() const;
     bool        fromJson(const std::string& json);
+    // Set by fromJson() when it fails for a reason worth telling the user
+    // (currently: manifest schema newer than this build). Empty otherwise.
+    std::string m_load_error;
     std::string generateId(const std::string& prefix) const;
     void        purgeOrphanedCaches();
 };

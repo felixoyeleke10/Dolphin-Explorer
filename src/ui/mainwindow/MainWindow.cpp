@@ -83,6 +83,35 @@ MainWindow::MainWindow(QWidget* parent)
         // look differs from disk — mark it dirty so it's saved.
         if (!layer_id.isEmpty())
             markProjectDirty();
+        // Per-layer visibility: fan out to every widget that renders or lists
+        // the layer. The model write lives in DisplayStateManager::
+        // setLayerVisible — this is the ONLY sync point (undo/redo replays
+        // through the same setter and lands here too).
+        if (aspect == DisplayAspect::Visibility && !layer_id.isEmpty()) {
+            const std::string lid = layer_id.toStdString();
+            const auto* l = currentProject() ? currentProject()->findLayer(lid)
+                                             : nullptr;
+            const bool v = l && l->visible;
+            if (m_viewport_host) m_viewport_host->setLayerVisible(lid, v);
+            else if (m_map_view) m_map_view->setLayerVisible(lid, v);
+            if (m_line_list)     m_line_list->setLayerVisibility(lid, v);
+            if (m_layer_picker)  m_layer_picker->setLayerVisibility(lid, v);
+        }
+        // Per-layer map compositing (transparency + blend mode): fan out to the
+        // map viewport (2D mosaic + 3D drape/curtain for opacity; 2D-only for
+        // blend). Model writes live in DisplayStateManager::setLayerOpacity /
+        // setLayerBlendMode, both of which emit this aspect.
+        if (aspect == DisplayAspect::Opacity && !layer_id.isEmpty()) {
+            const std::string lid = layer_id.toStdString();
+            const auto* l = currentProject() ? currentProject()->findLayer(lid)
+                                             : nullptr;
+            if (l && m_viewport_host) {
+                m_viewport_host->setLayerOpacity(lid, l->map_opacity);
+                m_viewport_host->setLayerBlendMode(lid, l->map_blend_mode);
+                m_viewport_host->setLayerClipPolygons(lid, l->map_clip_polygons);
+                m_viewport_host->setLayerShowBeams(lid, l->map_show_beams);
+            }
+        }
         // SBP palette change → recolour the 3D curtains (shader uniform, free).
         if (aspect == DisplayAspect::Palette && !layer_id.isEmpty()
                 && currentProject() && m_viewport_host) {
@@ -656,6 +685,10 @@ MainWindow::MainWindow(QWidget* parent)
             m_import_job_mgr, m_import_overlay, m_layer_picker,
             this, this);
         m_import_ctrl->connectToCacheRebuilds(m_import_service);
+        // Project switch / new / close must warn about in-flight imports the
+        // same way app close does — otherwise a switch abandons them silently.
+        m_session_ctrl->setImportsBusyCheck(
+            [this]() { return m_import_ctrl && m_import_ctrl->importsBusy(); });
         connect(m_import_ctrl, &ExecutionController::importFailed,
                 this, [this](const QString& layer_id, const QString& error) {
                     m_diag_hub->postProblem(

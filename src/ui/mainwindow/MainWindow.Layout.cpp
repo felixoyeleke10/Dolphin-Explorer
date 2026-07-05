@@ -327,14 +327,11 @@ void MainWindow::onLayerVisibilityChanged(const std::string& layer_id, bool visi
         old_visible = layer->visible;
 
     auto apply = [this](const std::string& lid, bool v) {
-        if (auto* layer = currentProject() ? currentProject()->findLayer(lid) : nullptr)
-            layer->visible = v;
-        if (m_viewport_host) m_viewport_host->setLayerVisible(lid, v);
-        else if (m_map_view) m_map_view->setLayerVisible(lid, v);
-        if (m_line_list)     m_line_list->setLayerVisibility(lid, v);
-        if (m_layer_picker)  m_layer_picker->setLayerVisibility(lid, v);
-        // visible is serialized; direct mutation bypasses Project::modified() signal.
-        markProjectDirty();
+        // Single mutate point: DisplayStateManager writes the model and emits
+        // displayStateChanged(lid, Visibility); MainWindow's bus handler fans
+        // out to viewport / line list / layer picker and marks the project
+        // dirty. Undo/redo replays land here too, so they stay in sync.
+        if (m_display_state) m_display_state->setLayerVisible(lid, v);
     };
 
     m_undo_stack->push(new SetLayerVisibleCommand(

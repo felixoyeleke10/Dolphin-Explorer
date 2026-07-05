@@ -120,6 +120,15 @@ bool Project::fromJson(const std::string& json)
     if (!root.isObject()) return false;
 
     const int version = std::max(1, root.get("version").asInt());
+    if (version > kSchemaVersion) {
+        // Forward-compat guard: refuse cleanly instead of silently misparsing
+        // fields this build does not understand.
+        m_load_error = "This project was saved by a newer version of "
+                       "Dolphin Explorer (manifest v" + std::to_string(version) +
+                       "; this build reads up to v" +
+                       std::to_string(kSchemaVersion) + ").";
+        return false;
+    }
     m_name = root.get("name").asString();
     m_display_spatial_ref = spatialRefFromJson(
         root.get("display_spatial_ref"),
@@ -178,6 +187,16 @@ bool Project::fromJson(const std::string& json)
             jl.get("qc_viewed_fraction").asDouble());
         layer->sss_palette = jl.has("sss_palette") ? jl.get("sss_palette").asInt() : -1;
         layer->sbp_palette = jl.has("sbp_palette") ? jl.get("sbp_palette").asInt() : -1;
+        // v11 optional fields; pre-v11 manifests default to opaque / Blend.
+        layer->map_opacity = jl.has("map_opacity")
+            ? std::clamp(static_cast<float>(jl.get("map_opacity").asDouble()), 0.f, 1.f)
+            : 1.0f;
+        layer->map_blend_mode = jl.has("map_blend_mode")
+            ? jl.get("map_blend_mode").asInt() : 0;
+        layer->map_clip_polygons = jl.has("map_clip_polygons")
+            && jl.get("map_clip_polygons").asBool();
+        layer->map_show_beams = jl.has("map_show_beams")
+            && jl.get("map_show_beams").asBool();
 
         if (jl.has("raster")) {
             const auto& jr = jl.get("raster");

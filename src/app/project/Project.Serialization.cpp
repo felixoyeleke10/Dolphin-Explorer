@@ -85,7 +85,7 @@ static std::string pathForManifest(const std::string& path, const std::string& m
 std::string Project::toJson() const
 {
     util::JsonValue root = util::JsonValue::object();
-    root["version"] = util::JsonValue(10);
+    root["version"] = util::JsonValue(kSchemaVersion);
     root["name"]    = util::JsonValue(m_name);
     root["crs"]     = util::JsonValue(m_display_spatial_ref.id);
     root["display_spatial_ref"] = spatialRefToJson(m_display_spatial_ref);
@@ -129,6 +129,17 @@ std::string Project::toJson() const
         jl["qc_viewed_fraction"] = util::JsonValue(static_cast<double>(l->qc_viewed_fraction));
         jl["sss_palette"] = util::JsonValue(l->sss_palette);
         jl["sbp_palette"] = util::JsonValue(l->sbp_palette);
+        // v11: per-layer map transparency (only written when customised).
+        if (l->map_opacity < 0.999f)
+            jl["map_opacity"] = util::JsonValue(static_cast<double>(l->map_opacity));
+        // v11: per-layer map blend mode (only written when non-default).
+        if (l->map_blend_mode != 0)
+            jl["map_blend_mode"] = util::JsonValue(l->map_blend_mode);
+        // v11: per-layer mosaic clip-to-polygons / beam overlay (only when on).
+        if (l->map_clip_polygons)
+            jl["map_clip_polygons"] = util::JsonValue(true);
+        if (l->map_show_beams)
+            jl["map_show_beams"] = util::JsonValue(true);
 
         // Raster layers — the GeoTIFF/image source is the durable store, so persist
         // its metadata (kind, size, geo-transform, CRS, extent) for reopen.

@@ -70,6 +70,7 @@ add_library(dolphin-ui-shared STATIC
     shared/widgets/LayerPickerWidget.cpp
     shared/widgets/PanelTabBar.cpp
     shared/widgets/SidePanelShell.cpp
+    shared/widgets/HistogramRangeSlider.cpp
     shared/dialogs/CommandPaletteDialog.cpp
     shared/dialogs/CommandPaletteDelegate.cpp
     shared/dialogs/CrsPickerDialog.cpp

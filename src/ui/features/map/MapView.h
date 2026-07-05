@@ -48,6 +48,10 @@ public:
 
     void removeLayerData    (const std::string& layer_id);
     void setLayerVisible    (const std::string& layer_id, bool visible);
+    void setLayerOpacity    (const std::string& layer_id, float opacity);  // [0,1]
+    void setLayerBlendMode  (const std::string& layer_id, int blend_mode); // 0..3
+    void setLayerClipPolygons(const std::string& layer_id, bool clip);
+    void setLayerShowBeams  (const std::string& layer_id, bool show);
     void clearAllLayerData  ();
 
     // Input mode: ModePan for pan+click-select, ModeSelect for rubber-band.

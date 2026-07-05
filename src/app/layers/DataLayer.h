@@ -70,6 +70,10 @@ public:
     float               qc_viewed_fraction    = 0.f;   // fraction of pings the user has scrolled past [0,1]
     int                 sss_palette           = -1;    // per-layer palette override; -1 = use app default
     int                 sbp_palette           = -1;    // per-layer SBP palette override; -1 = use window default
+    float               map_opacity           = 1.0f;  // map mosaic/drape transparency [0,1]; persisted (v11)
+    int                 map_blend_mode        = 0;      // 0=Blend,1=Cover up,2=Lighten,3=Darken; persisted (v11)
+    bool                map_clip_polygons     = false;  // clip mosaic to drawn polygons (show inside); persisted (v11)
+    bool                map_show_beams        = false;  // draw across-track beam fan on the mosaic; persisted (v11)
 
     // Per-layer display state — written by MainWindow on paramsApplied, read on
     // layer open.  Not yet persisted in project JSON; reset to defaults on project reload.

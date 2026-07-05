@@ -153,6 +153,15 @@ public:
         return { m_loaded_layers.begin(), m_loaded_layers.end() };
     }
 
+    // Amplitude histogram (sqrt-friendly raw counts) over `nbins` for the Views
+    // dynamic-range control, computed from this layer's intensity cache (the map
+    // never receives those pixels). Empty if the layer is not rasterised yet.
+    std::vector<float> amplitudeHistogram(const std::string& layer_id,
+                                          int nbins = 96) const;
+    // Auto-stretch black/white points [0,1] the layer was rasterised with, so the
+    // dynamic-range handles seat on the effective bounds. Returns false if unknown.
+    bool autoStretch(const std::string& layer_id, float& low, float& high) const;
+
     // Re-rasterize the given layers with their current gain/imaging params from the
     // cached (pre-correction) pings — no disk decode. The existing mosaic stays on
     // screen until the new one is ready (no blank), giving a fast Apply preview;

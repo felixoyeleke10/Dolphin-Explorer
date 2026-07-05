@@ -162,6 +162,7 @@ static const char* kCurtainFragSrc = R"glsl(
 in  vec2 vUV;
 uniform sampler2D uTex;
 uniform int       uPaletteIdx;
+uniform float     uAlpha;   // per-layer transparency (Views ▸ SBP)
 out vec4          fragColor;
 
 // Mirrors SbpPalette::toRgb (0=Greyscale, 1=InvGrey, 2=Seismic-as-grey, 3=Thermal).
@@ -179,7 +180,7 @@ vec3 applyPalette(float a, int idx) {
 void main() {
     vec4 s = texture(uTex, vUV);
     if (s.a < 0.5) discard;   // below this trace's data / gap column
-    fragColor = vec4(applyPalette(s.r, uPaletteIdx), 0.92);
+    fragColor = vec4(applyPalette(s.r, uPaletteIdx), 0.92 * uAlpha);
 }
 )glsl";
 
@@ -328,6 +329,7 @@ void MapView3D::initializeGL()
     m_loc_curt_palette = m_curtain_shader->uniformLocation("uPaletteIdx");
     m_loc_curt_vexag   = m_curtain_shader->uniformLocation("uVExag");
     m_loc_curt_tex     = m_curtain_shader->uniformLocation("uTex");
+    m_loc_curt_alpha   = m_curtain_shader->uniformLocation("uAlpha");
 
     // -- Drape shader ----------------------------------------------------------
     m_drape_shader = new QOpenGLShaderProgram(this);

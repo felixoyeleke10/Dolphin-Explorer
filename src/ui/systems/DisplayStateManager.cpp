@@ -6,6 +6,9 @@
 
 #include <QSettings>
 
+#include <algorithm>
+#include <cmath>
+
 namespace dolphin::ui {
 
 // Canonical QSettings key for the map preview quality — must match
@@ -81,6 +84,44 @@ bool DisplayStateManager::setLayerVisible(const std::string& layer_id, bool visi
     if (!l || l->visible == visible) return l != nullptr;
     l->visible = visible;
     emit displayStateChanged(QString::fromStdString(layer_id), DisplayAspect::Visibility);
+    return true;
+}
+
+bool DisplayStateManager::setLayerOpacity(const std::string& layer_id, float opacity)
+{
+    auto* l = layerById(layer_id);
+    opacity = std::clamp(opacity, 0.f, 1.f);
+    if (!l || std::abs(l->map_opacity - opacity) < 1e-3f) return l != nullptr;
+    l->map_opacity = opacity;
+    emit displayStateChanged(QString::fromStdString(layer_id), DisplayAspect::Opacity);
+    return true;
+}
+
+bool DisplayStateManager::setLayerBlendMode(const std::string& layer_id, int blend_mode)
+{
+    auto* l = layerById(layer_id);
+    if (!l || l->map_blend_mode == blend_mode) return l != nullptr;
+    l->map_blend_mode = blend_mode;
+    // Reuse Opacity — both are cheap map-composite changes with one fan-out.
+    emit displayStateChanged(QString::fromStdString(layer_id), DisplayAspect::Opacity);
+    return true;
+}
+
+bool DisplayStateManager::setLayerClipPolygons(const std::string& layer_id, bool clip)
+{
+    auto* l = layerById(layer_id);
+    if (!l || l->map_clip_polygons == clip) return l != nullptr;
+    l->map_clip_polygons = clip;
+    emit displayStateChanged(QString::fromStdString(layer_id), DisplayAspect::Opacity);
+    return true;
+}
+
+bool DisplayStateManager::setLayerShowBeams(const std::string& layer_id, bool show)
+{
+    auto* l = layerById(layer_id);
+    if (!l || l->map_show_beams == show) return l != nullptr;
+    l->map_show_beams = show;
+    emit displayStateChanged(QString::fromStdString(layer_id), DisplayAspect::Opacity);
     return true;
 }
 

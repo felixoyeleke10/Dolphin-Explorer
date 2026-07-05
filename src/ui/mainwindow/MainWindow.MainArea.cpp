@@ -299,6 +299,7 @@ void MainWindow::buildPropertiesPanel(QWidget* parent)
     // LOWER SHELL — Sensor/modality tab bar + adaptive modal inspector
     // =====================================================================
     auto* lower = new SidePanelShell(splitter);
+    m_sensor_shell = lower;   // hidden entirely when the project has no sensor layers
 
     // Sensor tab bar — SSS | SBP | MAG. No Map tab: the universal sections
     // (Contact Picking) show under every tab and with no tab checked, and map

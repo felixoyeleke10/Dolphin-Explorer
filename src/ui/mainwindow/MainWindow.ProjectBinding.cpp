@@ -35,6 +35,17 @@ void MainWindow::bindProjectUi()
     if (m_op_mgr) m_op_mgr->cancelAll();
     if (m_undo_stack) m_undo_stack->clear();
     updateActionStates();
+
+    // Per-project UI state that would otherwise leak across a switch:
+    // the History tab's activity journal, the Problems panel (its entries are
+    // keyed by the OLD project's layer ids and would never clear), and the
+    // lazy metadata inspector windows (they hold raw Project*/DataLayer*
+    // pointers into the previous project — closing is the only safe reset).
+    m_activity_log.clear();
+    rebuildHistoryList();   // History tab may be showing — don't leave stale rows
+    if (m_diag_hub) m_diag_hub->clearProblems();
+    if (m_metadata_win)     m_metadata_win->close();
+    if (m_sbp_metadata_win) m_sbp_metadata_win->close();
     // Window title is maintained by PSC; no setWindowTitle call needed here.
 
     // Notify all registered viewers that the project was replaced so they
@@ -56,25 +67,26 @@ void MainWindow::bindProjectUi()
     // Status-bar CRS is set by updateContextInfo() at the end of this method
     // (it shows the project's working/survey CRS, refreshed on every layer change).
 
-    if (m_viewport_host && !raw)
+    // Clear BOTH views on every project change — close AND project→project
+    // switch. The 2D view was already reset by setProject above, but the 3D
+    // scene (curtains / drapes / terrain) is only ever populated additively;
+    // without this, the old project's geometry stays in the 3D viewport under
+    // the new project's data ("old survey leaking into the new one").
+    if (m_viewport_host)
         m_viewport_host->clearScene();
 
     if (m_viewport_host)
         m_viewport_host->setShowImportHint(!raw || raw->layers().empty());
 
-    // Swap the 3D draping surface to the new project's stored one. clearScene
-    // above already dropped old terrain on close; track state accordingly.
+    // Load the new project's stored draping surface. clearScene above dropped
+    // whatever terrain was loaded, so always start from a clean slate.
     {
         const QString stored = raw
             ? QString::fromStdString(raw->drapingSurface()) : QString{};
-        if (m_viewport_host && m_loaded_draping != stored) {
-            if (!m_loaded_draping.isEmpty() && raw)
-                m_viewport_host->removeTerrainPath(m_loaded_draping);
-            m_loaded_draping.clear();
-            if (!stored.isEmpty() && QFileInfo::exists(stored)) {
-                m_viewport_host->loadTerrainPath(stored);
-                m_loaded_draping = stored;
-            }
+        m_loaded_draping.clear();
+        if (m_viewport_host && !stored.isEmpty() && QFileInfo::exists(stored)) {
+            m_viewport_host->loadTerrainPath(stored);
+            m_loaded_draping = stored;
         }
     }
     refreshViewsPanel();

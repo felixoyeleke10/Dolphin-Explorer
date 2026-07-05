@@ -107,7 +107,8 @@ public:
                        const QImage& image,
                        double lon_min, double lat_min,
                        double lon_max, double lat_max,
-                       std::vector<QPointF> hull_geo = {});
+                       std::vector<QPointF> hull_geo = {},
+                       float opacity = 1.f);
     void removeSonarDrape(const std::string& layer_id);
     int  drapeLayerCount() const { return static_cast<int>(m_drape_layers.size()); }
 
@@ -124,6 +125,7 @@ public:
     void setGratLabelRotated  (bool rotated);
     void setGratCoordFormat   (int fmt);
     void setLayerVisible      (const std::string& layer_id, bool visible);
+    void setLayerOpacity      (const std::string& layer_id, float opacity);  // drapes, [0,1]
     void setActiveLayer    (const std::string& layer_id);
     void setSelectedLayers (const std::vector<std::string>& ids);
 
@@ -217,6 +219,7 @@ private:
         float              z_range = 1.f;  // full profile depth in metres, for HUD legend
         float bbox_xmin = 0.f, bbox_ymin = 0.f;
         float bbox_xmax = 0.f, bbox_ymax = 0.f;
+        float opacity = 1.f;   // user transparency [0,1] (Views ▸ SBP)
         bool  dirty   = true;
         bool  visible = true;
     };
@@ -229,6 +232,7 @@ private:
         std::vector<QPointF> pending_hull;   // geo coords of swath outline polygon
         bool              dirty   = true;
         bool              visible = true;
+        float             opacity = 1.f;     // user transparency [0,1] (Views ▸ SSS)
         // GPU side — created in uploadPendingDrapes() inside GL context
         QOpenGLTexture*   texture    = nullptr;
         // Sonar bbox in local metres (computed once from geo bbox + origin)
@@ -300,6 +304,7 @@ private:
     GLint m_loc_curt_palette = -1;
     GLint m_loc_curt_vexag   = -1;
     GLint m_loc_curt_tex     = -1;
+    GLint m_loc_curt_alpha   = -1;
     int   m_curtain_palette  = 0;   // SbpPalette::Index shared by all curtains
 
     // -- Terrain shader (depth-coloured mesh + screen-space lighting) -----

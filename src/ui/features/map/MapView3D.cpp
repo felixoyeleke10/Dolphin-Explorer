@@ -135,7 +135,8 @@ void MapView3D::setSonarDrape(const std::string& layer_id,
                                const QImage& image,
                                double lon_min, double lat_min,
                                double lon_max, double lat_max,
-                               std::vector<QPointF> hull_geo)
+                               std::vector<QPointF> hull_geo,
+                               float opacity)
 {
     if (!m_has_origin) return;
     if (image.isNull() || lon_min >= lon_max || lat_min >= lat_max) return;
@@ -148,7 +149,8 @@ void MapView3D::setSonarDrape(const std::string& layer_id,
     if (it == m_drape_layers.end()) {
         m_drape_layers.push_back(SonarDrape3D{});
         it = m_drape_layers.end() - 1;
-        it->id = layer_id;
+        it->id      = layer_id;
+        it->opacity = opacity;   // seed once; live changes go through setLayerOpacity
     }
 
     // GL tex row 0 = south (low Y), QImage row 0 = north (high Y) — mirror.
@@ -202,7 +204,8 @@ void MapView3D::setProfileCurtain(const std::string& layer_id, const LayerMapDat
     if (it == m_curtain_layers.end()) {
         m_curtain_layers.push_back(CurtainLayer3D{});
         it = m_curtain_layers.end() - 1;
-        it->id = layer_id;
+        it->id      = layer_id;
+        it->opacity = data.opacity;   // seed once; live changes via setLayerOpacity
     }
 
     const size_t n       = data.nav_track.size();
@@ -395,6 +398,23 @@ void MapView3D::setLayerVisible(const std::string& layer_id, bool visible)
         if (C.id == layer_id && C.visible != visible) { C.visible = visible; changed = true; }
     for (auto& D : m_drape_layers)
         if (D.id == layer_id && D.visible != visible) { D.visible = visible; changed = true; }
+    if (changed) update();
+}
+
+void MapView3D::setLayerOpacity(const std::string& layer_id, float opacity)
+{
+    bool changed = false;
+    for (auto& D : m_drape_layers)
+        if (D.id == layer_id && std::abs(D.opacity - opacity) > 1e-3f) {
+            D.opacity = opacity;
+            changed = true;
+        }
+    // SBP layers present on the map as curtains, not drapes — fade those too.
+    for (auto& C : m_curtain_layers)
+        if (C.id == layer_id && std::abs(C.opacity - opacity) > 1e-3f) {
+            C.opacity = opacity;
+            changed = true;
+        }
     if (changed) update();
 }
 

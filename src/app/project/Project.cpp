@@ -148,7 +148,8 @@ std::string Project::dataPath() const
     return detail::cacheRootForManifest(m_manifest_path).toStdString();
 }
 
-std::shared_ptr<Project> Project::open(const std::string& manifest_path)
+std::shared_ptr<Project> Project::open(const std::string& manifest_path,
+                                       std::string* error)
 {
     std::ifstream f(manifest_path);
     if (!f.is_open()) return nullptr;
@@ -156,7 +157,10 @@ std::shared_ptr<Project> Project::open(const std::string& manifest_path)
     ss << f.rdbuf();
     auto p = std::make_shared<Project>();
     p->m_manifest_path = manifest_path;
-    if (!p->fromJson(ss.str())) return nullptr;
+    if (!p->fromJson(ss.str())) {
+        if (error) *error = p->m_load_error;
+        return nullptr;
+    }
     p->purgeOrphanedCaches();
     return p;
 }

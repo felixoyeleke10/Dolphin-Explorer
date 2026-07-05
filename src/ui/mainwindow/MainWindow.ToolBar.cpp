@@ -235,7 +235,7 @@ void MainWindow::setupToolBar()
     // Checked = 3D. State follows the viewport (corner button / HUD chip /
     // command palette all funnel through setMode3D → modeChanged).
     m_btn_3d_toggle = new QToolButton(tb);
-    m_btn_3d_toggle->setIcon(Theme::icon(QStringLiteral(":/icons/layers.svg")));
+    m_btn_3d_toggle->setIcon(Theme::icon(QStringLiteral(":/icons/view_3d.svg")));
     m_btn_3d_toggle->setToolTip(
         tr("3D View — toggle the OpenGL terrain/sonar-drape perspective.\n"
            "Unchecked = 2D plan chart."));

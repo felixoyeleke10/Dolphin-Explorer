@@ -163,6 +163,40 @@ QImage SidescanViewController::colorizeIntensityCache(
     return img;
 }
 
+// -- amplitudeHistogram / autoStretch ------------------------------------------
+
+std::vector<float> SidescanViewController::amplitudeHistogram(
+    const std::string& layer_id, int nbins) const
+{
+    const auto it = m_layer_intensity_cache.find(layer_id);
+    if (it == m_layer_intensity_cache.end() || !it->second.valid() || nbins <= 0)
+        return {};
+    const auto& px = it->second.pixels;   // uint16, stored amplitude+1; 0 = no return
+    const size_t n = px.size();
+    // Sample to a fixed budget so layer selection stays instant on High tiers.
+    const size_t stride = std::max<size_t>(1, n / 200000);
+    std::vector<float> bins(static_cast<size_t>(nbins), 0.f);
+    for (size_t i = 0; i < n; i += stride) {
+        const uint16_t v = px[i];
+        if (v == 0) continue;
+        const float norm = static_cast<float>(v - 1) / 65535.f;
+        int b = static_cast<int>(norm * nbins);
+        b = std::clamp(b, 0, nbins - 1);
+        bins[static_cast<size_t>(b)] += 1.f;
+    }
+    return bins;
+}
+
+bool SidescanViewController::autoStretch(const std::string& layer_id,
+                                         float& low, float& high) const
+{
+    const auto it = m_layer_intensity_cache.find(layer_id);
+    if (it == m_layer_intensity_cache.end() || !it->second.valid()) return false;
+    low  = it->second.disp_low;
+    high = it->second.disp_high;
+    return true;
+}
+
 // -- setPaletteIndex / repaletteAllLayers --------------------------------------
 
 void SidescanViewController::setPaletteIndex(int idx)

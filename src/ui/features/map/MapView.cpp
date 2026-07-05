@@ -430,6 +430,16 @@ void MapView::setLayerMapData(const std::string& layer_id, LayerMapData data)
 {
     // On update (entry already exists): preserve user-controlled visibility.
     // On first insert: honor the incoming flags so callers can pre-set them.
+    // Opacity + blend mode always re-seed from the model (single source of
+    // truth) so a rebuild never resets them and a fresh open restores them.
+    if (m_project) {
+        if (const auto* l = m_project->findLayer(layer_id)) {
+            data.opacity       = l->map_opacity;
+            data.blend_mode    = l->map_blend_mode;
+            data.clip_polygons = l->map_clip_polygons;
+            data.show_beams    = l->map_show_beams;
+        }
+    }
     auto it = m_layer_data.find(layer_id);
     if (it != m_layer_data.end()) {
         data.visible        = it->second.visible;
@@ -498,6 +508,42 @@ void MapView::setLayerVisible(const std::string& layer_id, bool visible)
     if (it->second.visible == visible) return;
     it->second.visible = visible;
     m_combined_dirty = true;
+    update();
+}
+
+void MapView::setLayerOpacity(const std::string& layer_id, float opacity)
+{
+    auto it = m_layer_data.find(layer_id);
+    if (it == m_layer_data.end()) return;
+    if (std::abs(it->second.opacity - opacity) < 1e-3f) return;
+    it->second.opacity = opacity;
+    update();
+}
+
+void MapView::setLayerBlendMode(const std::string& layer_id, int blend_mode)
+{
+    auto it = m_layer_data.find(layer_id);
+    if (it == m_layer_data.end()) return;
+    if (it->second.blend_mode == blend_mode) return;
+    it->second.blend_mode = blend_mode;
+    update();
+}
+
+void MapView::setLayerClipPolygons(const std::string& layer_id, bool clip)
+{
+    auto it = m_layer_data.find(layer_id);
+    if (it == m_layer_data.end()) return;
+    if (it->second.clip_polygons == clip) return;
+    it->second.clip_polygons = clip;
+    update();
+}
+
+void MapView::setLayerShowBeams(const std::string& layer_id, bool show)
+{
+    auto it = m_layer_data.find(layer_id);
+    if (it == m_layer_data.end()) return;
+    if (it->second.show_beams == show) return;
+    it->second.show_beams = show;
     update();
 }
 

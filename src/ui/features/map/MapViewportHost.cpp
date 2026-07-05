@@ -300,6 +300,29 @@ void MapViewportHost::setLayerVisible(const std::string& layer_id, bool visible)
     if (m_view3d) m_view3d->setLayerVisible(layer_id, visible);
 }
 
+void MapViewportHost::setLayerOpacity(const std::string& layer_id, float opacity)
+{
+    m_view2d->setLayerOpacity(layer_id, opacity);
+    if (m_view3d) m_view3d->setLayerOpacity(layer_id, opacity);
+}
+
+void MapViewportHost::setLayerBlendMode(const std::string& layer_id, int blend_mode)
+{
+    // Mosaic compositing is a 2D concern only; the 3D drape/curtain draw one
+    // texture per layer with no overlap blending, so there is no 3D equivalent.
+    m_view2d->setLayerBlendMode(layer_id, blend_mode);
+}
+
+void MapViewportHost::setLayerClipPolygons(const std::string& layer_id, bool clip)
+{
+    m_view2d->setLayerClipPolygons(layer_id, clip);   // 2D mosaic only
+}
+
+void MapViewportHost::setLayerShowBeams(const std::string& layer_id, bool show)
+{
+    m_view2d->setLayerShowBeams(layer_id, show);       // 2D mosaic only
+}
+
 void MapViewportHost::setNavTrackVisible(const std::string& layer_id, bool visible)
 {
     m_layer_visibility[layer_id] = visible;
@@ -538,7 +561,7 @@ void MapViewportHost::onLayerDataLoaded(const std::string& layer_id,
             m_view3d->setSonarDrape(layer_id, data.preview_image,
                                     data.lon_min, data.lat_min,
                                     data.lon_max, data.lat_max,
-                                    std::move(hull_geo));
+                                    std::move(hull_geo), data.opacity);
         }
     }
 }

@@ -349,7 +349,7 @@ private:
     void     refreshSidebarSections(const QStringList& paths);
     // Sync the Views panel with the display-state authority, the active
     // layer's palettes, and the project's draping surface.
-    void     refreshViewsPanel();
+    void     refreshViewsPanel(bool follow_active = false);
     void     onChooseDrapingSurface();
     void     onClearDrapingSurface();
     // Single mutate point for the draping surface: swaps the 3D terrain,
@@ -489,6 +489,7 @@ private:
     // Single shared Apply bar at the bottom of the tools panel (replaces the
     // per-section Apply buttons). Applies every visible tool section in one rebuild.
     QWidget*     m_tools_apply_bar  = nullptr;
+    QWidget*     m_sensor_shell     = nullptr;   // right panel's lower (sensor tools) shell
     QPushButton* m_tools_apply_line = nullptr;
     QPushButton* m_tools_apply_all  = nullptr;
 

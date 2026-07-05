@@ -4,6 +4,7 @@
 
 #include <QObject>
 #include <QStringList>
+#include <functional>
 #include <memory>
 #include <string>
 
@@ -46,6 +47,13 @@ public:
     void markClean();
 
     void setPendingCrs(const core::SpatialRef& crs) { m_pending_crs = crs; }
+
+    // MainWindow supplies this so switching / creating / closing a project can
+    // warn when file imports are still running — the same protection the app
+    // closeEvent has. Without it, a project switch abandons in-flight imports
+    // silently (dead placeholder layers until the next self-heal open).
+    void setImportsBusyCheck(std::function<bool()> fn)
+        { m_imports_busy_check = std::move(fn); }
 
     // Used by the import flow to inject a freshly-created project without the
     // full open/close ceremony (no projectAboutToChange / viewport suppression).
@@ -97,6 +105,8 @@ private:
     void addToRecentProjects(const QString& path);
     void emitWindowTitle();
     QString buildWindowTitle() const;
+    // True = proceed (no imports running, or user chose to abandon them).
+    bool confirmAbandonImports(const QString& dialog_title);
 
     QUndoStack*            m_undo_stack;
     DiagnosticsHub*        m_diag_hub;
@@ -109,6 +119,7 @@ private:
     uint64_t         m_project_load_gen = 0;
     bool             m_save_in_progress = false;
     core::SpatialRef m_pending_crs;
+    std::function<bool()> m_imports_busy_check;
 };
 
 } // namespace dolphin::ui

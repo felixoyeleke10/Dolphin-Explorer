@@ -206,6 +206,19 @@ struct LayerMapData {
     bool   is_projected   = false;
     bool   visible        = true;
     bool   show_nav_track = false;
+    // Per-layer map transparency [0,1] (mirrors DataLayer::map_opacity; seeded
+    // by MapView::setLayerMapData from the project, live-updated via
+    // MapView::setLayerOpacity).
+    float  opacity        = 1.f;
+    // Per-layer mosaic blend mode (mirrors DataLayer::map_blend_mode):
+    // 0=Blend, 1=Cover up, 2=Lighten, 3=Darken. Controls how this layer's
+    // sonar image composites over layers already drawn beneath it (visible
+    // where surveys overlap).
+    int    blend_mode     = 0;
+    // Clip this layer's mosaic to the project's drawn polygons (show inside).
+    bool   clip_polygons  = false;
+    // Draw the across-track beam fan (nadir → swath edge lines) over the mosaic.
+    bool   show_beams     = false;
 
     // Sonar amplitude preview image (quality >= Low only; null otherwise).
     // Drawn below coverage ribbons and nav track in the map view.

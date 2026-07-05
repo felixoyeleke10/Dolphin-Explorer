@@ -109,6 +109,9 @@ QStringList ProjectSessionController::recentProjects() const
 
 void ProjectSessionController::newProject()
 {
+    if (!confirmAbandonImports(tr("New Project")))
+        return;
+
     if (m_project && m_project_dirty && !m_project->isTempProject()) {
         const auto reply = QMessageBox::question(
             m_dialog_parent, tr("New Project"),
@@ -245,6 +248,9 @@ void ProjectSessionController::closeProject()
 {
     if (!m_project) return;
 
+    if (!confirmAbandonImports(tr("Close Project")))
+        return;
+
     if (!m_project->isTempProject() && m_project_dirty) {
         const auto reply = QMessageBox::question(
             m_dialog_parent, tr("Close Project"),
@@ -370,10 +376,27 @@ void ProjectSessionController::autoSave()
 
 // -- Private helpers ---------------------------------------------------------
 
+bool ProjectSessionController::confirmAbandonImports(const QString& dialog_title)
+{
+    if (!m_imports_busy_check || !m_imports_busy_check()) return true;
+    const auto reply = QMessageBox::warning(
+        m_dialog_parent, dialog_title,
+        tr("File imports are still running. Continuing now abandons them —\n"
+           "unfinished lines will be re-imported the next time their\n"
+           "project is opened.\n\nContinue anyway?"),
+        QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel);
+    return reply == QMessageBox::Yes;
+}
+
 void ProjectSessionController::loadProjectPath(const std::string& path)
 {
     // Guard against duplicate open (e.g. double-click on sidebar emits twice).
     if (!m_project_dirty && m_project && m_project->manifestPath() == path)
+        return;
+
+    // In-flight imports would be abandoned by the switch — warn first, like
+    // the app-close guard (MainWindow::closeEvent).
+    if (!confirmAbandonImports(tr("Open Project")))
         return;
 
     if (m_project && m_project_dirty) {
@@ -406,17 +429,23 @@ void ProjectSessionController::loadProjectPath(const std::string& path)
         return;
     }
 
-    m_project = app::Project::open(path);
+    std::string open_error;
+    m_project = app::Project::open(path, &open_error);
     if (!m_project) {
         const QString qpath = QString::fromStdString(path);
+        // Prefer the specific reason when the model provides one (e.g. the
+        // manifest was written by a newer app version).
+        const QString detail = open_error.empty()
+            ? tr("Could not open: %1").arg(qpath)
+            : tr("Could not open: %1\n%2").arg(qpath,
+                  QString::fromStdString(open_error));
         if (m_diag_hub)
-            m_diag_hub->postProblem(tr("Could not open: %1").arg(qpath),
+            m_diag_hub->postProblem(detail,
                                     DiagnosticsHub::Severity::Error, "project");
         // Re-enable viewport: projectAboutToChange suppressed it but no
         // projectChanged fired, so emit a null-project signal to trigger re-enable.
         emit projectChanged(nullptr);
-        QMessageBox::warning(m_dialog_parent, tr("Open Project"),
-            tr("Could not open: %1").arg(qpath));
+        QMessageBox::warning(m_dialog_parent, tr("Open Project"), detail);
         return;
     }
 

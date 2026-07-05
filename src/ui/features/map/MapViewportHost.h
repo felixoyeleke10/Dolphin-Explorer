@@ -68,6 +68,10 @@ public slots:
     void setGratLabelRotated  (bool rotated);
     void setGratCoordFormat   (int fmt);
     void setLayerVisible      (const std::string& layer_id, bool visible);
+    void setLayerOpacity      (const std::string& layer_id, float opacity);  // [0,1]
+    void setLayerBlendMode    (const std::string& layer_id, int blend_mode); // 0..3
+    void setLayerClipPolygons (const std::string& layer_id, bool clip);      // 2D mosaic
+    void setLayerShowBeams    (const std::string& layer_id, bool show);      // 2D mosaic
     void setNavTrackVisible   (const std::string& layer_id, bool visible);
     void setActiveLayer       (const std::string& layer_id);
     void setSelectedLayers (const std::vector<std::string>& ids);

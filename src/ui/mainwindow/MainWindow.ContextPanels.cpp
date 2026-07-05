@@ -12,8 +12,14 @@
 #include "ui/shared/widgets/SidePanelShell.h"
 #include "ui/systems/DisplayStateManager.h"
 #include "ui/features/subbottom/SubBottomWindow.h"
+#include "ui/features/map/sidescan/SidescanViewController.h"
+#include "ui/features/map/MapView.h"
 #include "app/display/SubBottomDisplayParams.h"
+#include "app/display/WaterfallParams.h"
 #include "app/layers/DataLayer.h"
+
+#include <algorithm>
+#include <cmath>
 
 #include <QDesktopServices>
 #include <QFileDialog>
@@ -108,6 +114,57 @@ void MainWindow::buildContextPanel(QWidget* parent)
         if (l->sbp_palette >= 0) p.palette_index = l->sbp_palette;
         if (m_sbp_win) m_sbp_win->applyDisplayParams(p);
         m_display_state->setLayerSbpDisplay(l->id, p);
+    });
+    // SSS gain/contrast intentionally are NOT here — they live in the right
+    // panel's Tools (the full imaging chain + Apply). The left Dynamic-range
+    // control below covers brightness via black/white points.
+    // Per-layer map transparency — cheap, applies instantly (no re-raster).
+    connect(m_views_panel, &ViewsPanel::sssOpacityEdited, this, [this](int pct) {
+        if (!m_display_state || !currentProject()) return;
+        const auto* l = currentProject()->findLayer(activeLayerId());
+        if (l && l->modality == app::Modality::Sidescan)
+            m_display_state->setLayerOpacity(l->id, pct / 100.f);
+    });
+    // Mosaic blend mode — cheap repaint (composition of overlapping lines).
+    connect(m_views_panel, &ViewsPanel::sssBlendSelected, this, [this](int mode) {
+        if (!m_display_state || !currentProject()) return;
+        const auto* l = currentProject()->findLayer(activeLayerId());
+        if (l && l->modality == app::Modality::Sidescan)
+            m_display_state->setLayerBlendMode(l->id, mode);
+    });
+    // Clip mosaic to drawn polygons (show inside) — cheap repaint.
+    connect(m_views_panel, &ViewsPanel::sssClipPolygonsToggled, this, [this](bool on) {
+        if (!m_display_state || !currentProject()) return;
+        const auto* l = currentProject()->findLayer(activeLayerId());
+        if (l && l->modality == app::Modality::Sidescan)
+            m_display_state->setLayerClipPolygons(l->id, on);
+    });
+    // Across-track beam fan overlay — cheap repaint.
+    connect(m_views_panel, &ViewsPanel::sssShowBeamsToggled, this, [this](bool on) {
+        if (!m_display_state || !currentProject()) return;
+        const auto* l = currentProject()->findLayer(activeLayerId());
+        if (l && l->modality == app::Modality::Sidescan)
+            m_display_state->setLayerShowBeams(l->id, on);
+    });
+    // Dynamic range — black/white points (display_low/high). Committed on drag
+    // release, so re-raster once here (heavier than gain/contrast's debounce
+    // because it fires per gesture, not per tick).
+    connect(m_views_panel, &ViewsPanel::sssDynamicRangeCommitted, this,
+            [this](double low, double high) {
+        if (!m_display_state || !currentProject()) return;
+        auto* l = currentProject()->findLayer(activeLayerId());
+        if (!l || l->modality != app::Modality::Sidescan) return;
+        WaterfallParams p = l->sss_display_state.params;
+        p.display_low  = static_cast<float>(low);
+        p.display_high = static_cast<float>(high);
+        m_display_state->setLayerSssDisplay(l->id, p);
+        if (m_sss_ctrl) m_sss_ctrl->applyLiveCorrections({l->id});
+    });
+    connect(m_views_panel, &ViewsPanel::sbpOpacityEdited, this, [this](int pct) {
+        if (!m_display_state || !currentProject()) return;
+        const auto* l = currentProject()->findLayer(activeLayerId());
+        if (l && l->modality == app::Modality::SubBottom)
+            m_display_state->setLayerOpacity(l->id, pct / 100.f);
     });
     connect(m_views_panel, &ViewsPanel::drapingBrowseRequested,
             this, &MainWindow::onChooseDrapingSurface);
@@ -221,7 +278,7 @@ QWidget* MainWindow::makeContextPlaceholder(const QString& title, const QString&
 
 // -- Views panel sync + draping surface -----------------------------------------
 
-void MainWindow::refreshViewsPanel()
+void MainWindow::refreshViewsPanel(bool follow_active)
 {
     if (!m_views_panel) return;
 
@@ -230,18 +287,59 @@ void MainWindow::refreshViewsPanel()
         m_views_panel->setMapQuality(static_cast<int>(m_display_state->mapQuality()));
     }
 
+    // Mirror the right panel's sensor tabs: only modalities the project
+    // contains are offered (MAP always).
+    bool has_sss = false, has_sbp = false;
+    if (currentProject()) {
+        for (const auto& l : currentProject()->layers()) {
+            if (!l) continue;
+            has_sss |= l->modality == app::Modality::Sidescan;
+            has_sbp |= l->modality == app::Modality::SubBottom;
+        }
+    }
+    m_views_panel->setModalities(has_sss, has_sbp);
+
     const app::DataLayer* active = currentProject()
         ? currentProject()->findLayer(activeLayerId()) : nullptr;
     const bool sss = active && active->modality == app::Modality::Sidescan;
     const bool sbp = active && active->modality == app::Modality::SubBottom;
-    m_views_panel->setSssLayer(sss, sss ? active->sss_palette : -1);
+    if (sss) {
+        const auto& p = active->sss_display_state.params;
+        m_views_panel->setSssLayer(true, active->sss_palette,
+                                   static_cast<int>(active->map_opacity * 100.f + 0.5f),
+                                   active->map_blend_mode,
+                                   active->map_clip_polygons, active->map_show_beams);
+        // Dynamic-range handles + histogram come from the SSS controller (it
+        // owns the intensity pixels; the map never receives them). Present only
+        // when the layer is rasterised (Low+ tier). display_low/high default
+        // 0/1 = "use auto-stretch"; when identity, seat the handles on the
+        // effective auto-stretch bounds so they show where the actual black/
+        // white points sit rather than pinned to the edges.
+        double dlow = p.display_low, dhigh = p.display_high;
+        if (dlow == 0.f && dhigh == 1.f && m_sss_ctrl) {
+            float alo = 0.f, ahi = 1.f;
+            if (m_sss_ctrl->autoStretch(active->id, alo, ahi)) { dlow = alo; dhigh = ahi; }
+        }
+        m_views_panel->setSssDynamicRange(dlow, dhigh);
+        m_views_panel->setSssHistogram(
+            m_sss_ctrl ? m_sss_ctrl->amplitudeHistogram(active->id)
+                       : std::vector<float>{});
+    } else {
+        m_views_panel->setSssLayer(false, -1);
+    }
     if (sbp) {
         const auto& d = active->sbp_display_state.display;
         m_views_panel->setSbpLayer(true, active->sbp_palette,
-                                   d.gain, d.contrast, d.polarity_invert);
+                                   d.gain, d.contrast, d.polarity_invert,
+                                   static_cast<int>(active->map_opacity * 100.f + 0.5f));
     } else {
         m_views_panel->setSbpLayer(false, -1);
     }
+
+    // Follow the active layer's modality on selection changes only — palette
+    // and quality refreshes must not yank the user off a tab they browsed to.
+    if (follow_active)
+        m_views_panel->setCurrentTab(sbp ? 2 : sss ? 1 : 0);
 
     const QString drape = currentProject()
         ? QString::fromStdString(currentProject()->drapingSurface()) : QString{};
