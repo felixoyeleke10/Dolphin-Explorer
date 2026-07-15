@@ -14,14 +14,12 @@
 namespace dolphin::ui {
 
 SidescanViewController::SidescanViewController(MapView*            map_view,
-                                               app::ImportService* import_service,
                                                QLabel*             status_ping,
                                                QLabel*             status_pos,
                                                QLabel*             status_depth,
                                                QObject*            parent)
     : QObject(parent)
     , m_map_view(map_view)
-    , m_import_service(import_service)
     , m_status_ping(status_ping)
     , m_status_pos(status_pos)
     , m_status_depth(status_depth)

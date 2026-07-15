@@ -1,4 +1,6 @@
 #pragma once
+#include <cmath>
+#include <limits>
 #include <string>
 #include <vector>
 #include <map>
@@ -6,8 +8,8 @@
 namespace dolphin::util {
 
 // Minimal JSON value — covers everything the project manifest and graph
-// serializer needs. Intentionally simple: no Unicode escaping beyond \\n/\\t,
-// no 64-bit integer distinction from double.
+// serializer needs. The parser validates the complete grammar; numbers remain
+// IEEE-754 doubles, so integer identities and ranges need caller validation.
 class JsonValue {
 public:
     enum class Type { Null, Bool, Number, String, Array, Object };
@@ -33,8 +35,22 @@ public:
 
     bool               asBool()   const { return m_bool; }
     double             asDouble() const { return m_num; }
-    int                asInt()    const { return static_cast<int>(m_num); }
-    float              asFloat()  const { return static_cast<float>(m_num); }
+    int asInt() const {
+        if (!std::isfinite(m_num)) return 0;
+        if (m_num <= static_cast<double>(std::numeric_limits<int>::min()))
+            return std::numeric_limits<int>::min();
+        if (m_num >= static_cast<double>(std::numeric_limits<int>::max()))
+            return std::numeric_limits<int>::max();
+        return static_cast<int>(m_num);
+    }
+    float asFloat() const {
+        if (!std::isfinite(m_num)) return 0.0f;
+        constexpr double max_float =
+            static_cast<double>(std::numeric_limits<float>::max());
+        if (m_num <= -max_float) return -std::numeric_limits<float>::max();
+        if (m_num >= max_float) return std::numeric_limits<float>::max();
+        return static_cast<float>(m_num);
+    }
     const std::string& asString() const { return m_str; }
 
     // Object interface

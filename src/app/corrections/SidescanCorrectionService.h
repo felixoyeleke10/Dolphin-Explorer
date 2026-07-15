@@ -7,10 +7,6 @@
 #include "core/SidescanPing.h"
 
 namespace dolphin::app {
-class ImportService;
-}
-
-namespace dolphin::app {
 
 // Bakes enabled processing corrections from SidescanCorrectionParams into the
 // .dlpd amplitude data in a background thread.
@@ -25,8 +21,7 @@ namespace dolphin::app {
 class SidescanCorrectionService : public QObject {
     Q_OBJECT
 public:
-    explicit SidescanCorrectionService(ImportService* import_service,
-                                       QObject* parent = nullptr);
+    explicit SidescanCorrectionService(QObject* parent = nullptr);
 
     // Bake amplitude corrections and optionally merge bottom picks from the viewer
     // into the same DLPD write pass.  viewer_pings may be empty (no-op for picks).
@@ -47,8 +42,6 @@ signals:
     void applySkipped(const std::string& layer_id);
     void applyFailed(const std::string& layer_id, const std::string& error);
 
-private:
-    ImportService* m_import_service;
 };
 
 } // namespace dolphin::app

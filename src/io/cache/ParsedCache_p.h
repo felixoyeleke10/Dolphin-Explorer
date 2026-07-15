@@ -8,9 +8,9 @@
 //   ArtifactType::SubBottom    → CacheSubBottomPayloadHeader + float[]
 //   ArtifactType::Magnetometer → CacheMagPayloadHeader (no samples array)
 //
-// Unsupported types (Multibeam, Raster) return payloadSize() == 0 and are
-// silently skipped by writePayload().  The record is not written to disk.
-// Readers will never see an entry for these types in the cached index.
+// Unsupported types (Multibeam, Raster) return payloadSize() == 0. Writers
+// reject the whole candidate cache rather than publish a silently partial
+// durable artifact store. Readers therefore never see these types in a DLPD.
 // If you add a new modality, add a payload struct, bump kCacheVersion, and
 // handle the new type in payloadSize(), writePayload(), and ParsedCache.Read.cpp.
 #include "io/FileIo.h"
@@ -466,11 +466,6 @@ static inline void appendIndexEntry(core::ArtifactIndex& index,
     index.entries.push_back(entry);
 }
 
-static inline std::string tempPathFor(const std::string& cache_path)
-{
-    return cache_path + ".tmp";
-}
-
 static inline void removeIfExists(const std::string& path)
 {
     std::error_code ec;
@@ -540,9 +535,25 @@ static inline bool tryReadIndexFooter(FILE* file,
     if (!seekFile(file, entries_start)) return false;
 
     index.entries.reserve(footer.entry_count);
+    uint64_t previous_record_end = sizeof(CacheFileHeader);
     for (uint32_t i = 0; i < footer.entry_count; ++i) {
         CacheIndexEntry ce{};
         if (!readPod(file, ce)) { index.entries.clear(); return false; }
+
+        // A footer is only useful as an integrity/reuse signal when every entry
+        // describes a complete record inside the artifact-data region. Without
+        // these bounds checks a syntactically valid footer could point into the
+        // footer itself, beyond EOF, or into an earlier record.
+        if (ce.file_offset < sizeof(CacheFileHeader)
+                || ce.byte_length < sizeof(CacheRecordHeader)
+                || ce.file_offset > entries_start
+                || static_cast<uint64_t>(ce.byte_length) > entries_start - ce.file_offset
+                || ce.file_offset < previous_record_end) {
+            index.entries.clear();
+            return false;
+        }
+        previous_record_end = ce.file_offset + ce.byte_length;
+
         core::ArtifactIndexEntry e{};
         e.artifact_id      = ce.artifact_id;
         e.timestamp_us     = ce.timestamp_us;

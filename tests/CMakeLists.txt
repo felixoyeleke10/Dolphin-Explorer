@@ -15,6 +15,33 @@ target_link_libraries(test_task_registry PRIVATE dolphin-app)
 set_target_properties(test_task_registry PROPERTIES CXX_STANDARD 20 AUTOMOC OFF)
 add_test(NAME TaskRegistry COMMAND test_task_registry)
 
+# -- ProcessingService: batch/single-run exclusion and reservation release ----
+add_executable(test_processing_service
+    test_processing_service.cpp
+)
+target_include_directories(test_processing_service PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_processing_service PRIVATE dolphin-app Qt6::Core)
+set_target_properties(test_processing_service PROPERTIES CXX_STANDARD 20 AUTOMOC OFF)
+add_test(NAME ProcessingService COMMAND test_processing_service)
+
+# -- NodeGraph persistence: transactional validation and complete round-trip --
+add_executable(test_node_graph
+    test_node_graph.cpp
+)
+target_include_directories(test_node_graph PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_node_graph PRIVATE dolphin-pipeline)
+set_target_properties(test_node_graph PROPERTIES CXX_STANDARD 20 AUTOMOC OFF)
+add_test(NAME NodeGraph COMMAND test_node_graph)
+
+# -- AppStyle tokenization: no malformed/unresolved typography declarations --
+add_executable(test_app_style
+    test_app_style.cpp
+)
+target_include_directories(test_app_style PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_app_style PRIVATE dolphin-ui-style Qt6::Core)
+set_target_properties(test_app_style PROPERTIES CXX_STANDARD 20 AUTOMOC OFF)
+add_test(NAME AppStyle COMMAND test_app_style)
+
 add_executable(test_parsed_cache
     test_parsed_cache.cpp
 )
@@ -42,6 +69,15 @@ set_target_properties(test_project_storage PROPERTIES
 
 add_test(NAME ProjectStorage COMMAND test_project_storage)
 
+# -- Project creation must never overwrite a manifest or hide path failures ---
+add_executable(test_project_creation
+    test_project_creation.cpp
+)
+target_include_directories(test_project_creation PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_project_creation PRIVATE dolphin-app Qt6::Core)
+set_target_properties(test_project_creation PROPERTIES CXX_STANDARD 20 AUTOMOC OFF)
+add_test(NAME ProjectCreation COMMAND test_project_creation)
+
 # -- Contact model: monotonic labels, recycle bin, serialization round-trip ----
 add_executable(test_contacts
     test_contacts.cpp
@@ -56,6 +92,21 @@ set_target_properties(test_contacts PROPERTIES
     AUTOMOC OFF
 )
 add_test(NAME Contacts COMMAND test_contacts)
+
+# -- Contact export: one canonical, atomic CSV path for every UI entry point --
+add_executable(test_contact_report
+    test_contact_report.cpp
+)
+target_include_directories(test_contact_report PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_contact_report PRIVATE
+    dolphin-ui-contacts
+    Qt6::Core
+)
+set_target_properties(test_contact_report PROPERTIES
+    CXX_STANDARD 20
+    AUTOMOC OFF
+)
+add_test(NAME ContactReport COMMAND test_contact_report)
 
 # -- ZipWriter: structural ZIP validity (backs .docx export) --------------------
 add_executable(test_zip_writer
@@ -259,6 +310,18 @@ set_target_properties(test_xtf_reader PROPERTIES
 )
 
 add_test(NAME XtfReader COMMAND test_xtf_reader)
+
+# -- JSF parser framing / Message Type 80 contract tests ----------------------
+add_executable(test_jsf_reader
+    test_jsf_reader.cpp
+)
+target_include_directories(test_jsf_reader PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_jsf_reader PRIVATE dolphin-io dolphin-geo)
+set_target_properties(test_jsf_reader PROPERTIES
+    CXX_STANDARD 20
+    AUTOMOC OFF
+)
+add_test(NAME JsfReader COMMAND test_jsf_reader)
 
 # -- SEG-Y parser tests --------------------------------------------------------
 add_executable(test_segy_reader

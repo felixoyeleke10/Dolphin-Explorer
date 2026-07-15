@@ -1,6 +1,8 @@
 #include "util/ZipWriter.h"
+#include "util/AtomicFile.h"
 
 #include <array>
+#include <filesystem>
 #include <fstream>
 
 namespace dolphin::util {
@@ -73,6 +75,8 @@ void ZipWriter::addFile(const std::string& name, const std::string& data)
 
 bool ZipWriter::writeToFile(const std::string& path)
 {
+    if (path.empty()) return false;
+
     const uint32_t cd_offset = static_cast<uint32_t>(m_buf.size());
 
     for (const auto& e : m_entries) {
@@ -108,10 +112,26 @@ bool ZipWriter::writeToFile(const std::string& path)
     putU32(m_buf, cd_offset);
     putU16(m_buf, 0);                                // comment length
 
-    std::ofstream out(path, std::ios::binary | std::ios::trunc);
+    const std::filesystem::path destination(path);
+    const std::filesystem::path temp = siblingTempPath(destination, "zip");
+
+    std::ofstream out(temp, std::ios::binary | std::ios::trunc);
     if (!out) return false;
     out.write(m_buf.data(), static_cast<std::streamsize>(m_buf.size()));
-    return static_cast<bool>(out);
+    out.flush();
+    if (!out) {
+        out.close();
+        std::error_code ec;
+        std::filesystem::remove(temp, ec);
+        return false;
+    }
+    out.close();
+    std::error_code ec;
+    if (!out || !replaceFileAtomically(temp, destination, ec)) {
+        std::filesystem::remove(temp, ec);
+        return false;
+    }
+    return true;
 }
 
 } // namespace dolphin::util

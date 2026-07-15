@@ -152,7 +152,8 @@ core::ArtifactIndex ParsedCacheReader::buildIndex(ProgressFn progress,
 
     // Append a compact index footer so the next project open takes the fast path.
     // Open in "r+b" (read-write, no truncate) to append without rebuilding.
-    // Silently skip on failure — the file is still readable; next open will retry.
+    // Skip on failure, but roll any partial footer append back so a failed
+    // acceleration write can never turn the durable artifact store corrupt.
     // Write even when cancel_flag was provided, as long as the scan was NOT cancelled
     // (a cancellation returns {} early above, so reaching here means the scan finished).
     const bool was_cancelled = cancel_flag && cancel_flag->load(std::memory_order_relaxed);
@@ -166,14 +167,23 @@ core::ArtifactIndex ParsedCacheReader::buildIndex(ProgressFn progress,
         wf = std::fopen(m_path.c_str(), "r+b");
 #endif
         if (wf) {
-            if (detail::seekEnd(wf))
-                writeIndexFooter(wf, index,
-                                 m_meta.correction_flags_seen,
-                                 m_meta.bottom_pick_src_mask);
-            std::fclose(wf);
-            // Update cached file size so subsequent reads don't reject the footer.
-            m_fileSize += static_cast<uint64_t>(index.entries.size()) * sizeof(CacheIndexEntry)
-                        + sizeof(CacheIndexFooter);
+            const uint64_t original_size = m_fileSize;
+            const bool footer_written = detail::seekEnd(wf)
+                && writeIndexFooter(wf, index,
+                                    m_meta.correction_flags_seen,
+                                    m_meta.bottom_pick_src_mask)
+                && std::fflush(wf) == 0;
+            const bool close_ok = std::fclose(wf) == 0;
+            if (footer_written && close_ok) {
+                // Update cached file size only after the complete footer reached
+                // the stream successfully.
+                m_fileSize += static_cast<uint64_t>(index.entries.size()) * sizeof(CacheIndexEntry)
+                            + sizeof(CacheIndexFooter);
+            } else {
+                std::error_code resize_error;
+                std::filesystem::resize_file(
+                    std::filesystem::path(m_path), original_size, resize_error);
+            }
         }
     }
 

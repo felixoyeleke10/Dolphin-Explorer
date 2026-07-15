@@ -66,7 +66,6 @@ class ExecutionProgressDialog;
 class GeodesyPanel;
 class InspectorPanel;
 class RightPanelHost;
-class LayerPickerWidget;
 class LineListPanel;
 class MapView;
 class MapViewportHost;
@@ -77,7 +76,9 @@ class SubBottomWindow;
 class WaterfallWindow;
 
 class CorrectionBatchOperator;
+class ExportController;
 class ProjectOperationCoordinator;
+class ToolController;
 class ViewportCoordinator;
 class ConversationPanel;
 class CommandBar;
@@ -125,15 +126,11 @@ private slots:
     void onImportFile();
     void onGeodeticSettings();
 
-    // Export stubs
+    // Export delegates
     void onExportCsv();
     void onExportGeotiff();
-    void onExportKmz();
-    void onExportNav();
-    void onExportPdf();
     void onExportScreenshot();
-    void onExportManagerOpen();              // project-wide export hub window
-    void exportContactsReport(bool docx);    // all contacts → PDF / Word via ContactReport
+    void onExportManagerOpen();
 
     // Processing
     void onRunAllLayers();
@@ -141,7 +138,7 @@ private slots:
     void onBakeCorrections();   // explicit commit of gain/imaging corrections to .dlpd
     void onOpenProcessingWindow();
 
-    // Tool stubs
+    // Tool delegates
     void onToolCursor();
     void onToolSelect();
     void onToggle3D();
@@ -204,11 +201,8 @@ private slots:
     // Fetch-from-source: render a snapshot patch from the cached source pings
     // for a waterfall pick with no persisted PNG, persist it, and return it.
     QPixmap fetchContactSnapshot(const core::Contact& c);
-    // Keep the Contact Picking / Feature Drawing section toggles (and the toolbar
-    // Contact button) in sync with the active map tool — exactly one annotation tool
-    // active at a time, cleared when a non-annotation tool is chosen.
-    void syncAnnotationToggles(bool contact_active, int feature_tool);
     void onLineProps();
+    void showSidescanCorrectionDialog(bool navigation_mode);
     void onResetRaw();
     void onRenumberContacts();
     void onClearContacts();
@@ -234,8 +228,6 @@ private slots:
     void onRenameLayer(const std::string& layer_id);
     void onRunLayers(const std::vector<std::string>& layer_ids);
     void onExportLayers(const std::vector<std::string>& layer_ids, const QString& format);
-    bool exportRasterLayer(app::DataLayer* layer, const QString& path);   // raster -> GeoTIFF
-    void onMergeLayers(const std::vector<std::string>& layer_ids);
     void onRemoveContact(uint64_t contact_id);
     void onRevealSource(const std::string& source_id);
     void updateControlsForModality(const app::DataLayer* layer);
@@ -286,6 +278,8 @@ private:
     void setupStatusBar();
     void setupCentralWidget();
     void setupTitleBar();
+    void setupRuntimeServices();
+    void setupFeatureControllers();
 
     // setupMenuBar sub-builders
     void buildFileMenu();
@@ -388,7 +382,9 @@ private:
     ExecutionController*     m_import_ctrl = nullptr;
     ProcessingController*    m_proc_ctrl   = nullptr;
     CorrectionBatchOperator*      m_corr_op       = nullptr;
+    ExportController*             m_export_ctrl   = nullptr;
     ProjectOperationCoordinator*  m_op_coord      = nullptr;
+    ToolController*               m_tool_ctrl     = nullptr;
     ViewportCoordinator*          m_viewport_coord = nullptr;
 
     // Map sonar preview quality actions (index == MapSonarQuality int value)
@@ -423,7 +419,6 @@ private:
     QToolButton* m_settings_btn        = nullptr;
     QToolButton* m_btn_sbp_open        = nullptr;
     QToolButton* m_btn_3d_toggle       = nullptr;   // top-toolbar 2D/3D switch (checked = 3D)
-    std::vector<QAction*> m_export_actions;
 
     // Activity bar button map: panel_id → button (for check state management)
     QMap<int, QToolButton*> m_activity_btns;
@@ -467,10 +462,6 @@ private:
     ActivityLog m_activity_log;
     void rebuildHistoryList();
     void recordActivity(ActivityKind kind, const QString& description);
-
-    // Legacy floating layer picker. The main shell now uses the fixed File
-    // Explorer dock instead, so this typically remains null.
-    LayerPickerWidget*      m_layer_picker   = nullptr;
 
     // Import progress overlay (bottom-centre of viewport)
     ExecutionProgressDialog* m_import_overlay = nullptr;
@@ -561,7 +552,6 @@ private:
     QPointer<QWidget>  m_contact_mgr_win;            // ContactManagerWindow (lazy-created)
     QPointer<QDialog>  m_contact_editor;             // shared ContactEditorDialog (lazy-created)
     bool m_viewer_contacts_sync_pending = false;     // coalesces viewer overlay resyncs
-    QPointer<QWidget>  m_export_win;                 // ExportManagerWindow (lazy-created)
 
     // Conversation panel (floating overlay below the unified bar)
     ConversationPanel*    m_conv_panel    = nullptr;

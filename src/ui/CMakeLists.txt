@@ -21,6 +21,10 @@ add_library(dolphin-ui-style STATIC
     shell/AppStyleShell.cpp
     shell/AppStylePanels.cpp
     shell/AppStyleDialogs.cpp
+    shell/AppStyleDialogsChrome.cpp
+    shell/AppStyleDialogsImport.cpp
+    shell/AppStyleDialogsContacts.cpp
+    shell/AppStyleDialogsProgress.cpp
     shell/AppStyleAcousticViews.cpp
     shell/AppStyleNodeGraph.cpp
     shell/Theme.cpp
@@ -61,13 +65,16 @@ add_library(dolphin-ui-shared STATIC
     shared/panels/LineListPanel.cpp
     shared/panels/LineListPanel.Tree.cpp
     shared/panels/LineListPanel.ContextMenu.cpp
+    shared/panels/LineListPanel.ContextMenu.Annotations.cpp
+    shared/panels/LineListPanel.ContextMenu.Layers.cpp
+    shared/panels/LineListPanel.ContextMenu.Menus.cpp
+    shared/panels/LineListPanel.ContextMenu.Project.cpp
     shared/processing/SssImagingAlgorithms.cpp
     shared/widgets/AnimatedToolButton.cpp
     shared/widgets/CollapsibleSection.cpp
     shared/widgets/EmptyStateWidget.cpp
     shared/widgets/CommandBar.cpp
     shared/widgets/ViewerToolbar.cpp
-    shared/widgets/LayerPickerWidget.cpp
     shared/widgets/PanelTabBar.cpp
     shared/widgets/SidePanelShell.cpp
     shared/widgets/HistogramRangeSlider.cpp
@@ -107,6 +114,8 @@ add_library(dolphin-ui-contacts STATIC
     features/contacts/ContactReport.cpp
     features/contacts/ContactSnapshotView.cpp
     features/contacts/ContactEditorDialog.cpp
+    features/contacts/ContactEditorDialog.Form.cpp
+    features/contacts/ContactEditorDialog.State.cpp
 )
 target_include_directories(dolphin-ui-contacts PUBLIC ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(dolphin-ui-contacts
@@ -173,6 +182,8 @@ add_library(dolphin-ui-map STATIC
     features/map/paint/MapViewPaint.Features.cpp
     features/map/paint/MapViewPaint.Overlays.cpp
     features/map/MapViewInput.cpp
+    features/map/MapViewInput.Features.cpp
+    features/map/MapViewInput.HitTesting.cpp
     features/map/MapView3D.cpp
     features/map/MapView3D.Load.cpp
     features/map/MapView3D.GL.cpp
@@ -375,6 +386,8 @@ add_library(dolphin-ui-mainwindow STATIC
     mainwindow/rightpanel/RightPanel.SbpGain.cpp
     mainwindow/rightpanel/RightPanel.SbpSignal.cpp
     mainwindow/MainWindow.cpp
+    mainwindow/MainWindow.Runtime.cpp
+    mainwindow/MainWindow.Controllers.cpp
     mainwindow/MainWindow.Diagnostics.cpp
     mainwindow/MainWindow.Chrome.cpp
     mainwindow/MainWindow.Commands.cpp
@@ -390,9 +403,12 @@ add_library(dolphin-ui-mainwindow STATIC
     mainwindow/MainWindow.Events.cpp
     mainwindow/MainWindow.ProjectBinding.cpp
     mainwindow/MainWindow.Import.cpp
+    mainwindow/MainWindow.Export.cpp
     mainwindow/MainWindow.Tools.cpp
     mainwindow/MainWindow.Layout.cpp
     mainwindow/coordinators/MainWindow.LayerCoordinator.cpp
+    mainwindow/coordinators/MainWindow.LayerCoordinator.Sbp.cpp
+    mainwindow/coordinators/MainWindow.LayerCoordinator.Raster.cpp
     mainwindow/coordinators/MainWindow.WaterfallCoordinator.cpp
     mainwindow/coordinators/MainWindow.WaterfallCoordinator.Processing.cpp
     mainwindow/coordinators/MainWindow.ContactCoordinator.cpp
@@ -401,7 +417,9 @@ add_library(dolphin-ui-mainwindow STATIC
     mainwindow/coordinators/MainWindow.ProcessingCoordinator.cpp
     mainwindow/coordinators/MainWindow.DataLibraryCoordinator.cpp
     mainwindow/coordinators/CorrectionBatchOperator.cpp
+    mainwindow/coordinators/ExportController.cpp
     mainwindow/coordinators/ProjectOperationCoordinator.cpp
+    mainwindow/coordinators/ToolController.cpp
     mainwindow/coordinators/ViewportCoordinator.cpp
     mainwindow/MainWindow.MapContextMenu.cpp
     mainwindow/MainStatusBar.cpp

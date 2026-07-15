@@ -4,164 +4,33 @@
 #include "ui/shell/Features.h"
 #include "ui/features/map/sidescan/SidescanViewController.h"
 #include "ui/features/map/track/TrackMapBuild.h"
-#include "ui/features/map/subbottom/SbpProfileBuild.h"
-#include "app/display/NavCorrection.h"
-#include "app/services/ImportService.h"
-#include "ui/features/map/subbottom/SubBottomMapDiagnostics.h"
-#include "ui/bottom/DiagnosticsHub.h"
 #include "ui/features/processing/ProcessingController.h"
 #include "ui/mainwindow/panels/InspectorPanel.h"
-#include "ui/features/import/ImportProgressDialog.h"
 #include "ui/mainwindow/rightpanel/RightPanelHost.h"
 #include "ui/mainwindow/rightpanel/RightPanel.SbpGain.h"
 #include "ui/mainwindow/rightpanel/RightPanel.SbpSignal.h"
 #include "ui/shared/panels/LineListPanel.h"
-#include "ui/shared/widgets/LayerPickerWidget.h"
 #include "ui/shared/widgets/PanelTabBar.h"
 #include "ui/features/waterfall/WaterfallWindow.h"
 #include "ui/features/subbottom/SubBottomWindow.h"
 #include "ui/features/map/MapView.h"
 #include "ui/features/map/MapViewportHost.h"
-#include "io/raster/RasterReader.h"
 #include "ui/features/nodegraph/NodeGraphWindow.h"
 #include "app/project/Project.h"
 #include "app/layers/CapabilitySet.h"
 #include "app/layers/DataLayer.h"
 
-#include <QDateTime>
-#include <QFutureWatcher>
 #include <QInputDialog>
-#include <QListWidget>
+#include <QLineEdit>
+#include <QMessageBox>
+#include <QSet>
 #include <QStackedWidget>
 #include <QToolButton>
-#include <QLabel>
-#include <QMessageBox>
-#include <QPushButton>
-#include <QSet>
 #include <QUndoStack>
-#include <QWidget>
-#include <QtConcurrent>
 
 #include <algorithm>
-#include <cmath>
-#include <QImage>
-#include <QColor>
 
 namespace dolphin::ui {
-
-// Build (or rebuild) the SBP profile map ribbon for one layer, applying any
-// nav corrections stored for it. Shared by layer selection and the SBP
-// Navigation / Geometry "Apply" actions. Always rebuilds; the caller decides
-// whether a rebuild is warranted.
-void MainWindow::buildSbpProfileMap(app::DataLayer* layer, const std::string& lane)
-{
-    if (!layer || !m_map_view || !m_import_service || !currentProject()) return;
-    if (!layer->index_built || layer->artifact_index.empty())           return;
-
-    core::SpatialRef source_crs = layer->source_spatial_ref;
-    if (source_crs.empty()) {
-        if (const auto* src = currentProject()->findSource(layer->source_id))
-            source_crs = src->source_spatial_ref;
-    }
-    const core::SpatialRef display_crs = currentProject()->displaySpatialRef();
-
-    // Capture by value — DataLayer must not be accessed on the bg thread.
-    const std::string store_path   = layer->artifact_store_path;
-    const std::string store_format = layer->artifact_store_format;
-    const core::ArtifactIndex index_copy = layer->artifact_index;
-    std::string source_path;
-    if (const auto* src = currentProject()->findSource(layer->source_id))
-        source_path = src->path;
-    const std::string lid = layer->id;
-    auto* svc = m_import_service;
-
-    // Display-time nav corrections — single source of truth on the layer.
-    const NavProcessingParams nav = layer->nav_state;
-
-    // Run through OperationManager: keyed so a newer build for this layer
-    // supersedes any in-flight one (replacing the old m_pending_sbp_builds guard),
-    // and tracked in DiagnosticsHub automatically via the operation→job bridge.
-    // NOT heavy: this is display rasterization of an already-imported layer, not
-    // an import/decode job, so it must not sit under the D-14 cap (2) — capping it
-    // throttled multi-line projects (parse→display felt slow). The global
-    // QThreadPool still bounds total concurrency.
-    // Per-line progress for a bottom-bar SBP Apply batch: report coarse phases to that
-    // line's dialog card (marshalled to the main thread).
-    auto report = [this, lid](int pct, const QString& phase) {
-        QMetaObject::invokeMethod(this, [this, lid, pct, phase]() {
-            if (!m_import_overlay) return;
-            const auto it = m_tools_apply_layers.find(lid);
-            if (it == m_tools_apply_layers.end()) return;
-            // Name the actual tools while in the corrections band ("Applying Static
-            // Gain, AGC…"); keep the worker's phase text for read/build bands.
-            const QString status = (pct >= 60 && pct < 90 && !it->second.isEmpty())
-                ? tr("Applying %1…").arg(it->second)
-                : phase;
-            m_import_overlay->updateJob(lid, pct,
-                QStringLiteral("%1  %2%").arg(status).arg(pct));
-        }, Qt::QueuedConnection);
-    };
-    m_op_mgr->run<LayerMapData>(
-        tr("Building sub-bottom profile map…"),
-        [svc, store_path, store_format, index_copy,
-         source_path, source_crs, display_crs, nav, report](app::CancellationToken) {
-            report(15, tr("Reading traces…"));
-            auto traces = svc->loadAllSubBottomTraces(
-                store_path, store_format, index_copy, source_path);
-            report(70, tr("Applying corrections…"));
-            applySbpNavCorrections(traces, nav);   // display-time nav corrections
-            report(90, tr("Building profile…"));
-            return buildSbpProfileMapData(traces, source_crs, display_crs);
-        },
-        [this, lid](LayerMapData result) {
-            if (!currentProject() || !currentProject()->findLayer(lid)) return;
-            if (m_map_view) {
-                result.track_stats.layer_visible = m_map_view->isLayerVisible(lid);
-                m_map_view->setLayerMapData(lid, result);
-            }
-            // Seed the 3D curtain palette from the layer's SBP palette (the
-            // curtain itself is forwarded via layerDataUpdated → viewport host).
-            if (m_viewport_host) {
-                if (const auto* l = currentProject()->findLayer(lid))
-                    m_viewport_host->setSbpCurtainPalette(
-                        l->sbp_palette >= 0 ? l->sbp_palette : 0);
-            }
-            if (m_diag_hub)
-                postSubBottomMapDiagnostics(
-                    m_diag_hub, QString::fromStdString(lid), result.track_stats);
-        },
-        "sbp_profile:" + lid,
-        /*heavy=*/false,   // display build, not import/decode — see note above
-        // on_finally: mark this line's dialog card done (any outcome) when it is part
-        // of a bottom-bar SBP Apply batch.
-        [this, lid]() {
-            if (m_import_overlay && m_tools_apply_layers.erase(lid) > 0) {
-                m_import_overlay->finishJob(lid, tr("Tools applied"));
-            }
-        },
-        lane);
-}
-
-void MainWindow::applySbpLiveCorrections(const std::vector<std::string>& layer_ids)
-{
-    // Line-by-line rebuild (mirrors SidescanViewController::applyLiveCorrections):
-    // a cap-1 "sbp:apply" lane processes one profile at a time. Callers pass only the
-    // layers that should rebuild now (already on the map); others apply lazily.
-    if (!currentProject() || layer_ids.empty()) return;
-    if (m_op_mgr) m_op_mgr->setLaneCap("sbp:apply", 1);
-    for (const auto& id : layer_ids)
-        if (auto* l = currentProject()->findLayer(id))
-            buildSbpProfileMap(l, "sbp:apply");
-}
-
-void MainWindow::applyStoredSbpNavParams(const std::string& layer_id)
-{
-    if (!m_sbp_win || layer_id.empty() || !currentProject()) return;
-    // Apply the layer's nav state (default when uncustomized) so switching to a
-    // line without corrections clears any carried over from the previous line.
-    const auto* layer = currentProject()->findLayer(layer_id);
-    m_sbp_win->applyNavToLine(layer ? layer->nav_state : NavProcessingParams{});
-}
 
 void MainWindow::onLayerSelected(const std::string& layer_id)
 {
@@ -220,7 +89,7 @@ void MainWindow::onLayerSelected(const std::string& layer_id)
         // (nav track + per-trace bottom-depth scalar for the colored map ribbon).
         // Skipped if real map data (non-empty nav_track) is already present for
         // this layer — avoids redundant disk reads on re-selection.
-        else if (m_map_view && mod == M::SubBottom && m_import_service) {
+        else if (m_map_view && mod == M::SubBottom) {
             // Skip the rebuild if real map data is already present — avoids
             // redundant disk reads on re-selection. buildSbpProfileMap applies
             // any stored nav corrections for the layer.
@@ -265,7 +134,7 @@ void MainWindow::onLayerSelected(const std::string& layer_id)
             const auto* src = currentProject()->findSource(layer->source_id);
             const std::string path = src ? src->path : std::string{};
             const uint64_t    sz   = src ? src->size_bytes : 0;
-            m_waterfall_win->setLayer(layer, m_import_service, path, sz);
+            m_waterfall_win->setLayer(layer, path, sz);
             applyStoredNavParams(layer->id);
             if (layer->sss_display_state.customized)
                 m_waterfall_win->applyExternalParams(layer->sss_display_state.params);
@@ -287,7 +156,7 @@ void MainWindow::onLayerSelected(const std::string& layer_id)
                 const auto* src = currentProject()->findSource(layer->source_id);
                 const std::string path = src ? src->path : std::string{};
                 const uint64_t    sz   = src ? src->size_bytes : 0;
-                m_sbp_win->setLayer(layer, m_import_service, path, sz);
+                m_sbp_win->setLayer(layer, path, sz);
                 // Restore per-layer SBP display params; palette always wins if set.
                 if (layer->sbp_display_state.display_customized)
                     m_sbp_win->applyDisplayParams(layer->sbp_display_state.display);
@@ -332,114 +201,6 @@ void MainWindow::updateControlsForModality(const app::DataLayer* layer)
     if (m_act_run_layer) m_act_run_layer->setEnabled(caps.has_processing);
 }
 
-namespace {
-
-// Set the 2D overlay's geographic bounds from a (north-up, WGS84-warped) geo-transform.
-void setRasterGeoBounds(LayerMapData& ld, const double gt[6], uint32_t cols, uint32_t rows)
-{
-    const double x0 = gt[0],                  y0 = gt[3];
-    const double x1 = gt[0] + cols * gt[1],   y1 = gt[3] + rows * gt[5];   // gt[5] < 0
-    ld.lon_min = std::min(x0, x1);  ld.lon_max = std::max(x0, x1);
-    ld.lat_min = std::min(y0, y1);  ld.lat_max = std::max(y0, y1);
-    ld.is_projected = false;        // warped to WGS84 geographic
-    ld.visible      = true;
-    ld.kind         = LayerMapKind::Swath;   // any kind with a preview_image renders the image
-}
-
-// Colourise a depth/bathy grid into an RGBA image (no-data → transparent).
-// Bathymetric ramp: deep = dark blue → shallow = warm. Depth is positive-down.
-QImage colorizeDepthGrid(const core::RasterGrid& g)
-{
-    QImage img(static_cast<int>(g.cols), static_cast<int>(g.rows), QImage::Format_RGBA8888);
-    img.fill(Qt::transparent);
-
-    float zmin = 1e30f, zmax = -1e30f;
-    for (float v : g.data)
-        if (std::isfinite(v) && v != g.no_data_value) { zmin = std::min(zmin, v); zmax = std::max(zmax, v); }
-    if (!(zmax > zmin)) zmax = zmin + 1.f;
-    const float inv = 1.f / (zmax - zmin);
-
-    struct Stop { float p; int r, g, b; };
-    static const Stop ramp[] = {
-        {0.00f,   8,  24,  80}, {0.25f,  16,  78, 160}, {0.50f,  30, 160, 176},
-        {0.75f, 120, 200,  90}, {1.00f, 240, 230, 140},
-    };
-    auto shade = [&](float t) -> QRgb {
-        t = std::clamp(t, 0.f, 1.f);
-        for (int i = 1; i < 5; ++i)
-            if (t <= ramp[i].p) {
-                const float f = (t - ramp[i-1].p) / (ramp[i].p - ramp[i-1].p);
-                return qRgb(int(ramp[i-1].r + f * (ramp[i].r - ramp[i-1].r)),
-                            int(ramp[i-1].g + f * (ramp[i].g - ramp[i-1].g)),
-                            int(ramp[i-1].b + f * (ramp[i].b - ramp[i-1].b)));
-            }
-        return qRgb(ramp[4].r, ramp[4].g, ramp[4].b);
-    };
-
-    for (uint32_t r = 0; r < g.rows; ++r) {
-        auto* line = reinterpret_cast<QRgb*>(img.scanLine(static_cast<int>(r)));
-        for (uint32_t c = 0; c < g.cols; ++c) {
-            const float v = g.data[static_cast<size_t>(r) * g.cols + c];
-            if (!std::isfinite(v) || v == g.no_data_value) { line[c] = qRgba(0,0,0,0); continue; }
-            const float t = 1.f - (v - zmin) * inv;   // shallow (small depth) → warm
-            const QRgb s = shade(t);
-            line[c] = qRgba(qRed(s), qGreen(s), qBlue(s), 255);
-        }
-    }
-    return img;
-}
-
-} // namespace
-
-// Display a raster layer. Depth rasters render as a 3D terrain mesh AND a coloured
-// 2D overlay; visual rasters render as a 2D image overlay. The 2D overlay is warped
-// to WGS84 (the display CRS) for correct placement; the 3D mesh uses native coords.
-void MainWindow::displayRaster(app::DataLayer* layer)
-{
-    if (!layer || !layer->raster.valid) return;
-    const std::string path = layer->artifact_store_path;
-
-    // 3D terrain (depth only) — native grid; CRS-agnostic local-metre projection.
-    // Read decimated (the mesh decimates to <=512/axis anyway) so a huge GeoTIFF
-    // never loads at full resolution.
-    if (layer->raster.is_depth && m_viewport_host) {
-        core::RasterGrid grid;
-        std::string err;
-        if (io::readElevationRaster(path, grid, &err, /*max_dim*/ 1024))
-            m_viewport_host->loadRasterTerrain(layer->id, grid);
-        else
-            appendJobMessage(tr("Raster 3D load failed — %1").arg(QString::fromStdString(err)));
-    }
-
-    // 2D overlay — warp to WGS84 geographic for correct placement on the map.
-    if (!m_map_view) return;
-    LayerMapData ld;
-    bool ok = false;
-    if (layer->raster.is_depth) {
-        core::RasterGrid g;
-        std::string err;
-        if (io::readElevationRasterWgs84(path, g, &err, /*max_dim*/ 2048) && g.cols && g.rows) {
-            ld.preview_image = colorizeDepthGrid(g);
-            setRasterGeoBounds(ld, g.geo_transform, g.cols, g.rows);
-            ok = true;
-        }
-    } else {
-        io::RasterImage im;
-        std::string err;
-        if (io::readImageRasterWgs84(path, im, &err, /*max_dim*/ 4096) && im.width && im.height) {
-            QImage qi(im.rgba.data(), static_cast<int>(im.width), static_cast<int>(im.height),
-                      QImage::Format_RGBA8888);
-            ld.preview_image = qi.copy();   // own the pixels
-            setRasterGeoBounds(ld, im.geo_transform, im.width, im.height);
-            ok = true;
-        }
-    }
-    if (ok) {
-        m_map_view->setLayerMapData(layer->id, std::move(ld));
-        appendJobMessage(tr("Raster on map — %1").arg(QString::fromStdString(layer->label)));
-    }
-}
-
 void MainWindow::onRemoveLayer(const std::string& layer_id)
 {
     if (!currentProject()) return;
@@ -449,8 +210,8 @@ void MainWindow::onRemoveLayer(const std::string& layer_id)
     const QString name = QString::fromStdString(layer->label);
     if (QMessageBox::question(this, tr("Remove Layer"),
             tr("Remove \"%1\" from the project?\n\n"
-               "The original source file is kept. The project's parsed cache (.dlpd) "
-               "for this layer is also removed, unless another layer still uses it.").arg(name),
+               "The original source file is kept. Durable parsed data (.dlpd/.dpcache) "
+               "is retained until the project itself is deleted.").arg(name),
             QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes)
         return;
 
@@ -479,8 +240,8 @@ void MainWindow::onRemoveLayers(const std::vector<std::string>& layer_ids)
     const int n = static_cast<int>(layer_ids.size());
     if (QMessageBox::question(this, tr("Remove Layers"),
             tr("Remove %1 layer(s) from the project?\n\n"
-               "Original source files are kept. Each layer's parsed cache (.dlpd) is "
-               "also removed, unless still used by another layer.").arg(n),
+               "Original source files are kept. Durable parsed data (.dlpd/.dpcache) "
+               "is retained until the project itself is deleted.").arg(n),
             QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes)
         return;
 
@@ -524,7 +285,6 @@ void MainWindow::onRenameLayer(const std::string& layer_id)
     auto refresh = [this](const std::string& lid) {
         if (auto* l = currentProject() ? currentProject()->findLayer(lid) : nullptr) {
             if (m_line_list)    m_line_list->updateLayerLabel(lid, l->label);
-            if (m_layer_picker) m_layer_picker->updateLayerLabel(lid, l->label);
             if (m_inspector && activeLayerId() == lid) m_inspector->showLayer(l);
         }
         

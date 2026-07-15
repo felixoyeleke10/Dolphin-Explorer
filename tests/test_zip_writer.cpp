@@ -46,7 +46,6 @@ int main()
     CHECK(in.good());
     std::string bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
     in.close();
-    std::filesystem::remove(tmp);
 
     CHECK(bytes.size() > 64);
 
@@ -76,6 +75,25 @@ int main()
     CHECK(contains(bytes, "[Content_Types].xml"));
     CHECK(contains(bytes, "word/document.xml"));
     CHECK(contains(bytes, "HELLO_ZIP_PAYLOAD"));
+
+    // Publishing a second archive to the same path must atomically replace the
+    // first archive on Windows as well as POSIX.
+    {
+        ZipWriter replacement;
+        replacement.addFile("replacement.txt", "REPLACEMENT_PAYLOAD");
+        CHECK(replacement.writeToFile(path));
+    }
+    std::ifstream replaced_in(path, std::ios::binary);
+    CHECK(replaced_in.good());
+    const std::string replaced(
+        (std::istreambuf_iterator<char>(replaced_in)),
+        std::istreambuf_iterator<char>());
+    replaced_in.close();
+    CHECK(contains(replaced, "replacement.txt"));
+    CHECK(contains(replaced, "REPLACEMENT_PAYLOAD"));
+    CHECK(!contains(replaced, "HELLO_ZIP_PAYLOAD"));
+
+    std::filesystem::remove(tmp);
 
     std::printf("\n%d passed, %d failed\n", g_pass, g_fail);
     return g_fail == 0 ? 0 : 1;

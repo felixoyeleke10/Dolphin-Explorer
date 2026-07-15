@@ -105,8 +105,9 @@ private:
     void addToRecentProjects(const QString& path);
     void emitWindowTitle();
     QString buildWindowTitle() const;
-    // True = proceed (no imports running, or user chose to abandon them).
-    bool confirmAbandonImports(const QString& dialog_title);
+    // Project replacement/deletion cannot safely outlive an active import yet.
+    // True means there is no import work holding the current project alive.
+    bool ensureImportsIdle(const QString& dialog_title);
 
     QUndoStack*            m_undo_stack;
     DiagnosticsHub*        m_diag_hub;

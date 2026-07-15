@@ -13,7 +13,6 @@
 #include "ui/shared/panels/LineListPanel.h"
 #include "ui/mainwindow/panels/InspectorPanel.h"
 #include "ui/mainwindow/rightpanel/RightPanelHost.h"
-#include "ui/shared/widgets/LayerPickerWidget.h"
 #include "ui/features/map/MapView.h"
 #include "ui/features/map/MapViewportHost.h"
 #include "ui/features/nodegraph/NodeGraphWindow.h"

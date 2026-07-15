@@ -7,7 +7,6 @@
 #include "geo/EpsgDatabase.h"
 #include "core/SpatialRef.h"
 #include "app/project/Project.h"
-#include "app/project/ProjectTransaction.h"
 #include "app/layers/DataLayer.h"
 
 #include <QDialog>
@@ -50,7 +49,7 @@ void MainWindow::onGeodeticSettings()
                 this, [this](const core::SpatialRef& crs, bool force) {
                     if (!currentProject() || crs.empty()) return;
                     int n_applied = 0;
-                    app::ProjectTransaction tx(currentProject());
+                    bool changed = false;
                     for (const auto& layer : currentProject()->layers()) {
                         if (!layer) continue;
                         if (!core::spatialRefIsProjected(layer->source_spatial_ref)) continue;
@@ -58,6 +57,7 @@ void MainWindow::onGeodeticSettings()
                         layer->source_spatial_ref       = crs;
                         layer->source_spatial_ref.exact = true;
                         ++n_applied;
+                        changed = true;
                     }
                     for (const auto& layer : currentProject()->layers()) {
                         if (!layer) continue;
@@ -67,8 +67,12 @@ void MainWindow::onGeodeticSettings()
                         if (src->source_spatial_ref.exact && !force) continue;
                         src->source_spatial_ref       = crs;
                         src->source_spatial_ref.exact = true;
+                        changed = true;
                     }
-                    tx.commit();
+                    if (changed) {
+                        markProjectDirty();
+                        m_session_ctrl->autoSave();
+                    }
                     m_geodesy_panel->refresh(currentProject(), m_session_ctrl->pendingCrs());
                     if (!activeLayerId().empty()) {
                         const auto* al = currentProject()->findLayer(activeLayerId());

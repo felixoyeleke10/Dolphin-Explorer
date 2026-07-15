@@ -18,6 +18,7 @@
 
 #include <QFutureWatcher>
 #include <QLabel>
+#include <QPointer>
 #include <QtConcurrent/QtConcurrent>
 #include <algorithm>
 #include <cmath>
@@ -151,16 +152,10 @@ void SidescanViewController::activateLayer(const std::string& layer_id,
         }
     }
 
-    // -- Guards: need an artifact store, import service, and op manager --------
+    // -- Guards: need an artifact store and operation manager -----------------
     if (store_path.empty()) {
         if (as_active && m_status_ping)
             m_status_ping->setText(tr("Layer has no artifact store — reimport required"));
-        emit loadingFinished();
-        return;
-    }
-    app::ImportService* svc = m_import_service;
-    if (!svc) {
-        if (as_active && m_status_ping) m_status_ping->setText(tr("Import service unavailable"));
         emit loadingFinished();
         return;
     }
@@ -333,7 +328,6 @@ void SidescanViewController::activateLayer(const std::string& layer_id,
     // Snapshot every field the off-thread build needs into an immutable inputs
     // struct (no access back to the controller or model from the worker).
     detail::SssLoadInputs inputs;
-    inputs.svc               = svc;
     inputs.store_path        = store_path;
     inputs.store_format      = store_format;
     inputs.idx               = idx;
@@ -353,17 +347,18 @@ void SidescanViewController::activateLayer(const std::string& layer_id,
     inputs.cache_path        = cache_path;
     inputs.cache_meta        = cache_meta;
 
+    const QPointer<SidescanViewController> progress_owner(this);
     m_op_mgr->run<SidescanLoadResult>(
         tr("Loading sidescan map — %1").arg(QString::fromStdString(layer_id)),
-        [this, as_active, in = std::move(inputs)](app::CancellationToken cancel)
+        [progress_owner, as_active, in = std::move(inputs)](app::CancellationToken cancel)
         -> SidescanLoadResult
         {
             // Report 0–100 progress for the ACTIVE layer's build to the status bar
             // (marshalled to the main thread). Non-active overview loads stay silent.
-            auto report = [this, as_active](int pct) {
-                if (!as_active) return;
-                QMetaObject::invokeMethod(this, [this, pct]() {
-                    emit loadingProgress(pct);
+            auto report = [progress_owner, as_active](int pct) {
+                if (!as_active || !progress_owner) return;
+                QMetaObject::invokeMethod(progress_owner.data(), [progress_owner, pct]() {
+                    if (progress_owner) emit progress_owner->loadingProgress(pct);
                 }, Qt::QueuedConnection);
             };
             return detail::buildSidescanLoadResult(in, report, cancel);

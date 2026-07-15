@@ -32,9 +32,6 @@ static const AppCommandDef kDefs[] = {
   /* NodeGraph       */ {nullptr,                       "Node Graph…",         nullptr,                                 "Ctrl+G",        "nodes graph pipeline workflow", "Tools"      },
   /* ExportCsv       */ {":/icons/export_csv.svg",     "Export as CSV…",      nullptr,                                 "",              "export csv table contacts",     "Export"     },
   /* ExportGeotiff   */ {":/icons/export_geotiff.svg", "Export as GeoTIFF…",  nullptr,                                 "",              "export geotiff raster image",   "Export"     },
-  /* ExportKmz       */ {":/icons/export_kmz.svg",     "Export as KMZ…",      nullptr,                                 "",              "export kmz kml",                "Export"     },
-  /* ExportNav       */ {":/icons/export_nav.svg",     "Export Navigation…",  nullptr,                                 "",              "export nav gps track route",    "Export"     },
-  /* ExportPdf       */ {":/icons/export_pdf.svg",     "Export as PDF…",      nullptr,                                 "",              "export pdf report print",       "Export"     },
   /* About           */ {nullptr,                       "About Dolphin…",      nullptr,                                 "",              "about version info",            "Help"       },
   /* ExportScreenshot*/ {":/icons/export.svg",         "Export Screenshot...",  "Save a stable screenshot of the current workspace", "Ctrl+Alt+S", "screenshot snapshot capture image png", "Export" },
 };

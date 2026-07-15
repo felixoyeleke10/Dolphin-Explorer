@@ -126,7 +126,7 @@ void WaterfallWindow::onRepipeDebounce()
 void WaterfallWindow::reloadCurrentLayer()
 {
     if (!m_layer) return;
-    setLayer(m_layer, m_import_service, m_source_path, m_source_size_bytes);
+    setLayer(m_layer, m_source_path, m_source_size_bytes);
 }
 
 void WaterfallWindow::onViewerRefresh(ViewerRefreshReason reason,

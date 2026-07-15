@@ -6,8 +6,10 @@
 
 namespace dolphin::io {
 
-// Edgetech JSF (Joint Strike Format) reader.
-// Supports SSS pings (port + starboard) and SBP traces.
+// EdgeTech JSF (Joint Strike Format) reader.
+// Supports uncompressed Message Type 80 SSS pings (channel 0/1 = port/starboard)
+// and SBP traces. Compressed encodings and legacy Message Type 82 are rejected
+// explicitly rather than decoded approximately.
 // No file header — format is a flat sequence of 16-byte-prefixed messages.
 class JsfReader : public IFormatReader {
 public:
@@ -35,13 +37,16 @@ private:
     uint64_t    m_fileSize = 0;
 
     static core::ArtifactType classifySubsystem(uint8_t subsystem);
+    static bool supportsSubsystem(uint8_t subsystem);
 
     // JSF constants
     static constexpr uint16_t JSF_MARKER    = 0x1601;
     static constexpr uint16_t MSG_SONAR     = 80;    // sonar data (SSS or SBP)
-    static constexpr uint8_t  SUBSYS_PORT   = 0;
-    static constexpr uint8_t  SUBSYS_STBD   = 1;
-    static constexpr uint8_t  SUBSYS_SBP    = 20;    // sub-bottom profiler
+    static constexpr uint8_t  SUBSYS_SBP    = 0;
+    static constexpr uint8_t  SUBSYS_SSS_MIN = 20;   // side-scan frequency bands
+    static constexpr uint8_t  SUBSYS_SSS_MAX = 99;   // 100+ are serial-data subsystems
+    static constexpr uint8_t  CHANNEL_PORT   = 0;
+    static constexpr uint8_t  CHANNEL_STBD   = 1;
     static constexpr uint32_t kPingHdrSize  = 240;   // sonar message body header
     static constexpr uint32_t kMaxRecordSz  = 64u * 1024u * 1024u;  // 64 MiB guard
 };

@@ -6,7 +6,6 @@
 #include "ui/shell/Theme.h"
 #include "ui/features/geodesy/GeodesyPanel.h"
 #include "ui/shared/panels/LineListPanel.h"
-#include "ui/shared/widgets/LayerPickerWidget.h"
 #include "ui/features/map/MapView.h"
 #include "ui/features/map/MapViewportHost.h"
 #include "app/project/Project.h"

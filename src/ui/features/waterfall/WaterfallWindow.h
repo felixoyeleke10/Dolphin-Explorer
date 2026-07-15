@@ -26,7 +26,6 @@ class QToolButton;
 
 namespace dolphin::app {
 class DataLayer;
-class ImportService;
 class OperationManager;
 }
 
@@ -57,7 +56,6 @@ public:
     ~WaterfallWindow() override;
 
     void setLayer(app::DataLayer*      layer,
-                  app::ImportService*  import_service,
                   const std::string&   source_path,
                   uint64_t             source_size_bytes = 0);
     void clearLayer();
@@ -312,7 +310,6 @@ private:
     std::vector<core::Contact> m_project_contacts;  // full project contact list, kept in sync
 
     app::DataLayer*     m_layer             = nullptr;
-    app::ImportService* m_import_service    = nullptr;
     std::string         m_source_path;
     uint64_t            m_source_size_bytes = 0;
     int                 m_active_mode       = ModeNavigate;

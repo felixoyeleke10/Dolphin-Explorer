@@ -131,15 +131,25 @@ std::shared_ptr<Project> Project::create(const std::string& name,
                                           const std::string& manifest_path)
 {
     namespace fs = std::filesystem;
+
+    if (manifest_path.empty()) return nullptr;
+
+    const fs::path manifest(manifest_path);
+    std::error_code ec;
+    const bool manifest_exists = fs::exists(manifest, ec);
+    if (ec || manifest_exists) return nullptr;
+
+    const QString data_dir = detail::cacheRootForManifest(manifest_path);
+    if (data_dir.isEmpty()) return nullptr;
+
+    const fs::path data_path(data_dir.toStdString());
+    fs::create_directories(data_path, ec);
+    if (ec) return nullptr;
+    if (!fs::is_directory(data_path, ec) || ec) return nullptr;
+
     auto p = std::make_shared<Project>();
     p->m_name          = name;
     p->m_manifest_path = manifest_path;
-
-    const QString data_dir = detail::cacheRootForManifest(manifest_path);
-    if (!data_dir.isEmpty()) {
-        std::error_code ec;
-        fs::create_directories(fs::path(data_dir.toStdString()), ec);
-    }
     return p;
 }
 
@@ -185,9 +195,9 @@ bool Project::save()
     // NO purgeOrphanedCaches() here — save() runs after EVERY import
     // completion, and during a multi-file import a sibling's freshly written
     // .dlpd is not referenced by any layer until ITS completion commits the
-    // store path. Purging at save deleted those in-flight caches (multi-line
-    // SBP imports lost all but one line). Orphans are cleaned at open()
-    // instead, when no imports can be in flight.
+    // store path. Purging at save deleted those in-flight stores (multi-line
+    // SBP imports lost all but one line). Durable parsed stores are retained;
+    // only rebuildable derived sidecars are cleaned at open().
     return true;
 }
 

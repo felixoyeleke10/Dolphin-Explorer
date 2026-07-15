@@ -32,7 +32,10 @@ add_library(dolphin-io STATIC
 )
 
 target_include_directories(dolphin-io PUBLIC ${CMAKE_SOURCE_DIR}/src)
-target_link_libraries(dolphin-io PUBLIC dolphin-core)
+target_link_libraries(dolphin-io
+    PUBLIC dolphin-core
+    PRIVATE dolphin-util
+)
 
 # GDAL — industry-standard geospatial raster I/O (GeoTIFF read/write, CRS, world
 # files). Provided by vcpkg; see build_mingw.bat (CMAKE_PREFIX_PATH). PRIVATE: it

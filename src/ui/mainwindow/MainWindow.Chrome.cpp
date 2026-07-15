@@ -105,28 +105,11 @@ void MainWindow::setupTitleBar()
                 m_conv_panel->popupBelow(btn_chat);
         });
 
-        auto* btn_agent = new QPushButton(QStringLiteral("✦  ") + tr("Assistant") + QStringLiteral("  ▾"), uni);
-        btn_agent->setObjectName("uniBarBtnAccent");
-        btn_agent->setFlat(true);
-        btn_agent->setToolTip(tr("Open Assistant"));
-        QObject::connect(btn_agent, &QPushButton::clicked, btn_agent, [btn_agent]() {
-            QMenu menu(btn_agent);
-            menu.addAction(QStringLiteral("New Conversation"));
-            menu.addAction(QStringLiteral("Configure..."));
-            menu.addSeparator();
-            menu.addAction(QStringLiteral("Manage..."));
-            menu.exec(btn_agent->mapToGlobal(QPoint(0, btn_agent->height())));
-        });
-
         ul->addWidget(m_cmd_bar, 1);
         ul->addSpacing(4);
         ul->addWidget(mkInnerSep());
         ul->addSpacing(4);
         ul->addWidget(btn_chat);
-        ul->addSpacing(2);
-        ul->addWidget(mkInnerSep());
-        ul->addSpacing(4);
-        ul->addWidget(btn_agent);
         ul->addSpacing(2);
 
         mb_filter->setSearchWidget(uni);

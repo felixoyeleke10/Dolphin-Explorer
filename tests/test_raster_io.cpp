@@ -70,6 +70,29 @@ static void testElevationRoundTrip()
     CHECK(std::fabs(back.geo_transform[5] + 2.0) < 1e-9);
     CHECK(std::fabs(back.no_data_value - g.no_data_value) < 1e-3f);
 
+    // A second valid export must atomically replace the existing GeoTIFF on
+    // Windows as well as POSIX.
+    core::RasterGrid replacement = g;
+    replacement.cols = 3;
+    replacement.rows = 2;
+    replacement.data = {1.f, 2.f, 3.f, 4.f, 5.f, 6.f};
+    CHECK(io::writeElevationGeoTiff(path, replacement, &err));
+    core::RasterGrid replaced;
+    CHECK(io::readElevationRaster(path, replaced, &err));
+    CHECK(replaced.cols == 3 && replaced.rows == 2);
+    CHECK(replaced.data.size() == 6);
+    CHECK(replaced.data.size() == 6 && std::fabs(replaced.data.back() - 6.f) < 1e-3f);
+
+    // A rejected candidate must leave that durable destination intact.
+    core::RasterGrid malformed = replacement;
+    malformed.data.pop_back();
+    CHECK(!io::writeElevationGeoTiff(path, malformed, &err));
+    core::RasterGrid preserved;
+    CHECK(io::readElevationRaster(path, preserved, &err));
+    CHECK(preserved.cols == 3 && preserved.rows == 2);
+    CHECK(preserved.data.size() == 6
+          && std::fabs(preserved.data.back() - 6.f) < 1e-3f);
+
     std::filesystem::remove(path);
 }
 
@@ -180,6 +203,18 @@ static void testWarpReproject()
     CHECK(back.geo_transform[0] > 2.0 && back.geo_transform[0] < 4.0);
     CHECK(std::fabs(back.geo_transform[1]) < 0.01);
     CHECK(back.cols > 0 && back.rows > 0);
+
+    core::RasterGrid web_mercator;
+    CHECK(io::readElevationRasterForCrs(
+        path, "EPSG:3857", web_mercator, &err));
+    // 3°E in Web Mercator is roughly 334 km east of the prime meridian.
+    CHECK(web_mercator.geo_transform[0] > 300000.0
+          && web_mercator.geo_transform[0] < 370000.0);
+    CHECK(std::fabs(web_mercator.geo_transform[1]) > 1.0);
+
+    core::RasterGrid rejected;
+    CHECK(!io::readElevationRasterForCrs(
+        path, "NOT_A_REAL_CRS", rejected, &err));
 
     std::filesystem::remove(path);
 }

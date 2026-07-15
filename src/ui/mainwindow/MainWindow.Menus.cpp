@@ -107,21 +107,14 @@ void MainWindow::buildFileMenu()
     };
 
     QMenu* sss = imp->addMenu(tr("Sidescan Sonar"));
-    sss->addAction(tr("XTF\u2026"),                  this, importAs({AT::Sidescan}));
-    sss->addAction(tr("JSF\u2026"),                  this, importAs({AT::Sidescan}));
-    sss->addAction(tr("Humminbird SON\u2026"),        this, importAs({AT::Sidescan}));
-    sss->addAction(tr("Lowrance SL2 / SL3\u2026"),   this, importAs({AT::Sidescan}));
-    sss->addAction(tr("Dolphin Cache (DLPD)\u2026"),  this, importAs({AT::Sidescan}));
+    sss->addAction(tr("XTF / JSF / DLPD\u2026"), this, importAs({AT::Sidescan}));
 
     QMenu* sbp = imp->addMenu(tr("Sub Bottom Profiler"));
-    sbp->addAction(tr("SEG-Y\u2026"),                this, importAs({AT::SubBottom}));
+    sbp->addAction(tr("XTF / JSF / SEG-Y / DLPD\u2026"),
+                   this, importAs({AT::SubBottom}));
 
     QMenu* mag = imp->addMenu(tr("Magnetometer"));
-    mag->addAction(tr("CSV / Text\u2026"),           this, importAs({AT::Magnetometer}));
-
-    QMenu* bathy = imp->addMenu(tr("Bathymetry"));
-    bathy->addAction(tr("Kongsberg ALL / KMALL\u2026"), this, importAs({AT::Multibeam}));
-    bathy->addAction(tr("Reson S7K\u2026"),          this, importAs({AT::Multibeam}));
+    mag->addAction(tr("XTF / DLPD\u2026"), this, importAs({AT::Magnetometer}));
 
     imp->addSeparator();
     // Generic browse: no sensor preset \u2014 the wizard detects each file's modalities.
@@ -131,19 +124,12 @@ void MainWindow::buildFileMenu()
     QMenu* exp = file->addMenu(Theme::icon(":/icons/export.svg"), tr("E&xport"));
     exp->addAction(tr("Export &Manager…"), this, &MainWindow::onExportManagerOpen);
     exp->addSeparator();
-    // Export formats are Phase 2 — listed for discoverability but not yet active.
     for (auto [id, slot] : {
-            std::pair{CommandId::ExportCsv,     &MainWindow::onExportCsv    },
+            std::pair{CommandId::ExportCsv,     &MainWindow::onExportCsv},
             std::pair{CommandId::ExportGeotiff, &MainWindow::onExportGeotiff},
-            std::pair{CommandId::ExportKmz,     &MainWindow::onExportKmz    },
-            std::pair{CommandId::ExportNav,     &MainWindow::onExportNav    },
-            std::pair{CommandId::ExportPdf,     &MainWindow::onExportPdf    },
         }) {
         auto* a = makeAction(id, this);
         connect(a, &QAction::triggered, this, slot);
-        // CSV (contacts) and GeoTIFF (raster layers) are implemented; others Phase 2.
-        if (id != CommandId::ExportCsv && id != CommandId::ExportGeotiff)
-            a->setEnabled(false);
         exp->addAction(a);
     }
     exp->addSeparator();
@@ -209,10 +195,6 @@ void MainWindow::buildProjectMenu()
         auto* act_exp_csv = makeAction(CommandId::ExportCsv, this);
         connect(act_exp_csv, &QAction::triggered, this, &MainWindow::onExportCsv);
         contacts->addAction(act_exp_csv);
-        auto* act_exp_kmz = makeAction(CommandId::ExportKmz, this);
-        connect(act_exp_kmz, &QAction::triggered, this, &MainWindow::onExportKmz);
-        act_exp_kmz->setEnabled(false);
-        contacts->addAction(act_exp_kmz);
     }
 }
 

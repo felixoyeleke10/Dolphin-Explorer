@@ -43,7 +43,7 @@ struct SbpCorrectionResult {
     bool                skipped = false;
 };
 
-SbpCorrectionResult execute(const SbpCorrectionRequest& req, ImportService* svc)
+SbpCorrectionResult execute(const SbpCorrectionRequest& req)
 {
     SbpCorrectionResult result;
     result.layer_id = req.layer_id;
@@ -83,7 +83,7 @@ SbpCorrectionResult execute(const SbpCorrectionRequest& req, ImportService* svc)
         meta.artifact_role = io::kArtifactRoleSidecar;  // formal marker on the output
     }
 
-    auto traces = svc->loadAllSubBottomTraces(
+    auto traces = ImportService::loadAllSubBottomTraces(
         req.store_path, req.store_format, req.artifact_index, req.source_path);
 
     if (traces.empty()) {
@@ -204,10 +204,8 @@ SbpCorrectionResult execute(const SbpCorrectionRequest& req, ImportService* svc)
 
 } // namespace
 
-SubBottomCorrectionService::SubBottomCorrectionService(ImportService* import_service,
-                                                       QObject* parent)
+SubBottomCorrectionService::SubBottomCorrectionService(QObject* parent)
     : QObject(parent)
-    , m_import_service(import_service)
 {}
 
 void SubBottomCorrectionService::applyToLine(
@@ -228,7 +226,6 @@ void SubBottomCorrectionService::applyToLine(
     req.gain           = gain;
     req.signal         = signal;
 
-    ImportService* svc = m_import_service;
     auto* watcher = new QFutureWatcher<SbpCorrectionResult>(this);
     connect(watcher, &QFutureWatcher<SbpCorrectionResult>::finished, this,
             [this, watcher, layer_id]() {
@@ -246,8 +243,8 @@ void SubBottomCorrectionService::applyToLine(
                     emit correctionsPersisted(res.layer_id, res.new_path, res.new_index);
                 }
             });
-    watcher->setFuture(QtConcurrent::run([req, svc]() {
-        return execute(req, svc);
+    watcher->setFuture(QtConcurrent::run([req]() {
+        return execute(req);
     }));
 }
 

@@ -12,6 +12,10 @@
 #include "core/Feature.h"
 #include "core/SpatialRef.h"
 
+namespace dolphin::util {
+class JsonValue;
+}
+
 namespace dolphin::app {
 
 struct ProjectSource {
@@ -199,8 +203,9 @@ private:
 
     std::string toJson() const;
     bool        fromJson(const std::string& json);
-    // Set by fromJson() when it fails for a reason worth telling the user
-    // (currently: manifest schema newer than this build). Empty otherwise.
+    bool        restoreLayersFromJson(const util::JsonValue& root, int version);
+    bool        restoreEntitiesFromJson(const util::JsonValue& root);
+    // Actionable validation/schema error from the most recent failed load.
     std::string m_load_error;
     std::string generateId(const std::string& prefix) const;
     void        purgeOrphanedCaches();

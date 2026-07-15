@@ -13,19 +13,9 @@ using namespace detail_cache;
 bool parsedCacheIsValid(const std::string& path)
 {
     if (path.empty()) return false;
-    FILE* f = nullptr;
-#ifdef _WIN32
-    fopen_s(&f, path.c_str(), "rb");
-#else
-    f = std::fopen(path.c_str(), "rb");
-#endif
-    if (!f) return false;
-    CacheFileHeader hdr{};
-    const bool ok = (std::fread(&hdr, sizeof(hdr), 1, f) == 1)
-                 && sameMagic(hdr.magic, kFileMagic)
-                 && (hdr.version >= kMinAcceptableVersion && hdr.version <= kCacheVersion);
-    std::fclose(f);
-    return ok;
+    ParsedCacheReader reader;
+    if (!reader.open(path)) return false;
+    return !reader.quickIndex().empty();
 }
 
 ParsedCacheReader::ParsedCacheReader() = default;

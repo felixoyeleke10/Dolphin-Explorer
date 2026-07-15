@@ -1,12 +1,21 @@
 #pragma once
 // Private helpers shared across Project*.cpp compilation units.
 // Never included from headers.
+#include "core/SpatialRef.h"
+#include "util/Json.h"
+
 #include <string>
 #include <algorithm>
 #include <QDir>
 #include <QFileInfo>
 
 namespace dolphin::app::detail {
+
+core::SpatialRef spatialRefFromJson(const util::JsonValue& node,
+                                    const core::SpatialRef& fallback = {});
+
+std::string resolveStoredPath(const std::string& path,
+                              const std::string& manifest_path);
 
 inline QString normalisePath(const QString& path)
 {

@@ -42,23 +42,30 @@ QString applyTokens(QString css)
         return QLatin1String(light ? light_v : dark);
     };
 
-    // Font family
-    // KNOWN TRAP (left as-is deliberately): replacing "@font" first eats the
-    // prefix of every "@fontXxx" size token ("@fontSm" → "<family>Sm"), so
-    // QSS font-size declarations using those tokens are dropped by Qt's
-    // parser and widgets fall back to the default font size. The app's look
-    // has been tuned WITH this behaviour — reordering the table retroactively
-    // applies hundreds of latent font sizes and reskins the whole app (tried
-    // 2026-07-03, immediately reverted on user feedback). If this is ever
-    // fixed, do it as a deliberate app-wide typography pass. New QSS should
-    // use literal px sizes, not @fontXxx tokens.
-    css.replace(QLatin1String("@font"),           QLatin1String(kFontFamily));
-    css.replace(QLatin1String("@fontBase"),       QLatin1String(kFontBase));
-    css.replace(QLatin1String("@fontXxs"),        QLatin1String(kFontXxs));
-    css.replace(QLatin1String("@fontXs"),         QLatin1String(kFontXs));
-    css.replace(QLatin1String("@fontSm"),         QLatin1String(kFontSm));
-    css.replace(QLatin1String("@fontMd"),         QLatin1String(kFontMd));
-    css.replace(QLatin1String("@fontLg"),         QLatin1String(kFontLg));
+    // Font family and size compatibility.
+    //
+    // Explicit @fontXxx sizes were historically ignored because @font was
+    // substituted first. The established UI was tuned around inherited font
+    // sizes, so remove those declarations intentionally instead of emitting
+    // malformed QSS. Enabling them is an app-wide visual-design change.
+    constexpr bool kUseExplicitFontSizes = false;
+    if constexpr (kUseExplicitFontSizes) {
+        // Longer tokens must precede the @font family prefix.
+        css.replace(QLatin1String("@fontBase"), QLatin1String(kFontBase));
+        css.replace(QLatin1String("@fontXxs"),  QLatin1String(kFontXxs));
+        css.replace(QLatin1String("@fontXs"),   QLatin1String(kFontXs));
+        css.replace(QLatin1String("@fontSm"),   QLatin1String(kFontSm));
+        css.replace(QLatin1String("@fontMd"),   QLatin1String(kFontMd));
+        css.replace(QLatin1String("@fontLg"),   QLatin1String(kFontLg));
+    } else {
+        css.replace(QLatin1String("font-size: @fontBase;"), QString{});
+        css.replace(QLatin1String("font-size: @fontXxs;"),  QString{});
+        css.replace(QLatin1String("font-size: @fontXs;"),   QString{});
+        css.replace(QLatin1String("font-size: @fontSm;"),   QString{});
+        css.replace(QLatin1String("font-size: @fontMd;"),   QString{});
+        css.replace(QLatin1String("font-size: @fontLg;"),   QString{});
+    }
+    css.replace(QLatin1String("@font"), QLatin1String(kFontFamily));
     // Backgrounds — longer tokens before shorter prefixes (@bgHover before @bg)
     css.replace(QLatin1String("@bgPanel"),        C(kBgPanel,     "#f2f2f4"));
     css.replace(QLatin1String("@bgCard"),         C(kBgCard,      "#ffffff"));

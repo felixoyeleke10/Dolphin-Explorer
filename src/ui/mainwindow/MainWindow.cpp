@@ -3,34 +3,25 @@
 #include "ui/mainwindow/ProjectSessionController.h"
 #include "ui/systems/ProjectEventBus.h"
 #include "ui/mainwindow/MainStatusBar.h"
-#include "ui/bottom/BottomDockPanel.h"
 #include "ui/bottom/RuntimeLogBridge.h"
-#include "ui/shell/AppStyle.h"
 #include "ui/shell/Features.h"
 #include "ui/features/nodegraph/NodeGraphWindow.h"
 #include "ui/features/import/ImportController.h"
-#include "ui/features/processing/ProcessingController.h"
 #include "ui/features/map/sidescan/SidescanViewController.h"
+#include "ui/mainwindow/coordinators/ExportController.h"
 #include "ui/mainwindow/coordinators/CorrectionBatchOperator.h"
-#include "ui/mainwindow/coordinators/ProjectOperationCoordinator.h"
+#include "ui/mainwindow/coordinators/ToolController.h"
 #include "ui/mainwindow/coordinators/ViewportCoordinator.h"
-#include "ui/mainwindow/rightpanel/RightPanelHost.h"
 #include "ui/features/import/ImportProgressDialog.h"
 #include "ui/features/waterfall/WaterfallWindow.h"
 #include "ui/features/subbottom/SubBottomWindow.h"
-#include "ui/shared/dialogs/SettingsDialog.h"
-#include "ui/shared/widgets/LayerPickerWidget.h"
 #include "ui/features/map/MapView.h"
 #include "ui/features/map/MapViewportHost.h"
 #include "app/services/ImportService.h"
-#include "app/services/ProcessingService.h"
 #include "ui/shared/panels/LineListPanel.h"
-#include "ui/mainwindow/AppSettingsDialog.h"
 #include "ui/shell/AppInfo.h"
-#include <QApplication>
-#include <QTimer>
-#include <QProgressBar>
 #include <QPushButton>
+#include <QTimer>
 #include <QSettings>
 #include <QUndoStack>
 
@@ -53,257 +44,7 @@ MainWindow::MainWindow(QWidget* parent)
 
     m_undo_stack = new QUndoStack(this);
 
-    // Settings authority — must exist before any code that reads live settings.
-    m_app_state = new AppState(this);
-    m_window_registry = new WindowRegistry(this);
-    m_event_bus = new ProjectEventBus(this);
-
-    // Display-state authority — owns per-view state (map preview quality, …),
-    // bridges global defaults from AppState, and is the single bus for per-layer
-    // display changes via displayStateChanged(layer_id, aspect).
-    m_display_state = new DisplayStateManager(m_app_state, this);
-    m_display_state->loadPersistentState();
-    connect(m_display_state, &DisplayStateManager::displayStateChanged, this,
-            [this](const QString& layer_id, DisplayAspect aspect) {
-        if (aspect == DisplayAspect::MapQuality) {
-            if (m_sss_ctrl) m_sss_ctrl->setMapSonarQuality(m_display_state->mapQuality());
-            const int cur = static_cast<int>(m_display_state->mapQuality());
-            for (int i = 0; i < static_cast<int>(m_act_map_quality.size()); ++i)
-                if (m_act_map_quality[i]) m_act_map_quality[i]->setChecked(i == cur);
-        }
-        // Global SSS palette change (empty layer_id): keep every visible control
-        // and renderer on the same palette name/look.
-        if (aspect == DisplayAspect::Palette && layer_id.isEmpty()) {
-            const int pal = m_display_state->mapPalette();
-            if (m_modal_host)    m_modal_host->setPalette(pal);
-            if (m_waterfall_win) m_waterfall_win->setPalette(pal);
-            if (m_sss_ctrl)      m_sss_ctrl->setPaletteIndex(pal);
-        }
-        // A per-layer display change (palette/gain/visibility/nav) means the project
-        // look differs from disk — mark it dirty so it's saved.
-        if (!layer_id.isEmpty())
-            markProjectDirty();
-        // Per-layer visibility: fan out to every widget that renders or lists
-        // the layer. The model write lives in DisplayStateManager::
-        // setLayerVisible — this is the ONLY sync point (undo/redo replays
-        // through the same setter and lands here too).
-        if (aspect == DisplayAspect::Visibility && !layer_id.isEmpty()) {
-            const std::string lid = layer_id.toStdString();
-            const auto* l = currentProject() ? currentProject()->findLayer(lid)
-                                             : nullptr;
-            const bool v = l && l->visible;
-            if (m_viewport_host) m_viewport_host->setLayerVisible(lid, v);
-            else if (m_map_view) m_map_view->setLayerVisible(lid, v);
-            if (m_line_list)     m_line_list->setLayerVisibility(lid, v);
-            if (m_layer_picker)  m_layer_picker->setLayerVisibility(lid, v);
-        }
-        // Per-layer map compositing (transparency + blend mode): fan out to the
-        // map viewport (2D mosaic + 3D drape/curtain for opacity; 2D-only for
-        // blend). Model writes live in DisplayStateManager::setLayerOpacity /
-        // setLayerBlendMode, both of which emit this aspect.
-        if (aspect == DisplayAspect::Opacity && !layer_id.isEmpty()) {
-            const std::string lid = layer_id.toStdString();
-            const auto* l = currentProject() ? currentProject()->findLayer(lid)
-                                             : nullptr;
-            if (l && m_viewport_host) {
-                m_viewport_host->setLayerOpacity(lid, l->map_opacity);
-                m_viewport_host->setLayerBlendMode(lid, l->map_blend_mode);
-                m_viewport_host->setLayerClipPolygons(lid, l->map_clip_polygons);
-                m_viewport_host->setLayerShowBeams(lid, l->map_show_beams);
-            }
-        }
-        // SBP palette change → recolour the 3D curtains (shader uniform, free).
-        if (aspect == DisplayAspect::Palette && !layer_id.isEmpty()
-                && currentProject() && m_viewport_host) {
-            if (const auto* l = currentProject()->findLayer(layer_id.toStdString());
-                    l && l->modality == app::Modality::SubBottom)
-                m_viewport_host->setSbpCurtainPalette(
-                    l->sbp_palette >= 0 ? l->sbp_palette : 0);
-        }
-        // Keep the left Views panel mirroring the authority (palette/quality
-        // changes made anywhere: status bar, menu, inspector, Views itself).
-        if (aspect == DisplayAspect::MapQuality || aspect == DisplayAspect::Palette)
-            refreshViewsPanel();
-    });
-    connect(m_app_state, &AppState::settingsChanged,
-            this, &MainWindow::applyLiveSettings);
-    // Sound velocity change: reload the waterfall so the pipeline picks up
-    // the new value on its next setLayer() call.
-    auto reloadWaterfall = [this]() {
-        if (!m_waterfall_win || !m_waterfall_win->isVisible()) return;
-        if (!currentProject() || activeLayerId().empty()) return;
-        if (auto* layer = currentProject()->findLayer(activeLayerId())) {
-            const auto* src = currentProject()->findSource(layer->source_id);
-            m_waterfall_win->setLayer(layer, m_import_service,
-                src ? src->path : std::string{},
-                src ? src->size_bytes : 0);
-            applyStoredNavParams(activeLayerId());
-            if (layer->sss_display_state.customized)
-                m_waterfall_win->applyExternalParams(layer->sss_display_state.params);
-        }
-    };
-    connect(m_app_state, &AppState::soundVelocityChanged, this,
-            [reloadWaterfall](double) { reloadWaterfall(); });
-    connect(m_app_state, &AppState::autoStretchChanged, this,
-            [this](bool) {
-                if (m_waterfall_win && m_waterfall_win->isVisible())
-                    m_waterfall_win->invalidateProcessedCache();
-            });
-    // Default palette change: sync waterfall and inspector to the new default.
-    connect(m_app_state, &AppState::defaultPaletteChanged,
-            this, &MainWindow::onPaletteChanged);
-
-    // Hub must exist before setupCentralWidget (which builds BottomDockPanel).
-    m_diag_hub = new DiagnosticsHub(this);
-
-    // PSC must be created after m_undo_stack, m_diag_hub, m_op_mgr, m_import_service.
-    // It is wired to MainWindow signals below, after services are ready.
-    {
-        auto* runtime_logs = RuntimeLogBridge::instance();
-        connect(runtime_logs, &RuntimeLogBridge::messageLogged,
-                this, [this](int type, const QString& message) {
-            if (!m_diag_hub || message.isEmpty()) return;
-
-            const auto qt_type = static_cast<QtMsgType>(type);
-            const QString prefix =
-                qt_type == QtDebugMsg    ? QStringLiteral("[DEBUG] ") :
-                qt_type == QtInfoMsg     ? QStringLiteral("[INFO] ")  :
-                qt_type == QtWarningMsg  ? QStringLiteral("[WARN] ")  :
-                qt_type == QtCriticalMsg ? QStringLiteral("[ERROR] ") :
-                                           QStringLiteral("[FATAL] ");
-
-            m_diag_hub->logOutput(prefix + message);
-
-            if (qt_type == QtWarningMsg || qt_type == QtCriticalMsg || qt_type == QtFatalMsg) {
-                const auto severity = qt_type == QtWarningMsg
-                    ? DiagnosticsHub::Severity::Warning
-                    : DiagnosticsHub::Severity::Error;
-                m_diag_hub->postProblem(message, severity, QStringLiteral("runtime"));
-            }
-        });
-    }
-
-    // Central operation manager — bridges lifecycle signals to DiagnosticsHub
-    // so any subsystem using m_op_mgr->run<T>() gets automatic job tracking.
-    m_op_mgr = new app::OperationManager(this);
-    connect(m_op_mgr, &app::OperationManager::operationQueued, this,
-            [this](uint32_t op_id, const QString& name) {
-                // Submitted but parked behind a lane cap — show as Queued, not Running.
-                m_op_job_ids[op_id] = m_diag_hub->beginJob(
-                    name, {}, 0, {}, 0.f, DiagnosticsHub::JobStatus::Queued);
-            });
-    connect(m_op_mgr, &app::OperationManager::operationStarted, this,
-            [this](uint32_t op_id, const QString& name) {
-                // If it was queued, flip it to Running; otherwise create it running.
-                const auto it = m_op_job_ids.find(op_id);
-                if (it != m_op_job_ids.end()) m_diag_hub->startJob(it->second);
-                else m_op_job_ids[op_id] = m_diag_hub->beginJob(name);
-            });
-    connect(m_op_mgr, &app::OperationManager::operationCompleted, this,
-            [this](uint32_t op_id) {
-                const auto it = m_op_job_ids.find(op_id);
-                if (it != m_op_job_ids.end()) {
-                    m_diag_hub->endJob(it->second);
-                    m_op_job_ids.erase(it);
-                }
-            });
-    connect(m_op_mgr, &app::OperationManager::operationFailed, this,
-            [this](uint32_t op_id, const QString& error) {
-                const auto it = m_op_job_ids.find(op_id);
-                if (it != m_op_job_ids.end()) {
-                    m_diag_hub->failJob(it->second, error);
-                    m_op_job_ids.erase(it);
-                }
-            });
-    connect(m_op_mgr, &app::OperationManager::operationCancelled, this,
-            [this](uint32_t op_id) {
-                const auto it = m_op_job_ids.find(op_id);
-                if (it != m_op_job_ids.end()) {
-                    m_diag_hub->cancelJob(it->second);
-                    m_op_job_ids.erase(it);
-                }
-            });
-
-    // Route AppState notifications → output log and (for warnings/errors) DiagnosticsHub.
-    connect(m_app_state, &AppState::notificationPosted,
-            this, [this](const Notification& n) {
-                appendJobMessage(QString::fromStdString(n.message));
-                if (n.severity == NotificationSeverity::Warning
-                        || n.severity == NotificationSeverity::Error) {
-                    const auto sev = n.severity == NotificationSeverity::Error
-                        ? DiagnosticsHub::Severity::Error
-                        : DiagnosticsHub::Severity::Warning;
-                    m_diag_hub->postProblem(
-                        QString::fromStdString(n.message), sev,
-                        QString::fromStdString(n.source));
-                }
-            });
-
-    // PSC is constructed after import_service is available (see below).
-    if constexpr (Features::kImport) {
-        m_import_service = new app::ImportService(this);
-
-        // Route ImportService indexing lifecycle → DiagnosticsHub structured jobs
-        // so the bottom-panel Jobs tab tracks every file import automatically.
-        // Cache-index rebuilds (project open) share the same signals but must not
-        // show the import popup — isRebuildingLayer() distinguishes them.
-        connect(m_import_service, &app::ImportService::indexingStarted, this,
-                [this](const std::string& layer_id) {
-                    if (m_import_service->isRebuildingLayer(layer_id)) return;
-                    QString label = tr("Importing…");
-                    if (currentProject()) {
-                        if (const auto* layer = currentProject()->findLayer(layer_id))
-                            label = tr("Importing %1")
-                                .arg(QString::fromStdString(layer->label));
-                    }
-                    const uint32_t jid = m_diag_hub->beginJob(
-                        label, QString::fromStdString(layer_id));
-                    m_import_job_ids[layer_id] = jid;
-                });
-        connect(m_import_service, &app::ImportService::indexingProgress, this,
-                [this](const std::string& layer_id, int percent) {
-                    const auto it = m_import_job_ids.find(layer_id);
-                    if (it != m_import_job_ids.end())
-                        m_diag_hub->updateJob(it->second, {}, percent / 100.f);
-                });
-        connect(m_import_service, &app::ImportService::indexingComplete, this,
-                [this](const std::string& layer_id) {
-                    const auto it = m_import_job_ids.find(layer_id);
-                    if (it != m_import_job_ids.end()) {
-                        m_diag_hub->endJob(it->second, tr("Ready"));
-                        m_import_job_ids.erase(it);
-                    }
-                    if (currentProject()) {
-                        if (const auto* layer = currentProject()->findLayer(layer_id))
-                            recordActivity(ActivityKind::Import,
-                                tr("Imported: %1")
-                                    .arg(QString::fromStdString(layer->label)));
-                    }
-                });
-        connect(m_import_service, &app::ImportService::indexingFailed, this,
-                [this](const std::string& layer_id, const std::string& error) {
-                    const auto it = m_import_job_ids.find(layer_id);
-                    if (it != m_import_job_ids.end()) {
-                        m_diag_hub->failJob(it->second,
-                            QString::fromStdString(error));
-                        m_import_job_ids.erase(it);
-                    } else {
-                        // No import job registered — this was a cache rebuild failure.
-                        // Report through diagnostics without a modal popup.
-                        m_diag_hub->postProblem(
-                            tr("Could not load cached data for layer %1: %2")
-                                .arg(QString::fromStdString(layer_id),
-                                     QString::fromStdString(error)),
-                            DiagnosticsHub::Severity::Warning, "cache-rebuild");
-                        return;
-                    }
-                });
-
-    }
-
-    if constexpr (Features::kProcessing)
-        m_processing_service = new app::ProcessingService(this);
-
+    setupRuntimeServices();
     // --- ProjectSessionController + LayerDisplayCoordinator -----------------
     // PSC owns: m_project, m_project_dirty, m_pending_crs, and all CRUD slots.
     // LDC owns: m_active_layer_id, navigation history.
@@ -339,6 +80,7 @@ MainWindow::MainWindow(QWidget* parent)
         // in-flight builds + resets controller state without wiping the map.
         if (m_sss_ctrl) m_sss_ctrl->deactivate(false);
         if (m_import_service) m_import_service->cancelPendingRebuild();
+        if (m_corr_op) m_corr_op->cancelBatch();
         // Clear the Background Tasks panel: the cancelled builds' counters/cards must
         // not carry into the next project (stale "Building map X of Y" / stuck panel
         // when switching projects back and forth).
@@ -446,6 +188,23 @@ MainWindow::MainWindow(QWidget* parent)
     setupCentralWidget();
     RuntimeLogBridge::instance()->replayPending();
     setupToolBar();
+
+    m_tool_ctrl = new ToolController(m_app_state, m_map_view, m_viewport_host, this);
+    m_tool_ctrl->setButtons(
+        m_cursor_btn, m_select_btn, m_zoom_btn, m_measure_btn,
+        m_contact_btn, m_feat_poly_btn, m_feat_line_btn, m_feat_pen_btn);
+    connect(m_tool_ctrl, &ToolController::statusMessage,
+            this, [this](const QString& message) { appendJobMessage(message); });
+
+    m_export_ctrl = new ExportController(
+        [this] { return currentProject(); }, this, m_viewport_host, this, this);
+    connect(m_export_ctrl, &ExportController::statusMessage,
+            this, [this](const QString& message) { appendJobMessage(message); });
+    connect(m_export_ctrl, &ExportController::activityRecorded,
+            this, [this](const QString& description) {
+                recordActivity(ActivityKind::Export, description);
+            });
+
     setupMenuBar();
     setupStatusBar();
 
@@ -568,265 +327,7 @@ MainWindow::MainWindow(QWidget* parent)
             });
     // ---------------------------------------------------------------------
 
-    // Only the live coordinate (posLabel) is shown in the status bar. The old
-    // ping/track-length and cursor-depth readouts were noise (and floated, overlapping
-    // the project name), so they're gone — pass nullptr; the controller null-checks both.
-    m_sss_ctrl = new SidescanViewController(
-        m_map_view, m_import_service,
-        /*status_ping=*/nullptr, m_status_bar->posLabel(), /*status_depth=*/nullptr, this);
-    m_sss_ctrl->setOperationManager(m_op_mgr);  // owns per-layer map-build ops (keyed)
-    connect(m_sss_ctrl, &SidescanViewController::contactPicked,
-            this, &MainWindow::onContactPicked);
-    connect(m_sss_ctrl, &SidescanViewController::loadingStarted, this, [this]() {
-        // A sidescan map build reports real 0→100 progress (loadingProgress), so mark
-        // it progress-driven up front — otherwise refreshLoadingIndicator would flash
-        // the indeterminate spinner before the first progress tick (the whole show on
-        // a fast/cached load). The determinate bar appears with the first tick.
-        m_map_progress_active = true;
-        refreshLoadingIndicator();
-    });
-    connect(m_sss_ctrl, &SidescanViewController::loadingFinished, this, [this]() {
-        // Only clear the indicator if no other viewer (or concurrent map build)
-        // is still busy — the controller's state is updated before this fires.
-        refreshLoadingIndicator();
-        if (m_import_ctrl)
-            m_import_ctrl->onMapLoadDone();
-    });
-    // Determinate progress for the active layer's map build (0→100): fills the
-    // status-bar bar from start to end instead of the indeterminate bounce.
-    connect(m_sss_ctrl, &SidescanViewController::loadingProgress, this, [this](int pct) {
-        m_map_progress_active = true;
-        if (m_status_bar) {
-            m_status_bar->setProgress(pct, true);
-            // In-window background-task feedback (no top-level popup → no blink on the
-            // frameless window). Cleared by refreshLoadingIndicator when idle.
-            m_status_bar->setBusyText(tr("Building map…"));
-        }
-    });
-    // Per-line progress for a bottom-bar Apply batch: update that line's dialog card
-    // with a readable phase (the map build reports ~5–55 decode, ~66 corrections,
-    // ~80 georeference, ~98 raster).
-    connect(m_sss_ctrl, &SidescanViewController::prebuildTierProgress, this,
-            [this](const std::string& layer_id, int pct) {
-        if (!m_import_overlay) return;
-        const auto it = m_tools_apply_layers.find(layer_id);
-        if (it == m_tools_apply_layers.end()) return;
-        const QString& tools = it->second;   // "TVG, ARC, ARN" (empty = display only)
-        const QString phase =
-            pct < 55  ? tr("Reading pings…")        :
-            pct < 70  ? (tools.isEmpty() ? tr("Applying corrections…")
-                                         : tr("Applying %1…").arg(tools)) :
-            pct < 85  ? tr("Georeferencing…")       :
-            pct < 100 ? tr("Building mosaic…")      :
-                        tr("Finishing…");
-        m_import_overlay->updateJob(layer_id, pct,
-                                    QStringLiteral("%1  %2%").arg(phase).arg(pct));
-    });
-    connect(m_sss_ctrl, &SidescanViewController::prebuildTierFinished, this,
-            [this](const std::string& layer_id, MapSonarQuality) {
-        refreshLoadingIndicator();
-        if (m_import_overlay && m_tools_apply_layers.erase(layer_id) > 0) {
-            m_import_overlay->finishJob(layer_id, tr("Corrections applied"));
-        }
-    });
-    connect(m_sss_ctrl, &SidescanViewController::mapDiagnosticsReady,
-            this, &MainWindow::onMapDiagnosticsReady);
-
-    // Register the map controller so WindowRegistry broadcasts reach it.
-    // Uses m_map_view as the host widget for auto-cleanup on destroy.
-    m_window_registry->registerViewer(m_map_view, m_sss_ctrl);
-
-    // Single source of truth for correction bakes (SSS + SBP).
-    // CorrectionBatchOperator owns both services and routes lifecycle events
-    // through DiagnosticsHub and ExecutionProgressDialog internally.
-    m_corr_op = new CorrectionBatchOperator(m_import_service, m_diag_hub, m_import_overlay, this);
-    // correctionPersisted: layer mutation, contract, save, and viewer reload
-    // are handled entirely by ProjectOperationCoordinator (wired below).
-    // MainWindow only emits the user-visible log message.
-    connect(m_corr_op, &CorrectionBatchOperator::correctionPersisted,
-            this, [this](const std::string& layer_id,
-                         const std::string& /*new_path*/,
-                         const core::ArtifactIndex& /*new_index*/) {
-                const auto* layer = currentProject() ? currentProject()->findLayer(layer_id) : nullptr;
-                if (layer)
-                    appendJobMessage(tr("Corrections baked into %1")
-                        .arg(QString::fromStdString(layer->label)));
-            });
-    connect(m_corr_op, &CorrectionBatchOperator::correctionSkipped,
-            this, [this](const std::string& layer_id) {
-                const auto* layer = currentProject() ? currentProject()->findLayer(layer_id) : nullptr;
-                if (layer)
-                    appendJobMessage(tr("Corrections already baked — skipped %1")
-                        .arg(QString::fromStdString(layer->label)));
-            });
-    connect(m_corr_op, &CorrectionBatchOperator::correctionFailed,
-            this, [this](const std::string& /*layer_id*/, const QString& error) {
-                appendJobMessage(tr("Correction bake failed: %1").arg(error));
-            });
-    connect(m_corr_op, &CorrectionBatchOperator::batchComplete,
-            this, [this](int succeeded, int total) {
-                appendJobMessage(tr("Correction bake complete: %1/%2 lines")
-                    .arg(succeeded).arg(total));
-            });
-
-    {
-        // Apply the persisted map sonar quality from the display-state authority
-        // (loaded in the ctor; default CoverageOnly — coverage + nav instantly, no
-        // raster cost until the user picks a higher tier).
-        m_sss_ctrl->setMapSonarQuality(m_display_state->mapQuality());
-        // Seed the manager's global map palette from the controller's computed initial
-        // (the controller keeps the app-default-name fallback for a fresh install); the
-        // manager owns it from here on.
-        m_display_state->initMapPalette(m_sss_ctrl->paletteIndex());
-    }
-    if constexpr (Features::kImport) {
-        m_import_job_mgr = new app::ImportJobManager(m_import_service, this);
-        m_import_ctrl = new ExecutionController(
-            m_import_job_mgr, m_import_overlay, m_layer_picker,
-            this, this);
-        m_import_ctrl->connectToCacheRebuilds(m_import_service);
-        // Project switch / new / close must warn about in-flight imports the
-        // same way app close does — otherwise a switch abandons them silently.
-        m_session_ctrl->setImportsBusyCheck(
-            [this]() { return m_import_ctrl && m_import_ctrl->importsBusy(); });
-        connect(m_import_ctrl, &ExecutionController::importFailed,
-                this, [this](const QString& layer_id, const QString& error) {
-                    m_diag_hub->postProblem(
-                        tr("Import failed: %1").arg(error),
-                        DiagnosticsHub::Severity::Error, layer_id);
-                });
-        connect(m_import_ctrl, &ExecutionController::importCompleted,
-                this, [this](const std::string& layer_id) {
-                    // Only Sidescan layers trigger a background map-build task.
-                    // For all other modalities onLayerSelected returns synchronously
-                    // and loadingFinished never fires, so don't call onMapLoadPending.
-                    const auto* layer = currentProject() ? currentProject()->findLayer(layer_id) : nullptr;
-                    const bool  needs_map_build = layer
-                        && layer->modality == app::Modality::Sidescan;
-                    if (needs_map_build)
-                        m_import_ctrl->onMapLoadPending();
-                    // Evict stale map data so activateLayer() does a fresh load.
-                    if (m_sss_ctrl)
-                        m_sss_ctrl->unloadLayer(layer_id);
-                    // For SBP layers, clear the stale map profile so onLayerSelected
-                    // rebuilds it. On fresh import m_map_view has no data for this
-                    // layer yet so this is a no-op; on reindex it forces a rebuild.
-                    if (layer && layer->modality == app::Modality::SubBottom && m_map_view)
-                        m_map_view->removeLayerData(layer_id);
-                    onLayerSelected(layer_id);
-                    // Broadcast to all open viewers (handles the reindex case where a
-                    // viewer already showing this layer holds stale pre-reindex data).
-                    m_event_bus->postLayerDataChanged(layer_id);
-                    // Modality and index are finalised by the time importCompleted
-                    // fires — rebuild the tree so the layer lands in the right group,
-                    // and refresh the inspector's modality set so the right panel
-                    // shows the correct sections for the newly indexed layer.
-                    if (m_line_list) m_line_list->refresh();
-                    refreshInspectorModalities();
-                });
-        connect(m_import_ctrl, &ExecutionController::cacheLayerReady,
-                this, [this](const std::string& layer_id) {
-                    if (!currentProject()) return;
-                    auto* layer = currentProject()->findLayer(layer_id);
-                    if (!layer || !layer->index_built) return;
-
-                    using M = app::Modality;
-                    const bool needs_map_build =
-                        layer->modality == M::Sidescan && m_sss_ctrl;
-
-                    // Lazy: a freshly-reindexed layer only loads into the map when it
-                    // IS the active selection (or when nothing is selected yet — then
-                    // it becomes the selection). Other reindexed layers stay indexed
-                    // but unloaded, so opening a project with N lines doesn't rebuild
-                    // N mosaics — only the one the user is looking at.
-                    if (activeLayerId().empty()) {
-                        if (needs_map_build) m_import_ctrl->onMapLoadPending();
-                        onLayerSelected(layer_id);
-                    } else if (layer_id == activeLayerId()) {
-                        if (needs_map_build) {
-                            m_import_ctrl->onMapLoadPending();
-                            m_sss_ctrl->activateLayer(layer_id, currentProject());
-                        } else if (m_map_view) {
-                            m_map_view->setActiveLayer(layer_id);
-                            m_map_view->setNavTrackVisible(layer_id, true);
-                        }
-                    } else if (needs_map_build) {
-                        // Reindexed non-active sidescan layer: instant nav-track
-                        // overview, then load its raster as a non-active overview
-                        // layer (cache-first; builds + caches on miss) so the whole
-                        // survey shows as raster, not just the active line.
-                        m_sss_ctrl->showNavTrackFromIndex(layer_id, currentProject());
-                        m_sss_ctrl->activateLayer(layer_id, currentProject(),
-                                                  /*as_active=*/false);
-                    } else if (layer->modality == M::SubBottom) {
-                        // SSS/SBP parity: a reindexed non-active SBP line shows on
-                        // the map too — instant track, then the profile ribbon.
-                        if (m_sss_ctrl)
-                            m_sss_ctrl->showNavTrackFromIndex(layer_id, currentProject());
-                        if (m_op_mgr) m_op_mgr->setLaneCap("sbp:open", 2);
-                        buildSbpProfileMap(layer, "sbp:open");
-                    }
-                    // Refresh the tree so the reindexed layer shows ready.
-                    if (m_line_list) m_line_list->refresh();
-
-                    markProjectDirty();
-                });
-        connect(m_import_ctrl, &ExecutionController::statusMessage,
-                this, &MainWindow::appendJobMessage);
-        connect(m_import_ctrl, &ExecutionController::progressChanged,
-                this, [this](int percent, bool visible) {
-                    m_status_bar->setProgress(percent, visible);
-                });
-    }
-    if constexpr (Features::kProcessing) {
-        m_proc_ctrl = new ProcessingController(m_processing_service, this);
-        connect(m_proc_ctrl, &ProcessingController::statusMessage,
-                this, &MainWindow::appendJobMessage);
-        connect(m_proc_ctrl, &ProcessingController::progressChanged,
-                this, [this](int percent, bool visible) {
-                    m_status_bar->setProgress(percent, visible);
-                });
-        // Feed processing jobs into the overlay dialog and DiagnosticsHub.
-        connect(m_proc_ctrl, &ProcessingController::layerRunStarted,
-                this, [this](const std::string& id, const QString& label) {
-                    m_import_job_ids[id] = m_diag_hub->beginJob(
-                        tr("Processing: %1").arg(label), QString::fromStdString(id));
-                    m_import_overlay->addJob(id, label, "RUN", 0.f);
-                });
-        connect(m_proc_ctrl, &ProcessingController::layerRunFinished,
-                this, [this](const std::string& id, const QString& summary) {
-                    const auto it = m_import_job_ids.find(id);
-                    if (it != m_import_job_ids.end()) {
-                        m_diag_hub->endJob(it->second, summary);
-                        m_import_job_ids.erase(it);
-                    }
-                    m_import_overlay->finishJob(id, summary);
-                    // Viewer reload happens in processingPersisted (after index is updated).
-                    // If no data was written (empty buffer) the .dlpd is unchanged — no reload needed.
-                });
-        connect(m_proc_ctrl, &ProcessingController::layerRunFailed,
-                this, [this](const std::string& id, const QString& error) {
-                    const auto it = m_import_job_ids.find(id);
-                    if (it != m_import_job_ids.end()) {
-                        m_diag_hub->failJob(it->second, error);
-                        m_import_job_ids.erase(it);
-                    }
-                    m_import_overlay->failJob(id, error);
-                    m_diag_hub->postProblem(
-                        tr("Processing failed: %1").arg(error),
-                        DiagnosticsHub::Severity::Error, QString::fromStdString(id));
-                });
-        // processingPersisted: layer mutation, contract, save, and viewer reload
-        // are handled entirely by ProjectOperationCoordinator (wired below).
-        // Nothing left for MainWindow to do here.
-    }
-
-    // ProjectOperationCoordinator — bridges service completion into the Worker
-    // registry, ContractStore, event bus, and project persistence.
-    m_op_coord = new ProjectOperationCoordinator(m_event_bus, this);
-    m_op_coord->connectToProcessing(m_proc_ctrl);
-    m_op_coord->connectToCorrections(m_corr_op);
-
+    setupFeatureControllers();
     setupTitleBar();
 
     QSettings settings(AppInfo::kOrgName, AppInfo::kSettingsApp);

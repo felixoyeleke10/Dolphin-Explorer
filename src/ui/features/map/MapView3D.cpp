@@ -7,9 +7,7 @@
 
 #include "ui/features/map/MapView3D.h"
 
-#include <QMatrix4x4>
 #include <QOpenGLTexture>
-#include <QVector4D>
 
 #include <algorithm>
 #include <cmath>
@@ -310,6 +308,9 @@ void MapView3D::setCurtainPalette(int palette_index)
 
 void MapView3D::clearScene()
 {
+    m_terrain_load_generation.clear();
+    m_pending_terrain_loads.clear();
+    m_terrain_loading = false;
     if (m_gl_ready && context() && context()->isValid()) {
         makeCurrent();
         m_nav_merged_vbo.destroy();
@@ -393,12 +394,29 @@ void MapView3D::setLayerVisible(const std::string& layer_id, bool visible)
 {
     bool changed = false;
     for (auto& L : m_layers)
-        if (L.id == layer_id && L.visible != visible) { L.visible = visible; changed = true; }
+        if (L.id == layer_id && L.layer_visible != visible) {
+            L.layer_visible = visible; changed = true;
+        }
     for (auto& C : m_curtain_layers)
         if (C.id == layer_id && C.visible != visible) { C.visible = visible; changed = true; }
+    for (auto& T : m_terrain_layers)
+        if (T.id == layer_id && T.visible != visible) { T.visible = visible; changed = true; }
     for (auto& D : m_drape_layers)
         if (D.id == layer_id && D.visible != visible) { D.visible = visible; changed = true; }
-    if (changed) update();
+    if (changed) {
+        m_survey_dirty = true;
+        update();
+    }
+}
+
+void MapView3D::setNavTrackVisible(const std::string& layer_id, bool visible)
+{
+    for (auto& layer : m_layers) {
+        if (layer.id != layer_id || layer.nav_visible == visible) continue;
+        layer.nav_visible = visible;
+        update();
+        return;
+    }
 }
 
 void MapView3D::setLayerOpacity(const std::string& layer_id, float opacity)
@@ -432,85 +450,6 @@ void MapView3D::setSelectedLayers(const std::vector<std::string>& ids)
     update();
 }
 
-std::string MapView3D::hitTestLayer(QPoint px) const
-{
-    if (!m_gl_ready) return {};
-
-    const QMatrix4x4 mvp = m_camera.projMatrix() * m_camera.viewMatrix();
-    constexpr float kPickRadius = 24.f;
-    float best_d2 = kPickRadius * kPickRadius;
-    std::string best_id;
-
-    // -- Pass 1: Nav tracks — screen-space proximity -----------------------
-    for (const auto& L : m_layers) {
-        if (!L.visible || L.raw_track.empty()) continue;
-        const int step = std::max(1, int(L.raw_track.size()) / 500);
-        for (int i = 0; i < int(L.raw_track.size()); i += step) {
-            const QPointF& pt = L.raw_track[static_cast<size_t>(i)];
-            if (std::isnan(pt.x()) || std::isnan(pt.y())) continue;  // NaN segment sentinel
-            const QVector3D lp = toLocal(pt.x(), pt.y(), 0.0);
-            const QVector4D clip = mvp * QVector4D(lp.x(), lp.y(), 0.f, 1.f);
-            if (clip.w() <= 0.f) continue;
-            const float sx = (clip.x() / clip.w() * 0.5f + 0.5f) * width();
-            const float sy = (1.f - (clip.y() / clip.w() * 0.5f + 0.5f)) * height();
-            const float dx = sx - float(px.x()), dy = sy - float(px.y());
-            const float d2 = dx * dx + dy * dy;
-            if (d2 < best_d2) { best_d2 = d2; best_id = L.id; }
-        }
-    }
-
-    // -- Pass 2: Sonar drapes — ground-plane bbox (fallback when no track hit) --
-    // Drapes cover wide swath areas; pick them when the cursor falls inside the
-    // bbox but not close enough to the nav track center line.
-    if (best_id.empty() && m_has_origin && !m_drape_layers.empty()) {
-        bool ok = false;
-        const QMatrix4x4 inv = mvp.inverted(&ok);
-        const float fw = float(width()), fh = float(height());
-        if (ok && fw > 0.f && fh > 0.f) {
-            const float nx =  (2.f * px.x() / fw) - 1.f;
-            const float ny = -(2.f * px.y() / fh) + 1.f;
-            const QVector4D pn = inv * QVector4D(nx, ny, -1.f, 1.f);
-            const QVector4D pf = inv * QVector4D(nx, ny,  1.f, 1.f);
-            // Guard against degenerate projection (on-horizon or near-zero w).
-            if (std::abs(pn.w()) >= 1e-7f && std::abs(pf.w()) >= 1e-7f) {
-                const QVector3D near_w = pn.toVector3D() / pn.w();
-                const QVector3D far_w  = pf.toVector3D() / pf.w();
-                const QVector3D dir    = (far_w - near_w).normalized();
-                if (std::abs(dir.z()) >= 1e-6f) {
-                    const float t = -near_w.z() / dir.z();
-                    if (t >= 0.f) {
-                        const QVector3D hit = near_w + t * dir;
-                        for (const auto& D : m_drape_layers) {
-                            if (!D.visible) continue;
-                            if (hit.x() >= D.bbox_x0 &&
-                                hit.x() <= D.bbox_x0 + D.bbox_w &&
-                                hit.y() >= D.bbox_y0 &&
-                                hit.y() <= D.bbox_y0 + D.bbox_h) {
-                                // Keep overwriting — last match is topmost-drawn drape.
-                                best_id = D.id;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    return best_id;
-}
-
-void MapView3D::pickAt(QPoint px)
-{
-    const std::string best_id = hitTestLayer(px);
-    if (!best_id.empty()) {
-        setSelectedLayers({best_id});
-        emit layerClicked(best_id);
-    } else {
-        setSelectedLayers({});
-        emit layersSelected({});
-    }
-}
-
 // -----------------------------------------------------------------------------
 //  Camera
 // -----------------------------------------------------------------------------
@@ -537,51 +476,6 @@ void MapView3D::fitToScene()
 // -----------------------------------------------------------------------------
 //  Coordinate helper (used by data API + geometry builders)
 // -----------------------------------------------------------------------------
-
-bool MapView3D::groundHit(QPoint px, QPointF& geo) const
-{
-    if (!m_has_origin || !m_gl_ready) return false;
-
-    const float w = static_cast<float>(width());
-    const float h = static_cast<float>(height());
-    if (w <= 0.f || h <= 0.f) return false;
-
-    // Pixel → NDC (y flipped: top of widget = +1 in NDC)
-    const float nx =  (2.f * px.x() / w) - 1.f;
-    const float ny = -(2.f * px.y() / h) + 1.f;
-
-    bool ok = false;
-    const QMatrix4x4 invVP = (m_camera.projMatrix() * m_camera.viewMatrix()).inverted(&ok);
-    if (!ok) return false;
-
-    // Unproject near and far clip points
-    const QVector4D pn = invVP * QVector4D(nx, ny, -1.f, 1.f);
-    const QVector4D pf = invVP * QVector4D(nx, ny,  1.f, 1.f);
-    if (std::abs(pn.w()) < 1e-7f || std::abs(pf.w()) < 1e-7f) return false;
-    const QVector3D near_w = pn.toVector3D() / pn.w();
-    const QVector3D far_w  = pf.toVector3D() / pf.w();
-    const QVector3D dir    = (far_w - near_w).normalized();
-
-    // Intersect ray with z=0 ground plane
-    if (std::abs(dir.z()) < 1e-6f) return false;
-    const float t = -near_w.z() / dir.z();
-    if (t < 0.f) return false;
-
-    const QVector3D hit = near_w + t * dir;
-
-    // Local metres → display CRS (inverse of toLocal, z ignored)
-    const double lx = static_cast<double>(hit.x());
-    const double ly = static_cast<double>(hit.y());
-    if (m_is_projected) {
-        geo = QPointF(m_origin_x + lx, m_origin_y + ly);
-    } else {
-        static constexpr double kMetPerDeg = 111320.0;
-        const double cos_lat = std::cos(m_origin_y * M_PI / 180.0);
-        geo = QPointF(m_origin_x + lx / (cos_lat * kMetPerDeg),
-                      m_origin_y + ly / kMetPerDeg);
-    }
-    return true;
-}
 
 QVector3D MapView3D::toLocal(double x, double y, double z) const
 {

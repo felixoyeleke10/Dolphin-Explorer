@@ -29,7 +29,6 @@ class QToolButton;
 
 namespace dolphin::app {
 class DataLayer;
-class ImportService;
 class OperationManager;
 }
 
@@ -63,7 +62,6 @@ public:
     ~SubBottomWindow() override = default;
 
     void setLayer(app::DataLayer*      layer,
-                  app::ImportService*  import_service,
                   const std::string&   source_path,
                   uint64_t             source_size_bytes = 0);
     void clearLayer();
@@ -206,7 +204,6 @@ private:
     // -- Data -------------------------------------------------------------
     std::vector<core::Contact> m_project_contacts;  // full list, synced via the bus
     app::DataLayer*     m_layer             = nullptr;
-    app::ImportService* m_import_service    = nullptr;
     std::string         m_source_path;
     uint64_t            m_source_size_bytes = 0;
     int                    m_total_traces = 0;

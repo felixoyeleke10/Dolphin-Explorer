@@ -357,7 +357,14 @@ void WaterfallView::setParams(const WaterfallParams& p)
             [this, w, gen, raw_snap]() {
                 w->deleteLater();
                 if (gen != m_rebuild_gen.load()) return;
-                setPreassembledRows(*raw_snap, w->result(), true);
+                try {
+                    setPreassembledRows(*raw_snap, w->result(), true);
+                } catch (...) {
+                    // Keep the previous rendered rows on an exceptional rebuild;
+                    // a later parameter change can safely retry.
+                    m_dirty = true;
+                    update();
+                }
             });
         w->setFuture(QtConcurrent::run([raw_snap, par, seabed, use_sb]() {
             return runPipeline(*raw_snap, par, seabed, use_sb);

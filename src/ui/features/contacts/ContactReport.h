@@ -1,7 +1,6 @@
 #pragma once
-// ContactReport — generates a contacts report as PDF (QPdfWriter) or Word .docx
-// (OOXML built with util::ZipWriter). Both outputs are produced from one shared
-// row model so they stay in sync.
+// ContactReport — generates a machine-readable contact CSV or a formatted
+// report as PDF/Word. PDF and DOCX share one presentation row model.
 #include <QString>
 #include <vector>
 #include "core/Contact.h"

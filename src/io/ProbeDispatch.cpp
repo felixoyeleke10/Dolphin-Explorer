@@ -32,11 +32,11 @@ std::string fileFilterForArtifactType(core::ArtifactType type)
         case core::ArtifactType::Sidescan:
             return "Sidescan Files (*.xtf *.jsf *.dlpd *.dpcache)";
         case core::ArtifactType::SubBottom:
-            return "Sub-Bottom Files (*.segy *.sgy *.dlpd *.dpcache)";
+            return "Sub-Bottom Files (*.xtf *.jsf *.segy *.sgy *.dlpd *.dpcache)";
         case core::ArtifactType::Magnetometer:
             return "Magnetometer Files (*.xtf *.dlpd *.dpcache)";
         case core::ArtifactType::Multibeam:
-            return "Bathymetry Files (*.dlpd *.dpcache)";
+            return "Multibeam import is not available (*.unsupported)";
         case core::ArtifactType::Raster:
             return "Raster Files (*.tif *.tiff *.png *.jpg *.jpeg)";
         default:
@@ -74,7 +74,13 @@ ProbeResult probeFile(const std::string& path)
         r.has_sidescan     = meta.sidescan_ping_count   > 0;
         r.has_subbottom    = meta.subbottom_trace_count > 0;
         r.has_magnetometer = meta.mag_sample_count      > 0;
-        r.has_multibeam    = meta.multibeam_ping_count  > 0;
+        const bool contains_multibeam = meta.multibeam_ping_count > 0;
+        // ParsedCacheReader can index the type marker but does not yet decode a
+        // MultibeamPing payload. Do not offer a checkbox that can only fail later.
+        r.has_multibeam = false;
+        if (contains_multibeam)
+            r.warnings.push_back(
+                "DLPD contains multibeam records, which this build cannot decode");
 
         if (!meta.coordinate_ref.empty()) {
             r.declared_crs   = meta.coordinate_ref;
@@ -119,9 +125,12 @@ ProbeResult probeFile(const std::string& path)
             r.channels.push_back(ch);
         }
 
-        r.success = r.has_sidescan || r.has_subbottom || r.has_magnetometer || r.has_multibeam;
-        if (!r.success)
-            r.error_message = "DLPD contains no recognised artifact types";
+        r.success = r.has_sidescan || r.has_subbottom || r.has_magnetometer;
+        if (!r.success) {
+            r.error_message = contains_multibeam
+                ? "DLPD contains only unsupported multibeam records"
+                : "DLPD contains no supported artifact types";
+        }
         return r;
     }
 

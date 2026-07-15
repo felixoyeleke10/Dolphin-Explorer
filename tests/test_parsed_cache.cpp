@@ -123,6 +123,18 @@ public:
     }
 };
 
+class NullReader : public io::IFormatReader {
+public:
+    bool open(const std::string&) override { return true; }
+    void close() override {}
+    bool isOpen() const override { return true; }
+    std::string formatName() const override { return "NULL"; }
+    io::FormatMeta metadata() override { return {}; }
+    core::ArtifactIndex buildIndex(io::ProgressFn) override { return {}; }
+    std::optional<core::Artifact> readArtifact(const core::ArtifactIndexEntry&) override
+    { return std::nullopt; }
+};
+
 // ---------------------------------------------------------------------------
 // Temp-file RAII helper
 // ---------------------------------------------------------------------------
@@ -211,6 +223,148 @@ static void test_stale_cache_detection()
         }
     }
     CHECK(!dolphin::io::parsedCacheIsValid(tmp2.path));
+
+    // Compatible header only: no records/footer means there is nothing reusable.
+    TempFile header_only;
+    SyntheticReader header_reader;
+    header_reader.add(makePing(1, 1'000'000, 48.0, -52.0));
+    dolphin::core::ArtifactIndex header_index;
+    CHECK(dolphin::io::writeParsedCache(
+        header_only.path, header_reader.source_index, header_reader, header_index));
+    CHECK(header_index.size() == 1);
+    std::error_code ec;
+    std::filesystem::resize_file(
+        std::filesystem::path(header_only.path),
+        header_index.entries.front().file_offset, ec);
+    CHECK(!ec);
+    CHECK(!dolphin::io::parsedCacheIsValid(header_only.path));
+
+    // Compatible header plus a truncated record is also unusable.
+    TempFile truncated;
+    SyntheticReader truncated_reader;
+    truncated_reader.add(makePing(2, 2'000'000, 48.1, -52.1));
+    dolphin::core::ArtifactIndex truncated_index;
+    CHECK(dolphin::io::writeParsedCache(
+        truncated.path, truncated_reader.source_index, truncated_reader,
+        truncated_index));
+    const auto& entry = truncated_index.entries.front();
+    std::filesystem::resize_file(
+        std::filesystem::path(truncated.path),
+        entry.file_offset + entry.byte_length - 1, ec);
+    CHECK(!ec);
+    CHECK(!dolphin::io::parsedCacheIsValid(truncated.path));
+}
+
+// ---------------------------------------------------------------------------
+// Test: empty/unsupported writes never publish or replace a durable cache
+// ---------------------------------------------------------------------------
+
+static void test_empty_writes_not_published()
+{
+    using namespace dolphin;
+
+    NullReader null_reader;
+    core::ArtifactIndex empty_source;
+    core::ArtifactIndex empty_output;
+
+    TempFile fresh;
+    CHECK(!io::writeParsedCache(
+        fresh.path, empty_source, null_reader, empty_output));
+    CHECK(!std::filesystem::exists(std::filesystem::path(fresh.path)));
+
+    // A failed rewrite must preserve the previously published cache.
+    TempFile existing;
+    SyntheticReader valid_reader;
+    valid_reader.add(makePing(3, 3'000'000, 48.2, -52.2));
+    core::ArtifactIndex valid_index;
+    CHECK(io::writeParsedCache(
+        existing.path, valid_reader.source_index, valid_reader, valid_index));
+    const auto original_size = std::filesystem::file_size(existing.path);
+    CHECK(!io::writeParsedCache(
+        existing.path, empty_source, null_reader, empty_output));
+    CHECK(std::filesystem::file_size(existing.path) == original_size);
+    CHECK(io::parsedCacheIsValid(existing.path));
+
+    // Non-empty input containing only unsupported artifact types must not leave
+    // a misleading header-only DLPD either.
+    TempFile unsupported;
+    core::RasterGrid grid;
+    grid.id = 4;
+    std::vector<core::Artifact> buffer{core::Artifact{std::move(grid)}};
+    core::ArtifactIndex unsupported_index;
+    CHECK(!io::writeArtifactBufferToCache(
+        unsupported.path, buffer, {}, unsupported_index));
+    CHECK(!std::filesystem::exists(std::filesystem::path(unsupported.path)));
+
+    // Mixed supported/unsupported output must fail as a unit. Publishing only
+    // the supported prefix would silently change the processing result.
+    TempFile mixed;
+    auto ping = makePing(5, 5'000'000, 48.3, -52.3);
+    core::RasterGrid mixed_grid;
+    mixed_grid.id = 6;
+    std::vector<core::Artifact> mixed_buffer{
+        core::Artifact{std::move(ping)}, core::Artifact{std::move(mixed_grid)}};
+    core::ArtifactIndex mixed_index;
+    CHECK(!io::writeArtifactBufferToCache(
+        mixed.path, mixed_buffer, {}, mixed_index));
+    CHECK(!std::filesystem::exists(std::filesystem::path(mixed.path)));
+
+    // An indexed artifact that cannot be decoded is also a failed cache build,
+    // not permission to publish an incomplete subset.
+    TempFile undecodable;
+    core::ArtifactIndex claimed_source;
+    core::ArtifactIndexEntry claimed_entry;
+    claimed_entry.artifact_id = 7;
+    claimed_entry.type = core::ArtifactType::Sidescan;
+    claimed_source.entries.push_back(claimed_entry);
+    CHECK(!io::writeParsedCache(
+        undecodable.path, claimed_source, null_reader, empty_output));
+    CHECK(!std::filesystem::exists(std::filesystem::path(undecodable.path)));
+
+    // A valid rebuild must atomically replace an existing destination on
+    // Windows as well as POSIX.
+    SyntheticReader replacement_reader;
+    replacement_reader.add(makePing(8, 8'000'000, 49.0, -53.0));
+    replacement_reader.add(makePing(9, 9'000'000, 49.1, -53.1));
+    core::ArtifactIndex replacement_index;
+    CHECK(io::writeParsedCache(existing.path, replacement_reader.source_index,
+                               replacement_reader, replacement_index));
+    CHECK(replacement_index.size() == 2);
+    io::ParsedCacheReader replaced;
+    CHECK(replaced.open(existing.path));
+    const auto replaced_index = replaced.quickIndex();
+    CHECK(replaced_index.size() == 2);
+    CHECK(replaced_index.entries.front().artifact_id == 8);
+}
+
+static void test_footerless_cache_repaired()
+{
+    using namespace dolphin;
+    TempFile legacy;
+    SyntheticReader writer;
+    writer.add(makePing(10, 10'000'000, 50.0, -54.0));
+    writer.add(makePing(11, 11'000'000, 50.1, -54.1));
+    core::ArtifactIndex written;
+    CHECK(io::writeParsedCache(
+        legacy.path, writer.source_index, writer, written));
+
+    const auto& last = written.entries.back();
+    std::error_code ec;
+    std::filesystem::resize_file(
+        legacy.path, last.file_offset + last.byte_length, ec);
+    CHECK(!ec);
+    CHECK(!io::parsedCacheIsValid(legacy.path));
+
+    io::ParsedCacheReader scanner;
+    CHECK(scanner.open(legacy.path));
+    const auto scanned = scanner.buildIndex();
+    CHECK(scanned.size() == 2);
+    scanner.close();
+
+    CHECK(io::parsedCacheIsValid(legacy.path));
+    io::ParsedCacheReader reopened;
+    CHECK(reopened.open(legacy.path));
+    CHECK(reopened.quickIndex().size() == 2);
 }
 
 // ---------------------------------------------------------------------------
@@ -520,6 +674,8 @@ static void test_time_span_from_index()
 int main()
 {
     test_stale_cache_detection();
+    test_empty_writes_not_published();
+    test_footerless_cache_repaired();
     test_sidescan_round_trip();
     test_metadata_persistence();
     test_valid_cache_accepted();

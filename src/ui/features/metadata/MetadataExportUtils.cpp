@@ -2,10 +2,10 @@
 #include "ui/features/metadata/MetadataExportUtils.h"
 
 #include <QAbstractItemModel>
-#include <QFile>
 #include <QFileDialog>
 #include <QItemSelectionModel>
 #include <QMessageBox>
+#include <QSaveFile>
 #include <QSet>
 #include <QSortFilterProxyModel>
 #include <QTableView>
@@ -69,14 +69,16 @@ QString buildTabText(QSortFilterProxyModel* proxy, QTableView* table,
 void exportToCsv(QWidget* parent, QSortFilterProxyModel* proxy, QTableView* table,
                  bool selection_only)
 {
-    const QString path = QFileDialog::getSaveFileName(
+    QString path = QFileDialog::getSaveFileName(
         parent,
         selection_only ? QObject::tr("Export Selection to CSV")
                        : QObject::tr("Export All to CSV"),
         QString(), QObject::tr("CSV files (*.csv);;All files (*)"));
     if (path.isEmpty()) return;
+    if (!path.endsWith(QStringLiteral(".csv"), Qt::CaseInsensitive))
+        path += QStringLiteral(".csv");
 
-    QFile f(path);
+    QSaveFile f(path);
     if (!f.open(QIODevice::WriteOnly | QIODevice::Text)) {
         QMessageBox::warning(parent, QObject::tr("Export Failed"),
                              QObject::tr("Could not write to:\n%1").arg(path));
@@ -114,6 +116,18 @@ void exportToCsv(QWidget* parent, QSortFilterProxyModel* proxy, QTableView* tabl
         writeRows([&](int r){ return sel_rows.contains(r); });
     } else {
         writeRows([](int){ return true; });
+    }
+
+    ts.flush();
+    if (ts.status() != QTextStream::Ok || f.error() != QFileDevice::NoError) {
+        f.cancelWriting();
+        QMessageBox::warning(parent, QObject::tr("Export Failed"),
+                             QObject::tr("Could not finish writing:\n%1").arg(path));
+        return;
+    }
+    if (!f.commit()) {
+        QMessageBox::warning(parent, QObject::tr("Export Failed"),
+                             QObject::tr("Could not publish:\n%1").arg(path));
     }
 }
 

@@ -9,6 +9,8 @@ add_library(dolphin-app STATIC
     project/Project.Groups.cpp
     project/Project.Serialization.cpp
     project/Project.Serialization.Read.cpp
+    project/Project.Serialization.Layers.Read.cpp
+    project/Project.Serialization.Entities.cpp
 
     # Layers
     layers/DataLayer.cpp

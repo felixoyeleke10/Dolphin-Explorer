@@ -9,13 +9,12 @@
 
 namespace dolphin::ui {
 
-CorrectionBatchOperator::CorrectionBatchOperator(app::ImportService*      import_svc,
-                                                  DiagnosticsHub*          hub,
+CorrectionBatchOperator::CorrectionBatchOperator(DiagnosticsHub*          hub,
                                                   ExecutionProgressDialog* overlay,
                                                   QObject*                 parent)
     : QObject(parent)
-    , m_sss_svc(new app::SidescanCorrectionService(import_svc, this))
-    , m_sbp_svc(new app::SubBottomCorrectionService(import_svc, this))
+    , m_sss_svc(new app::SidescanCorrectionService(this))
+    , m_sbp_svc(new app::SubBottomCorrectionService(this))
     , m_hub(hub)
     , m_overlay(overlay)
 {
@@ -54,6 +53,7 @@ void CorrectionBatchOperator::applySSS(app::DataLayer*                      laye
         tr("Baking corrections into %1…").arg(label),
         QString::fromStdString(lid), 0, QStringLiteral("COR"));
     m_job_ids[lid] = jid;
+    m_job_generations[lid] = m_generation;
     m_overlay->addJob(lid, label, QStringLiteral("COR"), 0.f);
 
     m_sss_svc->applyToLine(lid, layer->artifact_store_path, layer->artifact_store_format,
@@ -79,6 +79,7 @@ void CorrectionBatchOperator::applySBP(app::DataLayer*             layer,
         tr("Baking corrections into %1…").arg(label),
         QString::fromStdString(lid), 0, QStringLiteral("SBP"));
     m_job_ids[lid] = jid;
+    m_job_generations[lid] = m_generation;
     m_overlay->addJob(lid, label, QStringLiteral("SBP"), 0.f);
 
     m_sbp_svc->applyToLine(lid, layer->artifact_store_path, layer->artifact_store_format,
@@ -147,6 +148,7 @@ void CorrectionBatchOperator::bakeCustomized(app::Project& project)
                         tr("Baking corrections into %1…").arg(label),
                         QString::fromStdString(lid), batch_id, QStringLiteral("COR"));
                     m_job_ids[lid] = jid;
+                    m_job_generations[lid] = m_generation;
                     m_overlay->addJob(lid, label, QStringLiteral("COR"), 0.f);
                     m_sss_svc->applyToLine(lid, store_path, store_fmt, ai, src_path, params);
                 });
@@ -209,6 +211,7 @@ void CorrectionBatchOperator::bakeCustomized(app::Project& project)
                         tr("Baking corrections into %1…").arg(label),
                         QString::fromStdString(lid), batch_id, QStringLiteral("SBP"));
                     m_job_ids[lid] = jid;
+                    m_job_generations[lid] = m_generation;
                     m_overlay->addJob(lid, label, QStringLiteral("SBP"), 0.f);
                     m_sbp_svc->applyToLine(lid, store_path, store_fmt, ai, src_path, gain, signal);
                 });
@@ -224,6 +227,7 @@ void CorrectionBatchOperator::onSssPersisted(const std::string& lid,
                                               const std::string& path,
                                               const core::ArtifactIndex& idx)
 {
+    if (!acceptCurrentGeneration(lid)) return;
     jobPersisted(lid, path, idx);
     if (m_sss_batch_layer_ids.erase(lid) > 0)
         settleSss(true);
@@ -231,6 +235,7 @@ void CorrectionBatchOperator::onSssPersisted(const std::string& lid,
 
 void CorrectionBatchOperator::onSssSkipped(const std::string& lid)
 {
+    if (!acceptCurrentGeneration(lid)) return;
     jobSkipped(lid);
     if (m_sss_batch_layer_ids.erase(lid) > 0)
         settleSss(true); // skipped is not a failure
@@ -239,6 +244,7 @@ void CorrectionBatchOperator::onSssSkipped(const std::string& lid)
 void CorrectionBatchOperator::onSssFailed(const std::string& lid,
                                            const std::string& error)
 {
+    if (!acceptCurrentGeneration(lid)) return;
     jobFailed(lid, QString::fromStdString(error));
     if (m_sss_batch_layer_ids.erase(lid) > 0)
         settleSss(false);
@@ -248,6 +254,7 @@ void CorrectionBatchOperator::onSbpPersisted(const std::string& lid,
                                               const std::string& path,
                                               const core::ArtifactIndex& idx)
 {
+    if (!acceptCurrentGeneration(lid)) return;
     jobPersisted(lid, path, idx);
     if (m_sbp_batch_layer_ids.erase(lid) > 0)
         settleSbp(true);
@@ -255,6 +262,7 @@ void CorrectionBatchOperator::onSbpPersisted(const std::string& lid,
 
 void CorrectionBatchOperator::onSbpSkipped(const std::string& lid)
 {
+    if (!acceptCurrentGeneration(lid)) return;
     jobSkipped(lid);
     if (m_sbp_batch_layer_ids.erase(lid) > 0)
         settleSbp(true);
@@ -263,9 +271,27 @@ void CorrectionBatchOperator::onSbpSkipped(const std::string& lid)
 void CorrectionBatchOperator::onSbpFailed(const std::string& lid,
                                            const std::string& error)
 {
+    if (!acceptCurrentGeneration(lid)) return;
     jobFailed(lid, QString::fromStdString(error));
     if (m_sbp_batch_layer_ids.erase(lid) > 0)
         settleSbp(false);
+}
+
+bool CorrectionBatchOperator::acceptCurrentGeneration(const std::string& lid)
+{
+    const auto generation_it = m_job_generations.find(lid);
+    if (generation_it == m_job_generations.end())
+        return false;
+
+    const bool current = generation_it->second == m_generation;
+    m_job_generations.erase(generation_it);
+    if (!current) {
+        // cancelBatch() already marked the DiagnosticsHub job cancelled. Keep
+        // the layer blocked until its worker settles, then release it here.
+        m_job_ids.erase(lid);
+        return false;
+    }
+    return true;
 }
 
 void CorrectionBatchOperator::settleSss(bool succeeded)
@@ -317,26 +343,37 @@ void CorrectionBatchOperator::settleSbp(bool succeeded)
 
 void CorrectionBatchOperator::cancelBatch()
 {
-    // SSS batch — drain queued items first, then mark hub batch cancelled.
+    // A project transition invalidates standalone applies as well as Apply-All
+    // batches. Running workers cannot currently be interrupted safely during
+    // their atomic DLPD write, so let them settle but suppress every terminal
+    // signal from this generation.
+    ++m_generation;
+    for (const auto& [lid, job_id] : m_job_ids) {
+        Q_UNUSED(lid)
+        m_hub->cancelJob(job_id);
+    }
+
+    // SSS batch — drain queued items and mark the hub batch cancelled.
     if (m_sss_batch_id != 0) {
-        m_sss_pending -= static_cast<int>(m_sss_queue.size());
         m_sss_queue.clear();
         m_hub->cancelBatch(m_sss_batch_id);
         m_sss_batch_id = 0;
-        // If nothing is in-flight, clean up now; otherwise let settling do it.
-        if (m_sss_dispatched == 0)
-            m_sss_batch_layer_ids.clear();
     }
 
-    // SBP batch — same pattern.
+    // SBP batch — same treatment.
     if (m_sbp_batch_id != 0) {
-        m_sbp_pending -= static_cast<int>(m_sbp_queue.size());
         m_sbp_queue.clear();
         m_hub->cancelBatch(m_sbp_batch_id);
         m_sbp_batch_id = 0;
-        if (m_sbp_dispatched == 0)
-            m_sbp_batch_layer_ids.clear();
     }
+
+    // Stale service completions are generation-filtered before settleSss/Sbp,
+    // so reset the old batch accounting now rather than leaving dispatch slots
+    // occupied forever.
+    m_sss_pending = m_sss_succeeded = m_sss_total = m_sss_dispatched = 0;
+    m_sbp_pending = m_sbp_succeeded = m_sbp_total = m_sbp_dispatched = 0;
+    m_sss_batch_layer_ids.clear();
+    m_sbp_batch_layer_ids.clear();
 }
 
 void CorrectionBatchOperator::dispatchNextSss()

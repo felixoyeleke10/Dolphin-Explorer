@@ -6,6 +6,7 @@
 #include "core/SidescanPing.h"
 #include <QObject>
 #include <QString>
+#include <cstdint>
 #include <deque>
 #include <functional>
 #include <string>
@@ -15,7 +16,6 @@
 
 namespace dolphin::app {
 class DataLayer;
-class ImportService;
 class Project;
 class SidescanCorrectionService;
 class SubBottomCorrectionService;
@@ -39,8 +39,7 @@ namespace dolphin::ui {
 class CorrectionBatchOperator : public QObject {
     Q_OBJECT
 public:
-    explicit CorrectionBatchOperator(app::ImportService*      import_svc,
-                                     DiagnosticsHub*          hub,
+    explicit CorrectionBatchOperator(DiagnosticsHub*          hub,
                                      ExecutionProgressDialog* overlay,
                                      QObject*                 parent = nullptr);
 
@@ -65,9 +64,10 @@ public:
     // batch depending on which modalities have customized layers.
     void bakeCustomized(app::Project& project);
 
-    // Cancel any in-flight batch: drains the queued items immediately;
-    // in-flight service calls are allowed to finish but their hub jobs are
-    // marked cancelled and no batchComplete is re-emitted.
+    // Invalidate the current project's correction generation. Queued batch
+    // items are drained immediately; already-running service calls may finish
+    // their file write, but their terminal signals are discarded and cannot be
+    // committed into a subsequently opened project.
     void cancelBatch();
 
 signals:
@@ -92,6 +92,11 @@ private:
     void onSbpSkipped  (const std::string& lid);
     void onSbpFailed   (const std::string& lid, const std::string& error);
 
+    // Consume the generation recorded when a service call was dispatched.
+    // False means the project changed while that call was running, so none of
+    // its terminal state may escape this coordinator.
+    bool acceptCurrentGeneration(const std::string& lid);
+
     void jobPersisted(const std::string& lid, const std::string& path,
                       const core::ArtifactIndex& idx);
     void jobSkipped  (const std::string& lid);
@@ -112,6 +117,8 @@ private:
 
     // Per-layer tracking: layer_id → DiagnosticsHub job id
     std::unordered_map<std::string, uint32_t> m_job_ids;
+    std::unordered_map<std::string, uint64_t> m_job_generations;
+    uint64_t                                  m_generation = 1;
 
     // Active batch ids (0 = no batch in flight)
     uint32_t m_sss_batch_id   = 0;

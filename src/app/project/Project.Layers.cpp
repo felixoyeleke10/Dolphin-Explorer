@@ -1,7 +1,6 @@
 // Project.Layers.cpp — DataLayer CRUD and reorder methods.
 #include "app/project/Project.h"
 #include "app/project/Project_p.h"
-#include <QDebug>
 #include <algorithm>
 #include <filesystem>
 #include <unordered_map>
@@ -69,8 +68,6 @@ void Project::removeLayer(const std::string& id)
 
     const std::string source_id    = (*it)->source_id;
     const std::string store_path   = (*it)->artifact_store_path;
-    const std::string store_format = detail::normaliseFormat((*it)->artifact_store_format);
-
     m_layers.erase(it);
 
     const bool source_still_used = std::any_of(m_layers.begin(), m_layers.end(),
@@ -84,14 +81,10 @@ void Project::removeLayer(const std::string& id)
     const bool store_still_used = !store_path.empty() && std::any_of(
         m_layers.begin(), m_layers.end(),
         [&](const auto& l){ return l->artifact_store_path == store_path; });
-    if (!store_still_used && (store_format == "dlpd" || store_format == "dpcache")
-            && !store_path.empty()) {
-        std::error_code ec;
-        std::filesystem::remove(std::filesystem::path(store_path), ec);
-    }
-
     // Remove this layer's derived map-raster sidecars (".draster"); if the store
-    // itself is gone, remove all of its raster sidecars too. These are derived
+    // is no longer referenced, remove all of its raster sidecars too. Parsed
+    // stores remain durable workflow assets until the project itself is deleted.
+    // Raster sidecars are derived
     // artifacts (rebuilt on next load); naming is "<store_file>.<layerId>.q<tier>
     // .draster" — see ui/features/map/sidescan/SidescanRasterCache.
     if (!store_path.empty()) {
@@ -175,23 +168,9 @@ void Project::purgeOrphanedCaches()
             referenced.insert(norm.toStdString());
     }
 
-    // Delete every .dlpd / .dpcache in data/ that no layer references.
-    for (const auto& entry : fs::directory_iterator(data_dir, ec)) {
-        if (!entry.is_regular_file()) continue;
-        const std::string ext = entry.path().extension().string();
-        if (ext != ".dlpd" && ext != ".dpcache") continue;
-        const std::string norm =
-            detail::normalisePath(entry.path().string()).toStdString();
-        if (!referenced.count(norm)) {
-            fs::remove(entry.path(), ec);
-            if (ec) {
-                qWarning("purgeOrphanedCaches: cannot remove \"%s\": %s",
-                         entry.path().string().c_str(), ec.message().c_str());
-                ec.clear();
-            }
-        }
-    }
-
+    // Parsed .dlpd / .dpcache stores are durable workflow assets (D-04), even
+    // after a layer stops referencing them. Only derived map-raster sidecars are
+    // eligible for orphan cleanup.
     // Delete orphaned map-raster sidecars (".draster") whose store is no longer
     // referenced. A sidecar "<store>.<layerId>.q<tier>.draster" belongs to a store
     // iff that store's normalized path + "." is a prefix of the sidecar's path.

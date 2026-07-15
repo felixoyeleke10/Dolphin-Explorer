@@ -23,12 +23,19 @@
 namespace dolphin::ui {
 
 void SubBottomWindow::setLayer(app::DataLayer*     layer,
-                               app::ImportService* import_service,
                                const std::string&  source_path,
                                uint64_t            source_size_bytes)
 {
+    if (m_proc_debounce) m_proc_debounce->stop();
+    if (m_op_mgr) {
+        m_op_mgr->cancelByKey("sbpwin:load");
+        m_op_mgr->cancelByKey("sbpwin:proc");
+    }
+    finishProgress();
+    setDataState(ViewerDataState::Idle);
+    m_traces_raw.reset();
+
     m_layer             = layer;
-    m_import_service    = import_service;
     m_source_path       = source_path;
     m_source_size_bytes = source_size_bytes;
     m_total_traces      = layer ? layer->subBottomCount() : 0;
@@ -46,7 +53,7 @@ void SubBottomWindow::setLayer(app::DataLayer*     layer,
     if (m_hscroll)   m_hscroll->setRange(0, 0);
     if (m_inspector) m_inspector->refresh(nullptr, {}, 0, 0, 0, 0.f, 0.f, 0.f, 0.f);
 
-    if (!layer || !import_service || m_total_traces == 0) {
+    if (!layer || m_total_traces == 0) {
         if (m_status_left)
             m_status_left->setText(layer ? tr("No sub-bottom traces in this layer.")
                                          : tr("No layer loaded."));
@@ -67,7 +74,6 @@ void SubBottomWindow::setLayer(app::DataLayer*     layer,
     const std::string store_path   = layer->artifact_store_path;
     const std::string store_format = layer->artifact_store_format;
     const core::ArtifactIndex idx  = layer->artifact_index;
-    auto* svc                      = import_service;
     const std::string lid          = layer->id;
 
     struct LoadResult {
@@ -85,11 +91,12 @@ void SubBottomWindow::setLayer(app::DataLayer*     layer,
     // can set Failed — a skipped on_done would leave the busy state stuck.
     m_op_mgr->run<LoadResult>(
         tr("Loading sub-bottom data"),
-        [svc, store_path, store_format, idx, source_path = m_source_path]
+        [store_path, store_format, idx, source_path = m_source_path]
         (app::CancellationToken cancel) -> LoadResult {
             LoadResult res;
             try {
-                res.traces = svc->loadAllSubBottomTraces(store_path, store_format, idx, source_path);
+                res.traces = app::ImportService::loadAllSubBottomTraces(
+                    store_path, store_format, idx, source_path);
                 if (cancel.isCancelled()) return res;   // superseded; on_done is skipped
 
                 const int n = static_cast<int>(res.traces.size());
@@ -139,13 +146,13 @@ void SubBottomWindow::setLayer(app::DataLayer*     layer,
 
 void SubBottomWindow::clearLayer()
 {
+    if (m_proc_debounce) m_proc_debounce->stop();
     if (m_op_mgr) {
         m_op_mgr->cancelByKey("sbpwin:load");
         m_op_mgr->cancelByKey("sbpwin:proc");
     }
     setDataState(ViewerDataState::Idle);
     m_layer             = nullptr;
-    m_import_service    = nullptr;
     m_source_path.clear();
     m_total_traces      = 0;
     m_traces_raw.reset();
@@ -166,7 +173,7 @@ const std::string& SubBottomWindow::currentLayerId() const
 void SubBottomWindow::reloadCurrentLayer()
 {
     if (!m_layer) return;
-    setLayer(m_layer, m_import_service, m_source_path, m_source_size_bytes);
+    setLayer(m_layer, m_source_path, m_source_size_bytes);
 }
 
 void SubBottomWindow::onViewerRefresh(ViewerRefreshReason reason,

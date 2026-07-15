@@ -7,14 +7,13 @@
 #include "core/SpatialRef.h"
 
 #include <QDateTime>
-#include <QFile>
 #include <QFileDialog>
-#include <QFileInfo>
 #include <QMarginsF>
 #include <QMessageBox>
 #include <QPageLayout>
 #include <QPageSize>
 #include <QPdfWriter>
+#include <QSaveFile>
 #include <QTextDocument>
 
 namespace dolphin::ui {
@@ -194,7 +193,7 @@ QString docxDocumentXml(const QString& title, const QString& meta, const std::ve
 namespace ContactReport {
 
 bool writeCsv(const QString& path, const QString& /*title*/,
-              const std::vector<core::Contact>& contacts, app::Project* project)
+              const std::vector<core::Contact>& contacts, app::Project* /*project*/)
 {
     auto esc = [](const QString& s) -> QString {
         if (s.contains(QLatin1Char(',')) || s.contains(QLatin1Char('"')) || s.contains(QLatin1Char('\n'))) {
@@ -204,23 +203,36 @@ bool writeCsv(const QString& path, const QString& /*title*/,
         return s;
     };
 
-    QString out;
-    QStringList hdr;
-    for (const char* col : kHeaders) hdr << esc(QObject::tr(col));
-    out += hdr.join(QLatin1Char(',')) + QLatin1Char('\n');
-
-    for (const auto& r : buildRows(contacts, project)) {
-        const QStringList f{ r.label, r.sensor, r.source, r.cls, r.conf, r.position, r.depth, r.range };
+    QString out = QStringLiteral(
+        "Label,Latitude,Longitude,Depth_m,Range_m,Width_m,Height_m,"
+        "Classification,Confidence,Line,Notes\n");
+    for (const auto& c : contacts) {
+        const QStringList f{
+            QString::fromStdString(c.label),
+            QString::number(c.lat, 'f', 8),
+            QString::number(c.lon, 'f', 8),
+            QString::number(c.depth_m, 'f', 2),
+            QString::number(c.range_m, 'f', 2),
+            QString::number(c.width_m, 'f', 2),
+            QString::number(c.height_m, 'f', 2),
+            QString::fromStdString(c.classification),
+            confidenceLabel(c.confidence),
+            QString::fromStdString(c.line_id),
+            QString::fromStdString(c.notes),
+        };
         QStringList cells;
         for (const QString& cell : f) cells << esc(cell);
         out += cells.join(QLatin1Char(',')) + QLatin1Char('\n');
     }
 
-    QFile file(path);
+    QSaveFile file(path);
     if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) return false;
-    file.write("\xEF\xBB\xBF");                 // UTF-8 BOM so Excel reads Unicode
-    file.write(out.toUtf8());
-    return true;
+    const QByteArray bytes = QByteArrayLiteral("\xEF\xBB\xBF") + out.toUtf8();
+    if (file.write(bytes) != bytes.size()) {
+        file.cancelWriting();
+        return false;
+    }
+    return file.commit();
 }
 
 bool writePdf(const QString& path, const QString& title,
@@ -229,18 +241,22 @@ bool writePdf(const QString& path, const QString& title,
     const auto rows = buildRows(contacts, project);
     const QString html = rowsToHtml(title, metaLine(title, project, static_cast<int>(rows.size())), rows);
 
-    QPdfWriter writer(path);
-    writer.setPageSize(QPageSize(QPageSize::A4));
-    writer.setPageOrientation(QPageLayout::Landscape);
-    writer.setPageMargins(QMarginsF(12, 12, 12, 12), QPageLayout::Millimeter);
-
+    QSaveFile file(path);
+    if (!file.open(QIODevice::WriteOnly)) return false;
     {
+        QPdfWriter writer(&file);
+        writer.setPageSize(QPageSize(QPageSize::A4));
+        writer.setPageOrientation(QPageLayout::Landscape);
+        writer.setPageMargins(QMarginsF(12, 12, 12, 12), QPageLayout::Millimeter);
         QTextDocument doc;
         doc.setHtml(html);
         doc.print(&writer);   // QPdfWriter is a QPagedPaintDevice → paginates automatically
-    }   // writer flushes on destruction
-    QFileInfo fi(path);
-    return fi.exists() && fi.size() > 0;   // don't report success on an unwritable path
+    } // writer flushes into the still-open transactional device on destruction
+    if (file.error() != QFileDevice::NoError) {
+        file.cancelWriting();
+        return false;
+    }
+    return file.commit();
 }
 
 bool writeDocx(const QString& path, const QString& title,

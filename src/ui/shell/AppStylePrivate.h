@@ -8,6 +8,10 @@ QString qssBase();
 QString qssShell();
 QString qssPanels();
 QString qssDialogs();
+QString qssDialogChrome();
+QString qssDialogImport();
+QString qssDialogContacts();
+QString qssDialogProgress();
 QString qssAcousticViews();
 QString qssNodeGraph();
 } // namespace dolphin::ui::detail

@@ -55,7 +55,7 @@ struct CorrectionResult {
     bool                skipped = false;
 };
 
-CorrectionResult execute(const CorrectionRequest& req, ImportService* svc)
+CorrectionResult execute(const CorrectionRequest& req)
 {
     CorrectionResult result;
     result.layer_id = req.layer_id;
@@ -98,7 +98,7 @@ CorrectionResult execute(const CorrectionRequest& req, ImportService* svc)
         meta.artifact_role = io::kArtifactRoleSidecar;  // formal marker on the output
     }
 
-    auto pings = svc->loadAllSidescanPingsFromStore(
+    auto pings = ImportService::loadAllSidescanPingsFromStore(
         req.store_path, req.store_format, req.artifact_index, req.source_path);
 
     if (pings.empty()) {
@@ -183,10 +183,8 @@ CorrectionResult execute(const CorrectionRequest& req, ImportService* svc)
 
 } // namespace
 
-SidescanCorrectionService::SidescanCorrectionService(ImportService* import_service,
-                                                     QObject* parent)
+SidescanCorrectionService::SidescanCorrectionService(QObject* parent)
     : QObject(parent)
-    , m_import_service(import_service)
 {}
 
 void SidescanCorrectionService::applyToLine(
@@ -207,7 +205,6 @@ void SidescanCorrectionService::applyToLine(
     req.params         = params;
     req.viewer_pings   = std::move(viewer_pings);
 
-    ImportService* svc = m_import_service;
     auto* watcher = new QFutureWatcher<CorrectionResult>(this);
     connect(watcher, &QFutureWatcher<CorrectionResult>::finished, this,
             [this, watcher, layer_id]() {
@@ -225,8 +222,8 @@ void SidescanCorrectionService::applyToLine(
                     emit correctionsPersisted(res.layer_id, res.new_path, res.new_index);
                 }
             });
-    watcher->setFuture(QtConcurrent::run([req, svc]() {
-        return execute(req, svc);
+    watcher->setFuture(QtConcurrent::run([req]() {
+        return execute(req);
     }));
 }
 

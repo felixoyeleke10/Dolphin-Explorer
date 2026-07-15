@@ -60,8 +60,9 @@ bool writeArtifactBufferToCache(const std::string& cache_path,
                                 const FormatMeta& meta,
                                 core::ArtifactIndex& out_index);
 
-// Returns true only if the file exists, has the correct magic, and matches
-// the current cache version. Use this to detect stale caches without a full open.
+// Returns true only if the file has a compatible header and a readable,
+// non-empty compact index footer whose entries stay inside the artifact-data
+// region. This is the cheap reuse check: it never scans artifact payloads.
 bool parsedCacheIsValid(const std::string& path);
 
 } // namespace dolphin::io

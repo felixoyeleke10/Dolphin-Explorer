@@ -41,15 +41,22 @@ struct GdalDs {
 
 void setErr(std::string* err, const char* msg) { if (err) *err = msg; }
 
-// Reproject a dataset to WGS84 geographic (lon/lat). Returns a warped VRT the
-// caller must GDALClose, or nullptr when the source has no CRS (warp impossible).
-GDALDataset* warpToWgs84(GDALDataset* src)
+// Reproject a dataset to the requested display CRS. Returns a warped VRT the
+// caller must GDALClose. A source without CRS returns nullptr with attempted=false
+// so callers can deliberately retain native coordinates.
+GDALDataset* warpToCrs(GDALDataset* src, const std::string& target_crs,
+                       bool& attempted, std::string* err)
 {
+    attempted = false;
     const char* srcWkt = src->GetProjectionRef();
     if (!srcWkt || !*srcWkt) return nullptr;
+    attempted = true;
 
     OGRSpatialReference dst;
-    dst.SetWellKnownGeogCS("WGS84");
+    if (target_crs.empty() || dst.SetFromUserInput(target_crs.c_str()) != OGRERR_NONE) {
+        setErr(err, "Target raster CRS is invalid or unavailable.");
+        return nullptr;
+    }
     dst.SetAxisMappingStrategy(OAMS_TRADITIONAL_GIS_ORDER);   // lon, lat order
     char* dstWkt = nullptr;
     dst.exportToWkt(&dstWkt);
@@ -57,6 +64,7 @@ GDALDataset* warpToWgs84(GDALDataset* src)
     GDALDataset* warped = static_cast<GDALDataset*>(GDALAutoCreateWarpedVRT(
         src, srcWkt, dstWkt, GRA_NearestNeighbour, 0.0, nullptr));
     CPLFree(dstWkt);
+    if (!warped) setErr(err, "GDAL could not reproject the raster to the display CRS.");
     return warped;
 }
 
@@ -234,26 +242,44 @@ bool readImageRaster(const std::string& path, RasterImage& out, std::string* err
     return fillImage(ds.ds, out, err, max_dim);
 }
 
-bool readElevationRasterWgs84(const std::string& path, core::RasterGrid& out, std::string* err, int max_dim)
+bool readElevationRasterForCrs(const std::string& path,
+                               const std::string& target_crs,
+                               core::RasterGrid& out, std::string* err, int max_dim)
 {
     ensureGdal();
     GdalDs ds(path);
     if (!ds) { setErr(err, "GDAL could not open the raster."); return false; }
-    GDALDataset* warped = warpToWgs84(ds.ds);
+    bool attempted = false;
+    GDALDataset* warped = warpToCrs(ds.ds, target_crs, attempted, err);
+    if (attempted && !warped) return false;
     const bool ok = fillElevation(warped ? warped : ds.ds, out, err, max_dim);
     if (warped) GDALClose(warped);
     return ok;
 }
 
-bool readImageRasterWgs84(const std::string& path, RasterImage& out, std::string* err, int max_dim)
+bool readImageRasterForCrs(const std::string& path,
+                           const std::string& target_crs,
+                           RasterImage& out, std::string* err, int max_dim)
 {
     ensureGdal();
     GdalDs ds(path);
     if (!ds) { setErr(err, "GDAL could not open the raster."); return false; }
-    GDALDataset* warped = warpToWgs84(ds.ds);
+    bool attempted = false;
+    GDALDataset* warped = warpToCrs(ds.ds, target_crs, attempted, err);
+    if (attempted && !warped) return false;
     const bool ok = fillImage(warped ? warped : ds.ds, out, err, max_dim);
     if (warped) GDALClose(warped);
     return ok;
+}
+
+bool readElevationRasterWgs84(const std::string& path, core::RasterGrid& out, std::string* err, int max_dim)
+{
+    return readElevationRasterForCrs(path, "EPSG:4326", out, err, max_dim);
+}
+
+bool readImageRasterWgs84(const std::string& path, RasterImage& out, std::string* err, int max_dim)
+{
+    return readImageRasterForCrs(path, "EPSG:4326", out, err, max_dim);
 }
 
 } // namespace dolphin::io

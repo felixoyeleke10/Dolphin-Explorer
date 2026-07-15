@@ -15,6 +15,7 @@
 
 #include <QFutureWatcher>
 #include <QLabel>
+#include <QPointer>
 #include <QtConcurrent/QtConcurrent>
 #include <algorithm>
 #include <cmath>
@@ -155,7 +156,6 @@ void SidescanViewController::prebuildTier(const std::string& layer_id,
     SssGeorefParams       georef  = m_georef_params;
     georef.slant_range_corrected  = layer->slant_range_corrected;
     const detail::QualityParams qp = detail::paramsForQuality(quality);
-    app::ImportService*   svc     = m_import_service;
     // Display-time nav correction (model-owned) — applied below so the upgraded
     // tier matches activateLayer's first-paint preview (no nav jump on swap).
     const NavProcessingParams nav_params = layer->nav_state;
@@ -180,9 +180,10 @@ void SidescanViewController::prebuildTier(const std::string& layer_id,
 
     // Keyed per layer+tier so a re-request supersedes; runs in the "map" lane
     // (cap 2) below; tracked in DiagnosticsHub via the OperationManager signals.
+    const QPointer<SidescanViewController> progress_owner(this);
     m_op_mgr->run<PrebuildResult>(
         tr("Prebuilding sidescan tier — %1").arg(QString::fromStdString(layer_id)),
-        [this, svc, store_path, store_format, idx, source_path,
+        [progress_owner, store_path, store_format, idx, source_path,
          layer_src_ref, apply_layer_crs, display_ref, layer_id,
          layer_freq_hz, layer_low_freq_hz, qp, quality, georef, nav_params,
          sss_params, cache_path, cache_meta, raw_cached]
@@ -191,10 +192,13 @@ void SidescanViewController::prebuildTier(const std::string& layer_id,
             // Coarse 0–100 progress, marshalled to the main thread. loadingProgress
             // drives the status bar; prebuildTierProgress carries the layer id so a
             // batch dialog can update the right line's card.
-            auto report = [this, layer_id](int pct) {
-                QMetaObject::invokeMethod(this, [this, layer_id, pct]() {
-                    emit loadingProgress(pct);
-                    emit prebuildTierProgress(layer_id, pct);
+            auto report = [progress_owner, layer_id](int pct) {
+                if (!progress_owner) return;
+                QMetaObject::invokeMethod(progress_owner.data(),
+                    [progress_owner, layer_id, pct]() {
+                    if (!progress_owner) return;
+                    emit progress_owner->loadingProgress(pct);
+                    emit progress_owner->prebuildTierProgress(layer_id, pct);
                 }, Qt::QueuedConnection);
             };
             report(3);
@@ -257,7 +261,7 @@ void SidescanViewController::prebuildTier(const std::string& layer_id,
                     map_idx.entries.insert(map_idx.entries.end(), thin.begin(), thin.end());
                 }
 
-                raw = svc->loadAllSidescanPingsFromStore(
+                raw = app::ImportService::loadAllSidescanPingsFromStore(
                     store_path, store_format, map_idx, source_path, qp.max_samples_per_ping);
                 if (raw.empty()) return res;
 

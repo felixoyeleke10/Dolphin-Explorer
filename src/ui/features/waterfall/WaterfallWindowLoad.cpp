@@ -32,7 +32,7 @@ namespace dolphin::ui {
 
 void WaterfallWindow::loadWindow(int abs_row)
 {
-    if (!m_layer || !m_import_service) {
+    if (!m_layer) {
         m_view->clear();
         m_vscroll->setRange(0, 0);
         return;
@@ -56,7 +56,6 @@ void WaterfallWindow::loadWindow(int abs_row)
     const std::string store_format = m_layer->artifact_store_format;
     const core::ArtifactIndex idx  = m_layer->artifact_index;
     const std::string source_path  = m_source_path;
-    auto* svc                      = m_import_service;
     const int total_entries        = m_total_ssc_entries;
 
     const float epr         = m_entries_per_row;
@@ -100,13 +99,13 @@ void WaterfallWindow::loadWindow(int abs_row)
     // set Failed — a skipped on_done would leave the busy state stuck.
     m_op_mgr->run<LoadResult>(
         tr("Loading waterfall window"),
-        [svc, store_path, store_format, idx, source_path, center_entry,
+        [store_path, store_format, idx, source_path, center_entry,
          layer_src_ref, apply_layer_crs, selected_hz, window_size,
          snap_params, snap_seabed_params, snap_seabed_enabled]
         (app::CancellationToken cancel) -> LoadResult {
             LoadResult result;
             try {
-                auto raw = svc->loadSidescanWindowFromStore(
+                auto raw = app::ImportService::loadSidescanWindowFromStore(
                     store_path, store_format, idx, source_path,
                     static_cast<int64_t>(center_entry), window_size, selected_hz);
 

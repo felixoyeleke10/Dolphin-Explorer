@@ -8,6 +8,7 @@
 //   - reopen invalidation: unknown format string also clears layer index
 //   - dual-format: "dpcache" artifact_store_format accepted on reopen (backward compat)
 //   - layer removal: layer and source removed cleanly; serialised manifest reflects that
+//   - durable parsed stores survive layer removal and project reopen
 //
 // No external test framework — minimal CHECK/FAIL helpers defined below.
 // Entry point: ctest --output-on-failure
@@ -28,6 +29,7 @@
 #include <cmath>
 #include <cstdio>
 #include <fstream>
+#include <limits>
 #include <sstream>
 #include <string>
 
@@ -332,8 +334,73 @@ static void testLayerRemoval()
     CHECK(loaded->sources().empty());
 }
 
-// 9. Display-state round-trip — visible, SRC, QC fraction, bottom-track kind,
-//    and the new per-layer SSS palette all survive save → reopen.
+// Layer removal must never delete a durable parsed store, including stores
+// outside the project's canonical data directory.
+static void testLayerRemovalPreservesExternalParsedStore()
+{
+    QTemporaryDir project_tmp;
+    QTemporaryDir external_tmp;
+    CHECK(project_tmp.isValid());
+    CHECK(external_tmp.isValid());
+    if (!project_tmp.isValid() || !external_tmp.isValid()) return;
+
+    const QString store_path = external_tmp.path() + "/external.dpcache";
+    QFile store(store_path);
+    CHECK(store.open(QIODevice::WriteOnly));
+    CHECK(store.write("durable parsed asset") > 0);
+    store.close();
+
+    const std::string manifest = (project_tmp.path() + "/proj.dlp").toStdString();
+    auto proj = dolphin::app::Project::create("proj", manifest);
+    CHECK(proj != nullptr);
+    if (!proj) return;
+
+    auto* src   = proj->addSource("/fake/a.xtf", "xtf");
+    auto* layer = proj->addLayer(src->id, "a");
+    CHECK(layer != nullptr);
+    if (!layer) return;
+    layer->artifact_store_path   = store_path.toStdString();
+    layer->artifact_store_format = "dpcache";
+
+    const std::string layer_id = layer->id;
+    proj->removeLayer(layer_id);
+
+    CHECK(QFileInfo::exists(store_path));
+    CHECK(QFileInfo(store_path).size() > 0);
+}
+
+// Opening a project must not purge unreferenced project-owned parsed stores.
+// D-04 treats these as durable workflow assets, not disposable caches.
+static void testOpenPreservesUnreferencedProjectParsedStores()
+{
+    QTemporaryDir tmp;
+    CHECK(tmp.isValid());
+    if (!tmp.isValid()) return;
+
+    const std::string manifest = (tmp.path() + "/proj.dlp").toStdString();
+    auto proj = dolphin::app::Project::create("proj", manifest);
+    CHECK(proj != nullptr);
+    if (!proj) return;
+    CHECK(proj->save());
+
+    const QString data_path = QString::fromStdString(proj->dataPath());
+    CHECK(QDir().mkpath(data_path));
+    const QString dlpd_path = data_path + "/unreferenced.dlpd";
+    const QString legacy_path = data_path + "/unreferenced.dpcache";
+    for (const QString& path : {dlpd_path, legacy_path}) {
+        QFile parsed_store(path);
+        CHECK(parsed_store.open(QIODevice::WriteOnly));
+        CHECK(parsed_store.write("durable parsed asset") > 0);
+    }
+
+    proj.reset();
+    auto loaded = dolphin::app::Project::open(manifest);
+    CHECK(loaded != nullptr);
+    CHECK(QFileInfo::exists(dlpd_path));
+    CHECK(QFileInfo::exists(legacy_path));
+}
+
+// Display state fields survive a save/open round trip.
 static void testDisplayStatePersistence()
 {
     QTemporaryDir tmp;
@@ -599,6 +666,243 @@ static void testSchemaVersionGuard()
     CHECK(root.get("version").asInt() == Project::kSchemaVersion);
 }
 
+// Malformed manifests fail cleanly, identity references are validated, and
+// persisted numeric UI/model fields cannot wrap into unsafe values.
+static void testManifestValidation()
+{
+    using dolphin::app::BottomTrackKind;
+    using dolphin::app::Project;
+
+    QTemporaryDir tmp;
+    CHECK(tmp.isValid());
+    if (!tmp.isValid()) return;
+
+    auto writeRaw = [&](const QString& name, const QByteArray& json) {
+        const QString path = tmp.path() + "/" + name;
+        QFile file(path);
+        CHECK(file.open(QIODevice::WriteOnly | QIODevice::Text));
+        CHECK(file.write(json) == json.size());
+        file.close();
+        return path.toStdString();
+    };
+
+    std::string error;
+    auto huge_number = Project::open(writeRaw(
+        "bad-number.dlp",
+        "{\"version\":1,\"name\":\"bad\",\"sources\":[],"
+        "\"layers\":[],\"contacts\":[{\"id\":1e999999}]}"), &error);
+    CHECK(huge_number == nullptr);
+    CHECK(error.find("Invalid project JSON") != std::string::npos);
+
+    error.clear();
+    auto trailing_garbage = Project::open(writeRaw(
+        "trailing-garbage.dlp",
+        "{\"version\":1,\"name\":\"bad\",\"sources\":[],\"layers\":[]}junk"),
+        &error);
+    CHECK(trailing_garbage == nullptr);
+    CHECK(error.find("Invalid project JSON") != std::string::npos);
+
+    for (const auto& malformed : {
+             QByteArray("{\"version\":1,\"name\":\"truncated\",\"sources\":[],\"layers\":[]"),
+             QByteArray("{\"version\":1,\"name\" \"missing-colon\"}"),
+             QByteArray("{\"version\":1,\"name\":\"bad-literal\",\"x\":truX}"),
+             QByteArray("{\"version\":1,\"name\":\"bad-number\",\"x\":1.}"),
+         }) {
+        error.clear();
+        auto invalid = Project::open(writeRaw("malformed.dlp", malformed), &error);
+        CHECK(invalid == nullptr);
+        CHECK(error.find("Invalid project JSON") != std::string::npos);
+    }
+
+    error.clear();
+    auto duplicate_source = Project::open(writeRaw(
+        "duplicate-source.dlp",
+        "{\"version\":1,\"name\":\"bad\",\"sources\":["
+        "{\"id\":\"same\"},{\"id\":\"same\"}],\"layers\":[]}"), &error);
+    CHECK(duplicate_source == nullptr);
+    CHECK(error.find("duplicate source ID") != std::string::npos);
+
+    error.clear();
+    auto missing_source = Project::open(writeRaw(
+        "missing-source.dlp",
+        "{\"version\":1,\"name\":\"bad\",\"sources\":[],\"layers\":["
+        "{\"id\":\"layer\",\"source_id\":\"missing\"}]}"), &error);
+    CHECK(missing_source == nullptr);
+    CHECK(error.find("missing source") != std::string::npos);
+
+    error.clear();
+    auto missing_name = Project::open(writeRaw(
+        "missing-name.dlp",
+        "{\"version\":1,\"sources\":[],\"layers\":[]}"), &error);
+    CHECK(missing_name == nullptr);
+    CHECK(error.find("non-empty name") != std::string::npos);
+
+    error.clear();
+    auto wrong_sources_shape = Project::open(writeRaw(
+        "wrong-shape.dlp",
+        "{\"version\":1,\"name\":\"bad\",\"sources\":{},\"layers\":[]}"),
+        &error);
+    CHECK(wrong_sources_shape == nullptr);
+    CHECK(error.find("'sources' must be an array") != std::string::npos);
+
+    error.clear();
+    auto duplicate_contact = Project::open(writeRaw(
+        "duplicate-contact.dlp",
+        "{\"version\":1,\"name\":\"bad\",\"sources\":[],\"layers\":[],"
+        "\"contacts\":[{\"id\":1}],\"recycled_contacts\":[{\"id\":1}]}"),
+        &error);
+    CHECK(duplicate_contact == nullptr);
+    CHECK(error.find("duplicate contact ID") != std::string::npos);
+
+    error.clear();
+    auto fractional_feature = Project::open(writeRaw(
+        "fractional-feature.dlp",
+        "{\"version\":1,\"name\":\"bad\",\"sources\":[],\"layers\":[],"
+        "\"features\":[{\"id\":1.5}]}"), &error);
+    CHECK(fractional_feature == nullptr);
+    CHECK(error.find("invalid feature ID") != std::string::npos);
+
+    error.clear();
+    auto lossy_contact_id = Project::open(writeRaw(
+        "lossy-contact-id.dlp",
+        "{\"version\":1,\"name\":\"bad\",\"sources\":[],\"layers\":[],"
+        "\"contacts\":[{\"id\":9007199254740992}]}"), &error);
+    CHECK(lossy_contact_id == nullptr);
+    CHECK(error.find("invalid or duplicate contact ID") != std::string::npos);
+
+    error.clear();
+    auto duplicate_group = Project::open(writeRaw(
+        "duplicate-group.dlp",
+        "{\"version\":1,\"name\":\"bad\",\"sources\":[],\"layers\":[],"
+        "\"layer_groups\":[{\"id\":\"g\"},{\"id\":\"g\"}]}"), &error);
+    CHECK(duplicate_group == nullptr);
+    CHECK(error.find("duplicate layer-group ID") != std::string::npos);
+
+    const QByteArray mismatched_index = QStringLiteral(
+        "{\"version\":%1,\"name\":\"bad\",\"sources\":["
+        "{\"id\":\"src\"},{\"id\":\"other\"}],"
+        "\"layers\":[{\"id\":\"layer\",\"source_id\":\"src\","
+        "\"index_built\":true,\"artifact_index\":{\"source_id\":\"other\","
+        "\"entries\":[{\"type\":0,\"artifact_id\":1,\"timestamp_us\":2,"
+        "\"file_offset\":3,\"subrecord_offset\":0,\"byte_length\":1}]}}]}")
+        .arg(Project::kSchemaVersion).toUtf8();
+    error.clear();
+    auto source_mismatch = Project::open(
+        writeRaw("index-source-mismatch.dlp", mismatched_index), &error);
+    CHECK(source_mismatch != nullptr);
+    if (source_mismatch && !source_mismatch->layers().empty()) {
+        CHECK(source_mismatch->layers().front()->artifact_index.source_id == "src");
+        CHECK(source_mismatch->layers().front()->artifact_index.empty());
+        CHECK(!source_mismatch->layers().front()->index_built);
+    }
+
+    // Reader-built indexes in existing SSS/SBP projects use the parsed-store
+    // path here.  It is a storage locator, not a conflicting ProjectSource ID,
+    // and must be normalized on reopen instead of rejecting the project.
+    const QByteArray path_form_index = QStringLiteral(
+        "{\"version\":%1,\"name\":\"legacy-index-locator\","
+        "\"sources\":[{\"id\":\"src\"}],"
+        "\"layers\":[{\"id\":\"layer\",\"source_id\":\"src\","
+        "\"modality\":\"sidescan\",\"artifact_index\":{"
+        "\"source_id\":\"C:/survey/data/src.dlpd\",\"entries\":[]}}]}")
+        .arg(Project::kSchemaVersion).toUtf8();
+    error.clear();
+    auto path_locator = Project::open(
+        writeRaw("index-path-locator.dlp", path_form_index), &error);
+    CHECK(path_locator != nullptr);
+    if (path_locator && !path_locator->layers().empty()) {
+        CHECK(path_locator->layers().front()->artifact_index.source_id == "src");
+    }
+
+    const QByteArray bad_index = QStringLiteral(
+        "{\"version\":%1,\"name\":\"recover\",\"sources\":[{\"id\":\"src\"}],"
+        "\"layers\":[{\"id\":\"layer\",\"source_id\":\"src\","
+        "\"modality\":\"sidescan\",\"index_built\":true,"
+        "\"artifact_index\":{\"source_id\":\"src\",\"entries\":[{"
+        "\"type\":0,\"artifact_id\":1,\"timestamp_us\":2,"
+        "\"file_offset\":3.5,\"subrecord_offset\":0,\"byte_length\":0.5}]}}]}")
+        .arg(Project::kSchemaVersion).toUtf8();
+    error.clear();
+    auto recovered = Project::open(writeRaw("bad-index.dlp", bad_index), &error);
+    CHECK(recovered != nullptr);
+    if (recovered && !recovered->layers().empty()) {
+        CHECK(recovered->layers().front()->artifact_index.empty());
+        CHECK(!recovered->layers().front()->index_built);
+    }
+
+    error.clear();
+    auto legacy_lines = Project::open(writeRaw(
+        "legacy-lines.dlp",
+        "{\"version\":1,\"name\":\"legacy\",\"sources\":[{\"id\":\"src\"}],"
+        "\"lines\":[{\"id\":\"line\",\"label\":\"Line\","
+        "\"source_id\":\"src\",\"modality\":\"sidescan\"}]}"), &error);
+    CHECK(legacy_lines != nullptr);
+    if (legacy_lines) {
+        CHECK(legacy_lines->sources().size() == 1);
+        CHECK(legacy_lines->layers().size() == 1);
+    }
+
+    error.clear();
+    auto unknown_project_node = Project::open(writeRaw(
+        "unknown-project-node.dlp",
+        "{\"version\":1,\"name\":\"bad\",\"sources\":[],\"layers\":[],"
+        "\"project_graph\":{\"nodes\":[{\"id\":\"n\","
+        "\"type\":\"future.unsupported\"}],\"edges\":[]}}"), &error);
+    CHECK(unknown_project_node == nullptr);
+    CHECK(error.find("invalid project graph") != std::string::npos);
+
+    error.clear();
+    auto unknown_layer_node = Project::open(writeRaw(
+        "unknown-layer-node.dlp",
+        "{\"version\":1,\"name\":\"bad\",\"sources\":[{\"id\":\"src\"}],"
+        "\"layers\":[{\"id\":\"layer\",\"source_id\":\"src\","
+        "\"graph\":{\"nodes\":[{\"id\":\"n\","
+        "\"type\":\"future.unsupported\"}],\"edges\":[]}}]}"), &error);
+    CHECK(unknown_layer_node == nullptr);
+    CHECK(error.find("invalid processing graph") != std::string::npos);
+
+    const QByteArray sanitized = QStringLiteral(
+        "{\"version\":%1,\"name\":\"safe\",\"crs\":\"EPSG:4326\","
+        "\"sources\":[{\"id\":\"src\",\"path\":\"\",\"size\":-5,"
+        "\"modified_utc_ms\":-9},{\"id\":\"huge\",\"size\":1e100,"
+        "\"modified_utc_ms\":1e100}],\"layers\":[{\"id\":\"layer\","
+        "\"label\":\"\",\"source_id\":\"src\",\"modality\":\"raster\","
+        "\"bottom_track_kind\":99,\"qc_viewed_fraction\":4,"
+        "\"map_blend_mode\":99,\"raster\":{\"cols\":-4,\"rows\":-3}}]}")
+        .arg(Project::kSchemaVersion).toUtf8();
+    error.clear();
+    auto safe = Project::open(writeRaw("sanitized.dlp", sanitized), &error);
+    CHECK(safe != nullptr);
+    if (safe && !safe->layers().empty()) {
+        const auto& layer = *safe->layers().front();
+        CHECK(layer.label == "layer");
+        CHECK(layer.bottom_track_kind == BottomTrackKind::Mixed);
+        CHECK(std::fabs(layer.qc_viewed_fraction - 1.f) < 1e-6f);
+        CHECK(layer.map_blend_mode == 3);
+        CHECK(!layer.raster.valid);
+        CHECK(!safe->sources().empty() && safe->sources().front().size_bytes == 0);
+        CHECK(!safe->sources().empty() && safe->sources().front().modified_utc_ms == 0);
+        CHECK(safe->sources().size() == 2);
+        if (safe->sources().size() == 2) {
+            CHECK(safe->sources()[1].size_bytes == std::numeric_limits<uint64_t>::max());
+            CHECK(safe->sources()[1].modified_utc_ms
+                  == std::numeric_limits<int64_t>::max());
+        }
+    }
+
+    CHECK(dolphin::util::JsonValue(std::numeric_limits<double>::infinity()).dump()
+          == "null");
+    CHECK(dolphin::util::JsonValue(1e100).asInt()
+          == std::numeric_limits<int>::max());
+    CHECK(dolphin::util::JsonValue(1e100).asFloat()
+          == std::numeric_limits<float>::max());
+    const std::string escaped_control = dolphin::util::JsonValue(
+        std::string(1, '\x01')).dump();
+    CHECK(escaped_control == "\"\\u0001\"");
+    CHECK(dolphin::util::parseJson(escaped_control).asString()
+          == std::string(1, '\x01'));
+}
+
 // 13. SSS/SBP display-param structs round-trip — gain/contrast/invert and the
 //     customized flags survive save → reopen (regression net for the
 //     DisplayStateManager migration; complements test 9's palette fields).
@@ -679,11 +983,14 @@ int main(int argc, char** argv)
     testReopenInvalidatesUnknownFormat();
     testDpcacheFormatAccepted();
     testLayerRemoval();
+    testLayerRemovalPreservesExternalParsedStore();
+    testOpenPreservesUnreferencedProjectParsedStores();
     testDisplayStatePersistence();
     testMapOpacityPersistence();
     testNavStatePersistence();
     testFeaturePersistence();
     testSchemaVersionGuard();
+    testManifestValidation();
     testDisplayParamsRoundTrip();
 
     std::printf("\n%d passed, %d failed\n", g_pass, g_fail);

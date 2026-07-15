@@ -23,7 +23,6 @@
 #include "ui/features/map/MapView.h"
 #include "ui/features/waterfall/WaterfallWindow.h"
 #include "app/project/Project.h"
-#include "app/project/ProjectTransaction.h"
 #include "app/layers/DataLayer.h"
 #include "core/Contact.h"
 #include "core/SpatialRef.h"
@@ -143,8 +142,8 @@ void MainWindow::onWaterfallOpen()
                     if (layer && layer->slant_range_corrected != p.slant_range_correction) {
                         layer->slant_range_corrected = p.slant_range_correction;
                         if (m_sss_ctrl) m_sss_ctrl->reloadLayer(wf_id);
-                        app::ProjectTransaction tx(currentProject());
-                        tx.commit();
+                        markProjectDirty();
+                        m_session_ctrl->autoSave();
                         // If the viewer holds detected bottom picks, persist them to
                         // the DLPD so the map georeferencer can use them.  The async
                         // bake will trigger a second SSS reload with the correct data.
@@ -178,14 +177,14 @@ void MainWindow::onWaterfallOpen()
         connect(m_waterfall_win, &WaterfallWindow::applyToAllRequested, this, [this]() {
             if (!currentProject() || !m_waterfall_win) return;
             const WaterfallParams p = m_waterfall_win->currentParams();
-            app::ProjectTransaction tx(currentProject());
             for (const auto& l : currentProject()->layers()) {
                 if (!l || l->modality != app::Modality::Sidescan) continue;  // SSS only
                 l->slant_range_corrected = p.slant_range_correction;
                 if (m_display_state) m_display_state->setLayerSssDisplay(l->id, p);
             }
             if (m_sss_ctrl) m_sss_ctrl->reloadCurrentLayer();
-            tx.commit();
+            markProjectDirty();
+            m_session_ctrl->autoSave();
             // Display-state only — no .dlpd bake here. The waterfall renders the
             // corrections live and the map shows gain/contrast live; committing the
             // full corrections (incl. TVG/AGC/ARC) into .dlpd for the map mosaic and
@@ -233,7 +232,7 @@ void MainWindow::onWaterfallOpen()
             const auto* src    = currentProject()->findSource(layer->source_id);
             const std::string path = src ? src->path : std::string{};
             const uint64_t    sz   = src ? src->size_bytes : 0;
-            m_waterfall_win->setLayer(layer, m_import_service, path, sz);
+            m_waterfall_win->setLayer(layer, path, sz);
             applyStoredNavParams(sss_id);
             m_waterfall_win->setProjectContacts(currentProject()->contacts());
 
@@ -362,7 +361,7 @@ void MainWindow::onWaterfallMetadata()
 
     auto* win = qobject_cast<SSSMetadataWindow*>(m_metadata_win);
     if (win)
-        win->setProject(currentProject(), m_import_service, activeLayerId());
+        win->setProject(currentProject(), activeLayerId());
 
     m_metadata_win->show();
     m_metadata_win->raise();

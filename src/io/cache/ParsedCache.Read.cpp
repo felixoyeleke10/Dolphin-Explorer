@@ -1,5 +1,6 @@
 // ParsedCache.Read.cpp — ParsedCacheReader::readArtifact and writeParsedCache.
 #include "io/cache/ParsedCache_p.h"
+#include "util/AtomicFile.h"
 
 #include <filesystem>
 
@@ -178,7 +179,7 @@ bool writeParsedCache(const std::string& cache_path,
         std::filesystem::create_directories(parent, ec);
     if (ec) return false;
 
-    const std::string temp_path = tempPathFor(cache_path);
+    const std::string temp_path = util::siblingTempPath(out_path, "dlpd").string();
     removeIfExists(temp_path);
 
     FILE* file = nullptr;
@@ -209,10 +210,10 @@ bool writeParsedCache(const std::string& cache_path,
             progress(static_cast<float>(i) / static_cast<float>(total));
 
         auto artifact = source_reader.readArtifact(source_index.entries[i]);
-        if (!artifact) continue;
+        if (!artifact) return fail();
 
         const uint32_t psize = payloadSize(*artifact);
-        if (psize == 0) continue;
+        if (psize == 0) return fail();
 
         uint64_t offset = 0;
         if (!tellFile(file, offset)) return fail();
@@ -240,21 +241,25 @@ bool writeParsedCache(const std::string& cache_path,
         appendIndexEntry(cache_index, record, offset, source_meta.coordinate_ref);
     }
 
+    // Do not publish a header-only cache. The caller received no usable
+    // artifacts, and replacing a previous durable DLPD with this file would
+    // turn a recoverable decode failure into data loss.
+    if (cache_index.empty()) return fail();
+
     if (progress) progress(1.0f);
 
     // Append the compact index footer so project-open can skip the full scan.
     // correction_flags_seen and bottom_pick_src_mask are not available here
     // (no source_meta.correction_flags_seen on writeParsedCache path); they
     // will be populated on the first full-scan pass if needed.
-    writeIndexFooter(file, cache_index, 0u, 0u);
+    if (!writeIndexFooter(file, cache_index, 0u, 0u)) return fail();
 
     if (std::fclose(file) != 0) {
         removeIfExists(temp_path);
         return false;
     }
 
-    std::filesystem::rename(std::filesystem::path(temp_path), out_path, ec);
-    if (ec) {
+    if (!util::replaceFileAtomically(temp_path, out_path, ec)) {
         removeIfExists(temp_path);
         return false;
     }
@@ -278,7 +283,7 @@ bool writeArtifactBufferToCache(const std::string& cache_path,
         std::filesystem::create_directories(parent, ec);
     if (ec) return false;
 
-    const std::string temp_path = tempPathFor(cache_path);
+    const std::string temp_path = util::siblingTempPath(out_path, "dlpd").string();
     removeIfExists(temp_path);
 
     FILE* file = nullptr;
@@ -303,7 +308,7 @@ bool writeArtifactBufferToCache(const std::string& cache_path,
 
     for (const auto& artifact : buffer) {
         const uint32_t psize = payloadSize(artifact);
-        if (psize == 0) continue; // unsupported type (Multibeam, Raster) — skip silently
+        if (psize == 0) return fail();
 
         uint64_t offset = 0;
         if (!tellFile(file, offset)) return fail();
@@ -331,6 +336,10 @@ bool writeArtifactBufferToCache(const std::string& cache_path,
         appendIndexEntry(out_index, record, offset, meta.coordinate_ref);
     }
 
+    // A non-empty input buffer may still contain only artifact types that the
+    // DLPD writer cannot encode. Never publish that as a header-only cache.
+    if (out_index.empty()) return fail();
+
     // Collect correction_flags_seen and bottom_pick_src_mask from the buffer
     // so the footer carries the right metadata from the first write.
     uint32_t corr_flags = 0u;
@@ -342,15 +351,14 @@ bool writeArtifactBufferToCache(const std::string& cache_path,
             else if (ping->bottom_pick.source == 2) bp_mask |= 0x02u;
         }
     }
-    writeIndexFooter(file, out_index, corr_flags, bp_mask);
+    if (!writeIndexFooter(file, out_index, corr_flags, bp_mask)) return fail();
 
     if (std::fclose(file) != 0) {
         removeIfExists(temp_path);
         return false;
     }
 
-    std::filesystem::rename(std::filesystem::path(temp_path), out_path, ec);
-    if (ec) {
+    if (!util::replaceFileAtomically(temp_path, out_path, ec)) {
         removeIfExists(temp_path);
         return false;
     }

@@ -97,6 +97,7 @@ private:
     struct ActiveJob {
         FileImportAction::Kind kind    = FileImportAction::Kind::ImportNew;
         bool                   started = false;  // true once indexingStarted has fired
+        uint32_t               epoch   = 0;      // project generation at dispatch
     };
     // Maps layer_id → ActiveJob for all in-flight jobs.
     // RebuildExisting entries are inserted at dispatch (layer_id is known then);
@@ -107,10 +108,9 @@ private:
     // Captured by value in every deferred lambda — stale post-cancel lambdas
     // see a mismatch and become no-ops.
     uint32_t                 m_epoch           = 0;
-    // Snapshot of m_epoch taken in dispatchNext() when a job is dispatched.
-    // Service-event handlers compare against m_epoch: if they differ,
-    // a cancel happened after this job started → suppress UI signals while
-    // still performing internal state transitions so queue advancement works.
+    // Snapshot used only while ImportService synchronously emits the initial
+    // started/failure signal. Long-lived jobs carry their own epoch in
+    // ActiveJob, so dispatching a newer job cannot revalidate an older one.
     uint32_t                 m_active_job_epoch = 0;
 
     // Accumulated per-batch outcome counts — reset when batchCompleted fires.

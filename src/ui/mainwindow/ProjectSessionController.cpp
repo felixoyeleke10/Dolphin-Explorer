@@ -51,10 +51,7 @@ QStringList projectTrashPaths(const dolphin::app::Project& project)
     QSet<QString> seen;
 
     addExistingPath(paths, seen, QString::fromStdString(project.manifestPath()));
-    for (const auto& layer : project.layers()) {
-        if (!layer) continue;
-        addExistingPath(paths, seen, QString::fromStdString(layer->artifact_store_path));
-    }
+    addExistingPath(paths, seen, QString::fromStdString(project.dataPath()));
 
     return paths;
 }
@@ -109,7 +106,7 @@ QStringList ProjectSessionController::recentProjects() const
 
 void ProjectSessionController::newProject()
 {
-    if (!confirmAbandonImports(tr("New Project")))
+    if (!ensureImportsIdle(tr("New Project")))
         return;
 
     if (m_project && m_project_dirty && !m_project->isTempProject()) {
@@ -131,12 +128,22 @@ void ProjectSessionController::newProject()
     const QString manifest = dlg.manifestPath();
     if (manifest.isEmpty()) return;
 
+    auto new_project = app::Project::create(
+        dlg.projectName().toStdString(), manifest.toStdString());
+    if (!new_project) {
+        const QString message = tr(
+            "Could not create the project. The target may already exist or its "
+            "folder may not be writable:\n%1").arg(manifest);
+        QMessageBox::warning(m_dialog_parent, tr("New Project"), message);
+        emit jobMessage(tr("Project creation failed: %1").arg(manifest));
+        return;
+    }
+
     emit projectAboutToChange();
 
     m_project_load_gen++;
     m_undo_stack->clear();
-    m_project = app::Project::create(
-        dlg.projectName().toStdString(), manifest.toStdString());
+    m_project = std::move(new_project);
     if (!dlg.crs().empty())
         m_project->setCrs(dlg.crs().id);
     m_project_dirty = false;
@@ -248,7 +255,7 @@ void ProjectSessionController::closeProject()
 {
     if (!m_project) return;
 
-    if (!confirmAbandonImports(tr("Close Project")))
+    if (!ensureImportsIdle(tr("Close Project")))
         return;
 
     if (!m_project->isTempProject() && m_project_dirty) {
@@ -281,6 +288,9 @@ void ProjectSessionController::deleteProject()
 {
     if (!m_project) return;
 
+    if (!ensureImportsIdle(tr("Delete Project")))
+        return;
+
     const QString manifest = QString::fromStdString(m_project->manifestPath());
     if (manifest.isEmpty()) {
         QMessageBox::information(m_dialog_parent, tr("Delete Project"),
@@ -296,11 +306,12 @@ void ProjectSessionController::deleteProject()
     }
 
     const QString project_name = QString::fromStdString(m_project->name());
-    const int artifact_count = std::max(0, static_cast<int>(paths.size()) - 1);
+    const bool has_project_data = paths.size() > 1;
     QString message = tr("Move \"%1\" to the Recycle Bin?").arg(project_name);
     message += "\n\n";
-    message += tr("This moves the project file and %n project-owned artifact file(s).",
-                  nullptr, artifact_count);
+    message += has_project_data
+        ? tr("This moves the project file and its project-owned data folder.")
+        : tr("This moves the project file.");
     message += "\n";
     message += tr("Original source survey files are not deleted.");
     if (m_project_dirty) {
@@ -370,22 +381,25 @@ void ProjectSessionController::autoSave()
     if (m_project->save()) {
         markClean();
     } else {
-        emit jobMessage("Auto-save failed — check available disk space.");
+        const QString err = tr("Auto-save failed for %1. Check available disk space and permissions.")
+            .arg(QString::fromStdString(m_project->name()));
+        if (m_diag_hub)
+            m_diag_hub->postProblem(
+                err, DiagnosticsHub::Severity::Error, QStringLiteral("project"));
+        emit jobMessage(err);
     }
 }
 
 // -- Private helpers ---------------------------------------------------------
 
-bool ProjectSessionController::confirmAbandonImports(const QString& dialog_title)
+bool ProjectSessionController::ensureImportsIdle(const QString& dialog_title)
 {
     if (!m_imports_busy_check || !m_imports_busy_check()) return true;
-    const auto reply = QMessageBox::warning(
+    QMessageBox::information(
         m_dialog_parent, dialog_title,
-        tr("File imports are still running. Continuing now abandons them —\n"
-           "unfinished lines will be re-imported the next time their\n"
-           "project is opened.\n\nContinue anyway?"),
-        QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel);
-    return reply == QMessageBox::Yes;
+        tr("File imports are still running. Wait for them to finish before "
+           "changing or deleting the project."));
+    return false;
 }
 
 void ProjectSessionController::loadProjectPath(const std::string& path)
@@ -396,7 +410,7 @@ void ProjectSessionController::loadProjectPath(const std::string& path)
 
     // In-flight imports would be abandoned by the switch — warn first, like
     // the app-close guard (MainWindow::closeEvent).
-    if (!confirmAbandonImports(tr("Open Project")))
+    if (!ensureImportsIdle(tr("Open Project")))
         return;
 
     if (m_project && m_project_dirty) {

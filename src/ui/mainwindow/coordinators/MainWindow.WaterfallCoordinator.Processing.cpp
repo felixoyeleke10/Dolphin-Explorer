@@ -25,7 +25,6 @@
 #include "ui/features/subbottom/SubBottomWindow.h"
 #include "ui/features/waterfall/WaterfallWindow.h"
 #include "app/project/Project.h"
-#include "app/project/ProjectTransaction.h"
 #include "app/layers/DataLayer.h"
 #include "core/SpatialRef.h"
 #include "geo/EpsgDatabase.h"
@@ -62,17 +61,15 @@ void MainWindow::onWaterfallSetCrs(const std::string& from_layer_id)
     // normalisation step reprojects source coordinates into it on reload.
     auto apply_crs = [this, ref_id](const core::SpatialRef& ref) {
         if (!currentProject()) return;
-        {
-            app::ProjectTransaction tx(currentProject());
-            for (const auto& l : currentProject()->layers())
-                if (l) l->source_spatial_ref = ref;
-            for (const auto& l : currentProject()->layers()) {
-                if (!l) continue;
-                if (auto* src = currentProject()->findSource(l->source_id))
-                    src->source_spatial_ref = ref;
-            }
-            tx.commit();
+        for (const auto& l : currentProject()->layers())
+            if (l) l->source_spatial_ref = ref;
+        for (const auto& l : currentProject()->layers()) {
+            if (!l) continue;
+            if (auto* src = currentProject()->findSource(l->source_id))
+                src->source_spatial_ref = ref;
         }
+        markProjectDirty();
+        m_session_ctrl->autoSave();
         auto* lyr = currentProject()->findLayer(ref_id);
         if (!ref_id.empty() && ref_id != activeLayerId()) {
             m_layer_ctrl->setActiveLayer(ref_id);
@@ -82,7 +79,7 @@ void MainWindow::onWaterfallSetCrs(const std::string& from_layer_id)
         if (m_sss_ctrl) m_sss_ctrl->reloadCurrentLayer();
         if (m_waterfall_win && lyr) {
             const auto* src = currentProject()->findSource(lyr->source_id);
-            m_waterfall_win->setLayer(lyr, m_import_service,
+            m_waterfall_win->setLayer(lyr,
                                       src ? src->path : std::string{},
                                       src ? src->size_bytes : 0);
             applyStoredNavParams(lyr->id);

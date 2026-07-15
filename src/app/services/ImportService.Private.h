@@ -50,10 +50,6 @@ std::string uniqueLayerLabel(const Project& project, const std::string& base_lab
 SourceFingerprint inspectSourceFile(const std::string& path);
 bool sourceFingerprintMatches(const ProjectSource& source, const SourceFingerprint& fingerprint);
 void releaseSourceJob(const std::string& source_id);
-void removeArtifactStoreFileIfUnused(const Project& project,
-                                     const std::string& source_id,
-                                     const ImportTaskResult& result);
-
 // Task functions defined in ImportService.Tasks.cpp.
 ImportTaskResult buildArtifactStore(const ProjectSource& source,
                                     const std::string& raw_path,

@@ -1,9 +1,8 @@
 // ImportController.cpp — thin UI adapter over ImportJobManager.
 // Queue and dispatch logic live in app::ImportJobManager.
-// This file drives the progress dialog, layer picker, and status bar.
+// This file drives the progress dialog and status bar.
 #include "ui/features/import/ImportController.h"
 #include "ui/features/import/ImportProgressDialog.h"
-#include "ui/shared/widgets/LayerPickerWidget.h"
 #include "ui/shared/CoordFormat.h"
 #include "app/layers/DataLayer.h"
 #include "app/project/Project.h"
@@ -16,13 +15,11 @@ namespace dolphin::ui {
 
 ExecutionController::ExecutionController(app::ImportJobManager*   job_manager,
                                          ExecutionProgressDialog* dialog,
-                                         LayerPickerWidget*       layer_picker,
                                          QWidget*                 dialog_parent,
                                          QObject*                 parent)
     : QObject(parent)
     , m_manager(job_manager)
     , m_dialog(dialog)
-    , m_layer_picker(layer_picker)
     , m_dialog_parent(dialog_parent)
 {
     connect(m_manager, &app::ImportJobManager::jobStarted,
@@ -108,10 +105,6 @@ void ExecutionController::onJobStarted(const std::string& layer_id,
     m_dialog->addJob(layer_id, filename, format, size_mb);
     m_dialog->reanchor();
     m_dialog->raise();
-    if (m_layer_picker) {
-        m_layer_picker->expand();
-        m_layer_picker->refresh();
-    }
 }
 
 void ExecutionController::onJobProgress(const std::string& layer_id, int percent)
@@ -148,8 +141,6 @@ void ExecutionController::onJobCompleted(const std::string& layer_id)
     // m_pending_map_loads > 0 and withholds "All Done" until the rasteriser finishes.
     emit importCompleted(layer_id);
     m_dialog->finishJob(layer_id, artifacts, freq_khz, coord_sys);
-    if (m_layer_picker)
-        m_layer_picker->refresh();
 }
 
 void ExecutionController::onJobFailed(const std::string& layer_id, const QString& error)
@@ -216,8 +207,6 @@ void ExecutionController::onCacheRebuilt(const std::string& layer_id)
     }
     if (m_dialog)
         m_dialog->finishJob(layer_id, result);
-    if (m_layer_picker)
-        m_layer_picker->refresh();
 }
 
 void ExecutionController::onCacheRebuildFailed(const std::string& layer_id,

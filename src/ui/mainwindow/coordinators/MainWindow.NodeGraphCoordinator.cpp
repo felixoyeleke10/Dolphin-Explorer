@@ -37,7 +37,9 @@ void MainWindow::onNodeGraph()
         m_node_graph_win = new NodeGraphWindow(this);
 
         connect(m_node_graph_win, &NodeGraphWindow::graphModified, this, [this]() {
-            
+            if (!currentProject()) return;
+            markProjectDirty();
+            m_session_ctrl->autoSave();
         });
 
         connect(m_node_graph_win, &NodeGraphWindow::runRequested,

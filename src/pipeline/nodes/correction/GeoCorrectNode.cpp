@@ -9,7 +9,7 @@ static constexpr double DEG_TO_RAD = M_PI / 180.0;
 NodeSchema GeoCorrectNode::schema() const
 {
     return NodeSchema{
-        "geocorrect", "Geo-Correction", "Correction",
+        "geocorrect", "Layback Correction", "Correction",
         {
             {"layback_m", {"Layback (m)", 0.0f, 0.0f, 1000.0f}},
         }
@@ -45,12 +45,8 @@ ArtifactBuffer GeoCorrectNode::process(const ArtifactBuffer& input,
 
         ping->correction_flags |= core::CorrectionFlag::GeoCorrect;
 
-        // TODO (Phase 2 — mosaicing): project each sample's slant range onto the
-        // ground plane using perp_heading and the slant-range correction already
-        // applied by SlantRangeNode.  This requires storing a per-ping bearing
-        // field on SidescanPing so the render layer can geo-reference footprints.
-        // For now, only the nav position (layback correction above) is adjusted.
-        (void)heading_rad;
+        // Sample-footprint georeferencing belongs to the mosaic/georeference
+        // stage; this node deliberately changes only the ping navigation fix.
     }
 
     return output;

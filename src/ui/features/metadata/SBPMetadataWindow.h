@@ -21,7 +21,6 @@ class QTableView;
 class QToolButton;
 
 namespace dolphin::app {
-class ImportService;
 class Project;
 }
 
@@ -95,7 +94,6 @@ public:
     explicit SBPMetadataWindow(QWidget* parent = nullptr);
 
     void setProject(app::Project*       project,
-                    app::ImportService* import_service,
                     const std::string&  active_layer_id = {});
 
 protected:
@@ -156,7 +154,6 @@ private:
 
     // -- Project / data --------------------------------------------------------
     app::Project*        m_project        = nullptr;
-    app::ImportService*  m_import_service = nullptr;
     std::string          m_active_layer_id;
     int                  m_load_gen       = 0;
     std::vector<core::SubBottomTrace> m_all_traces;

@@ -67,8 +67,12 @@ void MapView3D::drawHUD(QPainter& painter)
     // -- Depth colormap legend -------------------------------------------------
     // Anchored above the scale bar (barY ≈ height()-14); stack legends upward.
     const int legendBaseY = height() - 30;
-    if (!m_terrain_layers.empty()) {
-        const auto& T = m_terrain_layers.front();
+    const auto terrain = std::find_if(
+        m_terrain_layers.begin(), m_terrain_layers.end(),
+        [](const auto& layer) { return layer.visible; });
+    const bool has_visible_terrain = terrain != m_terrain_layers.end();
+    if (has_visible_terrain) {
+        const auto& T = *terrain;
         const QString leg = QString("Depth: %1 m → %2 m")
             .arg(qRound(-T.z_max)).arg(qRound(-T.z_min));
         painter.setPen(QColor(Theme::kIconStroke));
@@ -76,13 +80,16 @@ void MapView3D::drawHUD(QPainter& painter)
     }
 
     // -- SBP curtain depth legend ----------------------------------------------
-    if (!m_curtain_layers.empty()) {
+    const bool has_visible_curtain = std::any_of(
+        m_curtain_layers.begin(), m_curtain_layers.end(),
+        [](const auto& layer) { return layer.visible; });
+    if (has_visible_curtain) {
         float z_range_max = 0.f;
         for (const auto& C : m_curtain_layers)
-            z_range_max = std::max(z_range_max, C.z_range);
+            if (C.visible) z_range_max = std::max(z_range_max, C.z_range);
         const QString leg = QString("SBP depth: 0 m → %1 m").arg(qRound(z_range_max));
         painter.setPen(QColor(Theme::kIconStroke));
-        painter.drawText(15, legendBaseY - (m_terrain_layers.empty() ? 0 : 15), leg);
+        painter.drawText(15, legendBaseY - (has_visible_terrain ? 15 : 0), leg);
     }
 
     // -- Grid coordinate labels ------------------------------------------------
@@ -96,13 +103,21 @@ void MapView3D::drawHUD(QPainter& painter)
     drawViewButtons(painter);
 
     // -- Empty state -----------------------------------------------------------
-    if (m_layers.empty() && m_terrain_layers.empty()) {
+    const bool has_visible_nav = std::any_of(
+        m_layers.begin(), m_layers.end(), [](const auto& layer) {
+            return layer.layer_visible && layer.nav_visible;
+        });
+    const bool has_visible_drape = std::any_of(
+        m_drape_layers.begin(), m_drape_layers.end(),
+        [](const auto& layer) { return layer.visible; });
+    if (!has_visible_nav && !has_visible_terrain
+            && !has_visible_curtain && !has_visible_drape) {
         painter.setPen(QColor(Theme::kTextDim));
         QFont big = painter.font();
         big.setPointSizeF(big.pointSizeF() * 1.5);
         painter.setFont(big);
         painter.drawText(QRect(0, 0, width(), height()), Qt::AlignCenter,
-                         tr("No data loaded\nImport a survey to view in 3D"));
+                         tr("No visible data\nImport or show a layer to view it in 3D"));
     }
 }
 

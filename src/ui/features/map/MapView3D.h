@@ -17,6 +17,8 @@
 #include <QVector3D>
 
 #include <string>
+#include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 class QOpenGLTexture;
@@ -125,6 +127,7 @@ public:
     void setGratLabelRotated  (bool rotated);
     void setGratCoordFormat   (int fmt);
     void setLayerVisible      (const std::string& layer_id, bool visible);
+    void setNavTrackVisible   (const std::string& layer_id, bool visible);
     void setLayerOpacity      (const std::string& layer_id, float opacity);  // drapes, [0,1]
     void setActiveLayer    (const std::string& layer_id);
     void setSelectedLayers (const std::vector<std::string>& ids);
@@ -186,8 +189,9 @@ private:
         std::vector<QPointF> raw_track;
         int                  vertex_count = 0;
         int                  vbo_start    = 0;   // vertex offset in m_nav_merged_vbo
-        bool                 dirty   = true;
-        bool                 visible = true;
+        bool                 dirty         = true;
+        bool                 layer_visible = true;
+        bool                 nav_visible   = true;
         float bbox_xmin = 0.f, bbox_ymin = 0.f;
         float bbox_xmax = 0.f, bbox_ymax = 0.f;
         bool  has_bbox  = false;
@@ -206,6 +210,7 @@ private:
         float              bbox_xmin = 0.f, bbox_ymin = 0.f;
         float              bbox_xmax = 0.f, bbox_ymax = 0.f;
         bool               dirty = false;
+        bool               visible = true;
     };
 
     // -- Profile curtain layer (SBP Phase 2) ------------------------------
@@ -252,6 +257,9 @@ private:
     void rebuildAllCurtainVbos();
     void buildTerrainVbo(TerrainMesh3D& tm);
     void rebuildAllTerrainVbos();
+    uint64_t beginTerrainLoad(const std::string& layer_id);
+    bool finishTerrainLoad(const std::string& layer_id, uint64_t generation);
+    void invalidateTerrainLoad(const std::string& layer_id);
     // Apply a completed background terrain build (shared by file + grid loaders).
     void applyTerrainResult(const std::string& layer_id, TerrainBuildResult&& res);
     void uploadPendingDrapes();               // creates QOpenGLTexture + quad VBO in GL ctx
@@ -368,6 +376,9 @@ private:
     int           m_fps_frames  = 0;
 
     bool  m_terrain_loading = false;   // drives the in-HUD "Loading terrain…" chip
+    uint64_t m_next_terrain_load_generation = 0;
+    std::unordered_map<std::string, uint64_t> m_terrain_load_generation;
+    std::unordered_set<uint64_t> m_pending_terrain_loads;
 
     // -- Camera ------------------------------------------------------------
     Camera3D m_camera;

@@ -17,22 +17,20 @@ class Project;
 
 namespace dolphin::ui {
 class ExecutionProgressDialog;
-class LayerPickerWidget;
 
 // Bring FileImportAction into the ui namespace so existing call sites are unchanged.
 using FileImportAction = app::FileImportAction;
 
 // -- ExecutionController -------------------------------------------------------
 // Thin UI adapter over ImportJobManager.
-// Drives ExecutionProgressDialog, LayerPickerWidget, and the status bar in
-// response to job events from the manager. Queue and dispatch logic live in
-// ImportJobManager (app layer).
+// Drives ExecutionProgressDialog and the status bar in response to job events
+// from the manager. Queue and dispatch logic live in ImportJobManager (app
+// layer).
 class ExecutionController : public QObject {
     Q_OBJECT
 public:
     ExecutionController(app::ImportJobManager*   job_manager,
                         ExecutionProgressDialog* dialog,
-                        LayerPickerWidget*       layer_picker,
                         QWidget*                 dialog_parent,
                         QObject*                 parent = nullptr);
 
@@ -72,7 +70,6 @@ private:
 
     app::ImportJobManager*        m_manager;
     ExecutionProgressDialog*      m_dialog;
-    LayerPickerWidget*            m_layer_picker;
     QWidget*                      m_dialog_parent;
     std::shared_ptr<app::Project> m_project;
     std::unordered_set<std::string> m_cache_rebuild_jobs;

@@ -2,7 +2,6 @@
 #include "ui/mainwindow/MainWindow.h"
 #include "app/project/Project.h"
 #include "ui/features/import/ImportController.h"
-#include "ui/shared/widgets/LayerPickerWidget.h"
 
 #include "ui/shell/AppInfo.h"
 #include <QCloseEvent>
@@ -63,17 +62,15 @@ static void purgeStaleTempProjects()
 
 void MainWindow::closeEvent(QCloseEvent* event)
 {
-    // Imports still parsing? Closing used to abandon them silently, leaving
-    // dead placeholder layers in the saved project ("imported three lines,
-    // only one works"). Warn first; abandoned lines self-heal on next open.
+    // Import workers currently hold project-owned state until they finish.
+    // Do not promise abandonment while service teardown still waits for them.
     if (m_import_ctrl && m_import_ctrl->importsBusy()) {
-        const auto reply = QMessageBox::warning(
+        QMessageBox::information(
             this, tr("Imports in progress"),
-            tr("File imports are still running. Closing now abandons them —\n"
-               "unfinished lines will be re-imported the next time this\n"
-               "project is opened.\n\nClose anyway?"),
-            QMessageBox::Close | QMessageBox::Cancel, QMessageBox::Cancel);
-        if (reply == QMessageBox::Cancel) { event->ignore(); return; }
+            tr("File imports are still running. Wait for them to finish before "
+               "closing Dolphin Explorer."));
+        event->ignore();
+        return;
     }
 
     auto* proj = currentProject();
@@ -90,8 +87,6 @@ void MainWindow::closeEvent(QCloseEvent* event)
             onSaveProject();
             if (isProjectDirty()) { event->ignore(); return; }  // save failed or was cancelled
         }
-    } else if (proj && !proj->isTempProject()) {
-        proj->save();
     }
 
     QSettings settings(AppInfo::kOrgName, AppInfo::kSettingsApp);
@@ -105,8 +100,6 @@ void MainWindow::closeEvent(QCloseEvent* event)
 void MainWindow::showEvent(QShowEvent* event)
 {
     QMainWindow::showEvent(event);
-    if (auto* cw = centralWidget(); cw && m_layer_picker)
-        m_layer_picker->reposition(cw->size(), 0);
 
     static bool s_purged = false;
     if (!s_purged) {

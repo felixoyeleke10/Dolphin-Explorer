@@ -211,12 +211,26 @@ void ProcessingService::runLayer(Project& project, DataLayer* layer, const std::
     emit runStarted(request.layer_id);
 
     const std::string artifact_path = request.artifact_path;
+    const std::string layer_id = request.layer_id;
     auto* watcher = new QFutureWatcher<RunResult>(this);
     connect(watcher, &QFutureWatcher<RunResult>::finished, this,
-            [this, watcher, artifact_path]() {
-        RunResult result = watcher->result();
+            [this, watcher, artifact_path, layer_id]() {
+        RunResult result;
+        std::string future_error;
+        try {
+            result = watcher->result();
+        } catch (const std::exception& ex) {
+            future_error = ex.what();
+        } catch (...) {
+            future_error = "Background processing failed";
+        }
         watcher->deleteLater();
         m_active_paths.erase(artifact_path);
+
+        if (!future_error.empty()) {
+            emit runFailed(layer_id, future_error);
+            return;
+        }
 
         if (result.failed) {
             emit runFailed(result.layer_id, result.error);
@@ -274,6 +288,18 @@ void ProcessingService::runAll(Project& project)
         return;
     }
 
+    // Reserve every source/store used by this batch before the background
+    // future starts. Without this, a concurrent runLayer/runAll call could
+    // enter with the same path and publish to the same per-layer sidecar.
+    std::set<std::string> reserved_paths;
+    std::vector<std::string> request_ids;
+    request_ids.reserve(requests.size());
+    for (const auto& request : requests) {
+        m_active_paths.insert(request.artifact_path);
+        reserved_paths.insert(request.artifact_path);
+        request_ids.push_back(request.layer_id);
+    }
+
     for (const auto& req : requests)
         emit runStarted(req.layer_id);
 
@@ -285,9 +311,26 @@ void ProcessingService::runAll(Project& project)
     // the background loop has finished posting before the object is torn down.
     QPointer<ProcessingService> self(this);
     auto* watcher = new QFutureWatcher<BatchResult>(this);
-    connect(watcher, &QFutureWatcher<BatchResult>::finished, this, [this, watcher]() {
-        BatchResult batch = watcher->result();
+    connect(watcher, &QFutureWatcher<BatchResult>::finished, this,
+            [this, watcher, reserved_paths = std::move(reserved_paths),
+             request_ids = std::move(request_ids)]() {
+        BatchResult batch;
+        std::string future_error;
+        try {
+            batch = watcher->result();
+        } catch (const std::exception& ex) {
+            future_error = ex.what();
+        } catch (...) {
+            future_error = "Background processing batch failed";
+        }
         watcher->deleteLater();
+        for (const auto& path : reserved_paths) m_active_paths.erase(path);
+
+        if (!future_error.empty()) {
+            for (const auto& id : request_ids) emit runFailed(id, future_error);
+            emit batchComplete(0, static_cast<int>(request_ids.size()));
+            return;
+        }
 
         for (const auto& run : batch.runs) {
             if (run.failed) {
@@ -309,7 +352,18 @@ void ProcessingService::runAll(Project& project)
         batch.total = static_cast<int>(requests.size());
 
         for (size_t i = 0; i < requests.size(); ++i) {
-            RunResult run = executeRequest(requests[i]);
+            RunResult run;
+            try {
+                run = executeRequest(requests[i]);
+            } catch (const std::exception& ex) {
+                run.layer_id = requests[i].layer_id;
+                run.failed = true;
+                run.error = ex.what();
+            } catch (...) {
+                run.layer_id = requests[i].layer_id;
+                run.failed = true;
+                run.error = "Background processing failed";
+            }
             if (!run.failed) ++batch.succeeded;
             batch.runs.push_back(std::move(run));
 

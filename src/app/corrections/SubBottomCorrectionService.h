@@ -6,10 +6,6 @@
 #include "core/ArtifactIndex.h"
 
 namespace dolphin::app {
-class ImportService;
-}
-
-namespace dolphin::app {
 
 // Bakes enabled SBP processing corrections into the .dlpd float sample data
 // in a background thread.
@@ -24,8 +20,7 @@ namespace dolphin::app {
 class SubBottomCorrectionService : public QObject {
     Q_OBJECT
 public:
-    explicit SubBottomCorrectionService(ImportService* import_service,
-                                        QObject* parent = nullptr);
+    explicit SubBottomCorrectionService(QObject* parent = nullptr);
 
     void applyToLine(const std::string& layer_id,
                      const std::string& store_path,
@@ -44,8 +39,6 @@ signals:
     void applySkipped(const std::string& layer_id);
     void applyFailed(const std::string& layer_id, const std::string& error);
 
-private:
-    ImportService* m_import_service;
 };
 
 } // namespace dolphin::app

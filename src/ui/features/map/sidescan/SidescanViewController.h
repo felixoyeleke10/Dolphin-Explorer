@@ -20,7 +20,6 @@ class QLabel;
 
 namespace dolphin::app {
 class DataLayer;
-class ImportService;
 class Project;
 class OperationManager;
 }
@@ -62,7 +61,6 @@ class SidescanViewController : public QObject, public IViewerWindow {
     Q_OBJECT
 public:
     SidescanViewController(MapView*            map_view,
-                           app::ImportService* import_service,
                            QLabel*             status_ping,
                            QLabel*             status_pos,
                            QLabel*             status_depth,
@@ -197,7 +195,6 @@ signals:
 
 private:
     MapView*               m_map_view;
-    app::ImportService*    m_import_service;
     app::OperationManager* m_op_mgr = nullptr;  // owns per-layer map-build ops (keyed)
     QLabel*             m_status_ping;
     QLabel*             m_status_pos;

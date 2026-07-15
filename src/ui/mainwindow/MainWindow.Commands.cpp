@@ -93,10 +93,7 @@ QList<CommandPaletteItem> MainWindow::buildCommandItems()
 
     // -- Export ----------------------------------------------------------------
     addCmd(CommandId::ExportCsv,        has_project, [this] { onExportCsv(); });
-    addCmd(CommandId::ExportGeotiff,    false,       [this] { onExportGeotiff(); });
-    addCmd(CommandId::ExportKmz,        false,       [this] { onExportKmz(); });
-    addCmd(CommandId::ExportNav,        false,       [this] { onExportNav(); });
-    addCmd(CommandId::ExportPdf,        false,       [this] { onExportPdf(); });
+    addCmd(CommandId::ExportGeotiff,    has_project, [this] { onExportGeotiff(); });
     addCmd(CommandId::ExportScreenshot, true,        [this] { onExportScreenshot(); });
 
     // -- Settings / Help -------------------------------------------------------

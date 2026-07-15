@@ -54,9 +54,6 @@ enum class CommandId {
     // Export
     ExportCsv,
     ExportGeotiff,
-    ExportKmz,
-    ExportNav,
-    ExportPdf,
     // Help
     About,
     ExportScreenshot,

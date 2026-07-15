@@ -105,10 +105,9 @@ void ProjectOperationCoordinator::onProcessingPersisted(
         m_project->contractStore().publish(layer_id, {std::move(env)});
     }
 
-    // ── 5. Mark project dirty, save, notify viewers ───────────────────────────
+    // ── 5. Mark project dirty, persist through the session authority, notify ──
     if (m_event_bus) m_event_bus->postProjectModified();
-    if (!m_project->isTempProject() && !m_project->manifestPath().empty())
-        m_project->save();
+    emit persistenceRequested();
     if (m_event_bus) m_event_bus->postLayerDataChanged(layer_id);
 }
 
@@ -150,10 +149,9 @@ void ProjectOperationCoordinator::onCorrectionPersisted(
         m_project->contractStore().publish(layer_id, {std::move(env)});
     }
 
-    // ── 4. Mark project dirty, save, notify viewers ───────────────────────────
+    // ── 4. Mark project dirty, persist through the session authority, notify ──
     if (m_event_bus) m_event_bus->postProjectModified();
-    if (!m_project->isTempProject() && !m_project->manifestPath().empty())
-        m_project->save();
+    emit persistenceRequested();
     if (m_event_bus) m_event_bus->postLayerDataChanged(layer_id);
 }
 

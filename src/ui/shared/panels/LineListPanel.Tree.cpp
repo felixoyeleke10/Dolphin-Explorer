@@ -123,13 +123,83 @@ static QString featureDisplayText(const dolphin::core::Feature& f)
     return parts.join("  –  ");
 }
 
-static void applyContactTagDecoration(QTreeWidgetItem* item, const dolphin::core::Contact& c)
+static QString tagToolTip(const std::vector<std::string>& tags)
 {
-    if (c.tags.empty()) return;
-    item->setIcon(0, makeTagIcon(c.tags));
-    QStringList tl;
-    for (const auto& t : c.tags) tl << ("#" + QString::fromStdString(t));
-    item->setToolTip(0, tl.join("  "));
+    QStringList lines;
+    for (const auto& tag : tags)
+        lines << ("#" + QString::fromStdString(tag));
+    return lines.join("  ");
+}
+
+// Always assign the empty values too. Otherwise removing the last tag during a
+// targeted update leaves the row's previous icon and tooltip behind.
+static void applyTagDecoration(QTreeWidgetItem* item,
+                               const std::vector<std::string>& tags,
+                               bool update_tooltip = true)
+{
+    item->setIcon(0, makeTagIcon(tags));
+    if (update_tooltip)
+        item->setToolTip(0, tagToolTip(tags));
+}
+
+static QTreeWidgetItem* addGroupItem(QTreeWidgetItem* parent,
+                                     const app::ItemGroup& group,
+                                     ItemType type,
+                                     Qt::ItemFlags flags)
+{
+    auto* item = new QTreeWidgetItem(
+        parent, QStringList{QString::fromStdString(group.name)});
+    item->setFlags(flags);
+    setItemType(item, type);
+    item->setData(0, kRoleGroupId, QString::fromStdString(group.id));
+    item->setIcon(0, QApplication::style()->standardIcon(QStyle::SP_DirIcon));
+    QFont font = item->font(0);
+    font.setBold(true);
+    item->setFont(0, font);
+    return item;
+}
+
+static void applyContactRow(QTreeWidgetItem* item,
+                            const core::Contact& contact,
+                            app::Project* project)
+{
+    item->setText(0, contactDisplayText(contact, project, true));
+    item->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable
+                   | Qt::ItemIsUserCheckable);
+    item->setCheckState(0, contact.visible ? Qt::Checked : Qt::Unchecked);
+    setItemType(item, ItemType::Contact);
+    item->setData(0, kRoleId, static_cast<qulonglong>(contact.id));
+    item->setForeground(0, softText());
+    applyTagDecoration(item, contact.tags);
+}
+
+static QTreeWidgetItem* addContactItem(QTreeWidgetItem* parent,
+                                       const core::Contact& contact,
+                                       app::Project* project)
+{
+    auto* item = new QTreeWidgetItem(parent);
+    applyContactRow(item, contact, project);
+    return item;
+}
+
+static void applyFeatureRow(QTreeWidgetItem* item, const core::Feature& feature)
+{
+    item->setText(0, featureDisplayText(feature));
+    item->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable
+                   | Qt::ItemIsUserCheckable);
+    item->setCheckState(0, feature.visible ? Qt::Checked : Qt::Unchecked);
+    setItemType(item, ItemType::Feature);
+    item->setData(0, kRoleId, static_cast<qulonglong>(feature.id));
+    item->setForeground(0, softText());
+    applyTagDecoration(item, feature.tags);
+}
+
+static QTreeWidgetItem* addFeatureItem(QTreeWidgetItem* parent,
+                                       const core::Feature& feature)
+{
+    auto* item = new QTreeWidgetItem(parent);
+    applyFeatureRow(item, feature);
+    return item;
 }
 
 // Creates a collapsible section header item. If parent is non-null the item
@@ -219,7 +289,11 @@ void LineListPanel::buildContactsSection(QTreeWidgetItem* parent)
 {
     auto* sec = makeSectionItem(m_tree, parent, tr("Contacts"));
     setItemType(sec, ItemType::ContactsSection);
+    populateContactsSection(sec);
+}
 
+void LineListPanel::populateContactsSection(QTreeWidgetItem* sec)
+{
     const auto& contacts  = m_project->contacts();
     const auto& cgrps     = m_project->contactGroups();
 
@@ -230,25 +304,13 @@ void LineListPanel::buildContactsSection(QTreeWidgetItem* parent)
 
     // User-defined contact groups first
     for (const auto& grp : cgrps) {
-        auto* gi = new QTreeWidgetItem(sec, QStringList{QString::fromStdString(grp.name)});
-        gi->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
-        setItemType(gi, ItemType::ContactGroup);
-        gi->setData(0, kRoleGroupId, QString::fromStdString(grp.id));
-        gi->setIcon(0, QApplication::style()->standardIcon(QStyle::SP_DirIcon));
-        QFont f = gi->font(0); f.setBold(true); gi->setFont(0, f);
+        auto* gi = addGroupItem(sec, grp, ItemType::ContactGroup,
+                                Qt::ItemIsEnabled | Qt::ItemIsSelectable);
 
         bool any = false;
         for (const auto& c : contacts) {
             if (c.group_id != grp.id) continue;
-            auto* item = new QTreeWidgetItem(
-                gi, QStringList{contactDisplayText(c, m_project, true)});
-            item->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable
-                           | Qt::ItemIsUserCheckable);
-            item->setCheckState(0, c.visible ? Qt::Checked : Qt::Unchecked);
-            setItemType(item, ItemType::Contact);
-            item->setData(0, kRoleId, static_cast<qulonglong>(c.id));
-            item->setForeground(0, softText());
-            applyContactTagDecoration(item, c);
+            addContactItem(gi, c, m_project);
             any = true;
         }
         if (!any) makeEmptyPlaceholder(gi, tr("Empty group"));
@@ -258,14 +320,7 @@ void LineListPanel::buildContactsSection(QTreeWidgetItem* parent)
     bool any_ungrouped = false;
     for (const auto& c : contacts) {
         if (!c.group_id.empty()) continue;
-        auto* item = new QTreeWidgetItem(
-            sec, QStringList{contactDisplayText(c, m_project, true)});
-        item->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable
-                       | Qt::ItemIsUserCheckable);
-        item->setCheckState(0, c.visible ? Qt::Checked : Qt::Unchecked);
-        setItemType(item, ItemType::Contact);
-        item->setData(0, kRoleId, static_cast<qulonglong>(c.id));
-        item->setForeground(0, softText());
+        addContactItem(sec, c, m_project);
         any_ungrouped = true;
     }
     if (!any_ungrouped && cgrps.empty())
@@ -276,21 +331,18 @@ void LineListPanel::buildFeaturesSection(QTreeWidgetItem* parent)
 {
     auto* sec = makeSectionItem(m_tree, parent, tr("Features"));
     setItemType(sec, ItemType::FeaturesSection);
+    populateFeaturesSection(sec);
+}
 
+void LineListPanel::populateFeaturesSection(QTreeWidgetItem* sec)
+{
     const auto& features = m_project->features();
     if (features.empty()) {
         makeEmptyPlaceholder(sec, tr("No features yet"));
         return;
     }
-    for (const auto& f : features) {
-        auto* item = new QTreeWidgetItem(sec, QStringList{featureDisplayText(f)});
-        item->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable
-                       | Qt::ItemIsUserCheckable);
-        item->setCheckState(0, f.visible ? Qt::Checked : Qt::Unchecked);
-        setItemType(item, ItemType::Feature);
-        item->setData(0, kRoleId, static_cast<qulonglong>(f.id));
-        item->setForeground(0, softText());
-    }
+    for (const auto& feature : features)
+        addFeatureItem(sec, feature);
 }
 
 // Returns the resolved modality for a layer (same logic used in the ungrouped bucket loop).
@@ -304,40 +356,47 @@ static app::Modality resolveModality(const app::DataLayer* layer)
 
 // -- Layer item helper ---------------------------------------------------------
 
-static void addLayerItem(QTreeWidgetItem* parent, const app::DataLayer* layer)
+static void applyLayerRow(QTreeWidgetItem* item, const app::DataLayer* layer)
 {
     const bool is_ready = (layer->state == app::LayerState::Ready);
-    auto* item = new QTreeWidgetItem(parent, QStringList{layerDisplayText(layer)});
+    item->setText(0, layerDisplayText(layer));
+
     Qt::ItemFlags flags = Qt::ItemIsEnabled | Qt::ItemIsUserCheckable;
     if (is_ready)
         flags |= Qt::ItemIsSelectable | Qt::ItemIsDragEnabled;
     item->setFlags(flags);
-    item->setData(0, kRoleId,       QString::fromStdString(layer->id));
+    item->setData(0, kRoleId, QString::fromStdString(layer->id));
     setItemType(item, ItemType::Layer);
-    item->setData(0, kRoleModality, static_cast<int>(layer->modality));
+    item->setData(0, kRoleModality, static_cast<int>(resolveModality(layer)));
     item->setCheckState(0, layer->visible ? Qt::Checked : Qt::Unchecked);
     applyLayerStateDecoration(item, layer->state);
 
-    // Bottom-tracked lines (auto / manual / both picks present) are shown in bold so
-    // the user can see at a glance which data has a seabed pick.
     const bool bottom_tracked =
         layer->bottom_track_kind == app::BottomTrackKind::Auto   ||
         layer->bottom_track_kind == app::BottomTrackKind::Manual ||
         layer->bottom_track_kind == app::BottomTrackKind::Mixed;
-    if (bottom_tracked) {
-        QFont f = item->font(0);
-        f.setBold(true);
-        item->setFont(0, f);
-    }
+    QFont font = item->font(0);
+    font.setBold(bottom_tracked);
+    item->setFont(0, font);
 
-    if (!layer->tags.empty()) {
-        item->setIcon(0, makeTagIcon(layer->tags));
-        if (layer->state == app::LayerState::Ready) {
-            QStringList tl;
-            for (const auto& t : layer->tags) tl << ("#" + QString::fromStdString(t));
-            item->setToolTip(0, tl.join("  "));
-        }
-    }
+    // Non-ready states own the tooltip ("Indexing" / "Import failed"), but
+    // tags still contribute their icon. Ready rows use the tag list as tooltip.
+    applyTagDecoration(item, layer->tags, is_ready);
+}
+
+static void addLayerItem(QTreeWidgetItem* parent, const app::DataLayer* layer)
+{
+    auto* item = new QTreeWidgetItem(parent);
+    applyLayerRow(item, layer);
+}
+
+static std::string displayedGroupId(const QTreeWidgetItem* item,
+                                    ItemType group_type)
+{
+    const auto* parent = item ? item->parent() : nullptr;
+    if (!parent || itemTypeOf(parent) != group_type)
+        return {};
+    return parent->data(0, kRoleGroupId).toString().toStdString();
 }
 
 void LineListPanel::buildLayersSection(QTreeWidgetItem* parent)
@@ -375,12 +434,9 @@ void LineListPanel::buildLayersSection(QTreeWidgetItem* parent)
 
     // Helper to build the group QTreeWidgetItem under a given container.
     auto makeGroupItem = [&](QTreeWidgetItem* container, const app::ItemGroup& grp) {
-        auto* gi = new QTreeWidgetItem(container, QStringList{QString::fromStdString(grp.name)});
-        gi->setFlags(Qt::ItemIsEnabled | Qt::ItemIsDropEnabled | Qt::ItemIsSelectable);
-        setItemType(gi, ItemType::LayerGroup);
-        gi->setData(0, kRoleGroupId, QString::fromStdString(grp.id));
-        gi->setIcon(0, QApplication::style()->standardIcon(QStyle::SP_DirIcon));
-        QFont f = gi->font(0); f.setBold(true); gi->setFont(0, f);
+        auto* gi = addGroupItem(container, grp, ItemType::LayerGroup,
+                                Qt::ItemIsEnabled | Qt::ItemIsDropEnabled
+                                    | Qt::ItemIsSelectable);
         bool any = false;
         for (const auto& layer : layers) {
             if (!layer || layer->group_id != grp.id) continue;
@@ -442,53 +498,7 @@ void LineListPanel::refreshContacts()
         QSignalBlocker sb(m_tree);
         while (sec->childCount())
             delete sec->takeChild(0);
-
-        const auto& contacts = m_project->contacts();
-        const auto& cgrps    = m_project->contactGroups();
-
-        if (contacts.empty() && cgrps.empty()) {
-            makeEmptyPlaceholder(sec, tr("No contacts"));
-        } else {
-            for (const auto& grp : cgrps) {
-                auto* gi = new QTreeWidgetItem(sec, QStringList{QString::fromStdString(grp.name)});
-                gi->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
-                setItemType(gi, ItemType::ContactGroup);
-                gi->setData(0, kRoleGroupId, QString::fromStdString(grp.id));
-                gi->setIcon(0, QApplication::style()->standardIcon(QStyle::SP_DirIcon));
-                QFont f = gi->font(0); f.setBold(true); gi->setFont(0, f);
-                bool any = false;
-                for (const auto& c : contacts) {
-                    if (c.group_id != grp.id) continue;
-                    auto* item = new QTreeWidgetItem(
-                        gi, QStringList{contactDisplayText(c, m_project, true)});
-                    item->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable
-                                   | Qt::ItemIsUserCheckable);
-                    item->setCheckState(0, c.visible ? Qt::Checked : Qt::Unchecked);
-                    setItemType(item, ItemType::Contact);
-                    item->setData(0, kRoleId, static_cast<qulonglong>(c.id));
-                    item->setForeground(0, softText());
-            applyContactTagDecoration(item, c);
-                    any = true;
-                }
-                if (!any) makeEmptyPlaceholder(gi, tr("Empty group"));
-            }
-            bool any_ungrouped = false;
-            for (const auto& c : contacts) {
-                if (!c.group_id.empty()) continue;
-                auto* item = new QTreeWidgetItem(
-                    sec, QStringList{contactDisplayText(c, m_project, true)});
-                item->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable
-                               | Qt::ItemIsUserCheckable);
-                item->setCheckState(0, c.visible ? Qt::Checked : Qt::Unchecked);
-                setItemType(item, ItemType::Contact);
-                item->setData(0, kRoleId, static_cast<qulonglong>(c.id));
-                item->setForeground(0, softText());
-            applyContactTagDecoration(item, c);
-                any_ungrouped = true;
-            }
-            if (!any_ungrouped && cgrps.empty())
-                makeEmptyPlaceholder(sec, tr("No contacts"));
-        }
+        populateContactsSection(sec);
     }
     m_rebuilding = false;
     applyFilter(m_search->text());
@@ -511,21 +521,7 @@ void LineListPanel::refreshFeatures()
         QSignalBlocker sb(m_tree);
         while (sec->childCount())
             delete sec->takeChild(0);
-
-        const auto& features = m_project->features();
-        if (features.empty()) {
-            makeEmptyPlaceholder(sec, tr("No features yet"));
-        } else {
-            for (const auto& f : features) {
-                auto* item = new QTreeWidgetItem(sec, QStringList{featureDisplayText(f)});
-                item->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable
-                               | Qt::ItemIsUserCheckable);
-                item->setCheckState(0, f.visible ? Qt::Checked : Qt::Unchecked);
-                setItemType(item, ItemType::Feature);
-                item->setData(0, kRoleId, static_cast<qulonglong>(f.id));
-                item->setForeground(0, softText());
-            }
-        }
+        populateFeaturesSection(sec);
     }
     m_rebuilding = false;
     applyFilter(m_search->text());
@@ -543,12 +539,14 @@ void LineListPanel::refreshContactRow(uint64_t contact_id)
     while (*it) {
         if (itemTypeOf(*it) == ItemType::Contact
                 && (*it)->data(0, kRoleId).toULongLong() == contact_id) {
+            if (displayedGroupId(*it, ItemType::ContactGroup) != c->group_id) {
+                refreshContacts();
+                return;
+            }
             m_rebuilding = true;
             {
                 QSignalBlocker sb(m_tree);
-                (*it)->setText(0, contactDisplayText(*c, m_project, true));
-                (*it)->setCheckState(0, c->visible ? Qt::Checked : Qt::Unchecked);
-                applyContactTagDecoration(*it, *c);
+                applyContactRow(*it, *c, m_project);
             }
             m_rebuilding = false;
             return;
@@ -573,8 +571,7 @@ void LineListPanel::refreshFeatureRow(uint64_t feature_id)
             m_rebuilding = true;
             {
                 QSignalBlocker sb(m_tree);
-                (*it)->setText(0, featureDisplayText(*f));
-                (*it)->setCheckState(0, f->visible ? Qt::Checked : Qt::Unchecked);
+                applyFeatureRow(*it, *f);
             }
             m_rebuilding = false;
             return;
@@ -596,34 +593,15 @@ void LineListPanel::refreshLayer(const std::string& id)
         if (itemTypeOf(*it) == ItemType::Layer
                 && (*it)->data(0, kRoleId).toString() == qid) {
             auto* item = *it;
-            QSignalBlocker sb(m_tree);
-
-            item->setText(0, layerDisplayText(layer));
-            item->setCheckState(0, layer->visible ? Qt::Checked : Qt::Unchecked);
-            item->setData(0, kRoleModality, static_cast<int>(layer->modality));
-
-            const bool is_ready = (layer->state == app::LayerState::Ready);
-            Qt::ItemFlags flags = Qt::ItemIsEnabled | Qt::ItemIsUserCheckable;
-            if (is_ready) flags |= Qt::ItemIsSelectable | Qt::ItemIsDragEnabled;
-            item->setFlags(flags);
-
-            applyLayerStateDecoration(item, layer->state);
-
-            // Re-apply the bottom-tracked bold (it can change after auto/manual picks).
-            const bool bottom_tracked =
-                layer->bottom_track_kind == app::BottomTrackKind::Auto   ||
-                layer->bottom_track_kind == app::BottomTrackKind::Manual ||
-                layer->bottom_track_kind == app::BottomTrackKind::Mixed;
-            QFont lf = item->font(0);
-            lf.setBold(bottom_tracked);
-            item->setFont(0, lf);
-
-            item->setIcon(0, makeTagIcon(layer->tags));
-            if (!layer->tags.empty() && layer->state == app::LayerState::Ready) {
-                QStringList tl;
-                for (const auto& t : layer->tags) tl << ("#" + QString::fromStdString(t));
-                item->setToolTip(0, tl.join("  "));
+            const auto displayed_modality = static_cast<app::Modality>(
+                item->data(0, kRoleModality).toInt());
+            if (displayedGroupId(item, ItemType::LayerGroup) != layer->group_id
+                    || displayed_modality != resolveModality(layer)) {
+                refresh();
+                return;
             }
+            QSignalBlocker sb(m_tree);
+            applyLayerRow(item, layer);
             return;
         }
         ++it;

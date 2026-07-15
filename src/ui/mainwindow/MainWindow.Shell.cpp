@@ -243,9 +243,6 @@ void MainWindow::setupCentralWidget()
             this, &MainWindow::onRunLayers);
     connect(m_line_list, &LineListPanel::exportLayersRequested,
             this, &MainWindow::onExportLayers);
-    connect(m_line_list, &LineListPanel::mergeLayersRequested,
-            this, &MainWindow::onMergeLayers);
-
     connect(m_line_list, &LineListPanel::activityLogged,
             this, [this](const QString& desc, int kind) {
         recordActivity(static_cast<ActivityKind>(kind), desc);

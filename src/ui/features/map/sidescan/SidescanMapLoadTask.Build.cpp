@@ -106,7 +106,7 @@ SidescanLoadResult buildSidescanLoadResult(const SssLoadInputs&            in,
     }
 
     // Reading pings is the bulk of the work — map its 0..1 fraction to 5–60%.
-    auto raw = in.svc->loadAllSidescanPingsFromStore(
+    auto raw = app::ImportService::loadAllSidescanPingsFromStore(
         in.store_path, in.store_format, map_idx, in.source_path,
         in.qp.max_samples_per_ping,
         [&report](float f) { report(5 + static_cast<int>(f * 55.f)); });

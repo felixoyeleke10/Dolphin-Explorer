@@ -17,8 +17,6 @@
 #include <string>
 #include <vector>
 
-namespace dolphin::app { class ImportService; }
-
 namespace dolphin::ui {
 namespace detail {
 
@@ -101,7 +99,6 @@ struct SidescanLoadResult {
 // main thread in activateLayer(), then consumed by buildSidescanLoadResult()
 // with no access back to the controller or the model.
 struct SssLoadInputs {
-    app::ImportService* svc = nullptr;
     std::string         store_path;
     std::string         store_format;
     core::ArtifactIndex idx;

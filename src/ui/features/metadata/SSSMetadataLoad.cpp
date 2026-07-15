@@ -19,11 +19,9 @@
 namespace dolphin::ui {
 
 void SSSMetadataWindow::setProject(app::Project*        project,
-                                    app::ImportService*  import_service,
                                     const std::string&   active_layer_id)
 {
     m_project         = project;
-    m_import_service  = import_service;
     m_active_layer_id = active_layer_id;
 
     m_line_menu->clear();
@@ -49,7 +47,8 @@ void SSSMetadataWindow::setVisiblePingRange(int first_ping, int count)
 
 void SSSMetadataWindow::startLoad()
 {
-    if (!m_project || !m_import_service) return;
+    const int gen = ++m_load_gen;
+    if (!m_project) return;
 
     struct LoadItem {
         std::string sp, sf, src_path;
@@ -89,9 +88,6 @@ void SSSMetadataWindow::startLoad()
     m_model->setPings({});
     m_all_pings.clear();
 
-    const int gen = ++m_load_gen;
-    auto* svc = m_import_service;
-
     auto* watcher = new QFutureWatcher<std::vector<core::SidescanPing>>(this);
     connect(watcher, &QFutureWatcher<std::vector<core::SidescanPing>>::finished,
             this, [this, watcher, gen]() {
@@ -101,10 +97,10 @@ void SSSMetadataWindow::startLoad()
                 catch (...) { m_load_status->setText("Load failed"); }
             });
     watcher->setFuture(QtConcurrent::run(
-        [svc, items]() -> std::vector<core::SidescanPing> {
+        [items]() -> std::vector<core::SidescanPing> {
             std::vector<core::SidescanPing> all;
             for (const auto& item : items) {
-                auto pings = svc->loadAllSidescanNavFromStore(
+                auto pings = app::ImportService::loadAllSidescanNavFromStore(
                     item.sp, item.sf, item.idx, item.src_path);
                 all.insert(all.end(),
                            std::make_move_iterator(pings.begin()),

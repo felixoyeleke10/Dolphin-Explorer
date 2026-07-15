@@ -225,7 +225,7 @@ ImportService::loadAllSidescanPingsFromStore(
     const core::ArtifactIndex& artifact_index,
     const std::string& source_path,
     int max_samples_per_ping,
-    const std::function<void(float)>& progress) const
+    const std::function<void(float)>& progress)
 {
     std::vector<core::SidescanPing> result;
     if (artifact_index.empty()) return result;
@@ -272,7 +272,7 @@ ImportService::loadAllSidescanNavFromStore(
     const std::string& store_path,
     const std::string& store_format,
     const core::ArtifactIndex& artifact_index,
-    const std::string& source_path) const
+    const std::string& source_path)
 {
     std::vector<core::SidescanPing> result;
     if (artifact_index.empty()) return result;
@@ -317,7 +317,7 @@ ImportService::loadSidescanWindowFromStore(
     const std::string& source_path,
     int64_t center_entry,
     int     max_rows,
-    float   frequency_hz) const
+    float   frequency_hz)
 {
     std::vector<core::SidescanPing> result;
     if (artifact_index.empty() || max_rows <= 0) return result;
@@ -405,7 +405,7 @@ std::vector<core::SubBottomTrace> ImportService::loadAllSubBottomTraces(
     const std::string& store_path,
     const std::string& store_format,
     const core::ArtifactIndex& artifact_index,
-    const std::string& source_path) const
+    const std::string& source_path)
 {
     std::vector<core::SubBottomTrace> result;
 
@@ -442,7 +442,7 @@ std::vector<core::MagSample> ImportService::loadMagSamples(
     const std::string& store_path,
     const std::string& store_format,
     const core::ArtifactIndex& artifact_index,
-    const std::string& source_path) const
+    const std::string& source_path)
 {
     std::vector<core::MagSample> result;
 
@@ -478,7 +478,7 @@ std::vector<core::Artifact> ImportService::loadArtifacts(
     const std::string& store_path,
     const std::string& store_format,
     const core::ArtifactIndex& artifact_index,
-    const std::string& source_path) const
+    const std::string& source_path)
 {
     std::vector<core::Artifact> result;
 

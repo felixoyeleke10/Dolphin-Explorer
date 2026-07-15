@@ -102,7 +102,8 @@ void completeImport(ImportService*                   svc,
     auto* dl = project->findLayer(layer_id);
     if (!dl) {
         releaseSourceJob(source_id);
-        removeArtifactStoreFileIfUnused(*project, source_id, result);
+        // The completed DLPD remains a durable workflow asset (D-04), even
+        // though the user removed its layer while indexing was in flight.
         emit svc->indexingFailed(layer_id, "Layer removed during indexing");
         return;
     }
@@ -289,7 +290,7 @@ void completeReindex(ImportService*            svc,
     auto* dl = project->findLayer(layer_id);
     if (!dl) {
         releaseSourceJob(source_id);
-        removeArtifactStoreFileIfUnused(*project, source_id, result);
+        // Preserve the rebuilt DLPD; project deletion owns eventual cleanup.
         emit svc->indexingFailed(layer_id, "Layer removed during indexing");
         return;
     }

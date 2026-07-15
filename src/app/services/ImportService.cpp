@@ -20,6 +20,7 @@
 #include <QtConcurrent/QtConcurrent>
 #include <algorithm>
 #include <cctype>
+#include <exception>
 #include <filesystem>
 #include <memory>
 #include <mutex>
@@ -167,22 +168,6 @@ void releaseSourceJob(const std::string& source_id)
 {
     std::lock_guard<std::mutex> lock(g_active_source_jobs_mutex);
     g_active_source_jobs.erase(source_id);
-}
-
-void removeArtifactStoreFileIfUnused(const Project& project,
-                                     const std::string& source_id,
-                                     const ImportTaskResult& result)
-{
-    if (normaliseFormat(result.artifact_store_format) != "dlpd"
-        || result.artifact_store_path.empty()) {
-        return;
-    }
-
-    if (!project.findLayersBySource(source_id).empty())
-        return;
-
-    std::error_code ec;
-    std::filesystem::remove(std::filesystem::path(result.artifact_store_path), ec);
 }
 
 } // namespace import_detail
@@ -477,7 +462,14 @@ bool ImportService::startRebuild(const std::string& layer_id,
         if (m_rebuilds_running > 0) --m_rebuilds_running;
         pumpRebuilds();   // dispatch the next queued rebuild (sequential)
 
-        const Result r = watcher->result();
+        Result r;
+        try {
+            r = watcher->result();
+        } catch (const std::exception& ex) {
+            r.error = std::string("rebuildCacheIndex failed: ") + ex.what();
+        } catch (...) {
+            r.error = "rebuildCacheIndex failed unexpectedly";
+        }
         if (r.cancelled) return;  // project switched mid-scan; discard silently
 
         if (!r.error.empty()) {
@@ -505,8 +497,10 @@ bool ImportService::startRebuild(const std::string& layer_id,
                 resolved = filteredByType(resolved, wanted);
         }
 
-        layer->artifact_index.source_id =
-            resolved.source_id.empty() ? source_id : resolved.source_id;
+        // Reader indexes use their backing file path as source_id.  A DataLayer
+        // must retain the logical ProjectSource ID so the next manifest is
+        // portable and can be validated without confusing identity with storage.
+        layer->artifact_index.source_id = source_id;
         layer->artifact_index.entries = resolved.entries;
         layer->index_built = !layer->artifact_index.empty();
 

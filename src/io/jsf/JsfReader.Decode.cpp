@@ -1,146 +1,183 @@
-// JsfReader.Decode.cpp — JsfReader::readArtifact.
+// JsfReader.Decode.cpp — EdgeTech Message Type 80 artifact decoding.
 #include "io/jsf/JsfReader_p.h"
 #include "io/detail/SubBottomDetect.h"
+
 #include <algorithm>
+#include <cmath>
 
 namespace dolphin::io {
 
 using namespace detail_jsf;
 
+namespace {
+
+bool readWord(FILE* file, uint16_t& value)
+{
+    uint8_t bytes[2]{};
+    if (std::fread(bytes, sizeof(bytes), 1, file) != 1) return false;
+    value = leU16(bytes);
+    return true;
+}
+
+float sbpSample(FILE* file, uint16_t format, bool& ok)
+{
+    uint16_t first = 0;
+    if (!readWord(file, first)) { ok = false; return 0.0f; }
+
+    if (format == 1 || format == 9) {
+        uint16_t second = 0;
+        if (!readWord(file, second)) { ok = false; return 0.0f; }
+        const float real = static_cast<float>(static_cast<int16_t>(first));
+        const float imag = static_cast<float>(static_cast<int16_t>(second));
+        return std::min(1.0f, std::hypot(real, imag) / 46340.95f);
+    }
+    if (format == 2 || format == 3)
+        return static_cast<float>(static_cast<int16_t>(first)) / 32768.0f;
+    return static_cast<float>(first) / 65535.0f; // envelope / pixel data
+}
+
+uint16_t sidescanSample(FILE* file, uint16_t format, bool& ok)
+{
+    uint16_t first = 0;
+    if (!readWord(file, first)) { ok = false; return 0; }
+
+    if (format == 1 || format == 9) {
+        uint16_t second = 0;
+        if (!readWord(file, second)) { ok = false; return 0; }
+        const double real = static_cast<double>(static_cast<int16_t>(first));
+        const double imag = static_cast<double>(static_cast<int16_t>(second));
+        return static_cast<uint16_t>(std::min(65535.0, std::hypot(real, imag)));
+    }
+    if (format == 2 || format == 3) {
+        const int sample = static_cast<int>(static_cast<int16_t>(first));
+        return static_cast<uint16_t>(
+            std::min(65535, std::abs(sample) * 2));
+    }
+    return first; // envelope / pixel data
+}
+
+} // namespace
+
 std::optional<core::Artifact>
 JsfReader::readArtifact(const core::ArtifactIndexEntry& entry)
 {
-    if (!m_file) return std::nullopt;
-
-    if (!detail::seekAbs(m_file, entry.file_offset))
+    if (!m_file || !detail::seekAbs(m_file, entry.file_offset))
         return std::nullopt;
 
     JsfPacketHeader pkt{};
-    if (fread(&pkt, sizeof(pkt), 1, m_file) != 1) return std::nullopt;
-    if (pkt.marker != JSF_MARKER)  return std::nullopt;
-    if (pkt.type   != MSG_SONAR)   return std::nullopt;
-    if (pkt.size   <  kPingHdrSize) return std::nullopt;
+    if (std::fread(&pkt, sizeof(pkt), 1, m_file) != 1
+            || pkt.marker != JSF_MARKER
+            || pkt.type != MSG_SONAR
+            || !supportsSubsystem(pkt.subsystem)
+            || pkt.size < kPingHdrSize
+            || pkt.size > kMaxRecordSz
+            || (entry.byte_length != 0
+                && static_cast<uint64_t>(sizeof(JsfPacketHeader)) + pkt.size
+                    > entry.byte_length)) {
+        return std::nullopt;
+    }
 
     JsfSonarPingHeader ph{};
-    if (fread(&ph, sizeof(ph), 1, m_file) != 1) return std::nullopt;
+    if (std::fread(&ph, sizeof(ph), 1, m_file) != 1) return std::nullopt;
 
-    int64_t ts_us = pingTimestampUs(ph);
+    JsfSampleLayout layout;
+    if (!sampleLayout(ph, pkt.version, pkt.size, layout)) return std::nullopt;
 
-    // Preserve both raw position sources so the user can choose fish vs vessel nav.
-    const bool sensor_ok = hasUsableSensorCoord(ph.sensor_lat, ph.sensor_lon);
-    const bool ship_ok   = hasUsableCoordinate(ph.ship_lat, ph.ship_lon);
-
-    // Resolved best-available position (existing fallback order unchanged).
-    double lat = sensor_ok ? static_cast<double>(ph.sensor_lat) : ph.ship_lat;
-    double lon = sensor_ok ? static_cast<double>(ph.sensor_lon) : ph.ship_lon;
+    const int64_t ts_us = pingTimestampUs(ph);
+    const JsfCoordinate pos = coordinate(ph);
+    const uint16_t flags = validityFlags(ph);
 
     core::NavPoint nav;
-    nav.lat          = lat;
-    nav.lon          = lon;
-    nav.fish_lat         = sensor_ok ? static_cast<double>(ph.sensor_lat) : 0.0;
-    nav.fish_lon         = sensor_ok ? static_cast<double>(ph.sensor_lon) : 0.0;
-    nav.fish_nav_valid   = sensor_ok;
-    nav.vessel_lat       = ship_ok ? ph.ship_lat : 0.0;
-    nav.vessel_lon       = ship_ok ? ph.ship_lon : 0.0;
-    nav.vessel_nav_valid = ship_ok;
-    nav.heading_deg        = ph.heading_deg;
-    nav.sensor_heading_deg = ph.heading_deg;  // JSF has one heading field (towfish)
-    // course_deg is a separate GPS-derived COG; leave ship_heading_deg at 0
-    nav.speed_kn     = ph.sensor_speed_kn;
-    nav.altitude_m   = ph.altitude_m;
-    nav.pitch_deg    = ph.pitch_deg;
-    nav.roll_deg     = ph.roll_deg;
-    nav.heave_m      = ph.heave_m;
+    nav.lat          = pos.lat;
+    nav.lon          = pos.lon;
+    nav.heading_deg  = headingDeg(ph);
+    nav.sensor_heading_deg = nav.heading_deg;
+    nav.altitude_m   = altitudeM(ph);
+    nav.pitch_deg    = pitchDeg(ph);
+    nav.roll_deg     = rollDeg(ph);
     nav.timestamp    = ts_us * 1e-6;
-    nav.valid        = hasUsableCoordinate(lat, lon);
-    nav.is_projected = entry.is_projected;
-    nav.spatial_ref  = entry.is_projected
-        ? core::makeUnknownProjectedSpatialRef("PROJECTED:JSF_MAGNITUDE")
+    nav.valid        = pos.valid;
+    nav.is_projected = pos.projected;
+    nav.spatial_ref  = pos.projected
+        ? core::makeUnknownProjectedSpatialRef("PROJECTED:JSF")
         : core::makeWgs84SpatialRef();
 
-    uint32_t num_samples = ph.num_samples;
-    if (num_samples == 0) return std::nullopt;
+    // Position-interpolated means the trace coordinate represents the sonar;
+    // otherwise the format documents it as the last received navigation fix.
+    if (pos.valid && (flags & (1u << 13))) {
+        nav.fish_lat       = pos.lat;
+        nav.fish_lon       = pos.lon;
+        nav.fish_nav_valid = true;
+    } else if (pos.valid) {
+        nav.vessel_lat       = pos.lat;
+        nav.vessel_lon       = pos.lon;
+        nav.vessel_nav_valid = true;
+    }
 
-    uint32_t bps         = bytesPerSample(ph.sample_size_bits);
-    uint32_t body_remain = pkt.size - kPingHdrSize;
-    uint32_t max_samples = (bps > 0) ? (body_remain / bps) : 0;
-    num_samples = std::min(num_samples, max_samples);
-    if (num_samples == 0) return std::nullopt;
+    const uint32_t interval_ns = sampleIntervalNs(ph);
+    const float sample_rate_hz = interval_ns > 0
+        ? 1.0e9f / static_cast<float>(interval_ns) : 0.0f;
+    const float range_m = interval_ns > 0
+        ? static_cast<float>(layout.count) * static_cast<float>(interval_ns)
+            * 1.0e-9f * 1500.0f * 0.5f
+        : 0.0f;
+    const float blanking_m = interval_ns > 0
+        ? static_cast<float>(leU32(&ph.bytes[4])) * static_cast<float>(interval_ns)
+            * 1.0e-9f * 1500.0f * 0.5f
+        : 0.0f;
+    const float frequency_hz = static_cast<float>(frequencyHz(ph, pkt.version));
+    const auto artifact_type = classifySubsystem(pkt.subsystem);
 
-    // -- Sub-bottom trace ------------------------------------------------------
-    if (entry.type == core::ArtifactType::SubBottom) {
+    if (artifact_type == core::ArtifactType::SubBottom) {
         core::SubBottomTrace trace;
         trace.id             = entry.artifact_id;
         trace.timestamp_us   = ts_us;
         trace.nav            = nav;
-        trace.frequency_hz   = static_cast<float>(ph.frequency_hz);
-        trace.tow_depth_m    = ph.sensor_depth_m;
-        trace.two_way_time_s = (ph.range_m > 0.f) ? (2.f * ph.range_m / 1500.f) : 0.f;
-        trace.sample_rate_hz = (trace.two_way_time_s > 0.f)
-                             ? static_cast<float>(num_samples) / trace.two_way_time_s
-                             : 0.f;
-        trace.samples.reserve(num_samples);
-        for (uint32_t s = 0; s < num_samples; ++s) {
-            float normalised = 0.f;
-            if (bps == 1) {
-                uint8_t raw = 0;
-                if (fread(&raw, 1, 1, m_file) != 1) break;
-                normalised = (static_cast<float>(raw) - 128.f) / 128.f;
-            } else {
-                int16_t raw = 0;
-                if (fread(&raw, 2, 1, m_file) != 1) break;
-                normalised = static_cast<float>(raw) / 32768.f;
-            }
-            trace.samples.push_back(normalised);
-        }
+        trace.frequency_hz   = frequency_hz;
+        trace.sample_rate_hz = sample_rate_hz;
+        trace.tow_depth_m    = depthM(ph);
+        trace.two_way_time_s = interval_ns > 0
+            ? static_cast<float>(layout.count) * interval_ns * 1.0e-9f : 0.0f;
+        trace.samples.reserve(layout.count);
+        bool ok = true;
+        for (uint32_t i = 0; i < layout.count; ++i)
+            trace.samples.push_back(sbpSample(m_file, layout.format, ok));
+        if (!ok) return std::nullopt;
         trace.bottom_sample_idx = detectBottomSample(
             trace.samples.data(), static_cast<int>(trace.samples.size()));
         return trace;
     }
 
-    // -- Sidescan ping ---------------------------------------------------------
-    static constexpr float kDefaultSV = 1500.f;  // JSF has no SV field; use standard assumption
-
     core::SidescanPing ping;
     ping.id                = entry.artifact_id;
     ping.timestamp_us      = ts_us;
+    ping.ping_number       = pingNumber(ph);
     ping.nav               = nav;
-    ping.frequency_hz      = static_cast<float>(ph.frequency_hz);
-    ping.slant_range_m     = ph.range_m;
-    ping.sound_velocity_ms = kDefaultSV;
-    ping.tow_depth_m       = ph.sensor_depth_m;
-    ping.blanking_m        = (ph.time_offset_sec > 0.f)
-                           ? (ph.time_offset_sec * kDefaultSV * 0.5f)
-                           : 0.f;
-    ping.layback_m         = ph.layback_m;
-    ping.cable_out_m       = ph.cable_out_m;
-    ping.gain_code         = static_cast<uint16_t>(ph.weight_factor & 0xFFFFu);
-    ping.sample_rate_hz    = (ph.range_m > 0.f && num_samples > 0)
-                           ? (static_cast<float>(num_samples) * kDefaultSV / (2.f * ph.range_m))
-                           : 0.f;
-    ping.channel = (pkt.subsystem == SUBSYS_STBD)
-                 ? core::SidescanChannel::Starboard
-                 : core::SidescanChannel::Port;
+    ping.frequency_hz      = frequency_hz;
+    ping.sample_rate_hz    = sample_rate_hz;
+    ping.slant_range_m     = range_m;
+    ping.sound_velocity_ms = 1500.0f; // JSF Message 80 has no per-trace SV field
+    ping.tow_depth_m       = depthM(ph);
+    ping.blanking_m        = blanking_m;
+    ping.layback_m         = laybackM(ph);
+    ping.cable_out_m       = cableOutM(ph);
+    ping.gain_code         = leU16(&ph.bytes[120]);
+    ping.channel = pkt.channel == CHANNEL_STBD
+        ? core::SidescanChannel::Starboard
+        : core::SidescanChannel::Port;
 
-    ping.samples.reserve(num_samples);
-    for (uint32_t s = 0; s < num_samples; ++s) {
-        uint16_t raw = 0;
-        if (bps == 1) {
-            uint8_t b = 0;
-            if (fread(&b, 1, 1, m_file) != 1) break;
-            raw = static_cast<uint16_t>(b) * 257u;
-        } else {
-            if (fread(&raw, 2, 1, m_file) != 1) break;
-        }
+    ping.samples.reserve(layout.count);
+    bool ok = true;
+    for (uint32_t i = 0; i < layout.count; ++i) {
         core::SidescanSample sample;
-        sample.amplitude = raw;
-        sample.range_m   = (num_samples > 1)
-                         ? ping.blanking_m + (ping.slant_range_m - ping.blanking_m)
-                               * static_cast<float>(s) / static_cast<float>(num_samples - 1)
-                         : ping.blanking_m;
+        sample.amplitude = sidescanSample(m_file, layout.format, ok);
+        sample.range_m = layout.count > 1
+            ? blanking_m + (range_m - blanking_m)
+                * static_cast<float>(i) / static_cast<float>(layout.count - 1)
+            : blanking_m;
         ping.samples.push_back(sample);
     }
-
+    if (!ok) return std::nullopt;
     return ping;
 }
 

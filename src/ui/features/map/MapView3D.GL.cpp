@@ -581,19 +581,19 @@ void MapView3D::buildSurveyOutline()
     bool any = false;
 
     for (const auto& L : m_layers) {
-        if (!L.has_bbox) continue;
+        if (!L.layer_visible || !L.has_bbox) continue;
         xmin = std::min(xmin, L.bbox_xmin);  xmax = std::max(xmax, L.bbox_xmax);
         ymin = std::min(ymin, L.bbox_ymin);  ymax = std::max(ymax, L.bbox_ymax);
         any = true;
     }
     for (const auto& T : m_terrain_layers) {
-        if (T.vertex_count <= 0 && T.cpu_verts.empty()) continue;
+        if (!T.visible || (T.vertex_count <= 0 && T.cpu_verts.empty())) continue;
         xmin = std::min(xmin, T.bbox_xmin);  xmax = std::max(xmax, T.bbox_xmax);
         ymin = std::min(ymin, T.bbox_ymin);  ymax = std::max(ymax, T.bbox_ymax);
         any = true;
     }
     for (const auto& C : m_curtain_layers) {
-        if (C.vertex_count <= 0 && C.cpu_verts.empty()) continue;
+        if (!C.visible || (C.vertex_count <= 0 && C.cpu_verts.empty())) continue;
         xmin = std::min(xmin, C.bbox_xmin);  xmax = std::max(xmax, C.bbox_xmax);
         ymin = std::min(ymin, C.bbox_ymin);  ymax = std::max(ymax, C.bbox_ymax);
         any = true;

@@ -21,8 +21,10 @@
 
 # Local IDE/editor state
 /.vscode/
+/.vs/
 /.claude/
 /.sixth/
+/out/
 
 # Website dependencies
 /website/node_modules/

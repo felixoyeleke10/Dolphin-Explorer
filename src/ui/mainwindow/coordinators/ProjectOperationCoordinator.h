@@ -34,6 +34,11 @@ public:
     void connectToProcessing(ProcessingController* ctrl);
     void connectToCorrections(CorrectionBatchOperator* corr_op);
 
+signals:
+    // Emitted after projectModified so ProjectSessionController can perform the
+    // immediate save through its one dirty/clean/diagnostics path.
+    void persistenceRequested();
+
 private:
     void onProcessingPersisted(const std::string& layer_id,
                                const std::string& proc_path,

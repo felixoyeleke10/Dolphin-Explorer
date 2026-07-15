@@ -19,11 +19,9 @@ namespace dolphin::ui {
 //  Data loading
 // -----------------------------------------------------------------------------
 void SBPMetadataWindow::setProject(app::Project*       project,
-                                   app::ImportService* import_service,
                                    const std::string&  active_layer_id)
 {
     m_project         = project;
-    m_import_service  = import_service;
     m_active_layer_id = active_layer_id;
 
     m_line_menu->clear();
@@ -43,7 +41,8 @@ void SBPMetadataWindow::setProject(app::Project*       project,
 
 void SBPMetadataWindow::startLoad()
 {
-    if (!m_project || !m_import_service) return;
+    const int gen = ++m_load_gen;
+    if (!m_project) return;
 
     struct LoadItem {
         std::string sp, sf, src_path;
@@ -79,9 +78,6 @@ void SBPMetadataWindow::startLoad()
     m_model->setTraces({});
     m_all_traces.clear();
 
-    const int gen = ++m_load_gen;
-    auto* svc = m_import_service;
-
     auto* watcher = new QFutureWatcher<std::vector<core::SubBottomTrace>>(this);
     connect(watcher, &QFutureWatcher<std::vector<core::SubBottomTrace>>::finished,
             this, [this, watcher, gen] {
@@ -91,10 +87,10 @@ void SBPMetadataWindow::startLoad()
                 catch (...) { m_load_status->setText("Load failed"); }
             });
     watcher->setFuture(QtConcurrent::run(
-        [svc, items]() -> std::vector<core::SubBottomTrace> {
+        [items]() -> std::vector<core::SubBottomTrace> {
             std::vector<core::SubBottomTrace> all;
             for (const auto& item : items) {
-                auto traces = svc->loadAllSubBottomTraces(
+                auto traces = app::ImportService::loadAllSubBottomTraces(
                     item.sp, item.sf, item.idx, item.src_path);
                 all.insert(all.end(),
                            std::make_move_iterator(traces.begin()),

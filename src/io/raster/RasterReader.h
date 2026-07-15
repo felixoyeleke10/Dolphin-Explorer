@@ -60,8 +60,20 @@ bool readElevationRaster(const std::string& path, core::RasterGrid& out,
 bool readImageRaster(const std::string& path, RasterImage& out,
                      std::string* err = nullptr, int max_dim = 0);
 
-// Warped variants — reproject to WGS84 geographic (lon/lat) for the 2D map
-// overlay, which works in the display (geographic) CRS. When the source has no
+// Reproject into an explicit display CRS understood by GDAL (for example,
+// "EPSG:4326" or "EPSG:32630"). If the source has no CRS, coordinates are
+// read unchanged. An invalid/unavailable target CRS is an error, never a silent
+// native-coordinate fallback.
+bool readElevationRasterForCrs(const std::string& path,
+                               const std::string& target_crs,
+                               core::RasterGrid& out,
+                               std::string* err = nullptr, int max_dim = 0);
+bool readImageRasterForCrs(const std::string& path,
+                           const std::string& target_crs,
+                           RasterImage& out,
+                           std::string* err = nullptr, int max_dim = 0);
+
+// Convenience variants — reproject to WGS84 geographic (lon/lat). When the source has no
 // CRS, these fall back to a native read (coordinates assumed already geographic).
 // The returned geo_transform is therefore in degrees (lon/lat). max_dim caps size.
 bool readElevationRasterWgs84(const std::string& path, core::RasterGrid& out,

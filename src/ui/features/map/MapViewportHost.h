@@ -155,6 +155,7 @@ private:
     int    m_grat_coord_fmt     = 0;
     ToolMode m_tool_mode        = ToolMode::Pan;
     std::unordered_map<std::string, bool> m_layer_visibility;
+    std::unordered_map<std::string, bool> m_nav_track_visibility;
 };
 
 } // namespace dolphin::ui

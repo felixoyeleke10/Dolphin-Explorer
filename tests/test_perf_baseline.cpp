@@ -58,9 +58,11 @@ static void reportPerf(const char* tag, double ms, int count, const char* notes 
 // Failure tracking
 // ---------------------------------------------------------------------------
 
+static int g_checks = 0;
 static int g_fail = 0;
 
 #define REQUIRE(expr) do { \
+    ++g_checks; \
     if (!(expr)) { \
         std::fprintf(stderr, "FATAL  %s:%d  %s\n", __FILE__, __LINE__, #expr); \
         ++g_fail; \
@@ -359,7 +361,7 @@ int main(int argc, char* argv[])
         std::fprintf(stderr, "BENCHMARK ABORTED: %d correctness failure(s)\n", g_fail);
         return 1;
     }
-    std::printf("Benchmark complete — %d correctness checks passed.\n", 0);
+    std::printf("Benchmark complete — %d correctness checks passed.\n", g_checks);
     std::fflush(stdout);
     return 0;
 }

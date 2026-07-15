@@ -152,16 +152,16 @@ void WaterfallWindow::closeEvent(QCloseEvent* ev)
 // -----------------------------------------------------------------------------
 
 void WaterfallWindow::setLayer(app::DataLayer*     layer,
-                               app::ImportService* import_service,
                                const std::string&  source_path,
                                uint64_t            source_size_bytes)
 {
     saveQcRanges();   // persist ranges for the outgoing layer before replacing it
 
     m_scroll_debounce->stop();
+    m_repipe_debounce->stop();
+    if (m_op_mgr) m_op_mgr->cancelByKey("wf:pipeline");
     m_pending_abs_row   = -1;
     m_layer             = layer;
-    m_import_service    = import_service;
     m_source_path       = source_path;
     m_source_size_bytes = source_size_bytes;
 
@@ -279,11 +279,11 @@ void WaterfallWindow::clearLayer()
     saveQcRanges();   // persist before dropping the layer pointer
 
     m_scroll_debounce->stop();
+    m_repipe_debounce->stop();
     m_pending_abs_row = -1;
     if (m_op_mgr) m_op_mgr->cancelByKey("wf:pipeline");
     setDataState(ViewerDataState::Idle);
     m_layer                   = nullptr;
-    m_import_service          = nullptr;
     m_source_path.clear();
     m_selected_frequency_hz   = 0.f;
     m_total_ssc_entries       = 0;

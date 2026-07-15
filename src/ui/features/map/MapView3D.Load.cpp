@@ -246,6 +246,52 @@ static TerrainBuildResult buildTerrainFromFile(
 //  loadTerrainFile — public API, dispatches background parse + GL upload
 // -----------------------------------------------------------------------------
 
+uint64_t MapView3D::beginTerrainLoad(const std::string& layer_id)
+{
+    if (const auto existing = m_terrain_load_generation.find(layer_id);
+        existing != m_terrain_load_generation.end()) {
+        m_pending_terrain_loads.erase(existing->second);
+    }
+    const uint64_t generation = ++m_next_terrain_load_generation;
+    m_terrain_load_generation[layer_id] = generation;
+    m_pending_terrain_loads.insert(generation);
+    if (!m_terrain_loading) {
+        m_terrain_loading = true;
+        update();
+    }
+    return generation;
+}
+
+bool MapView3D::finishTerrainLoad(const std::string& layer_id, uint64_t generation)
+{
+    m_pending_terrain_loads.erase(generation);
+    const bool still_loading = !m_pending_terrain_loads.empty();
+    if (m_terrain_loading != still_loading) {
+        m_terrain_loading = still_loading;
+        update();
+    }
+
+    const auto it = m_terrain_load_generation.find(layer_id);
+    if (it == m_terrain_load_generation.end() || it->second != generation)
+        return false;
+    m_terrain_load_generation.erase(it);
+    return true;
+}
+
+void MapView3D::invalidateTerrainLoad(const std::string& layer_id)
+{
+    const auto it = m_terrain_load_generation.find(layer_id);
+    if (it == m_terrain_load_generation.end()) return;
+
+    m_pending_terrain_loads.erase(it->second);
+    m_terrain_load_generation.erase(it);
+    const bool still_loading = !m_pending_terrain_loads.empty();
+    if (m_terrain_loading != still_loading) {
+        m_terrain_loading = still_loading;
+        update();
+    }
+}
+
 // buildTerrainFromGrid — pure function, runs on a background thread.
 // A depth raster is already a regular grid, so it triangulates directly (no
 // resampling). Decimated to <= ~512 nodes/axis so a large GeoTIFF still yields a
@@ -369,14 +415,19 @@ void MapView3D::loadTerrainFile(const std::string& layer_id,
     const double oy       = m_origin_y;
     const bool   is_proj  = m_is_projected;
 
-    m_terrain_loading = true;   // shows the in-HUD "Loading terrain…" chip
-    update();
+    const uint64_t generation = beginTerrainLoad(layer_id);
 
     auto* watcher = new QFutureWatcher<TerrainBuildResult>(this);
     connect(watcher, &QFutureWatcher<TerrainBuildResult>::finished, this,
-            [this, watcher, layer_id]() {
-                TerrainBuildResult res = watcher->result();
+            [this, watcher, layer_id, generation]() {
+                TerrainBuildResult res;
+                try {
+                    res = watcher->result();
+                } catch (...) {
+                    res.error = tr("Terrain loading failed.");
+                }
                 watcher->deleteLater();
+                if (!finishTerrainLoad(layer_id, generation)) return;
                 applyTerrainResult(layer_id, std::move(res));
             });
 
@@ -389,7 +440,6 @@ void MapView3D::loadTerrainFile(const std::string& layer_id,
 // Shared apply path for both the file and grid terrain loaders.
 void MapView3D::applyTerrainResult(const std::string& layer_id, TerrainBuildResult&& res)
 {
-    if (m_terrain_loading) { m_terrain_loading = false; update(); }
     if (!res.error.isEmpty()) {
         emit terrainLoadFinished(layer_id, false, res.error);
         return;
@@ -437,12 +487,19 @@ void MapView3D::loadTerrainGrid(const std::string& layer_id,
     const double ox       = m_origin_x;
     const double oy       = m_origin_y;
     const bool   is_proj  = m_is_projected;
+    const uint64_t generation = beginTerrainLoad(layer_id);
 
     auto* watcher = new QFutureWatcher<TerrainBuildResult>(this);
     connect(watcher, &QFutureWatcher<TerrainBuildResult>::finished, this,
-            [this, watcher, layer_id]() {
-                TerrainBuildResult res = watcher->result();
+            [this, watcher, layer_id, generation]() {
+                TerrainBuildResult res;
+                try {
+                    res = watcher->result();
+                } catch (...) {
+                    res.error = tr("Terrain loading failed.");
+                }
                 watcher->deleteLater();
+                if (!finishTerrainLoad(layer_id, generation)) return;
                 applyTerrainResult(layer_id, std::move(res));
             });
 
@@ -456,6 +513,7 @@ void MapView3D::loadTerrainGrid(const std::string& layer_id,
 
 void MapView3D::removeTerrainLayer(const std::string& layer_id)
 {
+    invalidateTerrainLoad(layer_id);
     auto it = std::find_if(m_terrain_layers.begin(), m_terrain_layers.end(),
                            [&](const TerrainMesh3D& T){ return T.id == layer_id; });
     if (it == m_terrain_layers.end()) return;

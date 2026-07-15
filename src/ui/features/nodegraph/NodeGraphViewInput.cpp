@@ -4,7 +4,9 @@
 #include "pipeline/NodeRegistry.h"
 
 #include <QContextMenuEvent>
+#include <QInputDialog>
 #include <QKeyEvent>
+#include <QLineEdit>
 #include <QMap>
 #include <QMenu>
 #include <QMouseEvent>
@@ -258,8 +260,15 @@ void NodeGraphView::contextMenuEvent(QContextMenuEvent* ev)
         });
         if (grp) {
             menu.addAction(tr("Rename…"), [this, grp]() {
-                // TODO: inline rename input
-                Q_UNUSED(grp);
+                bool accepted = false;
+                const QString current = QString::fromStdString(grp->label);
+                const QString label = QInputDialog::getText(
+                    this, tr("Rename Group"), tr("Group name:"),
+                    QLineEdit::Normal, current, &accepted).trimmed();
+                if (!accepted || label.isEmpty() || label == current) return;
+                grp->label = label.toStdString();
+                emit graphModified();
+                update();
             });
         }
         menu.exec(ev->globalPos()); return;

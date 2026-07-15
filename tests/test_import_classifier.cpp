@@ -3,8 +3,8 @@
 // Covers:
 //   - classifyImportAction returns ImportNew for null project
 //   - classifyImportAction returns ImportNew for unknown source path
-//   - classifyImportAction returns ReuseExisting when a valid DLPD cache exists
-//   - classifyImportAction returns RebuildExisting when cache is missing/stale
+//   - classifyImportAction returns ReuseExisting when a usable DLPD cache exists
+//   - classifyImportAction returns RebuildExisting when cache is missing/stale/incomplete
 //   - classifyImportAction prefers pipeline_applied layer when multiple layers share a source
 //   - ImportJobManager::importBatch deduplicates repeated paths within one batch
 //
@@ -17,13 +17,14 @@
 #include "app/layers/DataLayer.h"
 #include "app/layers/LayerUtils.h"
 #include "io/cache/ParsedCache.h"
-#include "io/IFormatReader.h"
 #include "core/Artifact.h"
 #include "core/ArtifactIndex.h"
 #include "core/SpatialRef.h"
 
 #include <QCoreApplication>
+#include <QEventLoop>
 #include <QTemporaryDir>
+#include <QTimer>
 
 #include <cassert>
 #include <chrono>
@@ -52,29 +53,23 @@ static void check(bool cond, const char* expr, const char* file, int line)
 namespace {
 using namespace dolphin;
 
-// Minimal IFormatReader that serves nothing (for writing header-only DLPDs).
-class NullReader : public io::IFormatReader {
-public:
-    bool open(const std::string&) override { return true; }
-    void close() override {}
-    bool isOpen() const override { return true; }
-    std::string formatName() const override { return "NULL"; }
-    io::FormatMeta metadata() override { return {}; }
-    core::ArtifactIndex buildIndex(io::ProgressFn) override { return {}; }
-    std::optional<core::Artifact> readArtifact(const core::ArtifactIndexEntry&) override
-    { return std::nullopt; }
-};
-
-// Write a minimal valid DLPD (header only — no records).
-// parsedCacheIsValid returns true for this file.
-static bool writeDummyDlpd(const std::string& path)
+// Write a minimal but genuinely reusable DLPD containing one sidescan record.
+static bool writeValidDlpd(const std::string& path,
+                           core::ArtifactIndex* written_index = nullptr)
 {
-    NullReader reader;
-    core::ArtifactIndex src, out;
-    // writeParsedCache with empty source_index writes the file header and returns
-    // false (empty cache), but the resulting file passes parsedCacheIsValid.
-    io::writeParsedCache(path, src, reader, out);
-    return io::parsedCacheIsValid(path);
+    core::SidescanPing ping;
+    ping.id           = 1;
+    ping.timestamp_us = 1'000'000;
+    ping.nav.valid    = true;
+    ping.nav.lat      = 48.0;
+    ping.nav.lon      = -52.0;
+    ping.samples.push_back({1000, 1.0f});
+
+    core::ArtifactIndex out;
+    const std::vector<core::Artifact> artifacts{core::Artifact{std::move(ping)}};
+    const bool wrote = io::writeArtifactBufferToCache(path, artifacts, {}, out);
+    if (written_index) *written_index = out;
+    return wrote && io::parsedCacheIsValid(path);
 }
 
 // RAII temp file.
@@ -140,7 +135,7 @@ static void testClassifyReuseExisting()
 
     // Write a valid DLPD to a temp path.
     TempFile dlpd;
-    const bool written = writeDummyDlpd(dlpd.path);
+    const bool written = writeValidDlpd(dlpd.path);
     CHECK(written);
     if (!written) return;
 
@@ -203,7 +198,51 @@ static void testClassifyRebuildExisting()
 }
 
 // ---------------------------------------------------------------------------
-// 5 — multiple layers sharing source: prefer pipeline_applied=true
+// 5 — header-only/truncated cache → RebuildExisting
+// ---------------------------------------------------------------------------
+
+static void testClassifyRejectsIncompleteCache()
+{
+    QTemporaryDir tmp;
+    if (!tmp.isValid()) { ++g_fail; return; }
+
+    TempFile dlpd;
+    core::ArtifactIndex written_index;
+    CHECK(writeValidDlpd(dlpd.path, &written_index));
+    CHECK(written_index.size() == 1);
+    if (written_index.empty()) return;
+
+    // Keep the compatible file header but remove the record and footer.
+    std::error_code ec;
+    std::filesystem::resize_file(
+        std::filesystem::path(dlpd.path),
+        written_index.entries.front().file_offset, ec);
+    CHECK(!ec);
+    CHECK(!dolphin::io::parsedCacheIsValid(dlpd.path));
+
+    const std::string manifest = (tmp.path() + "/proj.dlp").toStdString();
+    auto proj = dolphin::app::Project::create("TestProj", manifest);
+    CHECK(proj != nullptr);
+    if (!proj) return;
+
+    const std::string src_path = "/survey/incomplete.xtf";
+    auto* src = proj->addSource(src_path, "xtf");
+    auto* layer = proj->addLayer(src->id, "Incomplete");
+    if (!layer) { ++g_fail; return; }
+    layer->artifact_store_path   = dlpd.path;
+    layer->artifact_store_format = "dlpd";
+    layer->index_built           = true;
+    proj->commitLayer(layer->id);
+
+    using Kind = dolphin::app::FileImportAction::Kind;
+    const auto result = dolphin::app::classifyImportAction(
+        QString::fromStdString(src_path), proj.get());
+    CHECK(result.kind == Kind::RebuildExisting);
+    CHECK(result.existing_source_id == src->id);
+}
+
+// ---------------------------------------------------------------------------
+// 6 — multiple layers sharing source: prefer pipeline_applied=true
 // ---------------------------------------------------------------------------
 
 static void testClassifyBestLayerPrefersPipelined()
@@ -213,8 +252,8 @@ static void testClassifyBestLayerPrefersPipelined()
 
     TempFile dlpd_raw;
     TempFile dlpd_proc;
-    if (!writeDummyDlpd(dlpd_raw.path)) { ++g_fail; return; }
-    if (!writeDummyDlpd(dlpd_proc.path)) { ++g_fail; return; }
+    if (!writeValidDlpd(dlpd_raw.path)) { ++g_fail; return; }
+    if (!writeValidDlpd(dlpd_proc.path)) { ++g_fail; return; }
 
     const std::string manifest = (tmp.path() + "/proj.dlp").toStdString();
     auto proj = dolphin::app::Project::create("TestProj", manifest);
@@ -251,7 +290,7 @@ static void testClassifyBestLayerPrefersPipelined()
 }
 
 // ---------------------------------------------------------------------------
-// 6 — modality-aware reuse: mixed source imported as SSS, now requesting SBP
+// 7 — modality-aware reuse: mixed source imported as SSS, now requesting SBP
 //     must NOT report ReuseExisting (the SBP layer doesn't exist yet).
 // ---------------------------------------------------------------------------
 
@@ -261,7 +300,7 @@ static void testClassifyModalityAware()
     if (!tmp.isValid()) { ++g_fail; return; }
 
     TempFile dlpd;
-    if (!writeDummyDlpd(dlpd.path)) { ++g_fail; return; }
+    if (!writeValidDlpd(dlpd.path)) { ++g_fail; return; }
 
     const std::string manifest = (tmp.path() + "/proj.dlp").toStdString();
     auto proj = dolphin::app::Project::create("TestProj", manifest);
@@ -300,7 +339,7 @@ static void testClassifyModalityAware()
 }
 
 // ---------------------------------------------------------------------------
-// 7 — ImportJobManager: batch deduplication
+// 8 — ImportJobManager: batch deduplication
 // ---------------------------------------------------------------------------
 
 static void testBatchDedup()
@@ -333,6 +372,90 @@ static void testBatchDedup()
 }
 
 // ---------------------------------------------------------------------------
+// 9 — cache-index rebuild keeps the logical ProjectSource ID
+// ---------------------------------------------------------------------------
+
+static void testRebuildCanonicalizesArtifactSourceId()
+{
+    QTemporaryDir tmp;
+    if (!tmp.isValid()) { ++g_fail; return; }
+
+    const std::string store_path = (tmp.path() + "/source.dlpd").toStdString();
+    CHECK(writeValidDlpd(store_path));
+
+    const std::string manifest = (tmp.path() + "/proj.dlp").toStdString();
+    auto project = dolphin::app::Project::create("RebuildIdentity", manifest);
+    CHECK(project != nullptr);
+    if (!project) return;
+
+    auto* source = project->addSource("/survey/source.xtf", "xtf");
+    CHECK(source != nullptr);
+    if (!source) return;
+    const std::string source_id = source->id;
+
+    auto* layer = project->addLayer(source_id, "Source");
+    CHECK(layer != nullptr);
+    if (!layer) return;
+    const std::string layer_id = layer->id;
+    layer->artifact_store_path   = store_path;
+    layer->artifact_store_format = "dlpd";
+    layer->modality              = dolphin::app::Modality::Sidescan;
+    layer->index_built           = false;
+    layer->artifact_index.entries.clear();
+
+    dolphin::app::ImportService service;
+    QEventLoop loop;
+    QTimer timeout;
+    timeout.setSingleShot(true);
+    bool rebuilt = false;
+    bool failed = false;
+    bool timed_out = false;
+    QObject::connect(&service, &dolphin::app::ImportService::cacheIndexRebuilt,
+                     &loop, [&](const std::string& completed_layer_id) {
+        if (completed_layer_id != layer_id) return;
+        rebuilt = true;
+        loop.quit();
+    });
+    QObject::connect(&service, &dolphin::app::ImportService::indexingFailed,
+                     &loop, [&](const std::string& failed_layer_id,
+                                const std::string&) {
+        if (failed_layer_id != layer_id) return;
+        failed = true;
+        loop.quit();
+    });
+    QObject::connect(&timeout, &QTimer::timeout, &loop, [&]() {
+        timed_out = true;
+        loop.quit();
+    });
+
+    timeout.start(5000);
+    service.rebuildCacheIndex(layer_id, project);
+    if (!rebuilt && !failed)
+        loop.exec();
+    timeout.stop();
+
+    CHECK(!timed_out);
+    CHECK(!failed);
+    CHECK(rebuilt);
+    auto* rebuilt_layer = project->findLayer(layer_id);
+    CHECK(rebuilt_layer != nullptr);
+    if (!rebuilt_layer) return;
+    CHECK(rebuilt_layer->artifact_index.source_id == source_id);
+    CHECK(!rebuilt_layer->artifact_index.empty());
+    CHECK(project->save());
+
+    project.reset();
+    auto reopened = dolphin::app::Project::open(manifest);
+    CHECK(reopened != nullptr);
+    if (reopened) {
+        auto* reopened_layer = reopened->findLayer(layer_id);
+        CHECK(reopened_layer != nullptr);
+        if (reopened_layer)
+            CHECK(reopened_layer->artifact_index.source_id == source_id);
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Entry point
 // ---------------------------------------------------------------------------
 
@@ -344,9 +467,11 @@ int main(int argc, char** argv)
     testClassifyUnknownSource();
     testClassifyReuseExisting();
     testClassifyRebuildExisting();
+    testClassifyRejectsIncompleteCache();
     testClassifyBestLayerPrefersPipelined();
     testClassifyModalityAware();
     testBatchDedup();
+    testRebuildCanonicalizesArtifactSourceId();
 
     std::printf("\n%d passed, %d failed\n", g_pass, g_fail);
     return (g_fail == 0) ? 0 : 1;

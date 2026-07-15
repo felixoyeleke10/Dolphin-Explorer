@@ -195,7 +195,7 @@ MapView3D* MapViewportHost::ensureView3D()
     m_view3d->setToolMode(static_cast<int>(m_tool_mode));
 
     connect(m_view3d, &MapView3D::terrainLoadFinished, this,
-            [this](const std::string& /*id*/, bool ok, const QString& err) {
+            [this](const std::string& id, bool ok, const QString& err) {
                 if (!ok) {
                     QMessageBox::warning(this, tr("Terrain Load Error"), err);
                     return;
@@ -207,6 +207,10 @@ MapView3D* MapViewportHost::ensureView3D()
                         if (const LayerMapData* data = m_view2d->layerData(lid))
                             onLayerDataLoaded(lid, *data, colorForLayer(lid));
                     }
+                }
+                if (const auto it = m_layer_visibility.find(id);
+                    it != m_layer_visibility.end()) {
+                    m_view3d->setLayerVisible(id, it->second);
                 }
             });
     connect(m_view3d, &MapView3D::cursorMoved,
@@ -325,9 +329,9 @@ void MapViewportHost::setLayerShowBeams(const std::string& layer_id, bool show)
 
 void MapViewportHost::setNavTrackVisible(const std::string& layer_id, bool visible)
 {
-    m_layer_visibility[layer_id] = visible;
+    m_nav_track_visibility[layer_id] = visible;
     m_view2d->setNavTrackVisible(layer_id, visible);
-    if (m_view3d) m_view3d->setLayerVisible(layer_id, visible);
+    if (m_view3d) m_view3d->setNavTrackVisible(layer_id, visible);
 }
 
 void MapViewportHost::setActiveLayer(const std::string& layer_id)
@@ -497,13 +501,6 @@ void MapViewportHost::onLayerDataLoaded(const std::string& layer_id,
 
     if (m_view3d->hasOrigin()) {
         m_view3d->updateNavTrack(layer_id, data, color);
-        // Replay any explicit hide set before the 3D layer was created.
-        {
-            auto it = m_layer_visibility.find(layer_id);
-            if (it != m_layer_visibility.end() && !it->second)
-                m_view3d->setLayerVisible(layer_id, false);
-        }
-
         if (data.kind == LayerMapKind::Profile) {
             m_view3d->setProfileCurtain(layer_id, data);
         }
@@ -563,6 +560,18 @@ void MapViewportHost::onLayerDataLoaded(const std::string& layer_id,
                                     data.lon_max, data.lat_max,
                                     std::move(hull_geo), data.opacity);
         }
+
+        // Replay visibility after every representation exists. Whole-layer
+        // visibility controls tracks, curtains, drapes, and terrain; the nav
+        // toggle controls only the centreline.
+        if (const auto it = m_layer_visibility.find(layer_id);
+            it != m_layer_visibility.end()) {
+            m_view3d->setLayerVisible(layer_id, it->second);
+        }
+        if (const auto it = m_nav_track_visibility.find(layer_id);
+            it != m_nav_track_visibility.end()) {
+            m_view3d->setNavTrackVisible(layer_id, it->second);
+        }
     }
 }
 
@@ -576,6 +585,7 @@ void MapViewportHost::loadRasterTerrain(const std::string& layer_id,
 void MapViewportHost::onLayerRemoved(const std::string& layer_id)
 {
     m_layer_visibility.erase(layer_id);
+    m_nav_track_visibility.erase(layer_id);
     m_view2d->removeLayerData(layer_id);
     m_view3d->removeLayer(layer_id);
     m_view3d->removeProfileCurtain(layer_id);
@@ -586,6 +596,7 @@ void MapViewportHost::onLayerRemoved(const std::string& layer_id)
 void MapViewportHost::clearScene()
 {
     m_layer_visibility.clear();
+    m_nav_track_visibility.clear();
     m_view2d->clearAllLayerData();
     if (m_view3d) m_view3d->clearScene();
 }

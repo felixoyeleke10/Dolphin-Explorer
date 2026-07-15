@@ -7,6 +7,7 @@
 #include "io/ProbeDispatch.h"
 
 #include <algorithm>
+#include <exception>
 
 #include <QCheckBox>
 #include <QDir>
@@ -300,7 +301,16 @@ void ImportReviewWizard::startProbe(int idx)
 
     connect(watcher, &QFutureWatcher<io::ProbeResult>::finished, this,
             [this, idx, watcher]() {
-                m_entries[idx].result  = watcher->result();
+                try {
+                    m_entries[idx].result = watcher->result();
+                } catch (const std::exception& ex) {
+                    m_entries[idx].result.success = false;
+                    m_entries[idx].result.error_message = ex.what();
+                } catch (...) {
+                    m_entries[idx].result.success = false;
+                    m_entries[idx].result.error_message =
+                        "Unexpected error while inspecting the file";
+                }
                 m_entries[idx].done    = true;
                 m_entries[idx].probing = false;
                 watcher->deleteLater();

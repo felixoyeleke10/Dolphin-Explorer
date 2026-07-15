@@ -1,4 +1,5 @@
 add_library(dolphin-util STATIC
+    AtomicFile.cpp
     Json.cpp
     ZipWriter.cpp
 )

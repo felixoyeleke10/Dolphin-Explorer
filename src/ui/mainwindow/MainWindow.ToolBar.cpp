@@ -150,8 +150,7 @@ void MainWindow::setupToolBar()
     m_export_btn->setIcon(Theme::icon(":/icons/export.svg"));
     m_export_btn->setToolButtonStyle(Qt::ToolButtonIconOnly);
     m_export_btn->setPopupMode(QToolButton::InstantPopup);
-    m_export_btn->setToolTip(tr("Export project data.\n"
-        "Choose from CSV table, GeoTIFF mosaic, KMZ, navigation track, or PDF report.\n"
+    m_export_btn->setToolTip(tr("Export contacts, raster layers, reports, or a screenshot.\n"
         "Available only when a project is open."));
     m_export_btn->setEnabled(false);
     auto* exp_menu = new QMenu(m_export_btn);
@@ -160,14 +159,9 @@ void MainWindow::setupToolBar()
     for (auto [id, slot] : {
             std::pair{CommandId::ExportCsv,     &MainWindow::onExportCsv    },
             std::pair{CommandId::ExportGeotiff, &MainWindow::onExportGeotiff},
-            std::pair{CommandId::ExportKmz,     &MainWindow::onExportKmz    },
-            std::pair{CommandId::ExportNav,     &MainWindow::onExportNav    },
-            std::pair{CommandId::ExportPdf,     &MainWindow::onExportPdf    },
         }) {
         auto* a = makeAction(id, this);
         connect(a, &QAction::triggered, this, slot);
-        if (id != CommandId::ExportCsv) a->setEnabled(false);
-        m_export_actions.push_back(a);
         exp_menu->addAction(a);
     }
     m_export_btn->setMenu(exp_menu);

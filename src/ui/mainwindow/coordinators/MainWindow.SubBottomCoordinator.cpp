@@ -66,8 +66,7 @@ void MainWindow::onSubBottomOpen()
                     }
                     auto* win = qobject_cast<SBPMetadataWindow*>(m_sbp_metadata_win);
                     if (win)
-                        win->setProject(currentProject(), m_import_service,
-                                        activeLayerId());
+                        win->setProject(currentProject(), activeLayerId());
                     m_sbp_metadata_win->show();
                     m_sbp_metadata_win->raise();
                     m_sbp_metadata_win->activateWindow();
@@ -217,7 +216,7 @@ void MainWindow::onSubBottomOpen()
         auto* layer = currentProject()->findLayer(sbp_id);
         if (layer && layer->modality == app::Modality::SubBottom) {
             const auto* src = currentProject()->findSource(layer->source_id);
-            m_sbp_win->setLayer(layer, m_import_service,
+            m_sbp_win->setLayer(layer,
                                 src ? src->path : std::string{},
                                 src ? src->size_bytes : 0);
             m_sbp_win->setProjectContacts(currentProject()->contacts());

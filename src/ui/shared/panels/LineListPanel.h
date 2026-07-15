@@ -98,8 +98,6 @@ signals:
     void runLayersRequested         (const std::vector<std::string>& layer_ids);
     void removeLayersRequested      (const std::vector<std::string>& layer_ids);
     void exportLayersRequested      (const std::vector<std::string>& layer_ids, const QString& format);
-    void mergeLayersRequested       (const std::vector<std::string>& layer_ids);
-
     // Context menu — source and contact actions
     void removeContactRequested     (uint64_t contact_id);
     void exportContactsRequested    ();
@@ -128,7 +126,19 @@ private:
     void buildContactsSection(QTreeWidgetItem* parent);  // nullptr = tree root
     void buildFeaturesSection(QTreeWidgetItem* parent);
     void buildLayersSection(QTreeWidgetItem* parent);    // nullptr = tree root
+    void populateContactsSection(QTreeWidgetItem* section);
+    void populateFeaturesSection(QTreeWidgetItem* section);
     void syncLayerOrderFromTree();
+
+    // Context-menu aspects.  The entry-point dispatches by tree item type;
+    // each builder owns only the actions for that item family.
+    void showProjectContextMenu(const QPoint& global_pos);
+    void showLayerContextMenu(QTreeWidgetItem* item, const QPoint& global_pos);
+    void showLayerGroupContextMenu(QTreeWidgetItem* item, const QPoint& global_pos);
+    void showSourceContextMenu(QTreeWidgetItem* item, const QPoint& global_pos);
+    void showContactContextMenu(QTreeWidgetItem* item, const QPoint& global_pos);
+    void showFeatureContextMenu(QTreeWidgetItem* item, const QPoint& global_pos);
+    void showContactGroupContextMenu(QTreeWidgetItem* item, const QPoint& global_pos);
 
     QTreeWidgetItem* makeSectionHeader(const QString& title);
     QTreeWidgetItem* makeEmptyPlaceholder(QTreeWidgetItem* parent, const QString& text);

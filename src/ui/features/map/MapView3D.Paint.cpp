@@ -187,7 +187,7 @@ void MapView3D::drawNavLayers()
     glEnableVertexAttribArray(0);
 
     for (const auto& L : m_layers) {
-        if (L.vertex_count <= 0 || !L.visible) continue;
+        if (L.vertex_count <= 0 || !L.layer_visible || !L.nav_visible) continue;
         const bool hi = isHighlighted(L.id);
         QColor col = L.color.isValid() ? L.color : kNavLayerDefault;
         if (any_highlight && !hi) col.setAlphaF(col.alphaF() * 0.35f);
@@ -233,6 +233,7 @@ void MapView3D::drawTerrain()
     const bool use_lod = m_camera.distance > m_scene_radius * 3.5f;
 
     for (auto& T : m_terrain_layers) {
+        if (!T.visible) continue;
         QOpenGLBuffer& vbo  = (use_lod && T.lod_vertex_count > 0) ? T.vbo_lod : T.vbo;
         const int      cnt  = (use_lod && T.lod_vertex_count > 0) ? T.lod_vertex_count
                                                                     : T.vertex_count;

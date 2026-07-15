@@ -90,64 +90,64 @@ public:
     // Safe to call from QtConcurrent::run() without holding the layer pointer.
     // progress (optional): called on the calling thread with a 0..1 fraction as the
     // ping entries are read, so a caller can drive a determinate progress bar.
-    std::vector<core::SidescanPing> loadAllSidescanPingsFromStore(
+    static std::vector<core::SidescanPing> loadAllSidescanPingsFromStore(
         const std::string& store_path,
         const std::string& store_format,
         const core::ArtifactIndex& artifact_index,
         const std::string& source_path,
         int max_samples_per_ping = 0,
-        const std::function<void(float)>& progress = {}) const;
+        const std::function<void(float)>& progress = {});
 
     // Load all sub-bottom traces from an artifact store.
     // Thread-safe: takes pre-copied store/index values — do not pass DataLayer* directly.
     // Returns an empty vector on failure (missing store, empty index, read error).
-    std::vector<core::SubBottomTrace> loadAllSubBottomTraces(
+    static std::vector<core::SubBottomTrace> loadAllSubBottomTraces(
         const std::string& store_path,
         const std::string& store_format,
         const core::ArtifactIndex& artifact_index,
-        const std::string& source_path) const;
+        const std::string& source_path);
 
     // Load all magnetometer samples from an artifact store.
     // Thread-safe: takes pre-copied store/index values.
-    std::vector<core::MagSample> loadMagSamples(
+    static std::vector<core::MagSample> loadMagSamples(
         const std::string& store_path,
         const std::string& store_format,
         const core::ArtifactIndex& artifact_index,
-        const std::string& source_path) const;
+        const std::string& source_path);
 
     // Generic load — returns every artifact of `type` as a variant vector.
     // Use the typed overloads above when you know the concrete type; this
     // overload is for operations that process artifacts uniformly (stats,
     // nav extraction, export) regardless of modality.
-    std::vector<core::Artifact> loadArtifacts(
+    static std::vector<core::Artifact> loadArtifacts(
         core::ArtifactType type,
         const std::string& store_path,
         const std::string& store_format,
         const core::ArtifactIndex& artifact_index,
-        const std::string& source_path) const;
+        const std::string& source_path);
 
     // Nav-only variant — loads all pings but discards sample buffers immediately.
     // Use this for metadata/spreadsheet display; avoids storing hundreds of MB
     // of amplitude data that the caller doesn't need.
-    std::vector<core::SidescanPing> loadAllSidescanNavFromStore(
+    static std::vector<core::SidescanPing> loadAllSidescanNavFromStore(
         const std::string& store_path,
         const std::string& store_format,
         const core::ArtifactIndex& artifact_index,
-        const std::string& source_path) const;
+        const std::string& source_path);
 
     // Thread-safe windowed load — same as loadAllSidescanPingsFromStore but
     // limits the result to max_rows artifact entries centred on center_entry.
     // center_entry is a 0-based index into the (optionally filtered) sidescan entries.
     // frequency_hz: when > 0, only pings whose frequency is in the nearest band
     //   to this value are returned.  Pass 0 to return all frequencies.
-    std::vector<core::SidescanPing> loadSidescanWindowFromStore(
+    static std::vector<core::SidescanPing> loadSidescanWindowFromStore(
         const std::string& store_path,
         const std::string& store_format,
         const core::ArtifactIndex& artifact_index,
         const std::string& source_path,
         int64_t center_entry,
         int     max_rows,
-        float   frequency_hz = 0.f) const;
+        float   frequency_hz = 0.f);
 
 signals:
     void indexingStarted(const std::string& layer_id);

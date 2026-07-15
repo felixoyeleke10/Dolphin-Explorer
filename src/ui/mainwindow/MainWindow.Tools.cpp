@@ -1,383 +1,50 @@
-// MainWindow.Tools.cpp — export/tool stubs, contact actions, onAbout.
+// MainWindow.Tools.cpp - application key filter plus project-aware tool commands.
 #include "ui/mainwindow/MainWindow.h"
+
+#include "ui/mainwindow/coordinators/ToolController.h"
 #include "ui/mainwindow/commands/LayerCommands.h"
-#include "ui/mainwindow/AppSettingsDialog.h"
-#include "ui/features/export/ExportManagerWindow.h"
-#include "ui/features/contacts/ContactReport.h"
-#include "ui/features/map/MapView.h"
-#include "ui/features/map/MapViewportHost.h"
 #include "ui/features/map/sidescan/SidescanViewController.h"
 #include "ui/features/map/sidescan/SidescanCorrectionDialog.h"
-#include "app/project/Project.h"
-#include "app/layers/DataLayer.h"
-#include "io/raster/RasterReader.h"
-#include "io/raster/RasterWriter.h"
-#include "core/Contact.h"
-#include "ui/shared/panels/LineListPanel.h"
-#include "ui/shared/widgets/LayerPickerWidget.h"
-#include "ui/mainwindow/rightpanel/RightPanelHost.h"
 #include "ui/shell/WindowChrome.h"
+#include "app/project/Project.h"
+#include "core/Contact.h"
 
 #include <QAbstractSpinBox>
 #include <QApplication>
 #include <QComboBox>
-#include <QDir>
-#include <QDateTime>
-#include <QFile>
-#include <QFileDialog>
-#include <QFileInfo>
-#include <QIcon>
-#include <QImage>
 #include <QKeyEvent>
 #include <QLineEdit>
 #include <QMessageBox>
-#include <QPainter>
-#include <QPixmap>
 #include <QPlainTextEdit>
 #include <QTextEdit>
-#include <QTextStream>
-#include <QToolButton>
-#include <vector>
 
 namespace dolphin::ui {
 
-// -- Export helpers ------------------------------------------------------------
-
-namespace {
-// Returns the user's preferred export directory, falling back to home.
-QString exportStartDir()
-{
-    const QString dir = AppSettingsDialog::loadDefaults().export_dir;
-    return dir.isEmpty() ? QDir::homePath() : dir;
-}
-} // namespace
-
-// -- Export stubs --------------------------------------------------------------
-
-void MainWindow::onExportCsv()
-{
-    if (!currentProject()) { appendJobMessage(tr("Open a project before exporting.")); return; }
-
-    const auto& contacts = currentProject()->contacts();
-    if (contacts.empty()) {
-        appendJobMessage(tr("No contacts to export."));
-        return;
-    }
-
-    const QString path = QFileDialog::getSaveFileName(
-        this, tr("Export Contacts as CSV"), exportStartDir(),
-        tr("CSV files (*.csv);;All files (*)"));
-    if (path.isEmpty()) return;
-
-    QFile file(path);
-    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
-        QMessageBox::warning(this, tr("Export Failed"),
-            tr("Could not write to:\n%1").arg(path));
-        return;
-    }
-
-    auto quoted = [](const QString& s) -> QString {
-        return '"' + QString(s).replace('"', "\"\"") + '"';
-    };
-    auto confidenceStr = [](core::Confidence c) -> QLatin1StringView {
-        switch (c) {
-        case core::Confidence::Possible: return QLatin1StringView("Possible");
-        case core::Confidence::Probable: return QLatin1StringView("Probable");
-        case core::Confidence::Certain:  return QLatin1StringView("Certain");
-        }
-        return QLatin1StringView("Possible");
-    };
-
-    QTextStream ts(&file);
-    ts << "Label,Latitude,Longitude,Depth_m,Range_m,Width_m,Height_m,"
-          "Classification,Confidence,Line,Notes\n";
-
-    for (const auto& c : contacts) {
-        ts << quoted(QString::fromStdString(c.label))          << ','
-           << QString::number(c.lat,      'f', 8)              << ','
-           << QString::number(c.lon,      'f', 8)              << ','
-           << QString::number(c.depth_m,  'f', 2)              << ','
-           << QString::number(c.range_m,  'f', 2)              << ','
-           << QString::number(c.width_m,  'f', 2)              << ','
-           << QString::number(c.height_m, 'f', 2)              << ','
-           << quoted(QString::fromStdString(c.classification))  << ','
-           << confidenceStr(c.confidence)                       << ','
-           << quoted(QString::fromStdString(c.line_id))         << ','
-           << quoted(QString::fromStdString(c.notes))           << '\n';
-    }
-
-    ts.flush();
-    if (file.error() != QFileDevice::NoError) {
-        file.close();
-        file.remove();
-        QMessageBox::warning(this, tr("Export Failed"),
-            tr("Export failed: could not write to file."));
-        return;
-    }
-
-    appendJobMessage(tr("Exported %1 contact(s) to %2")
-        .arg(static_cast<int>(contacts.size()))
-        .arg(QFileInfo(path).fileName()));
-    recordActivity(ActivityKind::Export,
-        tr("Exported %1 contact(s) → %2")
-            .arg(static_cast<int>(contacts.size()))
-            .arg(QFileInfo(path).fileName()));
-}
-
-void MainWindow::onExportGeotiff()
-{
-    if (!currentProject()) { appendJobMessage(tr("Open a project before exporting.")); return; }
-    std::vector<std::string> ids;
-    for (const auto& l : currentProject()->layers())
-        if (l && l->modality == app::Modality::Raster && l->raster.valid)
-            ids.push_back(l->id);
-    if (ids.empty()) {
-        appendJobMessage(tr("No raster layers to export. Import a raster (GeoTIFF / image) first."));
-        return;
-    }
-    onExportLayers(ids, QStringLiteral("geotiff"));   // single → file dialog, many → folder
-}
-
-void MainWindow::onExportKmz()
-{
-    if (!currentProject()) { appendJobMessage(tr("Open a project before exporting.")); return; }
-    const QString path = QFileDialog::getSaveFileName(
-        this, tr("Export as KMZ"), exportStartDir(),
-        tr("KMZ files (*.kmz);;All files (*)"));
-    if (path.isEmpty()) return;
-    appendJobMessage(tr("KMZ export is not yet available in this version."));
-}
-
-void MainWindow::onExportNav()
-{
-    if (!currentProject()) { appendJobMessage(tr("Open a project before exporting.")); return; }
-    const QString path = QFileDialog::getSaveFileName(
-        this, tr("Export Navigation"), exportStartDir(),
-        tr("CSV files (*.csv);;NMEA files (*.nmea *.txt);;All files (*)"));
-    if (path.isEmpty()) return;
-    appendJobMessage(tr("Navigation export is not yet available in this version."));
-}
-
-void MainWindow::onExportPdf()
-{
-    if (!currentProject()) { appendJobMessage(tr("Open a project before exporting.")); return; }
-    const QString path = QFileDialog::getSaveFileName(
-        this, tr("Export Survey Report"), exportStartDir(),
-        tr("PDF files (*.pdf);;All files (*)"));
-    if (path.isEmpty()) return;
-    appendJobMessage(tr("PDF report export is not yet available in this version."));
-}
-
-void MainWindow::onExportManagerOpen()
-{
-    if (!m_export_win) {
-        auto* win = new ExportManagerWindow(nullptr);
-        win->setAttribute(Qt::WA_DeleteOnClose);
-        m_export_win = win;
-        connect(win, &ExportManagerWindow::exportContactsCsvRequested,
-                this, &MainWindow::onExportCsv);
-        connect(win, &ExportManagerWindow::exportContactsPdfRequested,
-                this, [this]() { exportContactsReport(/*docx=*/false); });
-        connect(win, &ExportManagerWindow::exportContactsWordRequested,
-                this, [this]() { exportContactsReport(/*docx=*/true); });
-        connect(win, &ExportManagerWindow::exportScreenshotRequested,
-                this, &MainWindow::onExportScreenshot);
-        connect(win, &ExportManagerWindow::exportRastersRequested, this, [this]() {
-            if (!currentProject()) return;
-            std::vector<std::string> ids;
-            for (const auto& l : currentProject()->layers())
-                if (l && l->modality == app::Modality::Raster && l->raster.valid)
-                    ids.push_back(l->id);
-            if (ids.empty()) { appendJobMessage(tr("No raster layers to export.")); return; }
-            onExportLayers(ids, QStringLiteral("geotiff"));   // folder dialog for >1
-        });
-    }
-    m_export_win->show();
-    m_export_win->raise();
-    m_export_win->activateWindow();
-}
-
-void MainWindow::exportContactsReport(bool docx)
-{
-    if (!currentProject()) { appendJobMessage(tr("Open a project before exporting.")); return; }
-    const auto& contacts = currentProject()->contacts();
-    if (contacts.empty()) { appendJobMessage(tr("No contacts to export.")); return; }
-
-    const QString filter = docx ? tr("Word Document (*.docx)") : tr("PDF Document (*.pdf)");
-    const QString ext    = docx ? QStringLiteral(".docx") : QStringLiteral(".pdf");
-    QString path = QFileDialog::getSaveFileName(
-        this, tr("Export Contact Report"), exportStartDir(), filter);
-    if (path.isEmpty()) return;
-    if (!path.endsWith(ext, Qt::CaseInsensitive)) path += ext;
-
-    const QString title = tr("Contact Report — %1")
-        .arg(QString::fromStdString(currentProject()->name()));
-    const std::vector<core::Contact> rows(contacts.begin(), contacts.end());
-    const bool ok = docx ? ContactReport::writeDocx(path, title, rows, currentProject())
-                         : ContactReport::writePdf(path, title, rows, currentProject());
-    if (ok) {
-        appendJobMessage(tr("Exported %1 contact(s) → %2")
-            .arg(static_cast<int>(rows.size())).arg(QFileInfo(path).fileName()));
-        recordActivity(ActivityKind::Export,
-            tr("Exported contact report → %1").arg(QFileInfo(path).fileName()));
-    } else {
-        QMessageBox::warning(this, tr("Export Failed"), tr("Could not write the report file."));
-    }
-}
-
-void MainWindow::onExportScreenshot()
-{
-    const QString base = currentProject()
-        ? QString::fromStdString(currentProject()->name())
-        : QStringLiteral("DolphinExplorer");
-    const QString stamp = QDateTime::currentDateTime().toString("yyyyMMdd_HHmmss");
-    const QString suggested = QDir(exportStartDir())
-        .filePath(QString("%1_screenshot_%2.png").arg(base, stamp));
-
-    QString path = QFileDialog::getSaveFileName(
-        this, tr("Export Screenshot"), suggested,
-        tr("PNG image (*.png);;JPEG image (*.jpg *.jpeg);;All files (*)"));
-    if (path.isEmpty()) return;
-
-    const QString suffix = QFileInfo(path).suffix().toLower();
-    if (suffix.isEmpty())
-        path += QStringLiteral(".png");
-
-    // Render the shell into an offscreen QImage instead of grab()-ing the live
-    // window. grab() forces DWM/OpenGL recomposition while a QOpenGLWidget is
-    // visible and causes the entire window to visibly flicker on Windows.
-    const qreal dpr = devicePixelRatio();
-    QImage image(QSize(qRound(width() * dpr), qRound(height() * dpr)),
-                 QImage::Format_ARGB32_Premultiplied);
-    image.setDevicePixelRatio(dpr);
-    image.fill(Qt::black);
-    render(&image);
-
-    if (m_viewport_host) {
-        const QImage viewport = m_viewport_host->grabViewportImage();
-        if (!viewport.isNull()) {
-            const QPoint top_left = m_viewport_host->mapTo(this, QPoint(0, 0));
-            const QRect target(
-                QPoint(qRound(top_left.x() * dpr), qRound(top_left.y() * dpr)),
-                QSize(qRound(m_viewport_host->width() * dpr),
-                      qRound(m_viewport_host->height() * dpr)));
-
-            QPainter painter(&image);
-            painter.drawImage(target, viewport);
-        }
-    }
-
-    const QByteArray format =
-        QFileInfo(path).suffix().compare(QStringLiteral("jpg"), Qt::CaseInsensitive) == 0 ||
-        QFileInfo(path).suffix().compare(QStringLiteral("jpeg"), Qt::CaseInsensitive) == 0
-            ? QByteArrayLiteral("JPG")
-            : QByteArrayLiteral("PNG");
-
-    if (!image.save(path, format.constData())) {
-        QMessageBox::warning(this, tr("Export Failed"),
-            tr("Could not write screenshot to:\n%1").arg(path));
-        return;
-    }
-
-    appendJobMessage(tr("Screenshot exported to %1").arg(QFileInfo(path).fileName()));
-    recordActivity(ActivityKind::Export,
-        tr("Screenshot → %1").arg(QFileInfo(path).fileName()));
-}
-
-bool MainWindow::exportRasterLayer(app::DataLayer* layer, const QString& path)
-{
-    if (!layer || !layer->raster.valid) return false;
-    std::string err;
-    bool ok = false;
-    if (layer->raster.is_depth) {
-        core::RasterGrid g;
-        if (io::readElevationRaster(layer->artifact_store_path, g, &err))
-            ok = io::writeElevationGeoTiff(path.toStdString(), g, &err);
-    } else {
-        io::RasterImage im;
-        if (io::readImageRaster(layer->artifact_store_path, im, &err))
-            ok = io::writeImageGeoTiff(path.toStdString(), im.width, im.height, im.rgba,
-                                       im.geo_transform, im.crs_wkt, /*alpha*/ true, &err);
-    }
-    if (ok) {
-        appendJobMessage(tr("Exported GeoTIFF: %1").arg(path));
-        recordActivity(ActivityKind::Export,
-            tr("Exported raster %1").arg(QFileInfo(path).fileName()));
-    } else {
-        appendJobMessage(tr("Raster export failed — %1").arg(QString::fromStdString(err)));
-    }
-    return ok;
-}
-
-void MainWindow::onExportLayers(const std::vector<std::string>& layer_ids,
-                                const QString& format)
-{
-    if (!currentProject() || layer_ids.empty()) return;
-
-    // Raster layers export to GeoTIFF via GDAL (RasterWriter).
-    std::vector<app::DataLayer*> rasters;
-    for (const auto& id : layer_ids)
-        if (auto* l = currentProject()->findLayer(id);
-            l && l->modality == app::Modality::Raster && l->raster.valid)
-            rasters.push_back(l);
-
-    if (rasters.empty()) {
-        appendJobMessage(tr("Export as %1 is not yet available for these layers.")
-            .arg(format.toUpper()));
-        return;
-    }
-
-    if (rasters.size() == 1) {
-        const QString def = QString::fromStdString(rasters.front()->label) + ".tif";
-        const QString path = QFileDialog::getSaveFileName(
-            this, tr("Export GeoTIFF"), def, tr("GeoTIFF (*.tif *.tiff)"));
-        if (path.isEmpty()) return;
-        exportRasterLayer(rasters.front(), path);
-    } else {
-        const QString dir = QFileDialog::getExistingDirectory(
-            this, tr("Export GeoTIFFs to Folder"));
-        if (dir.isEmpty()) return;
-        int n = 0;
-        for (auto* l : rasters)
-            if (exportRasterLayer(l, dir + "/" + QString::fromStdString(l->label) + ".tif")) ++n;
-        appendJobMessage(tr("Exported %n GeoTIFF(s)", nullptr, n));
-    }
-}
-
-void MainWindow::onMergeLayers(const std::vector<std::string>& layer_ids)
-{
-    appendJobMessage(tr("Merge Lines is not yet available in this version."));
-}
-
-// -- Tool stubs ----------------------------------------------------------------
-
 bool MainWindow::eventFilter(QObject* obj, QEvent* ev)
 {
-    // Dark native title bars, app-wide: every top-level window (viewers, the
-    // contact editor/manager, settings dialogs, …) gets the DWM dark frame the
-    // moment it first shows — the white Windows frame clashes with the theme.
+    // Apply the native dark frame when any top-level window first appears.
     if (ev->type() == QEvent::Show) {
-        if (auto* w = qobject_cast<QWidget*>(obj); w && w->isWindow())
-            applyDarkTitleBar(w);
+        if (auto* window = qobject_cast<QWidget*>(obj); window && window->isWindow())
+            applyDarkTitleBar(window);
     }
 
-    // Single-letter tool keys (V/S/Z/M/C), app-wide so they also work from the
-    // viewer windows — but NEVER while the user is typing or a dialog is open.
+    // Single-letter tool keys remain app-wide but yield to text editors, spin
+    // boxes, editable combos, dialogs, and popups.
     if (ev->type() == QEvent::KeyPress) {
-        auto* ke = static_cast<QKeyEvent*>(ev);
-        if (ke->modifiers() == Qt::NoModifier
+        auto* key = static_cast<QKeyEvent*>(ev);
+        if (key->modifiers() == Qt::NoModifier
                 && !QApplication::activeModalWidget()
                 && !QApplication::activePopupWidget()) {
-            QWidget* fw = QApplication::focusWidget();
-            const bool typing = fw
-                && (qobject_cast<QLineEdit*>(fw)
-                    || qobject_cast<QTextEdit*>(fw)
-                    || qobject_cast<QPlainTextEdit*>(fw)
-                    || qobject_cast<QAbstractSpinBox*>(fw)
-                    || (qobject_cast<QComboBox*>(fw)
-                        && static_cast<QComboBox*>(fw)->isEditable()));
+            QWidget* focus = QApplication::focusWidget();
+            const bool typing = focus
+                && (qobject_cast<QLineEdit*>(focus)
+                    || qobject_cast<QTextEdit*>(focus)
+                    || qobject_cast<QPlainTextEdit*>(focus)
+                    || qobject_cast<QAbstractSpinBox*>(focus)
+                    || (qobject_cast<QComboBox*>(focus)
+                        && static_cast<QComboBox*>(focus)->isEditable()));
             if (!typing) {
-                switch (ke->key()) {
+                switch (key->key()) {
                 case Qt::Key_V: onToolCursor();  return true;
                 case Qt::Key_S: onToolSelect();  return true;
                 case Qt::Key_Z: onToolZoom();    return true;
@@ -391,89 +58,44 @@ bool MainWindow::eventFilter(QObject* obj, QEvent* ev)
     return QMainWindow::eventFilter(obj, ev);
 }
 
-void MainWindow::syncAnnotationToggles(bool contact_active, int feature_tool)
-{
-    // Every interactive tool (nav, contact, polygon/line/pen) now lives in the
-    // one exclusive toolbar group — checking the active tool's button is enough;
-    // the group unchecks the previous one. Both-inactive means a nav-tool
-    // handler is taking over and checks its own button.
-    QToolButton* to_check = nullptr;
-    if (contact_active)         to_check = m_contact_btn;
-    else if (feature_tool == 1) to_check = m_feat_poly_btn;
-    else if (feature_tool == 2) to_check = m_feat_line_btn;
-    else if (feature_tool == 3) to_check = m_feat_pen_btn;
-    if (to_check) { QSignalBlocker sb(to_check); to_check->setChecked(true); }
-}
-
 void MainWindow::onToolCursor()
 {
-    if (m_map_view) m_map_view->setInputMode(MapView::ModePan);
-    if (m_viewport_host) m_viewport_host->setToolMode(ToolMode::Pan);
-    if (m_cursor_btn) { QSignalBlocker sb(m_cursor_btn); m_cursor_btn->setChecked(true); }
-    syncAnnotationToggles(false, 0);
-    m_app_state->setToolMode(ToolMode::Pan);
+    if (m_tool_ctrl) m_tool_ctrl->activatePan();
 }
 
 void MainWindow::onToolSelect()
 {
-    if (m_map_view) m_map_view->setInputMode(MapView::ModeSelect);
-    if (m_viewport_host) m_viewport_host->setToolMode(ToolMode::Select);
-    if (m_select_btn) { QSignalBlocker sb(m_select_btn); m_select_btn->setChecked(true); }
-    syncAnnotationToggles(false, 0);
-    m_app_state->setToolMode(ToolMode::Select);
+    if (m_tool_ctrl) m_tool_ctrl->activateSelect();
 }
 
 void MainWindow::onToolZoom()
 {
-    if (m_map_view) m_map_view->setInputMode(MapView::ModeZoom);
-    if (m_viewport_host) m_viewport_host->setToolMode(ToolMode::Zoom);
-    if (m_zoom_btn) { QSignalBlocker sb(m_zoom_btn); m_zoom_btn->setChecked(true); }
-    syncAnnotationToggles(false, 0);
-    m_app_state->setToolMode(ToolMode::Zoom);
+    if (m_tool_ctrl) m_tool_ctrl->activateZoom();
 }
 
 void MainWindow::onToolMeasure()
 {
-    if (m_map_view) m_map_view->setInputMode(MapView::ModeMeasure);
-    if (m_viewport_host) m_viewport_host->setToolMode(ToolMode::Measure);
-    if (m_measure_btn) { QSignalBlocker sb(m_measure_btn); m_measure_btn->setChecked(true); }
-    syncAnnotationToggles(false, 0);
-    m_app_state->setToolMode(ToolMode::Measure);
-    appendJobMessage(tr("Click to add points. Right-click or double-click to reset."));
+    if (m_tool_ctrl) m_tool_ctrl->activateMeasure();
 }
-
 
 void MainWindow::onBottomTrack()
 {
-    // Open the SBP/seabed viewer. onSubBottomOpen() guards "no indexed sub-bottom data"
-    // and selects a valid sub-bottom line itself, so this works regardless of the active
-    // layer's modality (e.g. while an SSS line is selected) — it no longer refuses to
-    // open just because the active layer isn't sub-bottom.
     onSubBottomOpen();
 }
-
-// -- Contact / layer actions ---------------------------------------------------
 
 void MainWindow::onAddContact()
 {
     if (!currentProject()) {
         appendJobMessage(tr("Open a project before placing contacts."));
-        // The toolbar click already checked the Contact button (exclusive group);
-        // fall back to the default tool so the UI doesn't claim an inactive mode.
         onToolCursor();
         return;
     }
-    if (m_map_view) m_map_view->setInputMode(MapView::ModePickContact);
-    if (m_viewport_host) m_viewport_host->setToolMode(ToolMode::ContactPick);
-    syncAnnotationToggles(true, 0);   // contact on, feature off, toolbar btn checked
-    m_app_state->setToolMode(ToolMode::ContactPick);
-    appendJobMessage(tr("Click on the map to place a contact. Press V or another tool to stop."));
+    if (m_tool_ctrl) m_tool_ctrl->activateContactPick();
 }
 
 void MainWindow::onToggle3D()
 {
-    if (!m_viewport_host) return;
-    m_viewport_host->setMode3D(!m_viewport_host->isMode3D());
+    if (m_tool_ctrl) m_tool_ctrl->toggle3D();
 }
 
 void MainWindow::onMeasurementUpdated(double metres)
@@ -482,163 +104,112 @@ void MainWindow::onMeasurementUpdated(double metres)
         appendJobMessage({});
         return;
     }
-    QString text;
-    if (metres >= 1000.0)
-        text = tr("Distance: %1 km").arg(metres / 1000.0, 0, 'f', 3);
-    else
-        text = tr("Distance: %1 m").arg(metres, 0, 'f', 1);
-    appendJobMessage(text);
+    appendJobMessage(metres >= 1000.0
+        ? tr("Distance: %1 km").arg(metres / 1000.0, 0, 'f', 3)
+        : tr("Distance: %1 m").arg(metres, 0, 'f', 1));
 }
 
 void MainWindow::onContactPickedOnMap(double lon, double lat)
 {
     if (!currentProject()) return;
-    core::Contact c;
-    c.lat = lat;
-    c.lon = lon;
-    c.classification = m_pending_contact_class;   // from the Contact Picking section
-    c.spatial_ref = currentProject()->displaySpatialRef();
-    // Leave the label empty: the project assigns a stable, monotonic "Cnnn" from the
-    // contact id, so removals never cause a later pick to reuse a surviving number.
-    auto* cmd = new AddContactCommand(currentProject(), c, [this]() {  });
-    m_undo_stack->push(cmd);
+    core::Contact contact;
+    contact.lat = lat;
+    contact.lon = lon;
+    contact.classification = m_pending_contact_class;
+    contact.spatial_ref = currentProject()->displaySpatialRef();
+    auto* command = new AddContactCommand(currentProject(), contact, [] {});
+    m_undo_stack->push(command);
 
     QString label;
-    for (const auto& ct : currentProject()->contacts())
-        if (ct.id == cmd->assignedId()) { label = QString::fromStdString(ct.label); break; }
-
+    for (const auto& existing : currentProject()->contacts())
+        if (existing.id == command->assignedId()) {
+            label = QString::fromStdString(existing.label);
+            break;
+        }
     appendJobMessage(tr("Contact %1 placed at %2, %3")
-        .arg(label)
-        .arg(lat, 0, 'f', 6)
-        .arg(lon, 0, 'f', 6));
-    recordActivity(ActivityKind::ContactPick,
-        tr("Contact %1 placed").arg(label));
+        .arg(label).arg(lat, 0, 'f', 6).arg(lon, 0, 'f', 6));
+    recordActivity(ActivityKind::ContactPick, tr("Contact %1 placed").arg(label));
 }
 
 void MainWindow::onDrawFeature(int tool)
 {
     if (!currentProject()) {
         appendJobMessage(tr("Open a project before drawing features."));
-        // The toolbar click already checked the feature button (exclusive
-        // group); fall back to the default tool so the UI stays honest.
         onToolCursor();
         return;
     }
-    if (tool == 0) {   // deactivate → back to the default Cursor/Pan tool
-        onToolCursor();
-        return;
-    }
-    // Feature drawing happens on the 2D chart; leave 3D mode if active.
-    if (m_viewport_host && m_viewport_host->isMode3D())
-        m_viewport_host->setMode3D(false);
-    if (m_map_view) {
-        m_map_view->setFeatureDrawKind(tool);
-        m_map_view->setInputMode(MapView::ModeDrawFeature);
-    }
-    syncAnnotationToggles(false, tool);   // feature on, contact off
-    appendJobMessage(
-        tool == 1 ? tr("Polygon: click points, double-click or Enter to close, Esc to cancel.")
-      : tool == 2 ? tr("Line: click points, double-click or Enter to finish, Esc to cancel.")
-                  : tr("Pen: press and drag to draw freehand; release to finish."));
+    if (m_tool_ctrl) m_tool_ctrl->activateFeature(tool);
 }
 
-void MainWindow::onFeatureDrawn(const std::vector<QPointF>& lonlat_vertices, bool polygon)
+void MainWindow::onFeatureDrawn(const std::vector<QPointF>& vertices, bool polygon)
 {
-    if (!currentProject() || lonlat_vertices.size() < 2) return;
+    if (!currentProject() || vertices.size() < 2) return;
 
-    core::Feature f;
-    f.type = polygon ? core::FeatureType::Polygon : core::FeatureType::Polyline;
-    f.spatial_ref = currentProject()->displaySpatialRef();
-    f.vertices.reserve(lonlat_vertices.size());
-    for (const QPointF& v : lonlat_vertices)
-        f.vertices.push_back(core::GeoVertex{ v.y(), v.x() });   // QPointF is (lon,lat)
+    core::Feature feature;
+    feature.type = polygon ? core::FeatureType::Polygon : core::FeatureType::Polyline;
+    feature.spatial_ref = currentProject()->displaySpatialRef();
+    feature.vertices.reserve(vertices.size());
+    for (const QPointF& vertex : vertices)
+        feature.vertices.push_back(core::GeoVertex{vertex.y(), vertex.x()});
 
-    // Empty label → project assigns a stable monotonic "Fnnn".
-    auto* cmd = new AddFeatureCommand(currentProject(), f, []() {});
-    m_undo_stack->push(cmd);
-
+    auto* command = new AddFeatureCommand(currentProject(), feature, [] {});
+    m_undo_stack->push(command);
     QString label;
-    for (const auto& ft : currentProject()->features())
-        if (ft.id == cmd->assignedId()) { label = QString::fromStdString(ft.label); break; }
+    for (const auto& existing : currentProject()->features())
+        if (existing.id == command->assignedId()) {
+            label = QString::fromStdString(existing.label);
+            break;
+        }
+    appendJobMessage(
+        tr("Feature %1 added (%n point(s))", "", static_cast<int>(vertices.size()))
+            .arg(label));
+}
 
-    appendJobMessage(tr("Feature %1 added (%n point(s))", "", static_cast<int>(f.vertices.size()))
-                         .arg(label));
+void MainWindow::showSidescanCorrectionDialog(bool navigation_mode)
+{
+    const QString layer_name = (!activeLayerId().empty() && currentProject())
+        ? [this] {
+              const auto* layer = currentProject()->findLayer(activeLayerId());
+              return layer ? QString::fromStdString(layer->label)
+                           : tr("No layer selected");
+          }()
+        : tr("No layer selected");
+
+    auto* dialog = new SidescanCorrectionDialog(
+        navigation_mode ? SidescanCorrectionDialog::Mode::Navigation
+                        : SidescanCorrectionDialog::Mode::Heading,
+        layer_name, this);
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
+    connect(dialog, &SidescanCorrectionDialog::applyRequested,
+            this, [this, dialog](SidescanCorrectionDialog::ApplyScope) {
+                if (!m_sss_ctrl) return;
+                m_sss_ctrl->setGeorefParams(dialog->headingParams());
+                m_sss_ctrl->reloadCurrentLayer();
+            });
+    connect(dialog, &SidescanCorrectionDialog::previewRequested,
+            this, [this, dialog] {
+                if (!m_sss_ctrl) return;
+                m_sss_ctrl->setGeorefParams(dialog->headingParams());
+                m_sss_ctrl->reloadLayer(activeLayerId());
+            });
+    connect(dialog, &SidescanCorrectionDialog::resetRequested, this, [this] {
+        if (!m_sss_ctrl) return;
+        m_sss_ctrl->setGeorefParams({});
+        m_sss_ctrl->reloadLayer(activeLayerId());
+    });
+    dialog->show();
+    dialog->raise();
+    dialog->activateWindow();
 }
 
 void MainWindow::onRenumberContacts()
 {
-    const QString layer_name = (!activeLayerId().empty() && currentProject())
-        ? [&]() -> QString {
-              auto* l = currentProject()->findLayer(activeLayerId());
-              return l ? QString::fromStdString(l->label) : tr("No layer selected");
-          }()
-        : tr("No layer selected");
-
-    auto* dlg = new SidescanCorrectionDialog(
-        SidescanCorrectionDialog::Mode::Navigation, layer_name, this);
-    dlg->setAttribute(Qt::WA_DeleteOnClose);
-    connect(dlg, &SidescanCorrectionDialog::applyRequested,
-            this, [this, dlg](SidescanCorrectionDialog::ApplyScope /*scope*/) {
-                if (m_sss_ctrl) {
-                    m_sss_ctrl->setGeorefParams(dlg->headingParams());
-                    m_sss_ctrl->reloadCurrentLayer();
-                }
-            });
-    connect(dlg, &SidescanCorrectionDialog::previewRequested,
-            this, [this, dlg]() {
-                if (m_sss_ctrl) {
-                    m_sss_ctrl->setGeorefParams(dlg->headingParams());
-                    m_sss_ctrl->reloadLayer(activeLayerId());
-                }
-            });
-    connect(dlg, &SidescanCorrectionDialog::resetRequested,
-            this, [this]() {
-                if (m_sss_ctrl) {
-                    m_sss_ctrl->setGeorefParams({});
-                    m_sss_ctrl->reloadLayer(activeLayerId());
-                }
-            });
-    dlg->show();
-    dlg->raise();
-    dlg->activateWindow();
+    showSidescanCorrectionDialog(true);
 }
 
 void MainWindow::onLineProps()
 {
-    const QString layer_name = (!activeLayerId().empty() && currentProject())
-        ? [&]() -> QString {
-              auto* l = currentProject()->findLayer(activeLayerId());
-              return l ? QString::fromStdString(l->label) : tr("No layer selected");
-          }()
-        : tr("No layer selected");
-
-    auto* dlg = new SidescanCorrectionDialog(
-        SidescanCorrectionDialog::Mode::Heading, layer_name, this);
-    dlg->setAttribute(Qt::WA_DeleteOnClose);
-    connect(dlg, &SidescanCorrectionDialog::applyRequested,
-            this, [this, dlg](SidescanCorrectionDialog::ApplyScope /*scope*/) {
-                if (m_sss_ctrl) {
-                    m_sss_ctrl->setGeorefParams(dlg->headingParams());
-                    m_sss_ctrl->reloadCurrentLayer();
-                }
-            });
-    connect(dlg, &SidescanCorrectionDialog::previewRequested,
-            this, [this, dlg]() {
-                if (m_sss_ctrl) {
-                    m_sss_ctrl->setGeorefParams(dlg->headingParams());
-                    m_sss_ctrl->reloadLayer(activeLayerId());
-                }
-            });
-    connect(dlg, &SidescanCorrectionDialog::resetRequested,
-            this, [this]() {
-                if (m_sss_ctrl) {
-                    m_sss_ctrl->setGeorefParams({});
-                    m_sss_ctrl->reloadLayer(activeLayerId());
-                }
-            });
-    dlg->show();
-    dlg->raise();
-    dlg->activateWindow();
+    showSidescanCorrectionDialog(false);
 }
 
 void MainWindow::onResetRaw()
@@ -659,14 +230,15 @@ void MainWindow::onClearContacts()
     if (contacts.empty()) return;
     if (QMessageBox::question(this, tr("Clear Contacts"),
             tr("Move all contacts to the Recycle Bin?"),
-            QMessageBox::Yes | QMessageBox::No) != QMessageBox::Yes)
+            QMessageBox::Yes | QMessageBox::No) != QMessageBox::Yes) {
         return;
-    // Snapshot ids first (recycling mutates the list), then one undoable macro.
+    }
+
     std::vector<uint64_t> ids;
     ids.reserve(contacts.size());
-    for (const auto& c : contacts) ids.push_back(c.id);
+    for (const auto& contact : contacts) ids.push_back(contact.id);
     m_undo_stack->beginMacro(tr("Clear Contacts"));
-    for (uint64_t id : ids)
+    for (const uint64_t id : ids)
         m_undo_stack->push(new RecycleContactCommand(currentProject(), id));
     m_undo_stack->endMacro();
 }

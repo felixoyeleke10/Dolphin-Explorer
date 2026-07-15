@@ -255,7 +255,9 @@ std::string Project::toJson() const
         jl["low_frequency_hz"] = util::JsonValue(static_cast<double>(l->low_frequency_hz));
 
         util::JsonValue jindex = util::JsonValue::object();
-        jindex["source_id"] = util::JsonValue(l->artifact_index.source_id);
+        // Persist the authoritative project relationship, never a reader's
+        // backing-file locator that may have leaked into ArtifactIndex.
+        jindex["source_id"] = util::JsonValue(l->source_id);
 
         // Only embed entries when there is no .dlpd cache to recover from.
         // For layers with a valid parsed store the entries are reloaded at

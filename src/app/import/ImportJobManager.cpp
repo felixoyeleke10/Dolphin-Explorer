@@ -184,7 +184,8 @@ void ImportJobManager::dispatchNext()
             && !job.existing_layer_id.empty()) {
             // Layer ID is known at dispatch time — pre-insert so onIndexingComplete
             // can distinguish RebuildExisting from ImportNew in the summary.
-            m_active_jobs[job.existing_layer_id] = {FileImportAction::Kind::RebuildExisting, false};
+            m_active_jobs[job.existing_layer_id] = {
+                FileImportAction::Kind::RebuildExisting, false, m_epoch};
             m_log.record(makeEntry(ImportLogEntry::Event::Dispatched,
                                    job.existing_layer_id,
                                    QFileInfo(job.path).fileName().toStdString()));
@@ -231,12 +232,14 @@ void ImportJobManager::onIndexingStarted(const std::string& layer_id)
     auto it = m_active_jobs.find(layer_id);
     if (it == m_active_jobs.end()) {
         // ImportNew: layer ID wasn't known at dispatch — add it now.
-        m_active_jobs[layer_id] = {FileImportAction::Kind::ImportNew, true};
+        m_active_jobs[layer_id] = {
+            FileImportAction::Kind::ImportNew, true, m_active_job_epoch};
     } else {
         it->second.started = true;
     }
 
-    if (m_active_job_epoch != m_epoch) {
+    const auto active = m_active_jobs.find(layer_id);
+    if (active == m_active_jobs.end() || active->second.epoch != m_epoch) {
         m_log.record(makeEntry(ImportLogEntry::Event::Suppressed, layer_id, "started"));
         return;
     }
@@ -266,7 +269,8 @@ void ImportJobManager::onIndexingStarted(const std::string& layer_id)
 
 void ImportJobManager::onIndexingProgress(const std::string& layer_id, int percent)
 {
-    if (m_active_job_epoch != m_epoch) return;
+    const auto active = m_active_jobs.find(layer_id);
+    if (active != m_active_jobs.end() && active->second.epoch != m_epoch) return;
     if (percent % 25 == 0) {  // log milestones only to avoid flooding the buffer
         auto e = makeEntry(ImportLogEntry::Event::Progress, layer_id);
         e.progress_pct = static_cast<uint8_t>(percent);
@@ -277,7 +281,9 @@ void ImportJobManager::onIndexingProgress(const std::string& layer_id, int perce
 
 void ImportJobManager::onIndexingComplete(const std::string& layer_id)
 {
-    const bool live = (m_active_job_epoch == m_epoch);
+    const auto active = m_active_jobs.find(layer_id);
+    const bool live = active != m_active_jobs.end()
+                   && active->second.epoch == m_epoch;
 
     if (live) {
         m_log.record(makeEntry(ImportLogEntry::Event::Completed, layer_id));
@@ -316,7 +322,10 @@ void ImportJobManager::onIndexingComplete(const std::string& layer_id)
 void ImportJobManager::onIndexingFailed(const std::string& layer_id,
                                         const std::string& error)
 {
-    const bool live = (m_active_job_epoch == m_epoch);
+    const auto active = m_active_jobs.find(layer_id);
+    const bool live = active != m_active_jobs.end()
+        ? active->second.epoch == m_epoch
+        : m_active_job_epoch == m_epoch;
 
     if (live) {
         m_log.record(makeEntry(ImportLogEntry::Event::Failed, layer_id, error));

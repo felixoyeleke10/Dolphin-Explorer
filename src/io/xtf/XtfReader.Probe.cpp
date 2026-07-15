@@ -85,6 +85,9 @@ ProbeResult XtfReader::probe(const std::string& path)
         }
 
         if (pkt.HeaderType == PACKET_PING) {
+            if (pkt.MagX != 0.f || pkt.MagY != 0.f || pkt.MagZ != 0.f)
+                r.has_magnetometer = true;
+
             double lat = pkt.SensorYcoordinate;
             double lon = pkt.SensorXcoordinate;
             if (!hasUsableCoordinate(lat, lon)) {
@@ -120,6 +123,13 @@ ProbeResult XtfReader::probe(const std::string& path)
         r.heading_min   = hdg_min;
         r.heading_max   = hdg_max;
         r.heading_mean  = static_cast<float>(hdg_sum / hdg_n);
+    }
+
+    if (r.has_magnetometer) {
+        ProbeResult::ChannelInfo ci;
+        ci.name     = "Magnetometer";
+        ci.modality = "Magnetometer";
+        r.channels.push_back(std::move(ci));
     }
 
     if (r.coord_valid) {
