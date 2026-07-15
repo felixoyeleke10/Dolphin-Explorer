@@ -54,6 +54,17 @@ public:
     // silently (dead placeholder layers until the next self-heal open).
     void setImportsBusyCheck(std::function<bool()> fn)
         { m_imports_busy_check = std::move(fn); }
+    // Escape hatch for the busy case: drops queued import jobs (the file
+    // currently decoding still settles naturally — in-flight decodes have no
+    // cancellation token). Lets ensureImportsIdle offer "Cancel Imports"
+    // instead of leaving the operator with no exit but Task Manager.
+    void setImportsCancelRequest(std::function<void()> fn)
+        { m_imports_cancel_request = std::move(fn); }
+
+    // Public: app-close (MainWindow::closeEvent) uses the same dialog + cancel
+    // + bounded-settle flow as project transitions, so both surfaces behave
+    // identically. True means no import work holds the current project alive.
+    bool ensureImportsIdle(const QString& dialog_title);
 
     // Used by the import flow to inject a freshly-created project without the
     // full open/close ceremony (no projectAboutToChange / viewport suppression).
@@ -105,9 +116,9 @@ private:
     void addToRecentProjects(const QString& path);
     void emitWindowTitle();
     QString buildWindowTitle() const;
-    // Project replacement/deletion cannot safely outlive an active import yet.
-    // True means there is no import work holding the current project alive.
-    bool ensureImportsIdle(const QString& dialog_title);
+    // After a cancel request: pump the event loop (job completions arrive as
+    // queued signals) until imports go idle or the timeout expires. True = idle.
+    bool waitForImportsToSettle(int timeout_ms);
 
     QUndoStack*            m_undo_stack;
     DiagnosticsHub*        m_diag_hub;
@@ -121,6 +132,7 @@ private:
     bool             m_save_in_progress = false;
     core::SpatialRef m_pending_crs;
     std::function<bool()> m_imports_busy_check;
+    std::function<void()> m_imports_cancel_request;
 };
 
 } // namespace dolphin::ui

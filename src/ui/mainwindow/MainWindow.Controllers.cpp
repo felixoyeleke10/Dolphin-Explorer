@@ -139,6 +139,12 @@ void MainWindow::setupFeatureControllers()
         // same way app close does — otherwise a switch abandons them silently.
         m_session_ctrl->setImportsBusyCheck(
             [this]() { return m_import_ctrl && m_import_ctrl->importsBusy(); });
+        // Escape hatch for that dialog: drop queued files (the in-flight
+        // decode settles on its own; ensureImportsIdle waits for it, bounded).
+        m_session_ctrl->setImportsCancelRequest([this]() {
+            if (m_import_job_mgr)
+                m_import_job_mgr->cancelQueue(tr("Imports cancelled by operator"));
+        });
         connect(m_import_ctrl, &ExecutionController::importFailed,
                 this, [this](const QString& layer_id, const QString& error) {
                     m_diag_hub->postProblem(

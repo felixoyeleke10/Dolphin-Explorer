@@ -46,6 +46,13 @@ public:
     int  pendingCount() const { return static_cast<int>(m_queue.size()); }
     bool busy()         const { return m_active_count > 0 || !m_queue.empty(); }
 
+    // Clears the pending queue and invalidates deferred dispatch lambdas.
+    // Does NOT abort in-flight tasks — they still settle and collectively emit
+    // batchCompleted once all active jobs finish. Public so the shell's
+    // "Cancel Imports" escape hatch (project switch / app exit while imports
+    // run) can drop the queue and then wait for the in-flight decode.
+    void cancelQueue(const QString& reason);
+
     const ImportLog& importLog() const { return m_log; }
 
 signals:
@@ -76,10 +83,6 @@ private:
     };
 
     void dispatchNext();
-    // Clears the pending queue and invalidates deferred dispatch lambdas.
-    // Does NOT abort in-flight tasks — they will still settle and collectively
-    // emit batchCompleted once all active jobs finish.
-    void cancelQueue(const QString& reason);
 
     // Builds a log entry pre-filled with the current epoch/queue snapshot.
     ImportLogEntry makeEntry(ImportLogEntry::Event event,

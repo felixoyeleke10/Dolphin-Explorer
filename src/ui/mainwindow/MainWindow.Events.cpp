@@ -1,7 +1,6 @@
 // MainWindow.Events.cpp — OS-level event overrides: close, show, drag/drop, native WM.
 #include "ui/mainwindow/MainWindow.h"
 #include "app/project/Project.h"
-#include "ui/features/import/ImportController.h"
 
 #include "ui/shell/AppInfo.h"
 #include <QCloseEvent>
@@ -62,13 +61,12 @@ static void purgeStaleTempProjects()
 
 void MainWindow::closeEvent(QCloseEvent* event)
 {
-    // Import workers currently hold project-owned state until they finish.
-    // Do not promise abandonment while service teardown still waits for them.
-    if (m_import_ctrl && m_import_ctrl->importsBusy()) {
-        QMessageBox::information(
-            this, tr("Imports in progress"),
-            tr("File imports are still running. Wait for them to finish before "
-               "closing Dolphin Explorer."));
+    // Import workers hold project-owned state until they finish. Same dialog +
+    // cancel + bounded-settle flow as project transitions (one policy on both
+    // surfaces): the operator can drop the queue and exit once the in-flight
+    // decode settles, instead of being stuck until every queued file imports.
+    if (m_session_ctrl
+            && !m_session_ctrl->ensureImportsIdle(tr("Exit Dolphin Explorer"))) {
         event->ignore();
         return;
     }

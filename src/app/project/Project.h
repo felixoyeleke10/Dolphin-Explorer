@@ -46,8 +46,12 @@ public:
     // branch in Project.Serialization.Read.cpp (see the v5 gate there).
     // Manifests with a HIGHER version are refused at open (forward-compat
     // guard) rather than silently misparsed.
-    // v11: optional per-layer "map_opacity" (defaults to 1.0 when absent).
-    static constexpr int kSchemaVersion = 11;
+    // v11: optional per-layer map display fields (opacity/blend/clip/beams).
+    // v12: embedded NodeGraph documents are format v2 (edge to_port, groups)
+    //      and artifact_index.source_id is the canonical logical source ID.
+    //      Older builds would read v2 graphs silently degraded (dropped ports/
+    //      groups) — the version gate refuses instead.
+    static constexpr int kSchemaVersion = 12;
 
     // Open an existing .dlp project file (also accepts legacy .pelagic).
     // Returns nullptr on failure; if `error` is given, it receives a
