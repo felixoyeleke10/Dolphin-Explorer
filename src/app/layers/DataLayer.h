@@ -74,6 +74,7 @@ public:
     int                 map_blend_mode        = 0;      // 0=Blend,1=Cover up,2=Lighten,3=Darken; persisted (v11)
     bool                map_clip_polygons     = false;  // clip mosaic to drawn polygons (show inside); persisted (v11)
     bool                map_show_beams        = false;  // draw across-track beam fan on the mosaic; persisted (v11)
+    int                 map_beam_spacing      = 10;     // step between drawn beam lines (1=densest); persisted (v11)
 
     // Per-layer display state — written by MainWindow on paramsApplied, read on
     // layer open.  Not yet persisted in project JSON; reset to defaults on project reload.

@@ -92,7 +92,8 @@ public:
     bool setLayerOpacity   (const std::string& layer_id, float opacity);  // [0,1]
     bool setLayerBlendMode (const std::string& layer_id, int blend_mode); // 0..3, 2D mosaic
     bool setLayerClipPolygons(const std::string& layer_id, bool clip);    // 2D mosaic
-    bool setLayerShowBeams (const std::string& layer_id, bool show);      // 2D mosaic
+    bool setLayerShowBeams  (const std::string& layer_id, bool show);     // 2D mosaic
+    bool setLayerBeamSpacing(const std::string& layer_id, int spacing);   // 2D mosaic
     bool setLayerSssPalette(const std::string& layer_id, int palette_idx);
     bool setLayerSbpPalette(const std::string& layer_id, int palette_idx);
 

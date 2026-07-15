@@ -52,6 +52,7 @@ public:
     void setLayerBlendMode  (const std::string& layer_id, int blend_mode); // 0..3
     void setLayerClipPolygons(const std::string& layer_id, bool clip);
     void setLayerShowBeams  (const std::string& layer_id, bool show);
+    void setLayerBeamSpacing(const std::string& layer_id, int spacing);
     void clearAllLayerData  ();
 
     // Input mode: ModePan for pan+click-select, ModeSelect for rubber-band.

@@ -184,9 +184,8 @@ void WaterfallWindow::loadWindow(int abs_row)
             // Detect pipeline params that changed while the window was loading.
             bool pipeline_stale = false;
             WaterfallParams current_params;
-            if (m_analysis && m_inspector) {
-                current_params = m_analysis->currentParams(m_inspector->currentPaletteIndex());
-                current_params.display_channel = m_display_channel;
+            if (m_view) {
+                current_params = m_view->params();
                 pipeline_stale =
                     current_params.tvg                    != snap_params.tvg
                     || current_params.agc                 != snap_params.agc
@@ -209,7 +208,6 @@ void WaterfallWindow::loadWindow(int abs_row)
                                             std::move(res.pipeline), !reset_view);
 
             m_view->setSeabedAutoParamsOnly(snap_seabed_params, snap_seabed_enabled);
-            pushParams();
 
             const int actual_rows = m_view->rowCount();
             if (actual_rows >= 20 && entries_in_window > 0) {
@@ -246,7 +244,6 @@ void WaterfallWindow::loadWindow(int abs_row)
                         m_view->setPreassembledRows(std::move(r.raw_pings),
                                                     std::move(r.pipeline),
                                                     /*preserve_view=*/true);
-                        pushParams();
                         setDataState(ViewerDataState::Ready);
                     },
                     "wf:pipeline",

@@ -46,7 +46,7 @@ SubBottomInspectorPanel::SubBottomInspectorPanel(QWidget* parent)
         m_lines_list->setFrameShape(QFrame::NoFrame);
         m_lines_list->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
         m_lines_list->setMaximumHeight(120);
-        bl->addWidget(m_lines_list);
+        bl->addWidget(m_lines_list, 0, Qt::AlignTop);
 
         connect(m_lines_list, &QListWidget::itemClicked,
                 this, [this](QListWidgetItem* item) {

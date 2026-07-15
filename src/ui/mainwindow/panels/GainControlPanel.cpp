@@ -1,4 +1,6 @@
 #include "ui/mainwindow/panels/GainControlPanel.h"
+#include "ui/features/waterfall/components/TvgCurveEditor.h"
+#include "ui/features/waterfall/components/TvgEditorModeSwitch.h"
 #include "ui/features/waterfall/components/WfValueRow.h"
 #include "ui/shared/UiUtils.h"
 #include "ui/shell/Theme.h"
@@ -44,25 +46,49 @@ GainControlPanel::GainControlPanel(QWidget* parent) : QWidget(parent)
            "The acoustic signal weakens with distance; TVG applies an increasing\n"
            "gain curve so near-range and far-range returns appear equally bright.\n"
            "Requires Apply."));
-    vl->addWidget(m_tvg_en);
+    auto* tvg_header = new QWidget(container);
+    auto* tvg_header_l = new QHBoxLayout(tvg_header);
+    tvg_header_l->setContentsMargins(0, 0, 0, 0);
+    tvg_header_l->setSpacing(Theme::kSpacing2);
+    tvg_header_l->addWidget(m_tvg_en, 1);
+    m_tvg_editor_mode = new TvgEditorModeSwitch(tvg_header);
+    tvg_header_l->addWidget(m_tvg_editor_mode, 0, Qt::AlignVCenter);
+    vl->addWidget(tvg_header);
 
     auto* tvg_rows = new QWidget(container);
     auto* tvg_l = new QVBoxLayout(tvg_rows);
     tvg_l->setContentsMargins(Theme::kSpacing4, 0, 0, 0);
     tvg_l->setSpacing(3);
-    m_tvg_spread = new WfValueRow(tr("Spreading"), 0.0, 40.0, 20.0, 1.0, 0, " dB/dec", tvg_rows);
+    m_tvg_numeric_body = new QWidget(tvg_rows);
+    auto* tvg_numeric_l = new QVBoxLayout(m_tvg_numeric_body);
+    tvg_numeric_l->setContentsMargins(0, 0, 0, 0);
+    tvg_numeric_l->setSpacing(3);
+    m_tvg_spread = new WfValueRow(tr("Spreading"), 0.0, 40.0, 20.0, 1.0, 0, " dB/dec", m_tvg_numeric_body);
     m_tvg_spread->setToolTip(
         tr("Geometric spreading loss compensation in dB per decade of range.\n"
            "TVG is 0 dB at the ping blanking distance, or 1 m when blanking is unavailable.\n"
            "Start at 20 dB/dec.\n"
            "Increase if far range remains too dark after correction."));
-    m_tvg_absorb = new WfValueRow(tr("Absorption"), 0.0, 2.0, 0.0, 0.01, 2, " dB/m", tvg_rows);
+    m_tvg_absorb = new WfValueRow(tr("Absorption"), 0.0, 2.0, 0.0, 0.01, 2, " dB/m", m_tvg_numeric_body);
     m_tvg_absorb->setToolTip(
         tr("Absorption loss compensation in dB per metre of water path.\n"
            "Start at 0.00 dB/m. Increase gently only for high-frequency data or very lossy water.\n"
            "Too much will over-brighten the outer swath."));
-    tvg_l->addWidget(m_tvg_spread);
-    tvg_l->addWidget(m_tvg_absorb);
+    tvg_numeric_l->addWidget(m_tvg_spread);
+    tvg_numeric_l->addWidget(m_tvg_absorb);
+    tvg_l->addWidget(m_tvg_numeric_body);
+
+    m_tvg_curve = new TvgCurveEditor(tvg_rows);
+    m_tvg_curve->setCoefficients(20.f, 0.f);
+    tvg_l->addWidget(m_tvg_curve);
+    const auto tvg_mode = m_tvg_editor_mode->mode();
+    m_tvg_curve->setVisible(tvg_mode == TvgEditorModeSwitch::Graph);
+    m_tvg_numeric_body->setVisible(tvg_mode == TvgEditorModeSwitch::Numeric);
+    connect(m_tvg_editor_mode, &TvgEditorModeSwitch::modeChanged,
+            this, [this](TvgEditorModeSwitch::Mode mode) {
+                m_tvg_curve->setVisible(mode == TvgEditorModeSwitch::Graph);
+                m_tvg_numeric_body->setVisible(mode == TvgEditorModeSwitch::Numeric);
+            });
     vl->addWidget(tvg_rows);
 
     // -- AGC -------------------------------------------------------------------
@@ -197,6 +223,21 @@ GainControlPanel::GainControlPanel(QWidget* parent) : QWidget(parent)
     // Apply is a single shared bar at the bottom of the right-panel (see
     // MainWindow): this section only edits values and contributes them via
     // writeInto(). No per-section Apply buttons.
+    // TVG curve ↔ spinners — keep in sync bidirectionally.
+    connect(m_tvg_curve, &TvgCurveEditor::coefficientsChanged,
+            this, [this](float spreading, float absorption) {
+                const QSignalBlocker b1(m_tvg_spread), b2(m_tvg_absorb);
+                m_tvg_spread->setValue(spreading);
+                m_tvg_absorb->setValue(absorption);
+            });
+    auto syncCurve = [this](double) {
+        m_tvg_curve->setCoefficients(
+            static_cast<float>(m_tvg_spread->value()),
+            static_cast<float>(m_tvg_absorb->value()));
+    };
+    connect(m_tvg_spread, &WfValueRow::valueChanged, this, syncCurve);
+    connect(m_tvg_absorb, &WfValueRow::valueChanged, this, syncCurve);
+
     connect(m_tvg_en, &QCheckBox::toggled, this, &GainControlPanel::updateControlStates);
     connect(m_agc_en, &QCheckBox::toggled, this, &GainControlPanel::updateControlStates);
     connect(m_agc_mode, QOverload<int>::of(&QComboBox::currentIndexChanged),
@@ -232,7 +273,7 @@ void GainControlPanel::setParams(const WaterfallParams& p)
 {
     m_params = p;
 
-    const QSignalBlocker b1(m_tvg_en),    b2(m_tvg_spread), b3(m_tvg_absorb);
+    const QSignalBlocker b1(m_tvg_en),    b2(m_tvg_spread), b3(m_tvg_absorb), bc(m_tvg_curve);
     const QSignalBlocker b4(m_agc_en),    b5(m_agc_strength), b5b(m_agc_mode);
     const QSignalBlocker b5c(m_agc_along_track), b5d(m_agc_smooth_type);
     const QSignalBlocker b5e(m_agc_smooth_win),  b5f(m_agc_edge_skip), b5g(m_agc_noise_floor);
@@ -241,6 +282,7 @@ void GainControlPanel::setParams(const WaterfallParams& p)
     m_tvg_en->setChecked(p.tvg.enabled);
     m_tvg_spread->setValue(p.tvg.spreading);
     m_tvg_absorb->setValue(p.tvg.absorption);
+    m_tvg_curve->setCoefficients(p.tvg.spreading, p.tvg.absorption);
 
     m_agc_en->setChecked(p.agc.enabled);
     m_agc_mode->setCurrentIndex(p.agc.mode == AgcMode::Variable ? 1 : 0);
@@ -260,8 +302,11 @@ void GainControlPanel::setParams(const WaterfallParams& p)
 
 void GainControlPanel::updateControlStates()
 {
-    m_tvg_spread->setEnabled(m_tvg_en->isChecked());
-    m_tvg_absorb->setEnabled(m_tvg_en->isChecked());
+    const bool tvg = m_tvg_en->isChecked();
+    m_tvg_spread->setEnabled(tvg);
+    m_tvg_absorb->setEnabled(tvg);
+    m_tvg_curve->setEnabled(tvg);
+    m_tvg_editor_mode->setEnabled(tvg);
 
     const bool agc = m_agc_en->isChecked();
     m_agc_mode->setEnabled(agc);

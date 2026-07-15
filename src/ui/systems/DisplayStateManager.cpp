@@ -125,6 +125,15 @@ bool DisplayStateManager::setLayerShowBeams(const std::string& layer_id, bool sh
     return true;
 }
 
+bool DisplayStateManager::setLayerBeamSpacing(const std::string& layer_id, int spacing)
+{
+    auto* l = layerById(layer_id);
+    if (!l || l->map_beam_spacing == spacing) return l != nullptr;
+    l->map_beam_spacing = spacing;
+    emit displayStateChanged(QString::fromStdString(layer_id), DisplayAspect::Opacity);
+    return true;
+}
+
 bool DisplayStateManager::setLayerSssPalette(const std::string& layer_id, int palette_idx)
 {
     auto* l = layerById(layer_id);

@@ -134,6 +134,10 @@ public:
     void setContactClass(ContactClass cls) { m_contact_class = cls; }
     // Remove all picked contacts from the current view.
     void clearContacts();
+    // Scan the loaded window for isolated bright targets followed by a darker
+    // acoustic shadow. sensitivity: 0=conservative, 1=balanced, 2=sensitive.
+    // Returns the number of candidates promoted through contactPicked().
+    int detectContactCandidates(int sensitivity);
     // Read back all contacts placed in the current window.
     const std::vector<WfContact>& contacts() const { return m_contacts; }
 

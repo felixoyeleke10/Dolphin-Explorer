@@ -12,6 +12,7 @@
 #include <QDropEvent>
 #include <QKeyEvent>
 #include <QLineEdit>
+#include <QPainter>
 #include <QPushButton>
 #include <QSignalBlocker>
 #include <QTreeWidget>
@@ -26,8 +27,24 @@ namespace {
 
 class LayerTreeWidget final : public QTreeWidget {
 public:
-    explicit LayerTreeWidget(QWidget* parent = nullptr) : QTreeWidget(parent) {}
+    explicit LayerTreeWidget(QWidget* parent = nullptr) : QTreeWidget(parent) {
+        // Tree indentation is painted as adjacent style cells on Windows.
+        // Rounded item backgrounds expose the cell boundaries as separate
+        // pills; square selection cells form one continuous native row.
+        setStyleSheet(QStringLiteral(
+            "QTreeWidget::item { border-radius: 0; }"));
+    }
 protected:
+    void drawBranches(QPainter* painter, const QRect& rect,
+                      const QModelIndex& index) const override {
+        QTreeWidget::drawBranches(painter, rect, index);
+    }
+
+    void drawRow(QPainter* painter, const QStyleOptionViewItem& options,
+                 const QModelIndex& index) const override {
+        QTreeWidget::drawRow(painter, options, index);
+    }
+
     void startDrag(Qt::DropActions actions) override {
         m_drag_item = currentItem();
         QTreeWidget::startDrag(actions);

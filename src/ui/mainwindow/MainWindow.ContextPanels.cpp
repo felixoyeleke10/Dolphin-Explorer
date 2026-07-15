@@ -146,6 +146,12 @@ void MainWindow::buildContextPanel(QWidget* parent)
         if (l && l->modality == app::Modality::Sidescan)
             m_display_state->setLayerShowBeams(l->id, on);
     });
+    connect(m_views_panel, &ViewsPanel::sssBeamSpacingChanged, this, [this](int spacing) {
+        if (!m_display_state || !currentProject()) return;
+        const auto* l = currentProject()->findLayer(activeLayerId());
+        if (l && l->modality == app::Modality::Sidescan)
+            m_display_state->setLayerBeamSpacing(l->id, spacing);
+    });
     // Dynamic range — black/white points (display_low/high). Committed on drag
     // release, so re-raster once here (heavier than gain/contrast's debounce
     // because it fires per gesture, not per tick).
@@ -308,7 +314,8 @@ void MainWindow::refreshViewsPanel(bool follow_active)
         m_views_panel->setSssLayer(true, active->sss_palette,
                                    static_cast<int>(active->map_opacity * 100.f + 0.5f),
                                    active->map_blend_mode,
-                                   active->map_clip_polygons, active->map_show_beams);
+                                   active->map_clip_polygons, active->map_show_beams,
+                                   active->map_beam_spacing);
         // Dynamic-range handles + histogram come from the SSS controller (it
         // owns the intensity pixels; the map never receives them). Present only
         // when the layer is rasterised (Low+ tier). display_low/high default

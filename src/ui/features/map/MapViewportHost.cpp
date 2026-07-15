@@ -327,6 +327,11 @@ void MapViewportHost::setLayerShowBeams(const std::string& layer_id, bool show)
     m_view2d->setLayerShowBeams(layer_id, show);       // 2D mosaic only
 }
 
+void MapViewportHost::setLayerBeamSpacing(const std::string& layer_id, int spacing)
+{
+    m_view2d->setLayerBeamSpacing(layer_id, spacing);  // 2D mosaic only
+}
+
 void MapViewportHost::setNavTrackVisible(const std::string& layer_id, bool visible)
 {
     m_nav_track_visibility[layer_id] = visible;

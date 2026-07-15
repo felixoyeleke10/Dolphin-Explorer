@@ -41,7 +41,6 @@ void MainWindow::setupRuntimeServices()
         if (aspect == DisplayAspect::Palette && layer_id.isEmpty()) {
             const int pal = m_display_state->mapPalette();
             if (m_modal_host)    m_modal_host->setPalette(pal);
-            if (m_waterfall_win) m_waterfall_win->setPalette(pal);
             if (m_sss_ctrl)      m_sss_ctrl->setPaletteIndex(pal);
         }
         // A per-layer display change (palette/gain/visibility/nav) means the project
@@ -74,6 +73,7 @@ void MainWindow::setupRuntimeServices()
                 m_viewport_host->setLayerBlendMode(lid, l->map_blend_mode);
                 m_viewport_host->setLayerClipPolygons(lid, l->map_clip_polygons);
                 m_viewport_host->setLayerShowBeams(lid, l->map_show_beams);
+                m_viewport_host->setLayerBeamSpacing(lid, l->map_beam_spacing);
             }
         }
         // SBP palette change → recolour the 3D curtains (shader uniform, free).
@@ -102,8 +102,6 @@ void MainWindow::setupRuntimeServices()
                 src ? src->path : std::string{},
                 src ? src->size_bytes : 0);
             applyStoredNavParams(activeLayerId());
-            if (layer->sss_display_state.customized)
-                m_waterfall_win->applyExternalParams(layer->sss_display_state.params);
         }
     };
     connect(m_app_state, &AppState::soundVelocityChanged, this,

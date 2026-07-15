@@ -117,16 +117,17 @@ WaterfallWindow::WaterfallWindow(AppState* app_state, QWidget* parent)
     connect(m_inspector, &WaterfallInspectorPanel::nextLineRequested,
             this,        &WaterfallWindow::onNextFix);
     connect(m_inspector, &WaterfallInspectorPanel::paletteChanged,
-            this, [this](int idx) { pushParams(); emit paletteChanged(idx); });
+            this, [this](int idx) {
+                QSettings().setValue(QStringLiteral("waterfall/paletteIdx"), idx);
+                WaterfallParams p = m_view->params();
+                p.palette = idx;
+                m_view->setParams(p);
+                emit paletteChanged(idx);
+            });
     connect(m_inspector, &WaterfallInspectorPanel::verticalScaleChanged,
             m_view, &WaterfallView::setVerticalScale);
     connect(m_inspector, &WaterfallInspectorPanel::horizontalScaleChanged,
             m_view, &WaterfallView::setHorizontalScale);
-    connect(m_inspector, &WaterfallInspectorPanel::ampBarToggled,
-            this, [this](bool on) {
-                m_show_amp_bar = on;
-                m_view->setShowAmpBar(on);
-            });
     connect(m_inspector, &WaterfallInspectorPanel::setCrsRequested,
             this, [this] {
                 emit setCrsRequested(m_layer ? m_layer->id : std::string{});
@@ -151,6 +152,13 @@ WaterfallWindow::WaterfallWindow(AppState* app_state, QWidget* parent)
                 emit paramsApplied();
                 emit applyToAllRequested();
             });
+    // Any pipeline control change (TVG/ARN/AGC/destripe/BPN/ARC/CLAHE toggle or
+    // value) triggers an immediate debounced repipe so the panel state is always
+    // reflected in the view — no Apply needed for a live preview.  Apply still
+    // commits the params to the stored layer state and rebuilds the map.
+    connect(m_analysis, &WaterfallAnalysisPanel::pipelineParamsChanged,
+            this, [this]() { invalidateProcessedCache(); });
+
     connect(m_analysis, &WaterfallAnalysisPanel::slantRangeCorrectionChanged,
             this, [this](bool src_on) {
                 if (!m_view) return;
@@ -290,6 +298,14 @@ WaterfallWindow::WaterfallWindow(AppState* app_state, QWidget* parent)
                 emit clearAllContactsRequested();
             });
 
+    connect(m_analysis, &WaterfallAnalysisPanel::automaticContactScanRequested,
+            this, [this](int sensitivity) {
+                const int count = m_view->detectContactCandidates(sensitivity);
+                m_status_left->setText(count > 0
+                    ? tr("Automatic contact scan found %n candidate(s)", "", count)
+                    : tr("Automatic contact scan found no candidates"));
+            });
+
 
     connect(m_view, &WaterfallView::featureDrawn,
             this, [this](const std::vector<QPointF>& verts, bool polygon, bool is_projected) {
@@ -382,7 +398,6 @@ WaterfallWindow::WaterfallWindow(AppState* app_state, QWidget* parent)
     connect(m_repipe_debounce, &QTimer::timeout,
             this,               &WaterfallWindow::onRepipeDebounce);
 
-    pushParams();
 }
 
 void WaterfallWindow::setGpuAccel(bool enabled)

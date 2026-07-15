@@ -175,7 +175,14 @@ QString qssAcousticViews()
         "QToolButton#wfToolBtn:checked  { background: rgba(@accentRgb,0.15); border-color: rgba(@accentRgb,0.40); color: @accent; }"
         "QToolButton#wfToolBtn:pressed  { background: rgba(@accentRgb,0.08); }"
         "QToolButton#wfToolBtn:disabled { color: @textDisabled; border-color: @overlayMut; }"
-
+        "QToolButton#wfPrimaryBtn {"
+        "  background: rgba(@accentRgb,0.16); border: 1px solid rgba(@accentRgb,0.45);"
+        "  border-radius: 5px; padding: 3px 8px; color: @accentSoft;"
+        "  font-family: @font; font-size: @fontSm; font-weight: 600;"
+        "}"
+        "QToolButton#wfPrimaryBtn:hover { background: rgba(@accentRgb,0.24); border-color: rgba(@accentRgb,0.70); }"
+        "QToolButton#wfPrimaryBtn:checked { background: @accent; border-color: @accent; color: @white; }"
+        "QToolButton#wfPrimaryBtn:disabled { background: @overlayMut; border-color: @overlayMut; color: @textDisabled; }"
         // Checkboxes inside the analysis panel
         "QCheckBox#wfCheckBox {"
         "  color: @iconStroke; font-family: @font; font-size: @fontSm; spacing: 6px;"

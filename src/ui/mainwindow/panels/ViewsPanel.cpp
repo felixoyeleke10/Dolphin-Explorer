@@ -118,6 +118,7 @@ QWidget* ViewsPanel::buildMapPage()
     gl->addWidget(makeRowLabel(tr("Sonar preview"), page), 1, 0);
     gl->addWidget(m_map_preview, 1, 1, 1, 2);
 
+    gl->setRowStretch(2, 1);  // absorb leftover height so rows stay tight at top
     return page;
 }
 
@@ -208,24 +209,40 @@ QWidget* ViewsPanel::buildSssPage()
 
     m_sss_beams = new QCheckBox(tr("Show side scan beams"), page);
     m_sss_beams->setObjectName("viewsCheck");
-    m_sss_beams->setToolTip(tr("Draw the across-track beam fan over the mosaic"));
+    m_sss_beams->setToolTip(tr(
+        "Draw the across-track beam fan over the mosaic.\n"
+        "Port beams are drawn in red, starboard in green."));
     connect(m_sss_beams, &QCheckBox::toggled, this, &ViewsPanel::sssShowBeamsToggled);
     gl->addWidget(m_sss_beams, 5, 0, 1, 2);
+
+    m_sss_beam_spacing = new QSpinBox(page);
+    m_sss_beam_spacing->setRange(1, 50);
+    m_sss_beam_spacing->setValue(10);
+    m_sss_beam_spacing->setSuffix(tr(" pings"));
+    m_sss_beam_spacing->setToolTip(tr("Draw one beam line every N pings (1 = densest, 50 = sparsest)"));
+    m_sss_beam_spacing->setEnabled(false);
+    connect(m_sss_beams, &QCheckBox::toggled,
+            m_sss_beam_spacing, &QSpinBox::setEnabled);
+    connect(m_sss_beam_spacing, qOverload<int>(&QSpinBox::valueChanged),
+            this, &ViewsPanel::sssBeamSpacingChanged);
+    gl->addWidget(makeRowLabel(tr("Beam spacing"), page), 6, 0);
+    gl->addWidget(m_sss_beam_spacing, 6, 1);
 
     // Dynamic range — black/white points on the amplitude histogram. The
     // handles set SonarDisplayParams::display_low/high; the caller re-rasters
     // on commit (drag release), keeping the histogram itself instant.
-    gl->addWidget(makeRowLabel(tr("Dynamic range"), page), 6, 0, 1, 2);
+    gl->addWidget(makeRowLabel(tr("Dynamic range"), page), 7, 0, 1, 2);
     m_sss_hist = new HistogramRangeSlider(page);
     connect(m_sss_hist, &HistogramRangeSlider::rangeCommitted,
             this, &ViewsPanel::sssDynamicRangeCommitted);
-    gl->addWidget(m_sss_hist, 7, 0, 1, 2);
+    gl->addWidget(m_sss_hist, 8, 0, 1, 2);
 
     m_sss_hint = new QLabel(tr("Select a sidescan line to adjust it here."), page);
     m_sss_hint->setObjectName("viewsHint");
     m_sss_hint->setWordWrap(true);
-    gl->addWidget(m_sss_hint, 8, 0, 1, 2);
+    gl->addWidget(m_sss_hint, 9, 0, 1, 2);
 
+    gl->setRowStretch(10, 1);
     setSssLayer(false, -1);
     return page;
 }
@@ -304,6 +321,7 @@ QWidget* ViewsPanel::buildSbpPage()
     m_sbp_hint->setWordWrap(true);
     gl->addWidget(m_sbp_hint, 5, 0, 1, 2);
 
+    gl->setRowStretch(6, 1);
     setSbpLayer(false, -1);
     return page;
 }
@@ -357,7 +375,8 @@ void ViewsPanel::setDrapingSurface(const QString& file_name)
 
 void ViewsPanel::setSssLayer(bool has_layer, int palette_idx,
                              int opacity_pct, int blend_mode,
-                             bool clip_polygons, bool show_beams)
+                             bool clip_polygons, bool show_beams,
+                             int beam_spacing)
 {
     // Per-line controls follow the active line; draping surface is project-
     // global so it stays enabled whenever this page is shown.
@@ -366,6 +385,7 @@ void ViewsPanel::setSssLayer(bool has_layer, int palette_idx,
     m_sss_opacity->setEnabled(has_layer);
     m_sss_clip->setEnabled(has_layer);
     m_sss_beams->setEnabled(has_layer);
+    m_sss_beam_spacing->setEnabled(has_layer && show_beams);
     m_sss_hist->setEnabled(has_layer);
     m_sss_hint->setVisible(!has_layer);
     if (has_layer) {
@@ -374,6 +394,7 @@ void ViewsPanel::setSssLayer(bool has_layer, int palette_idx,
         const QSignalBlocker b3(m_sss_blend);
         const QSignalBlocker b4(m_sss_clip);
         const QSignalBlocker b5(m_sss_beams);
+        const QSignalBlocker b6(m_sss_beam_spacing);
         const int at = m_sss_palette->findData(
             palette_idx >= 0 ? palette_idx : PaletteIndex::Greyscale);
         if (at >= 0) m_sss_palette->setCurrentIndex(at);
@@ -382,6 +403,7 @@ void ViewsPanel::setSssLayer(bool has_layer, int palette_idx,
         m_sss_opacity->setValue(opacity_pct);
         m_sss_clip->setChecked(clip_polygons);
         m_sss_beams->setChecked(show_beams);
+        m_sss_beam_spacing->setValue(beam_spacing);
     } else {
         m_sss_hist->setHistogram({});   // clear bars → "select a line" hint
     }

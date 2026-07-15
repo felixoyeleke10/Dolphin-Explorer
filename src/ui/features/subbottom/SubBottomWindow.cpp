@@ -286,8 +286,8 @@ SubBottomWindow::SubBottomWindow(AppState* app_state, QWidget* parent)
         m_view->setViewStyle(st);
     }
 
-    // Push restored display preferences to the view now that all connections are live.
-    m_display->notifyParamsChanged();
+    // Opening the window restores the view; it must not rewrite preferences.
+    m_display->refreshParams();
 
     m_proc_debounce = new QTimer(this);
     m_proc_debounce->setSingleShot(true);
@@ -360,7 +360,7 @@ void SubBottomWindow::setSoundVelocity(double sv)
     if (p.sound_speed_ms == static_cast<float>(sv)) return;
     p.sound_speed_ms = static_cast<float>(sv);
     m_display->setParams(p);
-    m_display->notifyParamsChanged();
+    m_display->refreshParams();
 }
 
 void SubBottomWindow::setPalette(int idx)
@@ -370,7 +370,7 @@ void SubBottomWindow::setPalette(int idx)
     if (p.palette_index == idx) return;
     p.palette_index = idx;
     m_display->setParams(p);
-    m_display->notifyParamsChanged();
+    m_display->refreshParams();
 }
 
 void SubBottomWindow::setLineNavEnabled(bool has_prev, bool has_next)
@@ -390,13 +390,23 @@ void SubBottomWindow::applyDisplayParams(const SubBottomDisplayParams& params)
     m_display->notifyParamsChanged();  // fires paramsChanged → view update + QSettings save
 }
 
+void SubBottomWindow::restoreDisplayParams(const SubBottomDisplayParams& params)
+{
+    if (!m_display) return;
+    SubBottomDisplayParams merged = params;
+    merged.sound_speed_ms = m_display->currentParams().sound_speed_ms;
+    m_display->setParams(merged);
+    m_display->refreshParams();
+}
+
 void SubBottomWindow::applySettings(const SubBottomDisplayParams& params,
                                      int px_per_trace, float px_per_sample,
                                      const SubBottomViewStyle& style)
 {
     if (m_display) {
         m_display->setParams(params);
-        m_display->notifyParamsChanged();
+        // SubBottomSettingsDialog already persisted the explicit Apply action.
+        m_display->refreshParams();
     }
     if (m_view) {
         m_view->setPxPerTrace(px_per_trace);

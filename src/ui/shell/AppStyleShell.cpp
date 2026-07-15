@@ -10,7 +10,11 @@ QString qssShell()
         // Shell structure
         // ---------------------------------------------------------------------
 
-        "#shellRoot { background: @bg; }"
+        "#shellRoot {"
+"  background: @bg;"
+"  border-left:  2px solid rgba(255,255,255,0.10);"
+"  border-right: 2px solid rgba(255,255,255,0.10);"
+"}"
 
         // Activity bar (left)
         "#activityBar {"
@@ -103,8 +107,9 @@ QString qssShell()
         "  background: transparent; border: none; color: @textSecond; font-size: @fontBase; outline: none;"
         "}"
         "#layerPickerBody QTreeWidget::item { padding: 3px 6px; border-radius: 5px; }"
-        "#layerPickerBody QTreeWidget::item:hover { background: @overlayMut; }"
-        "#layerPickerBody QTreeWidget::item:selected { background: rgba(@accentRgb,0.25); color: @textPrimary; }"
+        "#layerPickerBody QTreeWidget::item:hover           { background: @overlayMut; }"
+        "#layerPickerBody QTreeWidget::item:selected        { background: rgba(@accentRgb,0.25); color: @textPrimary; }"
+        "#layerPickerBody QTreeWidget::item:hover:selected  { background: rgba(@accentRgb,0.35); color: @textPrimary; }"
         "#layerPickerBody QScrollBar:vertical { background: transparent; width: 6px; }"
         "#layerPickerBody QScrollBar::handle:vertical {"
         "  background: rgba(255,255,255,0.18); border-radius: @radius1; min-height: 24px;"

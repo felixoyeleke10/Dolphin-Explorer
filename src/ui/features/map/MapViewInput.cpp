@@ -46,7 +46,7 @@ QCursor cursorForMode(MapView::MapInputMode mode)
     case MapView::ModePickContact:
     case MapView::ModeDrawFeature: return QCursor(Qt::CrossCursor);
     case MapView::ModeZoom:        return zoomCursor();
-    default:                       return QCursor(Qt::OpenHandCursor);
+    default:                       return QCursor(Qt::ArrowCursor);  // ModePan: arrow at rest, hand appears on drag
     }
 }
 

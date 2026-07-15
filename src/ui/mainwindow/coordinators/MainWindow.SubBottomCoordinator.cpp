@@ -222,7 +222,7 @@ void MainWindow::onSubBottomOpen()
             m_sbp_win->setProjectContacts(currentProject()->contacts());
             // Restore per-layer SBP display params; palette always wins if set.
             if (layer->sbp_display_state.display_customized)
-                m_sbp_win->applyDisplayParams(layer->sbp_display_state.display);
+                m_sbp_win->restoreDisplayParams(layer->sbp_display_state.display);
             if (layer->sbp_palette >= 0)
                 m_sbp_win->setPalette(layer->sbp_palette);
             // Restore per-layer processing params; sync right-panel modules.
@@ -231,12 +231,6 @@ void MainWindow::onSubBottomOpen()
             if (layer->sbp_display_state.signal_customized)
                 m_sbp_win->applySignalParams(layer->sbp_display_state.signal);
             applyStoredSbpNavParams(layer->id);  // stored nav corrections
-            if (m_modal_host) {
-                if (auto* gm = m_modal_host->sbpGainModule(); layer->sbp_display_state.gain_customized)
-                    gm->setParams(layer->sbp_display_state.gain);
-                if (auto* sm = m_modal_host->sbpSignalModule(); layer->sbp_display_state.signal_customized)
-                    sm->setParams(layer->sbp_display_state.signal);
-            }
             refreshViewsPanel();   // Views ▸ SBP mirrors this line's display params
         }
     }

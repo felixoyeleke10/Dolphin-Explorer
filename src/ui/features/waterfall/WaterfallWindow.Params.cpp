@@ -26,14 +26,22 @@ void WaterfallWindow::setPalette(int idx)
     if (!m_inspector) return;
     if (m_inspector->currentPaletteIndex() == idx) return;  // already set — skip pushParams
     m_inspector->setPalette(idx);   // updates combo without re-emitting
-    pushParams();
+    if (m_view) {
+        WaterfallParams p = m_view->params();
+        p.palette = idx;
+        m_view->setParams(p);
+    }
 }
 
 void WaterfallWindow::setDisplayChannel(DisplayChannel ch)
 {
     if (m_display_channel == ch) return;
     m_display_channel = ch;
-    if (m_view) pushParams();
+    if (m_view) {
+        WaterfallParams p = m_view->params();
+        p.display_channel = ch;
+        m_view->setParams(p);
+    }
 }
 
 void WaterfallWindow::scheduleNavProcessing(const NavProcessingParams& nav)
@@ -77,7 +85,6 @@ void WaterfallWindow::scheduleNavProcessing(const NavProcessingParams& nav)
             m_view->setPreassembledRows(std::move(r.raw_pings),
                                         std::move(r.pipeline),
                                         /*preserve_view=*/true);
-            pushParams();
             setDataState(ViewerDataState::Ready);
         },
         "wf:pipeline",
@@ -119,10 +126,10 @@ void WaterfallWindow::applyWfSettings(const WaterfallSettingsDialog::Settings& s
     if (m_view) {
         m_view->setShowAmpBar(s.show_amp_bar);
         m_view->setOverlayParams(s.overlay);
-        pushParams();  // applies display_channel to the live view immediately
+        WaterfallParams p = m_view->params();
+        p.display_channel = s.display_channel;
+        m_view->setParams(p);
     }
-    if (m_inspector)
-        m_inspector->setAmpBarChecked(s.show_amp_bar);
 }
 
 void WaterfallWindow::applyExternalParams(const WaterfallParams& p)
@@ -132,7 +139,7 @@ void WaterfallWindow::applyExternalParams(const WaterfallParams& p)
     WaterfallParams applied = p;
     // Waterfall palette is global. Stored per-layer WaterfallParams may carry an
     // older palette value, so normalize it before touching UI/render state.
-    applied.palette = QSettings().value(QStringLiteral("sss/paletteIdx"),
+    applied.palette = QSettings().value(QStringLiteral("waterfall/paletteIdx"),
                                         PaletteIndex::Greyscale).toInt();
     if (m_inspector)
         m_inspector->setPalette(applied.palette);

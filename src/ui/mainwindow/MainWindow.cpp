@@ -195,6 +195,7 @@ MainWindow::MainWindow(QWidget* parent)
         m_contact_btn, m_feat_poly_btn, m_feat_line_btn, m_feat_pen_btn);
     connect(m_tool_ctrl, &ToolController::statusMessage,
             this, [this](const QString& message) { appendJobMessage(message); });
+    m_tool_ctrl->activatePan();  // sync AppState + MapView mode with the initially-checked cursor button
 
     m_export_ctrl = new ExportController(
         [this] { return currentProject(); }, this, m_viewport_host, this, this);

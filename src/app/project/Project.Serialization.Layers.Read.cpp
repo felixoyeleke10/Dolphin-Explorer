@@ -152,6 +152,8 @@ bool Project::restoreLayersFromJson(const util::JsonValue& root, int version)
             && jl.get("map_clip_polygons").asBool();
         layer->map_show_beams = jl.has("map_show_beams")
             && jl.get("map_show_beams").asBool();
+        layer->map_beam_spacing = jl.has("map_beam_spacing")
+            ? std::clamp(jl.get("map_beam_spacing").asInt(), 1, 50) : 10;
 
         if (jl.has("raster")) {
             const auto& jr = jl.get("raster");

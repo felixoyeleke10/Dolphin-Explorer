@@ -9,6 +9,8 @@ class QWidget;
 
 namespace dolphin::ui {
 
+class TvgCurveEditor;
+class TvgEditorModeSwitch;
 class WfValueRow;
 
 // Compact gain controls (TVG / AGC / ARC).
@@ -33,9 +35,12 @@ private slots:
 
 private:
     // TVG
-    QCheckBox*  m_tvg_en     = nullptr;
-    WfValueRow* m_tvg_spread = nullptr;   // dB/decade
-    WfValueRow* m_tvg_absorb = nullptr;   // dB/m
+    QCheckBox*      m_tvg_en     = nullptr;
+    TvgEditorModeSwitch* m_tvg_editor_mode = nullptr;
+    QWidget*        m_tvg_numeric_body = nullptr;
+    WfValueRow*     m_tvg_spread = nullptr;   // dB/decade
+    WfValueRow*     m_tvg_absorb = nullptr;   // dB/m
+    TvgCurveEditor* m_tvg_curve  = nullptr;
 
     // AGC — full control set (parity with the waterfall Image Processing section)
     QCheckBox*  m_agc_en           = nullptr;

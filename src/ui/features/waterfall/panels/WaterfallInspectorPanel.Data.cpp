@@ -10,7 +10,6 @@
 #include <QPushButton>
 #include <QLabel>
 #include <QSignalBlocker>
-#include <QToolButton>
 #include <cmath>
 
 namespace dolphin::ui {
@@ -41,14 +40,6 @@ void WaterfallInspectorPanel::setPalette(int idx)
     if (!m_palette_combo) return;
     QSignalBlocker sb(m_palette_combo);
     m_palette_combo->setCurrentIndex(idx);
-}
-
-void WaterfallInspectorPanel::setAmpBarChecked(bool on)
-{
-    if (!m_amp_bar_toggle) return;
-    QSignalBlocker sb(m_amp_bar_toggle);
-    m_amp_bar_toggle->setChecked(on);
-    m_amp_bar_toggle->setText(on ? tr("On") : tr("Off"));
 }
 
 void WaterfallInspectorPanel::refresh(const app::DataLayer*  layer,

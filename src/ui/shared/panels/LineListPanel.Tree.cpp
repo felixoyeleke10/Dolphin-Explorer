@@ -163,6 +163,7 @@ static void applyContactRow(QTreeWidgetItem* item,
                             const core::Contact& contact,
                             app::Project* project)
 {
+    item->setChildIndicatorPolicy(QTreeWidgetItem::DontShowIndicator);
     item->setText(0, contactDisplayText(contact, project, true));
     item->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable
                    | Qt::ItemIsUserCheckable);
@@ -184,6 +185,7 @@ static QTreeWidgetItem* addContactItem(QTreeWidgetItem* parent,
 
 static void applyFeatureRow(QTreeWidgetItem* item, const core::Feature& feature)
 {
+    item->setChildIndicatorPolicy(QTreeWidgetItem::DontShowIndicator);
     item->setText(0, featureDisplayText(feature));
     item->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable
                    | Qt::ItemIsUserCheckable);
@@ -247,6 +249,7 @@ QTreeWidgetItem* LineListPanel::makeEmptyPlaceholder(QTreeWidgetItem* parent,
     auto* item = new QTreeWidgetItem(parent, QStringList{text});
     item->setFlags(Qt::ItemIsEnabled);
     item->setForeground(0, mutedText());
+    item->setChildIndicatorPolicy(QTreeWidgetItem::DontShowIndicator);
     return item;
 }
 
@@ -358,6 +361,7 @@ static app::Modality resolveModality(const app::DataLayer* layer)
 
 static void applyLayerRow(QTreeWidgetItem* item, const app::DataLayer* layer)
 {
+    item->setChildIndicatorPolicy(QTreeWidgetItem::DontShowIndicator);
     const bool is_ready = (layer->state == app::LayerState::Ready);
     item->setText(0, layerDisplayText(layer));
 

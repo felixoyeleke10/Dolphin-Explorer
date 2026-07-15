@@ -79,10 +79,6 @@ void MainWindow::onWaterfallOpen()
                 this, &MainWindow::onWaterfallSetCrs);
         connect(m_waterfall_win, &WaterfallWindow::navProcessAllLinesRequested,
                 this, &MainWindow::onWaterfallNavProcessAllLines);
-        connect(m_waterfall_win, &WaterfallWindow::paletteChanged,
-                this, [this](int idx) {
-                    onPaletteChanged(idx);
-                });
         connect(m_waterfall_win, &WaterfallWindow::qcViewedFractionChanged,
                 this, [this](const std::string& /*layer_id*/, float /*fraction*/) {
                     // WaterfallScrollSync already writes to layer->qc_viewed_fraction
@@ -113,8 +109,6 @@ void MainWindow::onWaterfallOpen()
         connect(m_waterfall_win, &WaterfallWindow::paramsApplied, this, [this]() {
             if (!m_waterfall_win) return;
             const auto& p = m_waterfall_win->currentParams();
-            m_gain_panel->setParams(p);
-            m_imaging_panel->setParams(p);
             if (m_sss_ctrl) {
                 // Pass display params (palette, gain, contrast, threshold) to the
                 // map but strip the auto-stretch values.  The waterfall's
@@ -137,8 +131,30 @@ void MainWindow::onWaterfallOpen()
                 const std::string wf_id = m_waterfall_win->currentLayerId();
                 if (!wf_id.empty()) {
                     auto* layer = currentProject()->findLayer(wf_id);
-                    if (layer && m_display_state)
+                    if (layer && m_display_state) {
+                        // Snapshot old pipeline params so we can skip the raster rebuild
+                        // when paramsApplied fires from a programmatic restore (layer
+                        // switch, waterfall open) rather than a user Apply click.
+                        const WaterfallParams old_p = layer->sss_display_state.params;
                         m_display_state->setLayerSssDisplay(wf_id, p);  // mutate + notify (marks dirty)
+                        // Rebuild the map raster so corrections (destripe, AGC, ARC, TVG,
+                        // etc.) applied in the waterfall are immediately reflected in the
+                        // map mosaic.  Only rebuild when pipeline params actually changed
+                        // (avoids a wasteful rebuild on every layer switch/waterfall open).
+                        // Skip when SRC is changing — reloadLayer below does a full reload.
+                        const bool pipeline_changed =
+                               p.destripe     != old_p.destripe
+                            || p.agc          != old_p.agc
+                            || p.tvg          != old_p.tvg
+                            || p.arn          != old_p.arn
+                            || p.arc          != old_p.arc
+                            || p.beam_pattern != old_p.beam_pattern
+                            || p.ml_enhance   != old_p.ml_enhance;
+                        if (m_sss_ctrl
+                                && layer->slant_range_corrected == p.slant_range_correction
+                                && pipeline_changed)
+                            m_sss_ctrl->applyLiveCorrections({wf_id});
+                    }
                     if (layer && layer->slant_range_corrected != p.slant_range_correction) {
                         layer->slant_range_corrected = p.slant_range_correction;
                         if (m_sss_ctrl) m_sss_ctrl->reloadLayer(wf_id);
@@ -236,26 +252,11 @@ void MainWindow::onWaterfallOpen()
             applyStoredNavParams(sss_id);
             m_waterfall_win->setProjectContacts(currentProject()->contacts());
 
-            // Restore per-layer display params if the user has previously adjusted them.
-            if (layer->sss_display_state.customized)
-                m_waterfall_win->applyExternalParams(layer->sss_display_state.params);
-
-            // Sync mini-panels to the waterfall's current params on initial open.
-            // The SSS map is synced via the paramsApplied signal from applyExternalParams
-            // above; if no stored params exist, m_display_params stays nullopt so the
-            // map continues to use its own per-layer auto-stretch.
-            if (m_gain_panel && m_imaging_panel) {
-                const auto& p = m_waterfall_win->currentParams();
-                m_gain_panel->setParams(p);
-                m_imaging_panel->setParams(p);
-            }
         }
     }
 
     // Sync palette from the display-state authority. The waterfall display is
     // global, so do not restore per-layer/inspector palette state on open.
-    if (m_display_state)
-        m_waterfall_win->setPalette(m_display_state->mapPalette());
 
     // Reflect Prev/Next availability for the VIEWER's current line (source of truth).
     {

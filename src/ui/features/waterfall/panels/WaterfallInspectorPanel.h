@@ -53,9 +53,6 @@ public:
     int  currentPaletteIndex() const;
     void setPalette(int idx);           // external sync — does NOT re-emit
 
-    // Amp-bar toggle — external sync — does NOT re-emit ampBarToggled.
-    void setAmpBarChecked(bool on);
-
     // Populate the FILES list with all sidescan layers in the project.
     void setProjectLayers(const std::vector<std::pair<std::string, std::string>>& layers);
     // Highlight the active file (does not emit layerChangeRequested).
@@ -72,7 +69,6 @@ signals:
     void verticalScaleChanged(float);   // pings/cm  (0 = auto)
     void horizontalScaleChanged(float); // samples/cm (0 = auto)
     void setCrsRequested();             // user clicked "Set CRS" button
-    void ampBarToggled(bool show);      // amplitude chart show/hide
 
 private:
     // -- Section helpers ----------------------------------------------------
@@ -109,7 +105,6 @@ private:
     QComboBox*   m_palette_combo  = nullptr;
     WfValueRow*  m_scale_v        = nullptr;   // pings/cm  (0 = auto)
     WfValueRow*  m_scale_h        = nullptr;   // samples/cm (0 = auto)
-    QToolButton* m_amp_bar_toggle = nullptr;
 };
 
 } // namespace dolphin::ui

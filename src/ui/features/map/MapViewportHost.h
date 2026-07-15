@@ -72,6 +72,7 @@ public slots:
     void setLayerBlendMode    (const std::string& layer_id, int blend_mode); // 0..3
     void setLayerClipPolygons (const std::string& layer_id, bool clip);      // 2D mosaic
     void setLayerShowBeams    (const std::string& layer_id, bool show);      // 2D mosaic
+    void setLayerBeamSpacing  (const std::string& layer_id, int spacing);   // 2D mosaic
     void setNavTrackVisible   (const std::string& layer_id, bool visible);
     void setActiveLayer       (const std::string& layer_id);
     void setSelectedLayers (const std::vector<std::string>& ids);

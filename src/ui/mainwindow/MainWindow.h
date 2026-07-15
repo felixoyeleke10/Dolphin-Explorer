@@ -493,6 +493,11 @@ private:
     HeadingInfoPanel*    m_sbp_heading_panel = nullptr;  // SBP Geometry
     GainControlPanel*    m_gain_panel        = nullptr;
     ImagingControlPanel* m_imaging_panel     = nullptr;
+    // Per-layer editor drafts. Layer selection changes context without silently
+    // discarding values that have not yet been applied.
+    std::unordered_map<std::string, WaterfallParams> m_sss_control_drafts;
+    std::unordered_map<std::string, SbpGainParams>    m_sbp_gain_drafts;
+    std::unordered_map<std::string, SbpSignalParams>  m_sbp_signal_drafts;
 
     QScrollArea*        m_props_scroll    = nullptr;
     PanelChatWidget*    m_chat_widget       = nullptr;   // lives in the bottom dock's Chat tab

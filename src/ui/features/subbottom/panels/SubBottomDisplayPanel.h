@@ -29,8 +29,10 @@ public:
 
     SubBottomDisplayParams currentParams() const;
     void setParams(const SubBottomDisplayParams& p);
-    // Trigger paramsChanged without a UI interaction (e.g. pushed from right panel).
+    // User action: persist the current controls and update the live view.
     void notifyParamsChanged();
+    // Restoration/synchronisation: update the live view without persistence.
+    void refreshParams();
 
 signals:
     void paramsChanged(dolphin::ui::SubBottomDisplayParams params);
@@ -39,7 +41,7 @@ private:
     static QVBoxLayout* makeSection(const QString& title, bool expanded,
                                     QWidget* parent, QVBoxLayout* parent_layout);
 
-    void emitParams();
+    void emitParams(bool persist);
 
     QComboBox*      m_palette_combo   = nullptr;
     QDoubleSpinBox* m_gain_spin       = nullptr;

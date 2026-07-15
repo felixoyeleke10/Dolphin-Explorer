@@ -202,7 +202,7 @@ void MapView::paintSonarLayers(QPainter& p) const
             if (!ld.preview_image.isNull()) return;
             p.setBrush(kFill);
             p.setPen(Qt::NoPen);
-            drawMergedSwath(ld, true);
+            drawMergedSwath(ld, !ld.show_beams);
         });
         p.setRenderHint(QPainter::Antialiasing, true);
     }
@@ -213,22 +213,64 @@ void MapView::paintSonarLayers(QPainter& p) const
     // inner[i] → outer[i] (= ribbon[i] → ribbon[n-1-i]). Decimated so the fan
     // reads as beams rather than a solid fill.
     {
-        const QColor kBeam(120, 235, 255, 70);
-        p.setPen(QPen(kBeam, 0.7));
+        // Sidescan beams radiate outward from the towfish/nadir position to the
+        // swath edge on each side.  Port = red, starboard = green.  The nadir
+        // origin is the midpoint of the two inner-edge points: for SRC data both
+        // equal the vessel track exactly; for non-SRC they straddle it
+        // symmetrically so the midpoint still resolves to the towfish position.
+        static const QColor kPort      (255,  80,  80, 90);
+        static const QColor kStarboard ( 60, 200, 120, 90);
         p.setBrush(Qt::NoBrush);
         forEachVisibleLayer([&](const LayerMapData& ld) {
             if (!ld.show_beams) return;
+            const int step = std::max(1, ld.beam_spacing);
+
+            const SwathCoverage* port_cov = nullptr;
+            const SwathCoverage* stbd_cov = nullptr;
             for (const auto& cov : ld.coverage) {
-                for (const auto& ribbon : cov.ribbons) {
-                    const int n = static_cast<int>(ribbon.size());
-                    if (n < 4) continue;
-                    const int m = n / 2;                       // edge points per side
-                    const int step = std::max(1, m / 60);      // ~60 beams / ribbon
+                if      (cov.channel == core::SidescanChannel::Port)      port_cov = &cov;
+                else if (cov.channel == core::SidescanChannel::Starboard) stbd_cov = &cov;
+            }
+
+            if (port_cov && stbd_cov) {
+                // Dual-channel: derive the towfish nadir from the two inner
+                // edges, then draw two rays per ping emanating from that point:
+                // nadir → port swath edge (red), nadir → stbd swath edge (green).
+                const int ribbon_count = static_cast<int>(
+                    std::min(port_cov->ribbons.size(), stbd_cov->ribbons.size()));
+                for (int ri = 0; ri < ribbon_count; ++ri) {
+                    const auto& pr = port_cov->ribbons[ri];
+                    const auto& sr = stbd_cov->ribbons[ri];
+                    const int pn = static_cast<int>(pr.size());
+                    const int sn = static_cast<int>(sr.size());
+                    if (pn < 4 || sn < 4) continue;
+                    const int m = std::min(pn / 2, sn / 2);
                     for (int i = 0; i < m; i += step) {
-                        const QPointF a = geoToPixel(ribbon[i].x(), ribbon[i].y());
-                        const QPointF b = geoToPixel(ribbon[n - 1 - i].x(),
-                                                     ribbon[n - 1 - i].y());
-                        p.drawLine(a, b);
+                        const QPointF port_out = geoToPixel(pr[pn - 1 - i].x(), pr[pn - 1 - i].y());
+                        const QPointF port_in  = geoToPixel(pr[i].x(),           pr[i].y());
+                        const QPointF stbd_in  = geoToPixel(sr[i].x(),           sr[i].y());
+                        const QPointF stbd_out = geoToPixel(sr[sn - 1 - i].x(), sr[sn - 1 - i].y());
+                        const QPointF nadir    = (port_in + stbd_in) / 2.0;
+                        p.setPen(QPen(kPort,      1.5));
+                        p.drawLine(nadir, port_out);   // ray to port swath edge
+                        p.setPen(QPen(kStarboard, 1.5));
+                        p.drawLine(nadir, stbd_out);   // ray to starboard swath edge
+                    }
+                }
+            } else {
+                // Single channel — ray from inner (nadir side) to outer (swath edge).
+                for (const auto& cov : ld.coverage) {
+                    const QColor& col = (cov.channel == core::SidescanChannel::Port)
+                                        ? kPort : kStarboard;
+                    p.setPen(QPen(col, 1.5));
+                    for (const auto& ribbon : cov.ribbons) {
+                        const int n = static_cast<int>(ribbon.size());
+                        if (n < 4) continue;
+                        const int m = n / 2;
+                        for (int i = 0; i < m; i += step) {
+                            p.drawLine(geoToPixel(ribbon[i].x(),           ribbon[i].y()),
+                                       geoToPixel(ribbon[n - 1 - i].x(), ribbon[n - 1 - i].y()));
+                        }
                     }
                 }
             }

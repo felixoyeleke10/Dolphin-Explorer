@@ -9,6 +9,8 @@
 #include "ui/mainwindow/rightpanel/RightPanelHost.h"
 #include "ui/mainwindow/rightpanel/RightPanel.SbpGain.h"
 #include "ui/mainwindow/rightpanel/RightPanel.SbpSignal.h"
+#include "ui/mainwindow/panels/GainControlPanel.h"
+#include "ui/mainwindow/panels/ImagingControlPanel.h"
 #include "ui/shared/panels/LineListPanel.h"
 #include "ui/shared/widgets/PanelTabBar.h"
 #include "ui/features/waterfall/WaterfallWindow.h"
@@ -35,12 +37,54 @@ namespace dolphin::ui {
 void MainWindow::onLayerSelected(const std::string& layer_id)
 {
     if (!currentProject()) return;
+    const std::string outgoing_id = activeLayerId();
+    if (!outgoing_id.empty() && outgoing_id != layer_id) {
+        if (const auto* outgoing = currentProject()->findLayer(outgoing_id)) {
+            if (outgoing->modality == app::Modality::Sidescan
+                    && m_gain_panel && m_imaging_panel) {
+                WaterfallParams draft = outgoing->sss_display_state.customized
+                    ? outgoing->sss_display_state.params : WaterfallParams{};
+                m_gain_panel->writeInto(draft);
+                m_imaging_panel->writeInto(draft);
+                m_sss_control_drafts[outgoing_id] = draft;
+            } else if (outgoing->modality == app::Modality::SubBottom && m_modal_host) {
+                if (auto* gain = m_modal_host->sbpGainModule())
+                    m_sbp_gain_drafts[outgoing_id] = gain->currentParams();
+                if (auto* signal = m_modal_host->sbpSignalModule())
+                    m_sbp_signal_drafts[outgoing_id] = signal->currentParams();
+            }
+        }
+    }
     if (!m_layer_ctrl->isReplaying())
         m_layer_ctrl->recordSelection(layer_id);
 
     m_layer_ctrl->setActiveLayer(layer_id);
 
     auto* layer = currentProject()->findLayer(layer_id);
+
+    // Change editor context without losing the outgoing layer's draft. Returning
+    // to a layer restores its draft; otherwise its persisted/default state is used.
+    if (layer && layer->modality == app::Modality::Sidescan
+            && m_gain_panel && m_imaging_panel) {
+        const auto it = m_sss_control_drafts.find(layer_id);
+        const WaterfallParams p = it != m_sss_control_drafts.end()
+            ? it->second
+            : (layer->sss_display_state.customized
+                ? layer->sss_display_state.params : WaterfallParams{});
+        m_gain_panel->setParams(p);
+        m_imaging_panel->setParams(p);
+    } else if (layer && layer->modality == app::Modality::SubBottom && m_modal_host) {
+        if (auto* gain = m_modal_host->sbpGainModule()) {
+            const auto it = m_sbp_gain_drafts.find(layer_id);
+            gain->setParams(it != m_sbp_gain_drafts.end()
+                ? it->second : layer->sbp_display_state.gain);
+        }
+        if (auto* signal = m_modal_host->sbpSignalModule()) {
+            const auto it = m_sbp_signal_drafts.find(layer_id);
+            signal->setParams(it != m_sbp_signal_drafts.end()
+                ? it->second : layer->sbp_display_state.signal);
+        }
+    }
 
     // Publish the new selection so any subscriber (panels, future tools) can
     // react without coupling directly to MainWindow.
@@ -130,18 +174,15 @@ void MainWindow::onLayerSelected(const std::string& layer_id)
 
 
     if (m_waterfall_win && m_waterfall_win->isVisible()) {
-        if (layer && m_waterfall_win->currentLayerId() != layer->id) {
+        if (layer && layer->modality == app::Modality::Sidescan
+                && m_waterfall_win->currentLayerId() != layer->id) {
             const auto* src = currentProject()->findSource(layer->source_id);
             const std::string path = src ? src->path : std::string{};
             const uint64_t    sz   = src ? src->size_bytes : 0;
             m_waterfall_win->setLayer(layer, path, sz);
             applyStoredNavParams(layer->id);
-            if (layer->sss_display_state.customized)
-                m_waterfall_win->applyExternalParams(layer->sss_display_state.params);
             // Waterfall display palette is global; keep the current display-state
             // palette when switching lines instead of restoring per-layer UI state.
-            if (m_display_state)
-                m_waterfall_win->setPalette(m_display_state->mapPalette());
             // Restore per-layer channel selection.
             m_waterfall_win->setDisplayChannel(
                 layer->sss_display_state.params.display_channel);
@@ -159,7 +200,7 @@ void MainWindow::onLayerSelected(const std::string& layer_id)
                 m_sbp_win->setLayer(layer, path, sz);
                 // Restore per-layer SBP display params; palette always wins if set.
                 if (layer->sbp_display_state.display_customized)
-                    m_sbp_win->applyDisplayParams(layer->sbp_display_state.display);
+                    m_sbp_win->restoreDisplayParams(layer->sbp_display_state.display);
                 if (layer->sbp_palette >= 0)
                     m_sbp_win->setPalette(layer->sbp_palette);
                 if (layer->sbp_display_state.gain_customized)
@@ -167,12 +208,6 @@ void MainWindow::onLayerSelected(const std::string& layer_id)
                 if (layer->sbp_display_state.signal_customized)
                     m_sbp_win->applySignalParams(layer->sbp_display_state.signal);
                 applyStoredSbpNavParams(layer->id);  // stored nav corrections
-                if (m_modal_host) {
-                    if (auto* gm = m_modal_host->sbpGainModule(); layer->sbp_display_state.gain_customized)
-                        gm->setParams(layer->sbp_display_state.gain);
-                    if (auto* sm = m_modal_host->sbpSignalModule(); layer->sbp_display_state.signal_customized)
-                        sm->setParams(layer->sbp_display_state.signal);
-                }
             }
         } else {
             m_sbp_win->clearLayer();

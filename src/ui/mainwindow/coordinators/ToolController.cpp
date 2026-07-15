@@ -41,7 +41,11 @@ void ToolController::setButtons(QToolButton* cursor,
 void ToolController::checkButton(QToolButton* button)
 {
     if (!button) return;
-    const QSignalBlocker blocker(button);
+    // Do NOT block signals: the QButtonGroup listens to toggled() to enforce
+    // exclusivity. Without it, keyboard shortcuts (V/S/Z/M/C) activate the
+    // functional mode but the previously-checked toolbar button stays lit.
+    // setChecked(true) on an already-checked button is a no-op (no signal
+    // emitted), so the mouse-click path has no re-entry risk.
     button->setChecked(true);
 }
 

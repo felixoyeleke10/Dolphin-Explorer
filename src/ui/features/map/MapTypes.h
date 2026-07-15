@@ -219,6 +219,8 @@ struct LayerMapData {
     bool   clip_polygons  = false;
     // Draw the across-track beam fan (nadir → swath edge lines) over the mosaic.
     bool   show_beams     = false;
+    // Step between drawn beam lines (1=densest, higher=sparser).
+    int    beam_spacing   = 10;
 
     // Sonar amplitude preview image (quality >= Low only; null otherwise).
     // Drawn below coverage ribbons and nav track in the map view.

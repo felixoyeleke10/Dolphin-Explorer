@@ -112,7 +112,6 @@ void WaterfallWindow::onRepipeDebounce()
             m_view->setPreassembledRows(std::move(r.raw_pings),
                                         std::move(r.pipeline),
                                         /*preserve_view=*/true);
-            pushParams();
             setDataState(ViewerDataState::Ready);
         },
         "wf:pipeline",
@@ -142,10 +141,6 @@ void WaterfallWindow::onViewerRefresh(ViewerRefreshReason reason,
         // Sync palette to the global SSS palette, then push all visual params to
         // the view. No disk I/O — sound velocity is handled separately via
         // AppState::soundVelocityChanged → full reload.
-        if (m_inspector)
-            m_inspector->setPalette(QSettings().value(QStringLiteral("sss/paletteIdx"),
-                                                      PaletteIndex::Greyscale).toInt());
-        pushParams();
         break;
     case ViewerRefreshReason::ProjectReplaced:
         clearLayer();

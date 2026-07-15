@@ -438,6 +438,7 @@ void MapView::setLayerMapData(const std::string& layer_id, LayerMapData data)
             data.blend_mode    = l->map_blend_mode;
             data.clip_polygons = l->map_clip_polygons;
             data.show_beams    = l->map_show_beams;
+            data.beam_spacing  = l->map_beam_spacing;
         }
     }
     auto it = m_layer_data.find(layer_id);
@@ -544,6 +545,15 @@ void MapView::setLayerShowBeams(const std::string& layer_id, bool show)
     if (it == m_layer_data.end()) return;
     if (it->second.show_beams == show) return;
     it->second.show_beams = show;
+    update();
+}
+
+void MapView::setLayerBeamSpacing(const std::string& layer_id, int spacing)
+{
+    auto it = m_layer_data.find(layer_id);
+    if (it == m_layer_data.end()) return;
+    if (it->second.beam_spacing == spacing) return;
+    it->second.beam_spacing = spacing;
     update();
 }
 

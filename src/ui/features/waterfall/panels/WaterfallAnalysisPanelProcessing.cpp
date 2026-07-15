@@ -168,8 +168,8 @@ void WaterfallAnalysisPanel::buildProcessingSection(QVBoxLayout* vl, QWidget* co
 
     // -- Connections -----------------------------------------------------------
     {
-        auto refresh  = [this](auto)   { refreshProcessingDirty(); };
-        auto refreshB = [this](bool)   { updateProcessingVisibility(); refreshProcessingDirty(); };
+        auto refresh  = [this](auto)   { refreshProcessingDirty(); emit pipelineParamsChanged(); };
+        auto refreshB = [this](bool)   { updateProcessingVisibility(); refreshProcessingDirty(); emit pipelineParamsChanged(); };
 
         // BPN requires SRC — enforce on toggle-on.
         connect(m_bpn_toggle, &WfToggleRow::toggled, this, [this, refreshB](bool on) {

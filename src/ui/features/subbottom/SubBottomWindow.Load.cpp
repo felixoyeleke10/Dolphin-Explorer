@@ -188,8 +188,6 @@ void SubBottomWindow::onViewerRefresh(ViewerRefreshReason reason,
     case ViewerRefreshReason::DisplaySettingsChanged:
         // Apply palette from AppState. Sound velocity is handled separately
         // via setSoundVelocity(); other per-window params stay as-is.
-        if (m_app_state)
-            setPalette(m_app_state->current().default_palette);
         break;
     case ViewerRefreshReason::ProjectReplaced:
         clearLayer();

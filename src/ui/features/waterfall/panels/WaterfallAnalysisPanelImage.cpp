@@ -5,6 +5,8 @@
 #include "ui/shell/Theme.h"
 #include "ui/features/waterfall/components/WfToggleRow.h"
 #include "ui/features/waterfall/components/WfValueRow.h"
+#include "ui/features/waterfall/components/TvgCurveEditor.h"
+#include "ui/features/waterfall/components/TvgEditorModeSwitch.h"
 
 #include <QComboBox>
 #include <QFrame>
@@ -67,24 +69,57 @@ void WaterfallAnalysisPanel::buildImageSection(QVBoxLayout* vl, QWidget* contain
            "Gain = 0 dB at the blanking distance, rising with range.\n"
            "Suggested start: enable only when far range looks too dark.\n"
            "Spreading 20 dB/dec is a normal first value for open-water sidescan."));
-    bl->addWidget(m_tvg_toggle);
+    auto* tvg_header = new QWidget(container);
+    auto* tvg_header_layout = makeCompactLayout<QHBoxLayout>(tvg_header);
+    tvg_header_layout->addWidget(m_tvg_toggle, 1);
+    m_tvg_editor_mode = new TvgEditorModeSwitch(tvg_header);
+    tvg_header_layout->addWidget(m_tvg_editor_mode, 0, Qt::AlignVCenter);
+    bl->addWidget(tvg_header);
     m_tvg_body = new QWidget(container);
     m_tvg_body->setVisible(false);
     {
         auto* tvg_bl = makeCompactLayout<QVBoxLayout>(m_tvg_body);
-        addValueRow(tvg_bl, tr("Spreading"),   m_tvg_spreading,
+        m_tvg_numeric_body = new QWidget(m_tvg_body);
+        auto* numeric_bl = makeCompactLayout<QVBoxLayout>(m_tvg_numeric_body);
+        addValueRow(numeric_bl, tr("Spreading"),   m_tvg_spreading,
                     0, 40, 20, 1, 0, tr(" dB/dec"));
         m_tvg_spreading->setToolTip(
             tr("Controls how strongly TVG brightens far-range samples.\n"
                "TVG is 0 dB at the ping blanking distance, or 1 m when blanking is unavailable.\n"
                "Start with 20 dB/dec. Lower if far range becomes washed out; higher if it remains too dark.\n"
                "Typical range: 15-25 dB/dec."));
-        addValueRow(tvg_bl, tr("Absorption"),  m_tvg_absorption,
+        addValueRow(numeric_bl, tr("Absorption"),  m_tvg_absorption,
                     0.0, 2.0, 0.0, 0.01, 2, tr(" dB/m"));
         m_tvg_absorption->setToolTip(
             tr("Adds extra far-range gain for water absorption loss.\n"
                "Start at 0.0 dB/m. Increase gently only for high-frequency data or very lossy water.\n"
                "Too much will over-brighten the outer swath."));
+        tvg_bl->addWidget(m_tvg_numeric_body);
+
+        m_tvg_curve = new TvgCurveEditor(m_tvg_body);
+        tvg_bl->addWidget(m_tvg_curve);
+        const auto editor_mode = m_tvg_editor_mode->mode();
+        m_tvg_curve->setVisible(editor_mode == TvgEditorModeSwitch::Graph);
+        m_tvg_numeric_body->setVisible(editor_mode == TvgEditorModeSwitch::Numeric);
+        connect(m_tvg_editor_mode, &TvgEditorModeSwitch::modeChanged,
+                this, [this](TvgEditorModeSwitch::Mode mode) {
+                    m_tvg_curve->setVisible(mode == TvgEditorModeSwitch::Graph);
+                    m_tvg_numeric_body->setVisible(mode == TvgEditorModeSwitch::Numeric);
+                });
+        connect(m_tvg_curve, &TvgCurveEditor::coefficientsChanged,
+                this, [this](float spreading, float absorption) {
+                    m_tvg_spreading->setValue(spreading);
+                    m_tvg_absorption->setValue(absorption);
+                    refreshImageDirty();
+                });
+        auto syncCurve = [this](double) {
+            m_tvg_curve->setCoefficients(
+                static_cast<float>(m_tvg_spreading->value()),
+                static_cast<float>(m_tvg_absorption->value()));
+        };
+        connect(m_tvg_spreading, &WfValueRow::valueChanged, this, syncCurve);
+        connect(m_tvg_absorption, &WfValueRow::valueChanged, this, syncCurve);
+        m_tvg_curve->setCoefficients(20.f, 0.f);
     }
     bl->addWidget(m_tvg_body);
 
@@ -287,15 +322,15 @@ void WaterfallAnalysisPanel::buildImageSection(QVBoxLayout* vl, QWidget* contain
            "Use before beam-pattern correction or when you want across-track distance to represent seabed ground range."));
     bl->addWidget(m_src_toggle);
 
-    // -- Dirty indicator connections ---------------------------------------
+    // -- Dirty indicator + live-repipe connections -------------------------
     {
-        auto refresh = [this](auto) { refreshImageDirty(); };
-        auto refreshB = [this](bool) { refreshImageDirty(); };
+        auto refresh = [this](auto) { refreshImageDirty(); emit pipelineParamsChanged(); };
+        auto refreshB = [this](bool) { refreshImageDirty(); emit pipelineParamsChanged(); };
         connect(m_tvg_toggle,        &WfToggleRow::toggled,      this, refreshB);
         connect(m_arn_toggle,        &WfToggleRow::toggled,      this, refreshB);
         connect(m_agc_enable_toggle, &WfToggleRow::toggled,      this, refreshB);
         connect(m_destripe_toggle,   &WfToggleRow::toggled,      this, refreshB);
-        connect(m_src_toggle, &WfToggleRow::toggled, this, [this, refreshB](bool on) {
+        connect(m_src_toggle, &WfToggleRow::toggled, this, [this](bool on) {
             if (!on && m_bpn_toggle && m_bpn_toggle->isChecked()) {
                 // SRC is being disabled while BPN is active — block and warn.
                 QSignalBlocker sb(m_src_toggle);
@@ -316,7 +351,9 @@ void WaterfallAnalysisPanel::buildImageSection(QVBoxLayout* vl, QWidget* contain
                        "Beam Pattern Normalisation in the Processing Tools section.</p>"));
                 return;
             }
-            refreshB(on);
+            // SRC has its own repipe path via slantRangeCorrectionChanged — no
+            // pipelineParamsChanged here to avoid a redundant second pipeline run.
+            refreshImageDirty();
             emit slantRangeCorrectionChanged(on);
         });
         connect(m_tvg_spreading,     &WfValueRow::valueChanged,  this, refresh);

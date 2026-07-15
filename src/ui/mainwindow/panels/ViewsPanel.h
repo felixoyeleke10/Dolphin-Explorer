@@ -46,7 +46,8 @@ public:
     // opacity_pct is the layer's map transparency [0,100] (100 = opaque).
     void setSssLayer(bool has_layer, int palette_idx,
                      int opacity_pct = 100, int blend_mode = 0,
-                     bool clip_polygons = false, bool show_beams = false);
+                     bool clip_polygons = false, bool show_beams = false,
+                     int beam_spacing = 10);
     void setSbpLayer(bool has_layer, int palette_idx,
                      double gain = 1.0, double contrast = 1.0,
                      bool invert = false, int opacity_pct = 100);
@@ -67,6 +68,7 @@ signals:
     // SSS overlays (cheap repaint): clip mosaic to drawn polygons; beam fan.
     void sssClipPolygonsToggled(bool on);
     void sssShowBeamsToggled(bool on);
+    void sssBeamSpacingChanged(int spacing);
     // SSS dynamic range (black/white points in [0,1]). Committed fires on drag
     // release → the caller does the mosaic re-raster there.
     void sssDynamicRangeCommitted(double low, double high);
@@ -95,7 +97,8 @@ private:
     QComboBox*      m_sss_blend    = nullptr;
     QSpinBox*       m_sss_opacity  = nullptr;
     QCheckBox*      m_sss_clip     = nullptr;
-    QCheckBox*      m_sss_beams    = nullptr;
+    QCheckBox*      m_sss_beams        = nullptr;
+    QSpinBox*       m_sss_beam_spacing = nullptr;
     HistogramRangeSlider* m_sss_hist = nullptr;
     QLabel*         m_sss_hint     = nullptr;
     QComboBox*      m_sbp_palette  = nullptr;

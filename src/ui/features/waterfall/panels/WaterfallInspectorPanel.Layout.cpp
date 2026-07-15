@@ -21,7 +21,6 @@
 namespace dolphin::ui {
 
 static constexpr int kKeyW      = 62;  // key column width in inspector rows
-static constexpr int kToggleBtnW = 40;  // On/Off toggle button fixed width
 
 WaterfallInspectorPanel::WaterfallInspectorPanel(QWidget* parent)
     : QFrame(parent)
@@ -50,7 +49,7 @@ WaterfallInspectorPanel::WaterfallInspectorPanel(QWidget* parent)
         m_files_list->setFrameShape(QFrame::NoFrame);
         m_files_list->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
         m_files_list->setMaximumHeight(120);
-        bl->addWidget(m_files_list);
+        bl->addWidget(m_files_list, 0, Qt::AlignTop);
 
         connect(m_files_list, &QListWidget::itemClicked,
                 this, [this](QListWidgetItem* item) {
@@ -60,13 +59,29 @@ WaterfallInspectorPanel::WaterfallInspectorPanel(QWidget* parent)
                 });
     }
 
-    // -- SURVEY DATA (expanded) ---------------------------------------------
+    // -- SURVEY DATA (expanded) — contains survey stats, sonar, and vessel --
     {
         auto* bl = makeSection("Survey Data", true, container, vl);
         makeRow(bl, tr("Pings"),    m_val_pings);
         makeRow(bl, tr("Samples"),  m_val_samples);
         makeRow(bl, tr("Duration"), m_val_duration);
         makeRow(bl, tr("Length"),   m_val_length);
+
+        auto makeDivider = [&]() {
+            auto* d = new QFrame(container);
+            d->setFrameShape(QFrame::HLine);
+            d->setObjectName("avHRule");
+            bl->addWidget(d);
+        };
+
+        makeDivider();
+        makeRow(bl, tr("Model"),     m_val_sonar_model);
+        makeRow(bl, tr("Frequency"), m_val_freq);
+        makeRow(bl, tr("Sound spd"), m_val_sound_spd);
+
+        makeDivider();
+        makeRow(bl, tr("Survey"), m_val_survey);
+        makeRow(bl, tr("Vessel"), m_val_vessel);
     }
 
     // -- COORDINATE SYSTEM (collapsed) -------------------------------------
@@ -89,21 +104,6 @@ WaterfallInspectorPanel::WaterfallInspectorPanel(QWidget* parent)
 
         connect(m_btn_set_crs, &QPushButton::clicked,
                 this, &WaterfallInspectorPanel::setCrsRequested);
-    }
-
-    // -- SONAR (expanded) --------------------------------------------------
-    {
-        auto* bl = makeSection("Sonar", true, container, vl);
-        makeRow(bl, tr("Model"),     m_val_sonar_model);
-        makeRow(bl, tr("Frequency"), m_val_freq);
-        makeRow(bl, tr("Sound spd"), m_val_sound_spd);
-    }
-
-    // -- VESSEL (collapsed) ------------------------------------------------
-    {
-        auto* bl = makeSection("Vessel", false, container, vl);
-        makeRow(bl, tr("Survey"), m_val_survey);
-        makeRow(bl, tr("Vessel"), m_val_vessel);
     }
 
     // -- VIEW SETTINGS (expanded) — palette combo --------------------------
@@ -129,7 +129,7 @@ WaterfallInspectorPanel::WaterfallInspectorPanel(QWidget* parent)
             m_palette_combo->addItem(SSSPalette::name(i));
         {
             QSettings qs;
-            const QVariant sss_idx = qs.value(QStringLiteral("sss/paletteIdx"));
+            const QVariant sss_idx = qs.value(QStringLiteral("waterfall/paletteIdx"));
             if (sss_idx.isValid()) {
                 m_palette_combo->setCurrentIndex(sss_idx.toInt());
             } else {
@@ -172,38 +172,6 @@ WaterfallInspectorPanel::WaterfallInspectorPanel(QWidget* parent)
             emit horizontalScaleChanged(static_cast<float>(v));
         });
 
-        // -- Amplitude bar toggle -------------------------------------------
-        auto* amp_row = new QWidget(container);
-        amp_row->setFixedHeight(Theme::kDialogBtnH);
-        auto* arl = new QHBoxLayout(amp_row);
-        arl->setContentsMargins(Theme::kSpacing5, Theme::kSpacing1, Theme::kSpacing4, Theme::kSpacing1);
-        arl->setSpacing(Theme::kSpacing2);
-
-        auto* amp_lbl = new QLabel(tr("Amp. Chart"), container);
-        amp_lbl->setObjectName("avMetaKey");
-        amp_lbl->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-
-        m_amp_bar_toggle = new QToolButton(container);
-        m_amp_bar_toggle->setObjectName("avToggleBtn");
-        m_amp_bar_toggle->setCheckable(true);
-        {
-            const bool amp_on = QSettings().value(
-                QStringLiteral("waterfall/showAmpBar"), true).toBool();
-            m_amp_bar_toggle->setChecked(amp_on);
-            m_amp_bar_toggle->setText(amp_on ? tr("On") : tr("Off"));
-        }
-        m_amp_bar_toggle->setFixedWidth(kToggleBtnW);
-        m_amp_bar_toggle->setToolTip(
-            tr("Show or hide the amplitude profile chart at the bottom of the waterfall.\n"
-               "Use it to inspect average signal strength across range and spot gain or noise problems."));
-        connect(m_amp_bar_toggle, &QToolButton::toggled, this, [this](bool on) {
-            m_amp_bar_toggle->setText(on ? tr("On") : tr("Off"));
-            emit ampBarToggled(on);
-        });
-
-        arl->addWidget(amp_lbl);
-        arl->addWidget(m_amp_bar_toggle);
-        bl->addWidget(amp_row);
     }
 
     vl->addStretch();

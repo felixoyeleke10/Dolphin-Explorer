@@ -1,6 +1,7 @@
 // WaterfallAnalysisPanel.cpp — constructor, public API, shared helpers
 
 #include "ui/features/waterfall/panels/WaterfallAnalysisPanel.h"
+#include "ui/features/waterfall/components/TvgCurveEditor.h"
 #include "ui/shared/UiUtils.h"
 #include "ui/features/waterfall/components/WfToggleRow.h"
 #include "ui/features/waterfall/components/WfValueRow.h"
@@ -168,9 +169,12 @@ NavProcessingParams WaterfallAnalysisPanel::currentNavParams() const
 void WaterfallAnalysisPanel::setParams(const WaterfallParams& p)
 {
     // TVG
-    m_tvg_toggle->setChecked(p.tvg.enabled);
+    { QSignalBlocker blocker(m_tvg_toggle);
+      m_tvg_toggle->setChecked(p.tvg.enabled); }
     m_tvg_spreading ->setValue(p.tvg.spreading);
     m_tvg_absorption->setValue(p.tvg.absorption);
+    if (m_tvg_curve)
+        m_tvg_curve->setCoefficients(p.tvg.spreading, p.tvg.absorption);
 
     // ARN — block signal to prevent the SRC advisory QMessageBox firing during
     // programmatic restore (setLayer); the user already chose these params.
@@ -181,6 +185,7 @@ void WaterfallAnalysisPanel::setParams(const WaterfallParams& p)
 
     // AGC
     { QSignalBlocker bm(m_agc_mode_combo), bst(m_agc_smooth_type_combo);
+      QSignalBlocker enable_blocker(m_agc_enable_toggle);
       m_agc_enable_toggle->setChecked(p.agc.enabled);
       m_agc_mode_combo->setCurrentIndex(p.agc.mode == AgcMode::Variable ? 1 : 0);
       m_agc_smooth_type_combo->setCurrentIndex(
@@ -192,29 +197,38 @@ void WaterfallAnalysisPanel::setParams(const WaterfallParams& p)
     m_agc_noise_floor->setValue(p.agc.noise_floor_pct);
 
     // Destripe
-    m_destripe_toggle->setChecked(p.destripe.enabled);
+    { QSignalBlocker blocker(m_destripe_toggle);
+      m_destripe_toggle->setChecked(p.destripe.enabled); }
     m_destripe_window->setValue(p.destripe.window);
     m_destripe_subdiv->setValue(p.destripe.subdivision);
     m_destripe_cap   ->setValue(p.destripe.capping);
 
     // SRC — block signal to prevent the BPN guard dialog firing during
     // programmatic restore; the user already set these params deliberately.
-    const bool src_needed = p.beam_pattern.enabled;
     { QSignalBlocker sb(m_src_toggle);
-      m_src_toggle->setChecked(p.slant_range_correction || src_needed); }
+      m_src_toggle->setChecked(p.slant_range_correction); }
 
     // Beam Pattern Normalisation
-    if (m_bpn_toggle)    m_bpn_toggle->setChecked(p.beam_pattern.enabled);
+    if (m_bpn_toggle) {
+        QSignalBlocker blocker(m_bpn_toggle);
+        m_bpn_toggle->setChecked(p.beam_pattern.enabled);
+    }
     if (m_bpn_strength)  m_bpn_strength->setValue(p.beam_pattern.strength);
     if (m_bpn_smooth)    m_bpn_smooth->setValue(p.beam_pattern.smooth_radius);
 
     // Angle Range Correction
-    if (m_arc_toggle)    m_arc_toggle->setChecked(p.arc.enabled);
+    if (m_arc_toggle) {
+        QSignalBlocker blocker(m_arc_toggle);
+        m_arc_toggle->setChecked(p.arc.enabled);
+    }
     if (m_arc_exponent)  m_arc_exponent->setValue(p.arc.exponent);
     if (m_arc_gain_cap)  m_arc_gain_cap->setValue(p.arc.gain_cap_db);
 
     // Adaptive Contrast Enhancement
-    if (m_mle_toggle)      m_mle_toggle->setChecked(p.ml_enhance.enabled);
+    if (m_mle_toggle) {
+        QSignalBlocker blocker(m_mle_toggle);
+        m_mle_toggle->setChecked(p.ml_enhance.enabled);
+    }
     if (m_mle_tile_pings)  m_mle_tile_pings->setValue(p.ml_enhance.tile_pings);
     if (m_mle_tile_samps)  m_mle_tile_samps->setValue(p.ml_enhance.tile_samps);
     if (m_mle_clip_limit)  m_mle_clip_limit->setValue(p.ml_enhance.clip_limit);

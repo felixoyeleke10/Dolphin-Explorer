@@ -161,9 +161,43 @@ void WaterfallWindow::setLayer(app::DataLayer*     layer,
     m_repipe_debounce->stop();
     if (m_op_mgr) m_op_mgr->cancelByKey("wf:pipeline");
     m_pending_abs_row   = -1;
+
+    if (m_layer && m_analysis && m_inspector) {
+        WaterfallParams draft = m_analysis->currentParams(
+            m_inspector->currentPaletteIndex());
+        draft.display_channel = m_display_channel;
+        m_param_drafts[m_layer->id] = draft;
+    }
+
     m_layer             = layer;
     m_source_path       = source_path;
     m_source_size_bytes = source_size_bytes;
+
+    // Establish the incoming layer's complete processing state before starting
+    // its asynchronous load. Controls retained from the outgoing line must never
+    // become the new line's implicit TVG/AGC/destripe configuration.
+    if (layer && m_analysis && m_inspector && m_view) {
+        WaterfallParams applied = layer->sss_display_state.customized
+            ? layer->sss_display_state.params
+            : WaterfallParams{};
+        const auto draft_it = m_param_drafts.find(layer->id);
+        WaterfallParams controls = draft_it != m_param_drafts.end()
+            ? draft_it->second : applied;
+        // Destripe is deliberately opt-in for each viewer session. Older project
+        // files may contain a true flag written by the former restore/apply
+        // feedback loop; opening a line must never execute that legacy flag.
+        applied.destripe.enabled = false;
+        controls.destripe.enabled = false;
+        const int palette = QSettings().value(QStringLiteral("waterfall/paletteIdx"),
+                                              PaletteIndex::Greyscale).toInt();
+        applied.palette = palette;
+        controls.palette = palette;
+        applied.slant_range_correction = layer->slant_range_corrected;
+        m_display_channel = applied.display_channel;
+        m_inspector->setPalette(palette);
+        m_analysis->setParams(controls);          // draft only; never runs processing
+        m_view->setParamsNoRebuild(applied);      // last explicitly applied state
+    }
 
     const std::vector<float> bands = layer
         ? app::sidescanFrequencyBands(layer->artifact_index)
@@ -232,23 +266,12 @@ void WaterfallWindow::setLayer(app::DataLayer*     layer,
         m_inspector->setActiveLine(layer->id);
 
     // Restore the global SSS palette. DisplayStateManager owns this setting and
-    // persists it to "sss/paletteIdx"; do not fall back to per-layer/app defaults
+    // persists it to "waterfall/paletteIdx"; do not fall back to per-layer/app defaults
     // here or opening the waterfall can clobber the currently active palette.
     if (layer && m_inspector) {
-        const int pal = QSettings().value(QStringLiteral("sss/paletteIdx"),
+        const int pal = QSettings().value(QStringLiteral("waterfall/paletteIdx"),
                                           PaletteIndex::Greyscale).toInt();
         m_inspector->setPalette(pal);   // does NOT re-emit paletteChanged
-    }
-
-    // Restore the per-layer SRC state so the analysis panel and view reflect the
-    // persisted flag before loadWindow triggers pushParams.
-    if (layer && m_analysis) {
-        WaterfallParams p = m_analysis->currentParams(
-            m_inspector ? m_inspector->currentPaletteIndex() : 0);
-        if (p.slant_range_correction != layer->slant_range_corrected) {
-            p.slant_range_correction = layer->slant_range_corrected;
-            m_analysis->setParams(p);
-        }
     }
 
     // Start at the beginning of each new layer so Prev/Next navigation

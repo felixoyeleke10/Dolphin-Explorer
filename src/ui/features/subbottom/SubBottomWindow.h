@@ -94,6 +94,8 @@ public:
 
     // Apply display params only — called from the main-window right panel.
     void applyDisplayParams(const SubBottomDisplayParams& params);
+    // Restore per-layer state without rewriting global preferences.
+    void restoreDisplayParams(const SubBottomDisplayParams& params);
 
     // Sync the palette index from the app-wide default without touching other params.
     void setPalette(int idx);

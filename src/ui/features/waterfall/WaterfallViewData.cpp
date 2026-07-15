@@ -9,6 +9,7 @@
 #include <QSettings>
 #include <QtConcurrent/QtConcurrent>
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <memory>
 #include <vector>
@@ -172,6 +173,93 @@ void WaterfallView::clearContacts()
     m_contacts.clear();
     m_dirty = true;
     update();
+}
+
+int WaterfallView::detectContactCandidates(int sensitivity)
+{
+    const float ratio_threshold = sensitivity <= 0 ? 2.2f
+                                : sensitivity == 1 ? 1.8f : 1.5f;
+    const int row_gap = sensitivity <= 0 ? 10 : sensitivity == 1 ? 7 : 5;
+    constexpr int kMaxCandidates = 40;
+    int detected = 0;
+    int last_row[2] = {-1000, -1000};
+
+    for (int row = 0; row < rowCount() && detected < kMaxCandidates; ++row) {
+        const auto& ping = m_rows[static_cast<size_t>(row)];
+        for (int side = 0; side < 2 && detected < kMaxCandidates; ++side) {
+            if (row - last_row[side] < row_gap) continue;
+            const auto& samples = side == 0 ? ping.port : ping.stbd;
+            const auto& ranges  = side == 0 ? ping.port_ranges : ping.stbd_ranges;
+            if (samples.size() < 24) continue;
+
+            int best_sample = -1;
+            float best_score = ratio_threshold;
+            for (int i = 10; i + 10 < static_cast<int>(samples.size()); ++i) {
+                const float target = static_cast<float>(samples[static_cast<size_t>(i)]);
+                if (target < 1500.f) continue;
+                if (target < samples[static_cast<size_t>(i - 1)]
+                    || target < samples[static_cast<size_t>(i + 1)]) continue;
+
+                float context = 0.f;
+                float shadow = 0.f;
+                for (int k = 4; k <= 9; ++k)
+                    context += samples[static_cast<size_t>(i - k)];
+                for (int k = 2; k <= 7; ++k)
+                    shadow += samples[static_cast<size_t>(i + k)];
+                context /= 6.f;
+                shadow /= 6.f;
+                if (context < 1.f || shadow > context * 0.9f) continue;
+                const float score = target / context;
+                if (score > best_score) {
+                    best_score = score;
+                    best_sample = i;
+                }
+            }
+            if (best_sample < 0) continue;
+
+            float range_m = 0.f;
+            if (ranges.size() == samples.size())
+                range_m = ranges[static_cast<size_t>(best_sample)];
+            else if (ping.slant_range_m > 0.f)
+                range_m = ping.slant_range_m * best_sample
+                        / static_cast<float>(samples.size() - 1);
+            if (range_m <= 0.f) continue;
+
+            const auto channel = side == 0 ? core::SidescanChannel::Port
+                                           : core::SidescanChannel::Starboard;
+            const bool already_present = std::any_of(
+                m_contacts.cbegin(), m_contacts.cend(),
+                [row, channel, range_m](const WfContact& existing) {
+                    const float range_tolerance = std::max(1.f, range_m * 0.05f);
+                    return existing.ch == channel
+                        && std::abs(existing.row_idx - row) <= 2
+                        && std::abs(existing.range_m - range_m) <= range_tolerance;
+                });
+            if (already_present) {
+                last_row[side] = row;
+                continue;
+            }
+
+            WfContact contact;
+            contact.row_idx = row;
+            contact.ch = channel;
+            contact.range_m = range_m;
+            contact.classification = m_contact_class;
+            m_contacts.push_back(contact);
+
+            double lat = 0.0, lon = 0.0;
+            bool projected = false;
+            rangeToGeo(row, channel, range_m, lat, lon, projected);
+            emit contactPicked(row, channel, range_m, lat, lon, projected, QPixmap{});
+            last_row[side] = row;
+            ++detected;
+        }
+    }
+    if (detected > 0) {
+        m_dirty = true;
+        update();
+    }
+    return detected;
 }
 
 void WaterfallView::refreshExternalContacts(const std::vector<core::Contact>& contacts,

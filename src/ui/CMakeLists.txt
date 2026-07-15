@@ -261,6 +261,8 @@ add_library(dolphin-ui-waterfall STATIC
     features/waterfall/panels/WaterfallAnalysisPanelContact.cpp
     features/waterfall/panels/WaterfallAnalysisPanelProcessing.cpp
     features/waterfall/components/WfValueRow.cpp
+    features/waterfall/components/TvgCurveEditor.cpp
+    features/waterfall/components/TvgEditorModeSwitch.cpp
     features/waterfall/components/WfToggleRow.cpp
 )
 target_include_directories(dolphin-ui-waterfall PUBLIC ${CMAKE_SOURCE_DIR}/src)

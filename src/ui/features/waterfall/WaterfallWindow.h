@@ -12,6 +12,7 @@
 #include <QPointF>
 #include <QWidget>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -334,6 +335,10 @@ private:
     int            m_window_size     = 4000;
     DisplayChannel m_display_channel = DisplayChannel::Both;
     bool           m_show_amp_bar    = true;
+
+    // Window-local drafts keyed by layer. Switching lines must not destroy
+    // unapplied control values or leak them into the next line.
+    std::unordered_map<std::string, WaterfallParams> m_param_drafts;
 
     // -- QC viewed-range tracking ------------------------------------------
     // Sorted, non-overlapping [first, last) absolute row ranges the user has

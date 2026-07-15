@@ -15,6 +15,8 @@ namespace dolphin::ui {
 
 class WfValueRow;
 class WfToggleRow;
+class TvgCurveEditor;
+class TvgEditorModeSwitch;
 
 // -----------------------------------------------------------------------------
 //  WaterfallAnalysisPanel — right image-processing panel in the Waterfall window.
@@ -48,11 +50,17 @@ public:
 signals:
     void applyToLineRequested();
     void applyToAllLinesRequested();
+    // Fired immediately whenever any pipeline-affecting control changes (TVG/ARN/AGC/
+    // destripe/BPN/ARC/CLAHE toggles and their value rows).  WaterfallWindow connects
+    // this to invalidateProcessedCache() so the view stays in sync with the panel state
+    // without requiring Apply — same live-preview behaviour as slantRangeCorrectionChanged.
+    void pipelineParamsChanged();
     void slantRangeCorrectionChanged(bool enabled); // fired immediately on SRC toggle
     void seabedChannelChanged(int channel);         // 0=Both, 1=Port, 2=Starboard
     void seabedToolChanged(int tool);
     void contactToolChanged(int tool);
     void contactClassChanged(dolphin::ui::ContactClass cls);
+    void automaticContactScanRequested(int sensitivity);
     void clearContactsRequested();
     // "Edit Contacts…" pressed — open the shared contact editor for this line.
     void editContactsRequested();
@@ -98,6 +106,9 @@ private:
     // -- TVG ---------------------------------------------------------------
     WfToggleRow* m_tvg_toggle       = nullptr;
     QWidget*     m_tvg_body         = nullptr;
+    TvgEditorModeSwitch* m_tvg_editor_mode = nullptr;
+    QWidget*     m_tvg_numeric_body = nullptr;
+    TvgCurveEditor* m_tvg_curve     = nullptr;
     WfValueRow*  m_tvg_spreading    = nullptr;
     WfValueRow*  m_tvg_absorption   = nullptr;
 

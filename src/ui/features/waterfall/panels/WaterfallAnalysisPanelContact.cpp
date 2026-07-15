@@ -1,159 +1,124 @@
-// WaterfallAnalysisPanelContact.cpp
-//
-// buildContactSection() — CONTACT PICKING panel section.
-//
-// Contacts are POINT picks (boulders, debris, anomalies, …).
-// Features are SHAPE annotations (polygons, polylines, freehand outlines) — Phase 2.
-// The two concepts must not be conflated in the UI or data model.
-
+// WaterfallAnalysisPanelContact.cpp — automatic and manual contact workflows.
 #include "ui/features/waterfall/panels/WaterfallAnalysisPanel.h"
 #include "ui/shell/Theme.h"
 
 #include <QComboBox>
 #include <QHBoxLayout>
-#include <QIcon>
 #include <QLabel>
-#include <QPushButton>
-#include <QSize>
 #include <QToolButton>
 #include <QVBoxLayout>
 
 namespace dolphin::ui {
+namespace {
 
-// -----------------------------------------------------------------------------
-//  CONTACT PICKING section
-//
-//  Contacts are single-point picks.  Each click while the pick tool is active
-//  places one contact at (ping, channel, range) with the selected classification.
-// -----------------------------------------------------------------------------
+QLabel* addSubheading(QVBoxLayout* layout, const QString& text, QWidget* parent)
+{
+    auto* label = new QLabel(text, parent);
+    label->setObjectName("wfSubSectionLabel");
+    label->setContentsMargins(Theme::kSpacing4, Theme::kSpacing3,
+                              Theme::kSpacing4, Theme::kSpacing1);
+    layout->addWidget(label);
+    return label;
+}
+
+QWidget* makeComboRow(const QString& label, QComboBox*& combo, QWidget* parent)
+{
+    auto* row = new QWidget(parent);
+    auto* layout = new QHBoxLayout(row);
+    layout->setContentsMargins(Theme::kSpacing4, Theme::kSpacing1,
+                               Theme::kSpacing4, Theme::kSpacing1);
+    layout->setSpacing(Theme::kSpacing3);
+    auto* key = new QLabel(label, row);
+    key->setObjectName("wfSliderLabel");
+    combo = new QComboBox(row);
+    combo->setObjectName("wfCombo");
+    combo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    layout->addWidget(key);
+    layout->addWidget(combo);
+    return row;
+}
+
+QToolButton* makeAction(const QString& text, QWidget* parent, bool primary = false)
+{
+    auto* button = new QToolButton(parent);
+    button->setText(text);
+    button->setObjectName(primary ? "wfPrimaryBtn" : "wfToolBtn");
+    button->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    button->setFixedHeight(Theme::kFormBtnH);
+    return button;
+}
+
+} // namespace
 
 void WaterfallAnalysisPanel::buildContactSection(QVBoxLayout* vl, QWidget* container)
 {
-    auto* bl = makeSection(tr("Contact Picking"), /*expanded=*/true, container, vl);
+    auto* body = makeSection(tr("Contact Picking"), true, container, vl);
 
-    // -- Pick tool button --------------------------------------------------
-    {
-        auto* row = new QWidget;
-        auto* rl  = new QHBoxLayout(row);
-        rl->setContentsMargins(Theme::kSpacing4, Theme::kSpacing3, Theme::kSpacing4, Theme::kSpacing1);
-        rl->setSpacing(Theme::kSpacing2);
+    // Automatic candidate detection — a real scan of the currently loaded
+    // physical-amplitude window, not a placeholder action.
+    addSubheading(body, tr("AUTOMATIC DETECTION"), container);
 
-        m_contact_pick_btn = new QToolButton(row);
-        m_contact_pick_btn->setText(tr("Pick Contact"));
-        m_contact_pick_btn->setCheckable(true);
-        m_contact_pick_btn->setChecked(false);
-        m_contact_pick_btn->setObjectName("wfToolBtn");
-        m_contact_pick_btn->setToolTip(
-            tr("Toggle contact picking.\n"
-               "When active, click the waterfall at a target, shadow, or object to place one point contact.\n"
-               "The contact uses the selected classification below."));
-        m_contact_pick_btn->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-        m_contact_pick_btn->setFixedHeight(Theme::kMediumBtnSz);
-        rl->addWidget(m_contact_pick_btn);
-        bl->addWidget(row);
+    body->addWidget(makeComboRow(tr("Classification"), m_contact_class_combo, container));
+    m_contact_class_combo->addItems({
+        tr("Boulder"), tr("Debris"), tr("Cable"), tr("Pipeline"),
+        tr("Anomaly"), tr("Unknown")});
+    m_contact_class_combo->setToolTip(tr("Classification assigned to automatically detected contacts."));
 
-        connect(m_contact_pick_btn, &QToolButton::toggled,
-                this, [this](bool checked) {
-                    emit contactToolChanged(checked ? 1 : 0);
-                });
-    }
+    static const ContactClass classes[] = {
+        ContactClass::Boulder, ContactClass::Debris, ContactClass::Cable,
+        ContactClass::Pipeline, ContactClass::Anomaly, ContactClass::Unknown};
+    connect(m_contact_class_combo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, [this](int index) {
+                emit contactClassChanged(index >= 0 && index < 6
+                    ? classes[index] : ContactClass::Unknown);
+            });
 
-    // -- Classification combo — point-object types only --------------------
-    // "Feature" is intentionally absent: features are polygon/line annotations
-    // handled by the separate FEATURE PICKING section (Phase 2).
-    {
-        auto* row = new QWidget;
-        auto* rl  = new QHBoxLayout(row);
-        rl->setContentsMargins(Theme::kSpacing4, Theme::kSpacing1, Theme::kSpacing4, Theme::kSpacing1);
-        rl->setSpacing(Theme::kSpacing3);
+    QComboBox* sensitivity = nullptr;
+    body->addWidget(makeComboRow(tr("Sensitivity"), sensitivity, container));
+    sensitivity->addItems({tr("Conservative"), tr("Balanced"), tr("Sensitive")});
+    sensitivity->setCurrentIndex(1);
+    sensitivity->setToolTip(tr("Conservative returns fewer, stronger candidates. Sensitive finds more candidates and may include noise."));
 
-        auto* lbl = new QLabel(tr("Classification"), row);
-        lbl->setObjectName("wfSliderLabel");
+    auto* scan_row = new QWidget(container);
+    auto* scan_layout = new QHBoxLayout(scan_row);
+    scan_layout->setContentsMargins(Theme::kSpacing4, Theme::kSpacing1,
+                                    Theme::kSpacing4, Theme::kSpacing3);
+    auto* scan = makeAction(tr("Scan Loaded Window"), scan_row, true);
+    scan->setToolTip(tr("Detect contact candidates in the pings currently loaded in this Waterfall window."));
+    scan_layout->addWidget(scan);
+    body->addWidget(scan_row);
+    connect(scan, &QToolButton::clicked, this, [this, sensitivity] {
+        emit automaticContactScanRequested(sensitivity->currentIndex());
+    });
 
-        m_contact_class_combo = new QComboBox(row);
-        m_contact_class_combo->addItems({
-            tr("Boulder"),
-            tr("Debris"),
-            tr("Cable"),
-            tr("Pipeline"),
-            tr("Anomaly"),
-            tr("Unknown"),
-        });
-        m_contact_class_combo->setObjectName("wfCombo");
-        m_contact_class_combo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-        m_contact_class_combo->setToolTip(
-            tr("Classification assigned to the next contact pick.\n"
-               "Use Boulder, Debris, Cable, Pipeline, or Anomaly when identifiable; use Unknown when unsure."));
+    // Manual picking — classification first, then one clear primary action.
+    addSubheading(body, tr("MANUAL PICKING"), container);
+    auto* pick_row = new QWidget(container);
+    auto* pick_layout = new QHBoxLayout(pick_row);
+    pick_layout->setContentsMargins(Theme::kSpacing4, Theme::kSpacing1,
+                                    Theme::kSpacing4, Theme::kSpacing2);
+    m_contact_pick_btn = makeAction(tr("Pick Contact"), pick_row, true);
+    m_contact_pick_btn->setCheckable(true);
+    m_contact_pick_btn->setToolTip(tr("Enable manual picking, then click a target in the Waterfall image."));
+    pick_layout->addWidget(m_contact_pick_btn);
+    body->addWidget(pick_row);
+    connect(m_contact_pick_btn, &QToolButton::toggled, this,
+            [this](bool checked) { emit contactToolChanged(checked ? 1 : 0); });
 
-        rl->addWidget(lbl);
-        rl->addWidget(m_contact_class_combo);
-        bl->addWidget(row);
-
-        // Emit contactClassChanged whenever the combo selection changes so that
-        // WaterfallView always uses the current classification for the next pick.
-        static const ContactClass kClassMap[] = {
-            ContactClass::Boulder,
-            ContactClass::Debris,
-            ContactClass::Cable,
-            ContactClass::Pipeline,
-            ContactClass::Anomaly,
-            ContactClass::Unknown,
-        };
-        connect(m_contact_class_combo,
-                QOverload<int>::of(&QComboBox::currentIndexChanged),
-                this, [this](int idx) {
-                    const int n = static_cast<int>(
-                        sizeof(kClassMap) / sizeof(kClassMap[0]));
-                    emit contactClassChanged(
-                        (idx >= 0 && idx < n) ? kClassMap[idx]
-                                              : ContactClass::Unknown);
-                });
-    }
-
-    // -- Edit button ---------------------------------------------------------
-    // Opens the shared "Edit contact details" editor (same dialog as the Contact
-    // Manager) scoped to this line's contacts. Double-clicking a contact marker
-    // on the waterfall opens the same editor focused on that contact.
-    {
-        auto* row = new QWidget;
-        auto* rl  = new QHBoxLayout(row);
-        rl->setContentsMargins(Theme::kSpacing4, Theme::kSpacing1, Theme::kSpacing4, Theme::kSpacing1);
-
-        auto* edit_btn = new QToolButton(row);
-        edit_btn->setText(tr("Edit Contacts…"));
-        edit_btn->setObjectName("wfToolBtn");
-        edit_btn->setToolTip(
-            tr("Open the contact editor for this line's contacts.\n"
-               "Tip: double-click a contact marker on the waterfall to edit that contact directly."));
-        edit_btn->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-        edit_btn->setFixedHeight(Theme::kFormBtnH);
-        rl->addWidget(edit_btn);
-        bl->addWidget(row);
-
-        connect(edit_btn, &QToolButton::clicked,
-                this, &WaterfallAnalysisPanel::editContactsRequested);
-    }
-
-    // -- Clear button ------------------------------------------------------
-    {
-        auto* row = new QWidget;
-        auto* rl  = new QHBoxLayout(row);
-        rl->setContentsMargins(Theme::kSpacing4, Theme::kSpacing1, Theme::kSpacing4, 10);
-
-        auto* clear_btn = new QToolButton(row);
-        clear_btn->setText(tr("Clear All Contacts"));
-        clear_btn->setObjectName("wfToolBtn");
-        clear_btn->setToolTip(
-            tr("Remove all contact picks currently shown in this waterfall view.\n"
-               "Use with care when reviewing targets."));
-        clear_btn->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-        clear_btn->setFixedHeight(Theme::kFormBtnH);
-        rl->addWidget(clear_btn);
-        bl->addWidget(row);
-
-        connect(clear_btn, &QToolButton::clicked,
-                this, &WaterfallAnalysisPanel::clearContactsRequested);
-    }
+    auto* manage_row = new QWidget(container);
+    auto* manage_layout = new QHBoxLayout(manage_row);
+    manage_layout->setContentsMargins(Theme::kSpacing4, Theme::kSpacing1,
+                                      Theme::kSpacing4, Theme::kSpacing3);
+    manage_layout->setSpacing(Theme::kSpacing2);
+    auto* edit = makeAction(tr("Review / Edit…"), manage_row);
+    edit->setToolTip(tr("Review and edit contacts from this line."));
+    auto* clear = makeAction(tr("Clear All"), manage_row);
+    clear->setToolTip(tr("Remove all project contacts after confirmation."));
+    manage_layout->addWidget(edit);
+    manage_layout->addWidget(clear);
+    body->addWidget(manage_row);
+    connect(edit, &QToolButton::clicked, this, &WaterfallAnalysisPanel::editContactsRequested);
+    connect(clear, &QToolButton::clicked, this, &WaterfallAnalysisPanel::clearContactsRequested);
 }
 
 } // namespace dolphin::ui

@@ -175,13 +175,13 @@ SubBottomDisplayPanel::SubBottomDisplayPanel(QWidget* parent)
         bl->addWidget(pol_row);
 
         connect(m_palette_combo, qOverload<int>(&QComboBox::currentIndexChanged),
-                this, [this](int) { emitParams(); });
+                this, [this](int) { emitParams(true); });
         connect(m_gain_spin, qOverload<double>(&QDoubleSpinBox::valueChanged),
-                this, [this](double) { emitParams(); });
+                this, [this](double) { emitParams(true); });
         connect(m_contrast_spin, qOverload<double>(&QDoubleSpinBox::valueChanged),
-                this, [this](double) { emitParams(); });
+                this, [this](double) { emitParams(true); });
         connect(m_polarity_check, &QCheckBox::toggled,
-                this, [this](bool) { emitParams(); });
+                this, [this](bool) { emitParams(true); });
     }
 
     // -- BOTTOM TRACK ---------------------------------------------------------
@@ -210,7 +210,7 @@ SubBottomDisplayPanel::SubBottomDisplayPanel(QWidget* parent)
                "as detected by SegyReader at import time."));
         connect(m_bt_toggle, &QToolButton::toggled, this, [this](bool on) {
             m_bt_toggle->setText(on ? tr("On") : tr("Off"));
-            emitParams();
+            emitParams(true);
         });
 
         brl->addWidget(bt_lbl);
@@ -249,7 +249,7 @@ SubBottomDisplayPanel::SubBottomDisplayPanel(QWidget* parent)
         bl->addWidget(spd_row);
 
         connect(m_speed_spin, qOverload<double>(&QDoubleSpinBox::valueChanged),
-                this, [this](double) { emitParams(); });
+                this, [this](double) { emitParams(true); });
     }
 
     vl->addStretch();
@@ -298,19 +298,26 @@ void SubBottomDisplayPanel::setParams(const SubBottomDisplayParams& p)
 
 void SubBottomDisplayPanel::notifyParamsChanged()
 {
-    emitParams();
+    emitParams(true);
 }
 
-void SubBottomDisplayPanel::emitParams()
+void SubBottomDisplayPanel::refreshParams()
+{
+    emitParams(false);
+}
+
+void SubBottomDisplayPanel::emitParams(bool persist)
 {
     const SubBottomDisplayParams p = currentParams();
-    QSettings s;
-    s.setValue("sbpDisplay/palette",       p.palette_index);
-    s.setValue("sbpDisplay/gain",          static_cast<double>(p.gain));
-    s.setValue("sbpDisplay/contrast",      static_cast<double>(p.contrast));
-    s.setValue("sbpDisplay/polarityInvert", p.polarity_invert);
-    s.setValue("sbpDisplay/showBt",        p.show_bottom_track);
-    s.setValue("sbpDisplay/speed",         static_cast<double>(p.sound_speed_ms));
+    if (persist) {
+        QSettings s;
+        s.setValue("sbpDisplay/palette",       p.palette_index);
+        s.setValue("sbpDisplay/gain",          static_cast<double>(p.gain));
+        s.setValue("sbpDisplay/contrast",      static_cast<double>(p.contrast));
+        s.setValue("sbpDisplay/polarityInvert", p.polarity_invert);
+        s.setValue("sbpDisplay/showBt",        p.show_bottom_track);
+        s.setValue("sbpDisplay/speed",         static_cast<double>(p.sound_speed_ms));
+    }
     emit paramsChanged(p);
 }
 

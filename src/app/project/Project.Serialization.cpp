@@ -140,6 +140,8 @@ std::string Project::toJson() const
             jl["map_clip_polygons"] = util::JsonValue(true);
         if (l->map_show_beams)
             jl["map_show_beams"] = util::JsonValue(true);
+        if (l->map_beam_spacing != 10)
+            jl["map_beam_spacing"] = util::JsonValue(l->map_beam_spacing);
 
         // Raster layers — the GeoTIFF/image source is the durable store, so persist
         // its metadata (kind, size, geo-transform, CRS, extent) for reopen.

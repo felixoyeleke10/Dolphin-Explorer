@@ -146,8 +146,7 @@ void WaterfallSettingsDialog::buildDisplayTab(QTabWidget* tabs)
     m_amp_bar_check = new QCheckBox(tr("Show amplitude profile bar"), this);
     m_amp_bar_check->setToolTip(
         tr("Display the per-column mean amplitude chart at the bottom of the waterfall.\n"
-           "Useful for diagnosing system sensitivity and identifying AGC anomalies.\n"
-           "Can also be toggled from the Inspector panel."));
+           "Useful for diagnosing system sensitivity and identifying AGC anomalies."));
     f2->addRow(QString{}, m_amp_bar_check);
     vbox->addWidget(g2);
 

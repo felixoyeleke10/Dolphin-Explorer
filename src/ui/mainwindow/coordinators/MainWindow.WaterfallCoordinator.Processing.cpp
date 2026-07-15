@@ -55,19 +55,17 @@ void MainWindow::onWaterfallSetCrs(const std::string& from_layer_id)
     if (new_ref.kind == core::SpatialRefKind::Unknown) return;
 
     const core::SpatialRef old_ref = layer->source_spatial_ref;
+    const std::string source_id = layer->source_id;
 
     // Source CRS is a source-file property — apply to every layer and source in
     // the project.  The project display CRS (map target) is left unchanged; the
     // normalisation step reprojects source coordinates into it on reload.
-    auto apply_crs = [this, ref_id](const core::SpatialRef& ref) {
+    auto apply_crs = [this, ref_id, source_id](const core::SpatialRef& ref) {
         if (!currentProject()) return;
         for (const auto& l : currentProject()->layers())
-            if (l) l->source_spatial_ref = ref;
-        for (const auto& l : currentProject()->layers()) {
-            if (!l) continue;
-            if (auto* src = currentProject()->findSource(l->source_id))
-                src->source_spatial_ref = ref;
-        }
+            if (l && l->source_id == source_id) l->source_spatial_ref = ref;
+        if (auto* src = currentProject()->findSource(source_id))
+            src->source_spatial_ref = ref;
         markProjectDirty();
         m_session_ctrl->autoSave();
         auto* lyr = currentProject()->findLayer(ref_id);
@@ -83,18 +81,16 @@ void MainWindow::onWaterfallSetCrs(const std::string& from_layer_id)
                                       src ? src->path : std::string{},
                                       src ? src->size_bytes : 0);
             applyStoredNavParams(lyr->id);
-            if (lyr->sss_display_state.customized)
-                m_waterfall_win->applyExternalParams(lyr->sss_display_state.params);
             // Restore the global SSS palette after CRS-triggered reload.
-            if (m_display_state)
-                m_waterfall_win->setPalette(m_display_state->mapPalette());
         }
     };
 
     m_undo_stack->push(new SetSourceCrsCommand(old_ref, new_ref, apply_crs));
 
     const std::string display = geo::epsgDisplayName(new_ref);
-    const int n = static_cast<int>(currentProject()->layers().size());
+    const int n = static_cast<int>(std::count_if(
+        currentProject()->layers().cbegin(), currentProject()->layers().cend(),
+        [&source_id](const auto& l) { return l && l->source_id == source_id; }));
     appendJobMessage(tr("Source CRS set to %1 — applied to %2 layer(s)")
         .arg(QString::fromStdString(display)).arg(n));
     recordActivity(ActivityKind::CrsChange,
@@ -430,13 +426,7 @@ void MainWindow::onPaletteChanged(int idx)
         m_inspector->setPalette(idx);
 
     // Sync the waterfall (may be the source — setPalette checks current index first).
-    if (m_waterfall_win)
-        m_waterfall_win->setPalette(idx);
-
     // Sync the SBP window (the Views panel mirrors via refreshViewsPanel).
-    if (m_sbp_win)
-        m_sbp_win->setPalette(idx);
-
     // Global map palette → through the display-state manager: it persists the choice
     // and emits displayStateChanged({}, Palette); our handler applies it to the map.
     if (m_display_state)
