@@ -36,6 +36,11 @@ public:
 
 signals:
     void paramsChanged(dolphin::ui::SubBottomDisplayParams params);
+    // Fired ONLY for user actions in this panel (persist=true paths), never for
+    // programmatic synchronisation (setParams/refreshParams). The shell routes
+    // this to DisplayStateManager so palette/gain edits made inside the SBP
+    // window reach the map curtains, the Views panel, and the project file.
+    void userParamsEdited(dolphin::ui::SubBottomDisplayParams params);
 
 private:
     static QVBoxLayout* makeSection(const QString& title, bool expanded,

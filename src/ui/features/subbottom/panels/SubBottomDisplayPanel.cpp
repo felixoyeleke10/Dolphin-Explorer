@@ -319,6 +319,8 @@ void SubBottomDisplayPanel::emitParams(bool persist)
         s.setValue("sbpDisplay/speed",         static_cast<double>(p.sound_speed_ms));
     }
     emit paramsChanged(p);
+    if (persist)
+        emit userParamsEdited(p);   // user action → display-state authority
 }
 
 } // namespace dolphin::ui

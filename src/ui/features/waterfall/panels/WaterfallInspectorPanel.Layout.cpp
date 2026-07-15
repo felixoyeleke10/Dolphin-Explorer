@@ -128,8 +128,11 @@ WaterfallInspectorPanel::WaterfallInspectorPanel(QWidget* parent)
         for (int i = 0; i < PaletteIndex::Count; ++i)
             m_palette_combo->addItem(SSSPalette::name(i));
         {
+            // Seed from the ONE global SSS palette (DisplayStateManager persists
+            // "sss/paletteIdx"); legacy "waterfall/paletteIdx" is retired so the
+            // waterfall can never reopen on a different palette than the map.
             QSettings qs;
-            const QVariant sss_idx = qs.value(QStringLiteral("waterfall/paletteIdx"));
+            const QVariant sss_idx = qs.value(QStringLiteral("sss/paletteIdx"));
             if (sss_idx.isValid()) {
                 m_palette_combo->setCurrentIndex(sss_idx.toInt());
             } else {
@@ -271,6 +274,12 @@ void WaterfallInspectorPanel::makeRow(QVBoxLayout*  bl,
     val_out = new QLabel("—", this);
     val_out->setObjectName(obj_name);
     val_out->setWordWrap(true);
+    // Long metadata must not give the fixed-width scroll content a wider
+    // minimum size. Let the value column shrink so wrapping occurs inside the
+    // inspector instead of the text extending beneath the waterfall view.
+    val_out->setMinimumWidth(0);
+    val_out->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    val_out->setTextFormat(Qt::PlainText);
     val_out->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
 
     rl->addWidget(k);

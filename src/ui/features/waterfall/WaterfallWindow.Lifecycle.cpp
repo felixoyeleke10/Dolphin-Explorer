@@ -188,7 +188,9 @@ void WaterfallWindow::setLayer(app::DataLayer*     layer,
         // feedback loop; opening a line must never execute that legacy flag.
         applied.destripe.enabled = false;
         controls.destripe.enabled = false;
-        const int palette = QSettings().value(QStringLiteral("waterfall/paletteIdx"),
+        // Global SSS palette — DisplayStateManager persists it as "sss/paletteIdx"
+        // (one key for map, waterfall, right panel, and Views alike).
+        const int palette = QSettings().value(QStringLiteral("sss/paletteIdx"),
                                               PaletteIndex::Greyscale).toInt();
         applied.palette = palette;
         controls.palette = palette;
@@ -266,10 +268,10 @@ void WaterfallWindow::setLayer(app::DataLayer*     layer,
         m_inspector->setActiveLine(layer->id);
 
     // Restore the global SSS palette. DisplayStateManager owns this setting and
-    // persists it to "waterfall/paletteIdx"; do not fall back to per-layer/app defaults
+    // persists it to "sss/paletteIdx"; do not fall back to per-layer/app defaults
     // here or opening the waterfall can clobber the currently active palette.
     if (layer && m_inspector) {
-        const int pal = QSettings().value(QStringLiteral("waterfall/paletteIdx"),
+        const int pal = QSettings().value(QStringLiteral("sss/paletteIdx"),
                                           PaletteIndex::Greyscale).toInt();
         m_inspector->setPalette(pal);   // does NOT re-emit paletteChanged
     }

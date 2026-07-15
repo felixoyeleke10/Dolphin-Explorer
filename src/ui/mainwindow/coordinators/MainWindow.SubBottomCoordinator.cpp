@@ -56,6 +56,17 @@ void MainWindow::onSubBottomOpen()
                 this, &MainWindow::onOpenProject);
         connect(m_sbp_win, &SubBottomWindow::saveFileRequested,
                 this, &MainWindow::onSaveProject);
+        // Display edits made INSIDE the SBP window (palette/gain/contrast/
+        // invert/bottom-track) reach the display-state authority so the 3D
+        // curtains, the Views ▸ SBP page, and the project file all follow —
+        // same universality as the waterfall→map palette route.
+        connect(m_sbp_win, &SubBottomWindow::displayParamsEdited,
+                this, [this](SubBottomDisplayParams p) {
+                    if (!m_display_state || !currentProject() || !m_sbp_win) return;
+                    const std::string lid = m_sbp_win->currentLayerId();
+                    if (lid.empty() || !currentProject()->findLayer(lid)) return;
+                    m_display_state->setLayerSbpDisplay(lid, p);
+                });
 
         connect(m_sbp_win, &SubBottomWindow::metadataRequested,
                 this, [this] {

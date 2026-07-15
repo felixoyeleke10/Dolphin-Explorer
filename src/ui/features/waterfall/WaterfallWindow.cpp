@@ -118,7 +118,9 @@ WaterfallWindow::WaterfallWindow(AppState* app_state, QWidget* parent)
             this,        &WaterfallWindow::onNextFix);
     connect(m_inspector, &WaterfallInspectorPanel::paletteChanged,
             this, [this](int idx) {
-                QSettings().setValue(QStringLiteral("waterfall/paletteIdx"), idx);
+                // No QSettings write here: DisplayStateManager is the palette
+                // authority and persists "sss/paletteIdx" when the emitted
+                // signal below reaches it (via MainWindow::onPaletteChanged).
                 WaterfallParams p = m_view->params();
                 p.palette = idx;
                 m_view->setParams(p);

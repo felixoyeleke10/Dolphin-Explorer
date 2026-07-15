@@ -60,6 +60,13 @@ void MainWindow::onWaterfallOpen()
                 this, &MainWindow::onWaterfallPrevLine);
         connect(m_waterfall_win, &WaterfallWindow::nextLineRequested,
                 this, &MainWindow::onWaterfallNextLine);
+        // Palette picked inside the waterfall is a change of the ONE global SSS
+        // palette: route it through onPaletteChanged → DisplayStateManager, the
+        // same authority the right panel and Views use, so the map mosaic and
+        // every other surface follow. (Round-trip is loop-safe: the bus handler
+        // pushes back via setPalette, which no-ops on an unchanged index.)
+        connect(m_waterfall_win, &WaterfallWindow::paletteChanged,
+                this, &MainWindow::onPaletteChanged);
 
         connect(m_waterfall_win, &WaterfallWindow::cursorUpdated,
                 this, &MainWindow::onWaterfallCursorUpdated);

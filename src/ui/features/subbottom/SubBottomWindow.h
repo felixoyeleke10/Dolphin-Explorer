@@ -131,6 +131,11 @@ protected:
     void closeEvent(QCloseEvent* e) override;
 
 signals:
+    // User edited display params (palette/gain/contrast/invert/bottom-track)
+    // INSIDE this window — forwarded from the display panel's user-action
+    // signal only, never for programmatic pushes (applyDisplayParams/
+    // restoreDisplayParams), so the authority round-trip cannot echo.
+    void displayParamsEdited(dolphin::ui::SubBottomDisplayParams params);
     void newFileRequested();
     void openFileRequested();
     void saveFileRequested();

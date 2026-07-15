@@ -139,6 +139,11 @@ SubBottomWindow::SubBottomWindow(AppState* app_state, QWidget* parent)
     connect(m_inspector, &SubBottomInspectorPanel::layerChangeRequested,
             this, &SubBottomWindow::layerChangeRequested);
 
+    // User display edits leave the window so the shell can persist them via
+    // the display-state authority (Views panel + 3D curtains follow).
+    connect(m_display, &SubBottomDisplayPanel::userParamsEdited,
+            this,      &SubBottomWindow::displayParamsEdited);
+
     // Display panel → view rendering + sound speed
     connect(m_display, &SubBottomDisplayPanel::paramsChanged,
             this, [this](SubBottomDisplayParams p) {
@@ -387,7 +392,10 @@ void SubBottomWindow::applyDisplayParams(const SubBottomDisplayParams& params)
     SubBottomDisplayParams merged = params;
     merged.sound_speed_ms = m_display->currentParams().sound_speed_ms;
     m_display->setParams(merged);
-    m_display->notifyParamsChanged();  // fires paramsChanged → view update + QSettings save
+    // Synchronisation from the authority, NOT a user action: refreshParams
+    // updates the view without persisting and without re-emitting
+    // userParamsEdited (which would echo the push back into the authority).
+    m_display->refreshParams();
 }
 
 void SubBottomWindow::restoreDisplayParams(const SubBottomDisplayParams& params)
