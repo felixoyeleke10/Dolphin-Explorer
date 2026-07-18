@@ -158,6 +158,8 @@ private:
     void    rebuildNavTrack();
     void    rebuildCombined();
     void    ensureCombined();   // rebuilds if m_combined_dirty, then clears the flag
+    void    alignLayerLongitudeBranch(const std::string& layer_id,
+                                      LayerMapData& data) const;
     QPointF geoToPixel(double lon, double lat) const;
     QPointF pixelToGeo(QPointF px)             const;
     double  baseScale() const;
@@ -196,6 +198,8 @@ private:
     double       m_zoom            = 1.0;
     double       m_rotation_deg    = 0.0;   // canvas rotation in degrees (0 = north-up)
     double       m_ref_lat         = 0.0;  // reference latitude for Mercator cos(lat) scaling
+    double       m_lon_branch_ref  = 0.0;  // centre of the active unwrapped longitude branch
+    bool         m_has_lon_branch_ref = false;
     bool         m_is_projected    = false;
     bool         m_needs_fit       = false;
     bool         m_user_interacted = false;  // suppresses auto-fit after user pans/zooms

@@ -142,10 +142,6 @@ signals:
     // Allows MainWindow to drive a global loading indicator or status label.
     void dataStateChanged(dolphin::ui::ViewerDataState state);
 
-    // Fired when the user runs nav processing on all lines.
-    // MainWindow can propagate the correction to other loaded layers.
-    void navProcessAllLinesRequested(dolphin::ui::NavProcessingParams params);
-
     // Fired when the user clicks "Set CRS" in the inspector panel.
     // Carries the layer ID currently shown so MainWindow picks the right layer
     // even when the waterfall has navigated away from m_active_layer_id.
@@ -202,10 +198,9 @@ public:
 
 public slots:
     // Apply params from an external control panel (GainControlPanel, ImagingControlPanel).
-    // Triggers a visual flash and emits paramsApplied().
+    // Signal-silent consumer update; only user Apply emits commit signals.
     void applyExternalParams(const WaterfallParams& p);
-    // Same as applyExternalParams but also emits applyToAllRequested so
-    // MainWindow can propagate the params to every project layer.
+    // Compatibility wrapper for consumer synchronization; also signal-silent.
     void applyExternalParamsToAll(const WaterfallParams& p);
 
     // Live nav correction for the line shown in this window. The main-window

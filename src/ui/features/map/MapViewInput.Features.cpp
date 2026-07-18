@@ -1,6 +1,7 @@
 // Feature-selection and draft lifecycle helpers for MapView.
 
 #include "ui/features/map/MapView.h"
+#include "ui/features/map/MapLongitude.h"
 
 #include <cstddef>
 
@@ -38,7 +39,12 @@ void MapView::commitFeatureDraft()
     const bool        polygon = (m_feature_kind == 1);
     const std::size_t min_pts = polygon ? 3u : 2u;
     if (m_feature_pts_geo.size() >= min_pts) {
-        emit featureDrawn(m_feature_pts_geo, polygon);
+        auto output_points = m_feature_pts_geo;
+        if (!m_is_projected) {
+            for (QPointF& point : output_points)
+                point.setX(maplongitude::canonical(point.x()));
+        }
+        emit featureDrawn(output_points, polygon);
     }
     m_feature_pts_geo.clear();
     m_feature_drawing = false;

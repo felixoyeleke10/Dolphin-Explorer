@@ -1,5 +1,4 @@
 #pragma once
-#include "app/display/NavProcessingParams.h"
 #include "ui/features/waterfall/processing/SeabedAutoDetector.h"
 #include "ui/features/waterfall/WaterfallContact.h"
 #include "ui/features/waterfall/WaterfallParams.h"
@@ -39,7 +38,6 @@ public:
     explicit WaterfallAnalysisPanel(QWidget* parent = nullptr);
 
     WaterfallParams      currentParams(int palette_index) const;
-    NavProcessingParams  currentNavParams() const;
     void                 setParams(const WaterfallParams& p);
     void                 setContactPickActive(bool active);
     void                 setSeabedToolActive(int tool);
@@ -50,11 +48,6 @@ public:
 signals:
     void applyToLineRequested();
     void applyToAllLinesRequested();
-    // Fired immediately whenever any pipeline-affecting control changes (TVG/ARN/AGC/
-    // destripe/BPN/ARC/CLAHE toggles and their value rows).  WaterfallWindow connects
-    // this to invalidateProcessedCache() so the view stays in sync with the panel state
-    // without requiring Apply — same live-preview behaviour as slantRangeCorrectionChanged.
-    void pipelineParamsChanged();
     void slantRangeCorrectionChanged(bool enabled); // fired immediately on SRC toggle
     void seabedChannelChanged(int channel);         // 0=Both, 1=Port, 2=Starboard
     void seabedToolChanged(int tool);
@@ -66,8 +59,6 @@ signals:
     void editContactsRequested();
     // Nav processing — emitted when user clicks Run in the Navigation section.
     // Modifies stored raw ping nav; never auto-fired on data load.
-    void navProcessThisLineRequested(dolphin::ui::NavProcessingParams params);
-    void navProcessAllLinesRequested(dolphin::ui::NavProcessingParams params);
 
 private:
     static QVBoxLayout* makeSection(const QString& title, bool expanded,
@@ -85,23 +76,19 @@ private:
     void buildSeabedSection     (QVBoxLayout* vl, QWidget* container);
     void buildContactSection    (QVBoxLayout* vl, QWidget* container);
     void buildProcessingSection (QVBoxLayout* vl, QWidget* container);
-    void buildNavSection        (QVBoxLayout* vl, QWidget* container);
 
     void updateRangeCompVisibility();
     void updateAgcVisibility();
     void updateDestripeVisibility();
     void updateProcessingVisibility();
-    void updateNavVisibility();
     void refreshImageDirty();
     void refreshSeabedDirty();
     void refreshProcessingDirty();
-    void refreshNavDirty();
 
     // -- Section header buttons (for dirty indicators) ---------------------
     QPushButton* m_image_hdr      = nullptr;
     QPushButton* m_seabed_hdr     = nullptr;
     QPushButton* m_processing_hdr = nullptr;
-    QPushButton* m_nav_hdr        = nullptr;
 
     // -- TVG ---------------------------------------------------------------
     WfToggleRow* m_tvg_toggle       = nullptr;
@@ -176,14 +163,6 @@ private:
     WfValueRow*  m_mle_clip_limit    = nullptr;
     QWidget*     m_mle_body          = nullptr;
 
-    // -- Navigation Processing (applied via dedicated Run buttons) ---------
-    WfToggleRow* m_nav_smooth_toggle  = nullptr;
-    QWidget*     m_nav_smooth_body    = nullptr;
-    WfValueRow*  m_nav_smooth_window  = nullptr;
-
-    WfToggleRow* m_nav_layback_toggle = nullptr;
-    QWidget*     m_nav_layback_body   = nullptr;
-    WfValueRow*  m_nav_layback_m      = nullptr;
 };
 
 } // namespace dolphin::ui

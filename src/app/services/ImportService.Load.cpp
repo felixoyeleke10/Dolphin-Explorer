@@ -225,7 +225,9 @@ ImportService::loadAllSidescanPingsFromStore(
     const core::ArtifactIndex& artifact_index,
     const std::string& source_path,
     int max_samples_per_ping,
-    const std::function<void(float)>& progress)
+    const std::function<void(float)>& progress,
+    const std::function<void(core::SidescanPing&)>& before_sample_compaction,
+    const std::function<bool()>& should_cancel)
 {
     std::vector<core::SidescanPing> result;
     if (artifact_index.empty()) return result;
@@ -251,6 +253,10 @@ ImportService::loadAllSidescanPingsFromStore(
     result.reserve(sidescan_entries.size());
     const size_t total = sidescan_entries.size();
     for (size_t i = 0; i < total; ++i) {
+        if (should_cancel && should_cancel()) {
+            result.clear();
+            return result;
+        }
         // Report progress periodically (not every entry — keeps overhead negligible).
         if (progress && (i & 0x7F) == 0)
             progress(static_cast<float>(i) / static_cast<float>(total));
@@ -258,6 +264,11 @@ ImportService::loadAllSidescanPingsFromStore(
         if (!artifact || !std::holds_alternative<core::SidescanPing>(*artifact))
             continue;
         auto ping = std::get<core::SidescanPing>(std::move(*artifact));
+        // Resolution-only map compaction must happen after native-sample
+        // calibration. TVG/ARC and per-ping AGC otherwise see different sample
+        // positions/statistics than the sample-for-sample waterfall.
+        if (before_sample_compaction)
+            before_sample_compaction(ping);
         compactSidescanSamples(ping, max_samples_per_ping);
         result.push_back(std::move(ping));
     }

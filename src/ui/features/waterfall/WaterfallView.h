@@ -17,10 +17,12 @@
 #include <QPoint>
 #include <QPointF>
 #include <atomic>
+#include <memory>
 #include <unordered_map>
 #include <vector>
 
 namespace dolphin::ui {
+namespace imaging { struct SssAmplitudeContext; }
 
 // -----------------------------------------------------------------------------
 //  WaterfallView — scrolling sidescan waterfall canvas (thin orchestrator).
@@ -63,14 +65,21 @@ public:
         float stretch_high = 1.f;
     };
 
-    // Run the full display pipeline off-thread:
-    //   TVG/ARC/AGC → assemble → beam/ARN/destripe/ML → seabed → auto-stretch.
+    // Run the canonical SSS display pipeline off-thread. Display amplitudes use
+    // the same calibration/enhancement/stretch contract as the map; seabed
+    // detection uses a clean calibrated copy.
     // pings are read-only; an internal working copy is made.
     // Deliver result via setPreassembledRows.
     static WfPipelineResult runPipeline(const std::vector<core::SidescanPing>& pings,
                                         const WaterfallParams&                 params,
                                         const SeabedAutoParams&                seabed_params,
-                                        bool                                   seabed_enabled);
+                                        bool                                   seabed_enabled,
+                                        const imaging::SssAmplitudeContext*    amplitude_context = nullptr);
+
+    void setAmplitudeContext(
+        std::shared_ptr<const imaging::SssAmplitudeContext> context);
+    std::shared_ptr<const imaging::SssAmplitudeContext> amplitudeContext() const
+        { return m_amplitude_context; }
 
     // Install pre-built pipeline result on the UI thread.
     // Applies manual seabed picks, updates renderer stretch, scrolls to end.
@@ -247,14 +256,6 @@ private:
     // Single-argument wrappers around the anonymous free functions in
     // WaterfallViewProcessing.cpp — use m_params implicitly so that
     // setPings() doesn't have to name the params directly.
-    void doApplyTvg(std::vector<core::SidescanPing>& pings);
-    void doApplyArc(std::vector<core::SidescanPing>& pings);
-    void doNormalizeRawAmplitudes(std::vector<core::SidescanPing>& pings);
-    void doStretchRawAmplitudes(std::vector<core::SidescanPing>& pings);
-    void doApplyBeamPattern(std::vector<PingRow>& rows);
-    void doApplyArn(std::vector<PingRow>& rows);
-    void doApplyDestripe(std::vector<PingRow>& rows);
-    void doApplyMlEnhance(std::vector<PingRow>& rows);
 
     // Overlay m_manual_seabed onto the current m_rows after assembly/detection.
     void applyManualSeabedPicks();
@@ -287,6 +288,7 @@ private:
 
     // -- Members ------------------------------------------------------------
     std::vector<core::SidescanPing>   m_raw_pings;          // stored for re-assembly on Apply
+    std::shared_ptr<const imaging::SssAmplitudeContext> m_amplitude_context;
     std::vector<PingRow>              m_rows;
     std::unordered_map<int64_t,float> m_manual_seabed;     // timestamp_us → range_m; survives window changes
     WaterfallParams                 m_params;

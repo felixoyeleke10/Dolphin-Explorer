@@ -3,6 +3,7 @@
 // Shared between SidescanMapLoadTask.cpp (main-thread orchestration) and
 // SidescanMapLoadTask.Build.cpp (the off-thread raster build).
 #include "ui/features/map/MapTypes.h"
+#include "ui/features/map/sidescan/SidescanEntryFilter.h"
 #include "ui/features/map/sidescan/SssGeorefParams.h"
 #include "ui/features/map/sidescan/SidescanRasterCache.h"
 #include "core/ArtifactIndex.h"
@@ -12,6 +13,7 @@
 #include "app/display/WaterfallParams.h"
 #include "app/tasks/CancellationToken.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <functional>
 #include <string>
@@ -22,6 +24,7 @@ namespace detail {
 
 struct QualityParams {
     size_t max_ping_groups;
+    size_t max_ping_entries;       // hard decoded channel-record bound
     int    max_samples_per_ping;
     int    max_image_dim;          // 0 = no image (CoverageOnly or Off)
 
@@ -39,33 +42,100 @@ struct QualityParams {
     int    cell_budget_div;
 };
 
-// max_ping_groups == 0 means "no thinning — use all available ping groups".
-// For Full quality the background task applies an automatic safety fallback
-// if the file has more groups than kFullSafeLimit.
+// During rasterization each retained sample exists once in the decoded ping and
+// once as an expanded georeferenced SssPoint. Keep that combined payload bounded;
+// this deliberately accounts for SssPoint::ground_range_m and struct padding.
+inline constexpr size_t kHighSampleWorkingSetBytes =
+    size_t{4096} * size_t{1024}
+    * (sizeof(core::SidescanSample) + sizeof(SssPoint));
+static_assert(kHighSampleWorkingSetBytes <= size_t{160} * 1024 * 1024,
+              "High map sample working set exceeds its 160 MiB ceiling");
+
+// max_ping_groups == 0 remains available to internal callers as "no thinning";
+// shipped map tiers stay resolution-bounded per D-06 (index/visible-first).
 inline QualityParams paramsForQuality(MapSonarQuality q)
 {
     // Quality controls resolution only (ping count + image size).
     // Artifact guards are uniform across all tiers so switching quality
     // doesn't change which data is visible — only how detailed it looks.
-    //                        pings    samp   img
-    // Caps are sized for a map *overview* mosaic, not a full-res waterfall: a map
-    // preview gains little from >1k samples/ping or huge ping counts, but the read
-    // + rasterise cost scales with all three, so the tiers stay modest and the
-    // waterfall still shows full detail. High (the top tier) keeps 4096px and
-    // unlimited pings for an explicit max-quality mosaic, but falls back to Medium's
-    // ping cap on very large files (see kFullSafeLimit).
+    //                        groups entries samp  img
+    // Caps are sized for a map *overview* mosaic, not a full-res waterfall.  The
+    // entry cap is a hard backstop for dual-band/malformed groups: even when a
+    // ping number contains more than the usual port+starboard pair, decoded sample
+    // payload stays bounded. At High, decoded samples plus their expanded
+    // georeferenced SssPoints remain at or below 160 MiB before fixed per-ping
+    // metadata and the separately bounded 64 MiB image / 32 MiB intensity grid.
+    //
+    // High remains its own exact product (4096-pixel raster and twice Medium's
+    // cross-track samples); it is never relabelled or silently replaced by Medium.
+    // The waterfall remains the full-record, sample-for-sample view.
     switch (q) {
     case MapSonarQuality::Off:
-    case MapSonarQuality::CoverageOnly: return {5000,   16,    0, 0.0, 0};
-    case MapSonarQuality::Low:          return {10000, 512, 1024, 0.0, 0};
-    case MapSonarQuality::Medium:       return {16000, 1024, 2048, 0.0, 0};
-    case MapSonarQuality::High:         return {0,       0, 4096, 0.0, 0};
+    case MapSonarQuality::CoverageOnly: return {1024, 2048,   16,    0, 0.0, 0};
+    case MapSonarQuality::Low:          return {1024, 2048,  256, 1024, 0.0, 0};
+    case MapSonarQuality::Medium:       return {2048, 4096,  512, 2048, 0.0, 0};
+    case MapSonarQuality::High:         return {4096, 4096, 1024, 4096, 0.0, 0};
     }
-    return {5000, 16, 0, 0.0, 0};
+    return {1024, 2048, 16, 0, 0.0, 0};
 }
 
-// Ping-group limit above which the top (High) tier falls back to Medium's ping cap.
-constexpr size_t kFullSafeLimit = 24000;
+// Replace the sidescan portion of an index with a deterministic, group-aware
+// subset satisfying both quality bounds.  max_ping_groups == 0 and
+// max_ping_entries == 0 remain the explicit internal "unbounded" values.
+//
+// The second bound matters because one timestamp/ping-number group is not
+// guaranteed to contain exactly two records (multi-band stores can contain four,
+// and corrupt input can contain more).  Re-thinning by group preserves paired
+// channels in normal data; the final uniform trim is only a malformed-group
+// memory-safety backstop.
+inline void boundSidescanIndexForMap(core::ArtifactIndex& index,
+                                     const QualityParams& params)
+{
+    if (params.max_ping_groups == 0 && params.max_ping_entries == 0)
+        return;
+
+    size_t group_cap = params.max_ping_groups;
+    if (group_cap == 0)
+        group_cap = std::max<size_t>(1, params.max_ping_entries);
+
+    std::vector<core::ArtifactIndexEntry> selected =
+        thinSidescanEntriesForMap(index, group_cap);
+
+    while (params.max_ping_entries > 0
+           && selected.size() > params.max_ping_entries
+           && group_cap > 1) {
+        const long double ratio = static_cast<long double>(params.max_ping_entries)
+                                / static_cast<long double>(selected.size());
+        size_t next_cap = std::max<size_t>(1,
+            static_cast<size_t>(static_cast<long double>(group_cap) * ratio));
+        if (next_cap >= group_cap) next_cap = group_cap - 1;
+        group_cap = next_cap;
+        selected = thinSidescanEntriesForMap(index, group_cap);
+    }
+
+    if (params.max_ping_entries > 0 && selected.size() > params.max_ping_entries) {
+        std::vector<core::ArtifactIndexEntry> trimmed;
+        trimmed.reserve(params.max_ping_entries);
+        if (params.max_ping_entries == 1) {
+            trimmed.push_back(selected.front());
+        } else {
+            for (size_t i = 0; i < params.max_ping_entries; ++i) {
+                const size_t at = i * (selected.size() - 1)
+                                / (params.max_ping_entries - 1);
+                trimmed.push_back(selected[at]);
+            }
+        }
+        selected = std::move(trimmed);
+    }
+
+    index.entries.erase(
+        std::remove_if(index.entries.begin(), index.entries.end(),
+            [](const core::ArtifactIndexEntry& entry) {
+                return entry.type == core::ArtifactType::Sidescan;
+            }),
+        index.entries.end());
+    index.entries.insert(index.entries.end(), selected.begin(), selected.end());
+}
 
 struct SidescanLoadResult {
     std::string  layer_id;
@@ -91,8 +161,6 @@ struct SidescanLoadResult {
     // CRS IDs for which no supported transform was found (pseudo-degree fallback used).
     std::vector<core::SpatialRef> unresolved_crs;
 
-    // Normalized pings kept for palette-only re-rasterization (no disk I/O).
-    std::vector<core::SidescanPing> map_pings_cache;
 };
 
 // Immutable snapshot of everything the off-thread build needs — gathered on the
@@ -111,6 +179,7 @@ struct SssLoadInputs {
     float               layer_low_freq_hz = 0.f;
     QualityParams       qp{};
     int                 palette_idx = 0;
+    bool                auto_stretch_enabled = true;
     SssGeorefParams     georef_params;
     MapSonarQuality     current_quality = MapSonarQuality::Low;
     NavProcessingParams nav_params;

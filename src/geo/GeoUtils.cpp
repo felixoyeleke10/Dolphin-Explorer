@@ -276,6 +276,21 @@ bool isFiniteNav(const core::NavPoint& nav)
     return nav.valid && isFiniteCoordinate(nav.lat, nav.lon);
 }
 
+double wrapLongitude180(double lon_deg) noexcept
+{
+    if (!std::isfinite(lon_deg)) return lon_deg;
+    double wrapped = std::fmod(lon_deg + 180.0, 360.0);
+    if (wrapped < 0.0) wrapped += 360.0;
+    return wrapped - 180.0;
+}
+
+double unwrapLongitudeNear(double lon_deg, double reference_deg) noexcept
+{
+    if (!std::isfinite(lon_deg) || !std::isfinite(reference_deg))
+        return lon_deg;
+    return reference_deg + std::remainder(lon_deg - reference_deg, 360.0);
+}
+
 bool navUsesProjectedCoordinates(const core::NavPoint& nav)
 {
     return core::spatialRefIsProjected(effectiveNavSpatialRef(nav));

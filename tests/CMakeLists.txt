@@ -69,6 +69,18 @@ set_target_properties(test_project_storage PROPERTIES
 
 add_test(NAME ProjectStorage COMMAND test_project_storage)
 
+# -- SSS processing system: scope, per-layer isolation, and sole mutation path --
+add_executable(test_sidescan_processing_coordinator
+    test_sidescan_processing_coordinator.cpp
+)
+target_include_directories(test_sidescan_processing_coordinator PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_sidescan_processing_coordinator PRIVATE
+    dolphin-ui-mainwindow
+    Qt6::Core
+)
+set_target_properties(test_sidescan_processing_coordinator PROPERTIES CXX_STANDARD 20)
+add_test(NAME SidescanProcessingCoordinator COMMAND test_sidescan_processing_coordinator)
+
 # -- Project creation must never overwrite a manifest or hide path failures ---
 add_executable(test_project_creation
     test_project_creation.cpp
@@ -146,6 +158,18 @@ set_target_properties(test_sidescan_georef PROPERTIES
 
 add_test(NAME SidescanGeoref COMMAND test_sidescan_georef)
 
+# -- Geographic longitude branch alignment (2D/3D map antimeridian) -----------
+add_executable(test_map_longitude_branch
+    test_map_longitude_branch.cpp
+)
+target_include_directories(test_map_longitude_branch PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_map_longitude_branch PRIVATE dolphin-ui-map)
+set_target_properties(test_map_longitude_branch PROPERTIES
+    CXX_STANDARD 20
+    AUTOMOC OFF
+)
+add_test(NAME MapLongitudeBranch COMMAND test_map_longitude_branch)
+
 # -- Raster cache round-trip / staleness (raster-first persistence) ------------
 add_executable(test_raster_cache
     test_raster_cache.cpp
@@ -214,7 +238,7 @@ if(WIN32)
     if(_qt6_core_loc)
         get_filename_component(_qt6_bin "${_qt6_core_loc}" DIRECTORY)
 
-        foreach(_tgt test_project_storage test_sidescan_georef)
+        foreach(_tgt test_project_storage test_sidescan_georef test_map_longitude_branch)
             # Qt6Core.dll from the Qt installation
             add_custom_command(TARGET ${_tgt} POST_BUILD
                 COMMAND ${CMAKE_COMMAND} -E copy_if_different

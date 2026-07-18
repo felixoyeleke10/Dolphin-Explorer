@@ -97,6 +97,7 @@ constexpr uint32_t kNavFlagFishPos      = 1u << 0;  // fish/sensor position used
 constexpr uint32_t kNavFlagVesselPos    = 1u << 1;  // vessel/ship position used
 constexpr uint32_t kNavFlagLayback      = 1u << 2;  // layback offset applied
 constexpr uint32_t kNavFlagManualOffset = 1u << 3;  // manual x/y offset applied
+constexpr uint32_t kNavFlagInterpolated = 1u << 4;  // bounded timestamp interpolation
 
 struct ResolvedHeading {
     double           heading_rad = std::numeric_limits<double>::quiet_NaN();
@@ -136,8 +137,12 @@ ResolvedHeading resolveSssHeading(
 // -- Full corrected nav table ---------------------------------------------------
 //
 // Returns one CorrectedSssNav per ping, indexed to pings[order[i]].
-// Resolves heading (with EMA/COG and backward-fill) then position (with
-// nav_source, layback, and manual offsets), then applies nav smoothing.
+// Resolves the selected position source, repairs only cadence-continuous interior
+// nav runs whose anchor motion is speed-plausible and inside conservative hard
+// time/distance bounds, derives COG/heading from that repaired track, then applies
+// layback and optional nav smoothing. Leading/trailing gaps, unknown timestamps,
+// ping-number resets/reuse, survey breaks, and implausible jumps remain unresolved.
+// Repaired entries carry kNavFlagInterpolated.
 // Both georeferenceSidescanPings() and buildSwathCoverage() must call this
 // function so mosaic and coverage share identical per-ping positions and headings.
 std::vector<CorrectedSssNav> buildCorrectedNavTable(

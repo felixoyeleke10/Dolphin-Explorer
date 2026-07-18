@@ -6,7 +6,6 @@
 #include <QRgb>
 #include <array>
 #include <atomic>
-#include <memory>
 #include <optional>
 #include <set>
 #include <string>
@@ -40,9 +39,8 @@ struct IntensityCache {
 };
 
 // -- Per-quality-tier pre-built result -----------------------------------------
-// Populated by prebuildTier() (called from ProcessingWindow).
-// Holds everything needed to display a layer at a given quality level without
-// any background task — quality changes become an O(pixels) palette lookup.
+// Produced by prebuildTier() as a short-lived main-thread handoff. The persisted
+// raster remains the durable tier cache; this object is consumed when displayed.
 struct PrebuiltTier {
     std::vector<SwathCoverage> coverage;
     std::vector<QPointF>       nav_track;
@@ -119,6 +117,11 @@ public:
     // computed at rasterization time are used instead.
     void setDisplayParams(const SonarDisplayParams& dp);
 
+    // Apply the process-wide auto-stretch preference to every resident map
+    // raster. This is an O(pixels) LUT recolour only; geometry and disk caches
+    // remain untouched.
+    void setAutoStretchEnabled(bool enabled);
+
     // IViewerWindow
     void onViewerRefresh(ViewerRefreshReason reason,
                          const std::string& layer_id = {}) override;
@@ -160,20 +163,20 @@ public:
     // dynamic-range handles seat on the effective bounds. Returns false if unknown.
     bool autoStretch(const std::string& layer_id, float& low, float& high) const;
 
-    // Re-rasterize the given layers with their current gain/imaging params from the
-    // cached (pre-correction) pings — no disk decode. The existing mosaic stays on
-    // screen until the new one is ready (no blank), giving a fast Apply preview;
-    // staged tiers (Medium/High) then refine to full resolution in the background.
-    // Rebuilds line-by-line on a cap-1 lane (one ~64 MB raster in flight at a time).
+    // Re-rasterize the given layers with their current gain/imaging params. The
+    // existing mosaic stays on screen until the new bounded working set is decoded
+    // and ready (no blank). Rebuilds line-by-line on a cap-1 lane.
     void applyLiveCorrections(const std::vector<std::string>& layer_ids);
 
     // Build a colored QImage from an IntensityCache without any disk I/O.
-    // dp supplies stretch/gain overrides; if dp.display_low == 0 && dp.display_high == 1
-    // (identity / not set) the cache's own percentile stretch is used instead.
+    // dp supplies stretch/gain overrides. When auto_stretch_enabled is true,
+    // identity display bounds use the cache's canonical line-level stretch;
+    // when false, identity means the literal full range [0,1].
     // Returns a null QImage when the cache is empty.
     static QImage colorizeIntensityCache(const IntensityCache& cache,
                                          const std::optional<SonarDisplayParams>& dp,
-                                         int palette_idx);
+                                         int palette_idx,
+                                         bool auto_stretch_enabled);
 
 signals:
     void contactPicked(double lat, double lon, uint64_t artifact_id, uint32_t sample_idx);
@@ -214,31 +217,17 @@ private:
     SssGeorefParams  m_georef_params;
     int              m_palette_idx   = 1;   // PaletteIndex::Greyscale
     std::optional<SonarDisplayParams> m_display_params;  // nullopt = use per-layer auto-stretch
+    bool             m_auto_stretch_enabled = true;
 
     // Per-layer map builds run through OperationManager keyed "sss:load:<id>",
     // so supersession + cancellation replace the old generation/cancel-flag maps.
-
-    // Normalized pings cached after a successful load.
-    // Retained as a fallback for layers that predate the intensity cache.
-    std::unordered_map<std::string, std::vector<core::SidescanPing>> m_layer_pings_cache;
-
-    // RAW decoded pings (post band-filter/thin/sample-cap + source-CRS fixup, but
-    // PRE nav-correction, PRE imaging corrections, PRE map normalize), kept so a
-    // live Apply re-applies new gain/imaging params WITHOUT re-reading from disk —
-    // the decode is the dominant cost of an Apply. Valid for the current quality
-    // tier only (thinning is tier-specific), so it is cleared on quality change and
-    // wherever the other ping caches are cleared. shared_ptr<const> lets the worker
-    // capture it cheaply and copy once off-thread to apply corrections.
-    std::unordered_map<std::string,
-        std::shared_ptr<const std::vector<core::SidescanPing>>> m_layer_raw_pings_cache;
 
     // Per-layer intensity cache at the current quality tier.
     // Used by repaletteAllLayers() for O(pixels) main-thread palette recolors.
     std::unordered_map<std::string, IntensityCache> m_layer_intensity_cache;
 
-    // Pre-built results per layer per quality tier (int key = MapSonarQuality).
-    // Populated by prebuildTier(); consumed by setMapSonarQuality() for instant
-    // quality switching.
+    // Short-lived prebuild handoff (int key = MapSonarQuality). The completion
+    // signal consumes it synchronously; durable tiers live in the raster cache.
     std::unordered_map<std::string,
         std::unordered_map<int, PrebuiltTier>> m_quality_tier_cache;
 

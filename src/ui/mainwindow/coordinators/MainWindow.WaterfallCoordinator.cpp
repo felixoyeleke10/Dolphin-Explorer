@@ -10,6 +10,7 @@
 #include "ui/mainwindow/panels/ImagingControlPanel.h"
 #include "ui/features/map/sidescan/SidescanViewController.h"
 #include "ui/mainwindow/coordinators/CorrectionBatchOperator.h"
+#include "ui/mainwindow/coordinators/SidescanProcessingCoordinator.h"
 #include "ui/shell/Features.h"
 #include "ui/shared/dialogs/CrsPickerDialog.h"
 #include "ui/shared/LineNavigation.h"
@@ -84,8 +85,6 @@ void MainWindow::onWaterfallOpen()
                 this, &MainWindow::onWaterfallParamsApplied);
         connect(m_waterfall_win, &WaterfallWindow::setCrsRequested,
                 this, &MainWindow::onWaterfallSetCrs);
-        connect(m_waterfall_win, &WaterfallWindow::navProcessAllLinesRequested,
-                this, &MainWindow::onWaterfallNavProcessAllLines);
         connect(m_waterfall_win, &WaterfallWindow::qcViewedFractionChanged,
                 this, [this](const std::string& /*layer_id*/, float /*fraction*/) {
                     // WaterfallScrollSync already writes to layer->qc_viewed_fraction
@@ -116,20 +115,8 @@ void MainWindow::onWaterfallOpen()
         connect(m_waterfall_win, &WaterfallWindow::paramsApplied, this, [this]() {
             if (!m_waterfall_win) return;
             const auto& p = m_waterfall_win->currentParams();
-            if (m_sss_ctrl) {
-                // Pass display params (palette, gain, contrast, threshold) to the
-                // map but strip the auto-stretch values.  The waterfall's
-                // display_low/high are calibrated to its in-session processed
-                // amplitudes (post-TVG/ARC/AGC); the map renders DLPD amplitudes
-                // which have a different numeric range.  Passing identity (0/1)
-                // lets the map fall back to its own data-calibrated stretch.
-                SonarDisplayParams map_dp = p;
-                if (m_display_state)
-                    map_dp.palette = m_display_state->mapPalette();
-                map_dp.display_low  = 0.f;
-                map_dp.display_high = 1.f;
-                m_sss_ctrl->setDisplayParams(map_dp);
-            }
+            // Gain/imaging are per-layer. The map rebuild below reads this
+            // layer's stored params; never apply one waterfall line globally.
 
             if (currentProject()) {
                 // Use the layer the waterfall is actually showing, which may
@@ -138,12 +125,15 @@ void MainWindow::onWaterfallOpen()
                 const std::string wf_id = m_waterfall_win->currentLayerId();
                 if (!wf_id.empty()) {
                     auto* layer = currentProject()->findLayer(wf_id);
+                    const bool src_changed = layer
+                        && layer->slant_range_corrected != p.slant_range_correction;
                     if (layer && m_display_state) {
                         // Snapshot old pipeline params so we can skip the raster rebuild
                         // when paramsApplied fires from a programmatic restore (layer
                         // switch, waterfall open) rather than a user Apply click.
                         const WaterfallParams old_p = layer->sss_display_state.params;
-                        m_display_state->setLayerSssDisplay(wf_id, p);  // mutate + notify (marks dirty)
+                        if (m_sss_processing)
+                            m_sss_processing->commit(currentProject(), {wf_id}, p);
                         // Rebuild the map raster so corrections (destripe, AGC, ARC, TVG,
                         // etc.) applied in the waterfall are immediately reflected in the
                         // map mosaic.  Only rebuild when pipeline params actually changed
@@ -158,12 +148,11 @@ void MainWindow::onWaterfallOpen()
                             || p.beam_pattern != old_p.beam_pattern
                             || p.ml_enhance   != old_p.ml_enhance;
                         if (m_sss_ctrl
-                                && layer->slant_range_corrected == p.slant_range_correction
+                                && !src_changed
                                 && pipeline_changed)
                             m_sss_ctrl->applyLiveCorrections({wf_id});
                     }
-                    if (layer && layer->slant_range_corrected != p.slant_range_correction) {
-                        layer->slant_range_corrected = p.slant_range_correction;
+                    if (layer && src_changed) {
                         if (m_sss_ctrl) m_sss_ctrl->reloadLayer(wf_id);
                         markProjectDirty();
                         m_session_ctrl->autoSave();
@@ -200,11 +189,12 @@ void MainWindow::onWaterfallOpen()
         connect(m_waterfall_win, &WaterfallWindow::applyToAllRequested, this, [this]() {
             if (!currentProject() || !m_waterfall_win) return;
             const WaterfallParams p = m_waterfall_win->currentParams();
-            for (const auto& l : currentProject()->layers()) {
-                if (!l || l->modality != app::Modality::Sidescan) continue;  // SSS only
-                l->slant_range_corrected = p.slant_range_correction;
-                if (m_display_state) m_display_state->setLayerSssDisplay(l->id, p);
-            }
+            if (m_gain_panel)    m_gain_panel->setParams(p);
+            if (m_imaging_panel) m_imaging_panel->setParams(p);
+            const auto ids = SidescanProcessingCoordinator::allSidescanLayerIds(
+                currentProject());
+            if (m_sss_processing)
+                m_sss_processing->commit(currentProject(), ids, p);
             if (m_sss_ctrl) m_sss_ctrl->reloadCurrentLayer();
             markProjectDirty();
             m_session_ctrl->autoSave();

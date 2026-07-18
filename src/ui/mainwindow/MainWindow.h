@@ -37,6 +37,7 @@ class QFrame;
 class QLabel;
 class QPushButton;
 class QSplitter;
+namespace dolphin::ui { class SidescanProcessingCoordinator; }
 class QLineEdit;
 class QListWidget;
 class QListWidgetItem;
@@ -180,9 +181,6 @@ private slots:
                              uint64_t abs_trace);
     void onWaterfallParamsApplied();
     void onWaterfallSetCrs(const std::string& from_layer_id);
-    void onWaterfallNavProcessLine(dolphin::ui::NavProcessingParams params);
-    void onWaterfallNavProcessAllLines(dolphin::ui::NavProcessingParams params);
-
     // Single shared Apply bar at the bottom of the tools panel: gather every visible
     // tool section's settings for the active sensor and apply them in one rebuild.
     void onApplyToolsToLine();
@@ -366,6 +364,7 @@ private:
 
     // Layer selection state is owned by m_layer_ctrl; use this helper.
     LayerDisplayCoordinator* m_layer_ctrl = nullptr;
+    SidescanProcessingCoordinator* m_sss_processing = nullptr;
     const std::string& activeLayerId() const noexcept;
 
     app::OperationManager*  m_op_mgr = nullptr;  // central job runner + cancel registry

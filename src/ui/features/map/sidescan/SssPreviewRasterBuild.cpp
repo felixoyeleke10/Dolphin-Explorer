@@ -1,10 +1,12 @@
 // SssPreviewRasterBuild.cpp — buildSwathPreviewImage implementation.
-// Georefs pings → stitched bilinear quad raster → QImage stored in LayerMapData.
+// Georefs pings → stitched quadrilateral raster → QImage stored in LayerMapData.
 #include "ui/features/map/sidescan/SssMapBuild.h"
 #include "ui/features/map/sidescan/SidescanSwathGeoreferencer.h"
+#include "ui/features/map/sidescan/SssContinuity.h"
 #include "ui/features/map/sidescan/SwathRasterizer.h"
 #include "render/sonar/SonarDisplayParams.h"
 #include "geo/GeoUtils.h"
+#include "ui/shared/processing/SssImagingAlgorithms.h"
 
 #include <QColor>
 #include <QImage>
@@ -18,9 +20,80 @@
 namespace dolphin::ui {
 
 namespace {
-constexpr double  kDegToRad          = std::numbers::pi / 180.0;
-constexpr double  kMaxNavStepM       = 50.0;
-constexpr int64_t kMaxTimestampGapUs = 5'000'000LL;
+constexpr double kDegToRad = std::numbers::pi / 180.0;
+
+ssscontinuity::Thresholds stitchThresholds(
+    const std::vector<const SssStrip*>& strips,
+    bool is_projected)
+{
+    std::vector<double> nav_deltas;
+    std::vector<double> time_deltas;
+    std::vector<double> ping_deltas;
+    if (strips.size() > 1) {
+        nav_deltas.reserve(strips.size() - 1);
+        time_deltas.reserve(strips.size() - 1);
+        ping_deltas.reserve(strips.size() - 1);
+    }
+
+    for (size_t i = 1; i < strips.size(); ++i) {
+        const auto& previous = *strips[i - 1];
+        const auto& current  = *strips[i];
+
+        core::NavPoint a{}, b{};
+        a.lon = previous.nav_lon; a.lat = previous.nav_lat;
+        b.lon = current.nav_lon;  b.lat = current.nav_lat;
+        a.is_projected = b.is_projected = is_projected;
+        nav_deltas.push_back(geo::navDistanceMetres(a, b));
+
+        if (previous.timestamp_us > 0
+                && current.timestamp_us > previous.timestamp_us)
+            time_deltas.push_back(static_cast<double>(
+                current.timestamp_us - previous.timestamp_us));
+
+        if (previous.ping_number > 0
+                && current.ping_number > previous.ping_number)
+            ping_deltas.push_back(static_cast<double>(
+                current.ping_number - previous.ping_number));
+    }
+
+    return ssscontinuity::fromDeltas(
+        std::move(nav_deltas), std::move(time_deltas), std::move(ping_deltas));
+}
+
+SssPoint interpolateStripPointAtRange(const std::vector<SssPoint>& points,
+                                      double ground_range_m)
+{
+    if (points.size() == 1)
+        return points.front();
+    if (ground_range_m <= points.front().ground_range_m)
+        return points.front();
+    if (ground_range_m >= points.back().ground_range_m)
+        return points.back();
+
+    const auto upper = std::upper_bound(
+        points.begin(), points.end(), ground_range_m,
+        [](double range_m, const SssPoint& point) {
+            return range_m < point.ground_range_m;
+        });
+    if (upper == points.begin() || upper == points.end())
+        return upper == points.begin() ? points.front() : points.back();
+    const auto& b = *upper;
+    const auto& a = *(upper - 1);
+    const double span_m = b.ground_range_m - a.ground_range_m;
+    if (!(span_m > 1e-9))
+        return b;
+    const double fraction = std::clamp(
+        (ground_range_m - a.ground_range_m) / span_m, 0.0, 1.0);
+    const double amplitude = static_cast<double>(a.amplitude)
+        + (static_cast<double>(b.amplitude) - static_cast<double>(a.amplitude))
+          * fraction;
+    return {
+        a.lon + (b.lon - a.lon) * fraction,
+        a.lat + (b.lat - a.lat) * fraction,
+        static_cast<uint16_t>(std::clamp(std::llround(amplitude), 0LL, 65535LL)),
+        static_cast<float>(a.ground_range_m + span_m * fraction)
+    };
+}
 } // namespace
 
 bool buildSwathPreviewImage(const std::vector<core::SidescanPing>& pings,
@@ -32,7 +105,9 @@ bool buildSwathPreviewImage(const std::vector<core::SidescanPing>& pings,
                             double min_strip_cos,
                             int    cell_budget_div,
                             bool   ping_lines_only,
-                            const std::function<void(float)>& progress)
+                            const std::function<void(float)>& progress,
+                            float canonical_stretch_low,
+                            float canonical_stretch_high)
 {
     // Throttle progress to integer-percent buckets so a callback that marshals
     // across threads isn't flooded; no-op when no callback was supplied.
@@ -51,6 +126,10 @@ bool buildSwathPreviewImage(const std::vector<core::SidescanPing>& pings,
     ld.nav_stats.stitch_time_rejects    = 0;
     ld.nav_stats.stitch_ping_rejects    = 0;
     ld.nav_stats.stitch_heading_rejects = 0;
+    ld.nav_stats.cells_attempted        = 0;
+    ld.nav_stats.cells_rasterized       = 0;
+    ld.nav_stats.preview_pixels_written = 0;
+    ld.nav_stats.preview_pixels_filled  = 0;
 
     if (pings.empty()) return false;
     if (ld.lon_min >= ld.lon_max || ld.lat_min >= ld.lat_max) return false;
@@ -120,8 +199,8 @@ bool buildSwathPreviewImage(const std::vector<core::SidescanPing>& pings,
 
     // -- Create transparent image + intensity cache ----------------------------
     // Rasterized cells write fully-opaque pixels; cells with no data stay
-    // transparent (alpha 0).  MapView draws the image at 0.88 opacity, so
-    // gaps between pings show the map background rather than a solid fill.
+    // transparent (alpha 0). The paint path applies only the layer's explicit
+    // opacity; it does not silently fade valid sonar pixels into the basemap.
     QImage img(img_w, img_h, QImage::Format_ARGB32_Premultiplied);
     img.fill(Qt::transparent);
 
@@ -141,23 +220,18 @@ bool buildSwathPreviewImage(const std::vector<core::SidescanPing>& pings,
                  (ld.lat_max - lat) * sy };
     };
 
-    // -- Quick auto-stretch: 1st / 99th percentile of strip amplitudes ---------
-    float disp_low = 0.0f, disp_high = 1.0f;
-    {
-        std::vector<uint16_t> samp;
-        samp.reserve(std::min<size_t>(65536, gr.strips.size() * 8));
-        for (const auto& st : gr.strips)
-            for (size_t j = 0; j < st.points.size();
-                 j += std::max<size_t>(1, st.points.size() / 8))
-                samp.push_back(st.points[j].amplitude);
-
-        if (samp.size() > 10) {
-            std::sort(samp.begin(), samp.end());
-            disp_low  = static_cast<float>(samp[samp.size() / 100])      / 65535.0f;
-            disp_high = static_cast<float>(samp[samp.size() * 99 / 100]) / 65535.0f;
-            if (disp_high <= disp_low + 1e-4f) disp_high = disp_low + 0.01f;
-        }
-    }
+    // A supplied line-context stretch is the cross-view contrast authority.
+    // Local computation is retained only for callers without a context;
+    // geometry sampling must never define a second contrast policy.
+    const auto stretch = imaging::computeAutoStretch(pings);
+    const bool canonical_stretch = std::isfinite(canonical_stretch_low)
+        && std::isfinite(canonical_stretch_high)
+        && canonical_stretch_low >= 0.f
+        && canonical_stretch_high > canonical_stretch_low;
+    const float disp_low = canonical_stretch
+        ? canonical_stretch_low : stretch.low;
+    const float disp_high = canonical_stretch
+        ? canonical_stretch_high : stretch.high;
     ld.intensity_disp_low  = disp_low;
     ld.intensity_disp_high = disp_high;
 
@@ -175,21 +249,27 @@ bool buildSwathPreviewImage(const std::vector<core::SidescanPing>& pings,
     // Enabled by the explicit flag or by georef_params.debug_ping_lines_only.
     // If stretching disappears in this mode, the stitch logic is the root cause.
     if (ping_lines_only || georef_params.debug_ping_lines_only) {
+        size_t dots_written = 0;
         for (const auto& st : gr.strips) {
             for (const auto& pt : st.points) {
                 const QPointF px = geoToImg(pt.lon, pt.lat);
                 const int ix = static_cast<int>(px.x());
                 const int iy = static_cast<int>(px.y());
                 if (ix >= 0 && ix < img_w && iy >= 0 && iy < img_h) {
+                    const size_t idx = static_cast<size_t>(iy) * img_w + ix;
+                    if (amp_buf[idx] == 0)
+                        ++dots_written;
                     const float norm = SSSAmplitudeProcessor::displayIntensity(pt.amplitude, params);
-                    pixels[iy * img_w + ix] = SSSPalette::color(norm, palette_index);
+                    pixels[idx] = SSSPalette::color(norm, palette_index);
                     const int ai = static_cast<int>(pt.amplitude);
-                    amp_buf[iy * img_w + ix] =
+                    amp_buf[idx] =
                         static_cast<uint16_t>(ai < 65535 ? ai + 1 : 65535);
                 }
             }
         }
+        ld.nav_stats.preview_pixels_written = dots_written;
         ld.preview_image = std::move(img);
+        report(1.0f);
         return true;
     }
 
@@ -201,31 +281,10 @@ bool buildSwathPreviewImage(const std::vector<core::SidescanPing>& pings,
     // point, which is offset perpendicularly from the vessel and cannot serve
     // as a reliable distance proxy.
     //
-    // Threshold: median same-channel ping spacing × 10, capped at [10 m, 50 m].
-    // At typical survey speed (1–3 m spacing), this gives a 10–30 m threshold
-    // that passes all intra-line pairs and rejects inter-line gaps cleanly.
+    // Continuity is estimated independently for each retained channel sequence.
+    // This is essential after index thinning: consecutive decoded records may
+    // legitimately be tens of ping numbers and several seconds apart.
     const bool is_proj = gr.is_projected;
-
-    // Compute median intra-line spacing for a sorted channel strip list.
-    auto computeMedianSpacing = [&](const std::vector<const SssStrip*>& strips) -> double {
-        if (strips.size() < 2) return 10.0;
-        std::vector<double> spacings;
-        spacings.reserve(strips.size() - 1);
-        for (size_t i = 1; i < strips.size(); ++i) {
-            core::NavPoint a{}, b{};
-            a.lon = strips[i - 1]->nav_lon;  a.lat = strips[i - 1]->nav_lat;
-            a.is_projected = is_proj;
-            b.lon = strips[i]->nav_lon;       b.lat = strips[i]->nav_lat;
-            b.is_projected = is_proj;
-            const double d = geo::navDistanceMetres(a, b);
-            if (d > 0.0 && d < kMaxNavStepM)   // exclude inter-line spikes
-                spacings.push_back(d);
-        }
-        if (spacings.empty()) return 10.0;
-        const size_t mid = spacings.size() / 2;
-        std::nth_element(spacings.begin(), spacings.begin() + mid, spacings.end());
-        return spacings[mid];
-    };
 
     // Stitch progress spans 0.15 → 0.85 across all strips of both channels.
     const size_t strips_total = std::max<size_t>(1, gr.strips.size());
@@ -237,9 +296,8 @@ bool buildSwathPreviewImage(const std::vector<core::SidescanPing>& pings,
         for (const auto& st : gr.strips)
             if (st.channel == ch) ch_strips.push_back(&st);
 
-        // Adaptive threshold: median × 10, bounded to [10 m, 50 m].
-        const double median_m         = computeMedianSpacing(ch_strips);
-        const double nav_gap_thresh_m = std::min(50.0, std::max(10.0, median_m * 10.0));
+        const ssscontinuity::Thresholds thresholds =
+            stitchThresholds(ch_strips, is_proj);
 
         for (size_t si = 1; si < ch_strips.size(); ++si) {
             if (cancelled.load(std::memory_order_relaxed)) return false;
@@ -252,6 +310,13 @@ bool buildSwathPreviewImage(const std::vector<core::SidescanPing>& pings,
             if (prev.points.empty() || curr.points.empty()) continue;
             if (prev.points.size() < 2 || curr.points.size() < 2) continue;
 
+            // Decimation omissions are intentionally stitchable, but a decoded
+            // record that was explicitly rejected or could not produce geometry
+            // advances this per-channel segment in the georeferencer. Never paint
+            // across that known data-quality hole.
+            if (prev.continuity_segment != curr.continuity_segment)
+                continue;
+
             // Nav-centre distance guard.
             {
                 core::NavPoint nav_prev{}, nav_curr{};
@@ -259,23 +324,23 @@ bool buildSwathPreviewImage(const std::vector<core::SidescanPing>& pings,
                 nav_prev.is_projected = is_proj;
                 nav_curr.lon = curr.nav_lon;  nav_curr.lat = curr.nav_lat;
                 nav_curr.is_projected = is_proj;
-                if (geo::navDistanceMetres(nav_prev, nav_curr) > nav_gap_thresh_m) {
+                if (geo::navDistanceMetres(nav_prev, nav_curr) > thresholds.nav_gap_m) {
                     ++ld.nav_stats.stitch_nav_rejects;
                     continue;
                 }
             }
 
-            // Timestamp gap guard: 5 s = line end / instrument restart.
+            // Timestamp cadence guard (adaptive after preview thinning).
             if (prev.timestamp_us > 0 && curr.timestamp_us > 0
-                    && curr.timestamp_us - prev.timestamp_us > kMaxTimestampGapUs) {
+                    && curr.timestamp_us - prev.timestamp_us > thresholds.time_gap_us) {
                 ++ld.nav_stats.stitch_time_rejects;
                 continue;
             }
 
-            // Ping-number continuity guard (XTF only; JSF has ping_number == 0).
-            constexpr uint32_t kMaxPingNumGap = 20;
+            // Ping-number cadence guard (XTF only; JSF has ping_number == 0).
             if (prev.ping_number > 0 && curr.ping_number > 0
-                    && curr.ping_number > prev.ping_number + kMaxPingNumGap) {
+                    && (curr.ping_number <= prev.ping_number
+                        || curr.ping_number - prev.ping_number > thresholds.ping_gap)) {
                 ++ld.nav_stats.stitch_ping_rejects;
                 continue;
             }
@@ -299,26 +364,83 @@ bool buildSwathPreviewImage(const std::vector<core::SidescanPing>& pings,
                 }
             }
 
-            const size_t np = std::min(prev.points.size(), curr.points.size());
+            // Pair adjacent strips on their authoritative physical ground-range
+            // coordinate. Index-normalized pairing warps non-uniform/unequal
+            // sample grids, connecting different seabed ranges to one another.
+            // Clamp the shorter strip at its recorded inner/outer edge so range
+            // changes taper as triangles without extrapolating amplitude.
+            const double range_min = std::min(
+                prev.points.front().ground_range_m,
+                curr.points.front().ground_range_m);
+            const double range_max = std::max(
+                prev.points.back().ground_range_m,
+                curr.points.back().ground_range_m);
+            const double range_span_m = range_max - range_min;
+            if (!std::isfinite(range_span_m) || range_span_m <= 1e-9)
+                continue;
 
-            for (size_t j = 0; j + 1 < np; ++j) {
+            const size_t source_segments =
+                std::max(prev.points.size(), curr.points.size()) - 1;
+            const auto stripLengthPixels = [&](const SssStrip& strip) {
+                const QPointF first = geoToImg(
+                    strip.points.front().lon, strip.points.front().lat);
+                const QPointF last = geoToImg(
+                    strip.points.back().lon, strip.points.back().lat);
+                return std::hypot(last.x() - first.x(), last.y() - first.y());
+            };
+            const auto stripPixelsPerMetre = [&](const SssStrip& strip) {
+                const double span_m = strip.points.back().ground_range_m
+                                    - strip.points.front().ground_range_m;
+                return span_m > 1e-9 ? stripLengthPixels(strip) / span_m : 0.0;
+            };
+            // At most two cells per output pixel across-track. More source
+            // samples cannot add spatial detail to this raster and would make a
+            // high-tier overview perform millions of redundant sub-pixel writes.
+            const double domain_pixels = range_span_m * std::max(
+                stripPixelsPerMetre(prev), stripPixelsPerMetre(curr));
+            size_t segment_count = source_segments;
+            const double desired_segments = 2.0 * domain_pixels;
+            if (std::isfinite(desired_segments) && desired_segments > 0.0) {
+                // Clamp in floating point before converting to size_t. This
+                // avoids undefined/out-of-range conversion for malformed
+                // geometry while never requesting more source detail.
+                const double bounded = std::min(
+                    desired_segments, static_cast<double>(source_segments));
+                segment_count = std::max<size_t>(1,
+                    static_cast<size_t>(std::ceil(bounded)));
+            }
+
+            for (size_t j = 0; j < segment_count; ++j) {
+                const double t0 = static_cast<double>(j)
+                                / static_cast<double>(segment_count);
+                const double t1 = static_cast<double>(j + 1)
+                                / static_cast<double>(segment_count);
+                const double range0_m = range_min + range_span_m * t0;
+                const double range1_m = range_min + range_span_m * t1;
+                const SssPoint pa = interpolateStripPointAtRange(
+                    prev.points, range0_m);
+                const SssPoint na = interpolateStripPointAtRange(
+                    prev.points, range1_m);
+                const SssPoint pb = interpolateStripPointAtRange(
+                    curr.points, range0_m);
+                const SssPoint nb = interpolateStripPointAtRange(
+                    curr.points, range1_m);
                 ++ld.nav_stats.cells_attempted;
-                rast.rasterizeCell(
+                const size_t writes = rast.rasterizeCell(
                     pixels, img_w, img_h,
-                    geoToImg(prev.points[j].lon,     prev.points[j].lat),
-                    geoToImg(prev.points[j + 1].lon, prev.points[j + 1].lat),
-                    geoToImg(curr.points[j].lon,     curr.points[j].lat),
-                    geoToImg(curr.points[j + 1].lon, curr.points[j + 1].lat),
-                    prev.points[j].amplitude,     prev.points[j + 1].amplitude,
-                    curr.points[j].amplitude,     curr.points[j + 1].amplitude,
+                    geoToImg(pa.lon, pa.lat), geoToImg(na.lon, na.lat),
+                    geoToImg(pb.lon, pb.lat), geoToImg(nb.lon, nb.lat),
+                    pa.amplitude, na.amplitude, pb.amplitude, nb.amplitude,
                     max_cell_pix,
                     amp_buf);
+                if (writes > 0)
+                    ++ld.nav_stats.cells_rasterized;
             }
         }
     }
 
     if (cancelled.load(std::memory_order_relaxed)) return false;
-    report(0.85f);   // stitch done; pixel count + hole-fill next
+    report(0.85f);   // stitch done; pixel accounting next
 
     // Count raw non-transparent pixels.  If nothing was rasterized, discard the
     // image so MapView falls back to drawing the coverage ribbons instead of
@@ -331,53 +453,10 @@ bool buildSwathPreviewImage(const std::vector<core::SidescanPing>& pings,
             if (qAlpha(bits[k]) > 0) ++px_written;
     }
 
-    // -- 3×3 hole-fill pass (normal preview only) ------------------------------
-    // Closes pinhole gaps left where rasterized quads nearly meet but leave an
-    // isolated transparent pixel.  Skipped in debug/ping-line modes so QC views
-    // show the raw rasterization unmodified.
-    //
-    // Rule: fill a transparent pixel only when ≥5 of its 8 neighbours are opaque.
-    // This leaves real survey gaps (open space on multiple sides) untouched.
-    // Source pixels are read from a snapshot taken before any writes so no fill
-    // pixel influences the neighbour test of another pixel in the same pass.
-    size_t px_filled = 0;
-    if (px_written > 0 && !ping_lines_only && !georef_params.debug_ping_lines_only) {
-        const int total = img_w * img_h;
-        std::vector<QRgb> snap(total);
-        std::copy(reinterpret_cast<const QRgb*>(img.constBits()),
-                  reinterpret_cast<const QRgb*>(img.constBits()) + total,
-                  snap.data());
-
-        for (int y = 1; y < img_h - 1; ++y) {
-            for (int x = 1; x < img_w - 1; ++x) {
-                const int idx = y * img_w + x;
-                if (qAlpha(snap[idx]) > 0) continue;
-
-                int      count = 0;
-                uint32_t sum_r = 0, sum_g = 0, sum_b = 0;
-                uint32_t sum_amp = 0;
-                for (int dy = -1; dy <= 1; ++dy) {
-                    for (int dx = -1; dx <= 1; ++dx) {
-                        if (dx == 0 && dy == 0) continue;
-                        const int ni = (y + dy) * img_w + (x + dx);
-                        const QRgb nb = snap[ni];
-                        if (qAlpha(nb) > 0) {
-                            ++count;
-                            sum_r   += static_cast<uint32_t>(qRed(nb));
-                            sum_g   += static_cast<uint32_t>(qGreen(nb));
-                            sum_b   += static_cast<uint32_t>(qBlue(nb));
-                            sum_amp += static_cast<uint32_t>(amp_buf[ni]);
-                        }
-                    }
-                }
-                if (count >= 5) {
-                    pixels[idx] = qRgba(sum_r / count, sum_g / count, sum_b / count, 255);
-                    amp_buf[idx] = static_cast<uint16_t>(sum_amp / count);
-                    ++px_filled;
-                }
-            }
-        }
-    }
+    // No post-hoc hole filling: conservative quad coverage handles sub-pixel
+    // geometry directly. Any remaining transparency represents an actual break
+    // or rejected cell and must stay visible for honest QC.
+    constexpr size_t px_filled = 0;
 
     ld.nav_stats.preview_pixels_written = px_written;
     ld.nav_stats.preview_pixels_filled  = px_filled;

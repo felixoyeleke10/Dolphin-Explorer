@@ -18,7 +18,20 @@ void WaterfallWindow::pushParams()
     if (!m_view || !m_analysis || !m_inspector) return;
     WaterfallParams p = m_analysis->currentParams(m_inspector->currentPaletteIndex());
     p.display_channel = m_display_channel;
-    m_view->setParams(p);
+    const auto& current = m_view->params();
+    const bool pipeline_changed = p.agc          != current.agc
+                               || p.tvg          != current.tvg
+                               || p.arn          != current.arn
+                               || p.destripe     != current.destripe
+                               || p.beam_pattern != current.beam_pattern
+                               || p.arc          != current.arc
+                               || p.ml_enhance   != current.ml_enhance;
+    if (pipeline_changed) {
+        m_view->setParamsNoRebuild(p);
+        invalidateProcessedCache();
+    } else {
+        m_view->setParams(p);
+    }
 }
 
 void WaterfallWindow::setPalette(int idx)
@@ -57,6 +70,7 @@ void WaterfallWindow::scheduleNavProcessing(const NavProcessingParams& nav)
                                                  : m_view->seabedAutoParams();
     const bool seabed_en           = m_view->seabedEnabled();
     auto raw = m_view->rawPings();
+    auto amplitude_context = m_view->amplitudeContext();
 
     struct Repipe {
         std::vector<core::SidescanPing> raw_pings;
@@ -66,14 +80,16 @@ void WaterfallWindow::scheduleNavProcessing(const NavProcessingParams& nav)
     // Keyed "wf:pipeline" so this supersedes any in-flight load/repipe/nav run.
     m_op_mgr->run<Repipe>(
         tr("Waterfall nav processing"),
-        [r = std::move(raw), nav, params, seabed, seabed_en]
+        [r = std::move(raw), nav, params, seabed, seabed_en,
+         amplitude_context]
         (app::CancellationToken cancel) mutable -> Repipe {
             Repipe out;
             try {
                 if (cancel.isCancelled()) return out;
                 r = WaterfallView::runNavCorrections(std::move(r), nav);
                 if (cancel.isCancelled()) return out;
-                out.pipeline  = WaterfallView::runPipeline(r, params, seabed, seabed_en);
+                out.pipeline  = WaterfallView::runPipeline(
+                    r, params, seabed, seabed_en, amplitude_context.get());
                 out.raw_pings = std::move(r);
                 out.ok = true;
             } catch (...) { out.ok = false; }
@@ -139,7 +155,7 @@ void WaterfallWindow::applyExternalParams(const WaterfallParams& p)
     WaterfallParams applied = p;
     // Waterfall palette is global. Stored per-layer WaterfallParams may carry an
     // older palette value, so normalize it before touching UI/render state.
-    applied.palette = QSettings().value(QStringLiteral("waterfall/paletteIdx"),
+    applied.palette = QSettings().value(QStringLiteral("sss/paletteIdx"),
                                         PaletteIndex::Greyscale).toInt();
     if (m_inspector)
         m_inspector->setPalette(applied.palette);
@@ -165,13 +181,11 @@ void WaterfallWindow::applyExternalParams(const WaterfallParams& p)
         m_view->setParams(applied);
     }
     flashProgress();
-    emit paramsApplied();
 }
 
 void WaterfallWindow::applyExternalParamsToAll(const WaterfallParams& p)
 {
     applyExternalParams(p);
-    emit applyToAllRequested();
 }
 
 } // namespace dolphin::ui

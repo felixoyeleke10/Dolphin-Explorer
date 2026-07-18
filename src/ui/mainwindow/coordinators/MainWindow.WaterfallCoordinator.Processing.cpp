@@ -17,6 +17,7 @@
 #include <QPushButton>
 #include <QStringList>
 #include "ui/mainwindow/coordinators/CorrectionBatchOperator.h"
+#include "ui/mainwindow/coordinators/SidescanProcessingCoordinator.h"
 #include "ui/shared/dialogs/CrsPickerDialog.h"
 #include "ui/features/map/MapView.h"
 #include "ui/mainwindow/MainStatusBar.h"
@@ -97,6 +98,7 @@ void MainWindow::onWaterfallSetCrs(const std::string& from_layer_id)
         tr("Source CRS → %1").arg(QString::fromStdString(display)));
 }
 
+#if 0 // Retired with the waterfall's duplicate navigation execution controls.
 void MainWindow::onWaterfallNavProcessLine(NavProcessingParams params)
 {
     // Target the actively selected layer — the panel reflects it. The waterfall's
@@ -163,6 +165,8 @@ void MainWindow::onWaterfallNavProcessAllLines(NavProcessingParams params)
     recordActivity(ActivityKind::NavCorrection,
         tr("Nav corrections stored for %1 line(s)").arg(n));
 }
+
+#endif
 
 void MainWindow::applyStoredNavParams(const std::string& layer_id)
 {
@@ -264,19 +268,15 @@ void MainWindow::applyActiveTools(bool all_lines)
         if (m_nav_panel)     m_nav_panel->writeInto(nav);
         if (m_heading_panel) m_heading_panel->writeInto(nav);
 
-        // Store on every target line; the rebuild below applies it to those on screen.
-        for (const auto& id : target_ids) {
-            auto* l = proj->findLayer(id);
-            if (!l) continue;
-            m_display_state->setLayerSssDisplay(id, disp);
-            l->slant_range_corrected = disp.slant_range_correction;
-            m_display_state->setLayerNav(id, nav);
-        }
+        // One workflow owns scope filtering and every SSS model mutation.
+        if (m_sss_processing)
+            m_sss_processing->commit(proj, target_ids, disp, &nav);
 
         // Keep the live waterfall in sync if it is open.
-        if (m_waterfall_win && m_waterfall_win->isVisible()) {
-            if (all_lines) m_waterfall_win->applyExternalParamsToAll(disp);
-            else           m_waterfall_win->applyExternalParams(disp);
+        if (m_waterfall_win && m_waterfall_win->isVisible()
+                && std::find(target_ids.begin(), target_ids.end(),
+                             m_waterfall_win->currentLayerId()) != target_ids.end()) {
+            m_waterfall_win->applyExternalParams(disp);
             applyStoredNavParams(m_waterfall_win->currentLayerId());
         }
 

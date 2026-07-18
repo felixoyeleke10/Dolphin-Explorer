@@ -6,6 +6,7 @@
 #include "ui/features/waterfall/WaterfallView.h"
 #include "ui/features/waterfall/panels/WaterfallInspectorPanel.h"
 #include "ui/features/waterfall/panels/WaterfallAnalysisPanel.h"
+#include "ui/shared/processing/SssAmplitudeContext.h"
 
 #include <QFutureWatcher>
 #include <QSettings>
@@ -80,7 +81,7 @@ void WaterfallWindow::invalidateProcessedCache()
 
 void WaterfallWindow::onRepipeDebounce()
 {
-    if (!m_view || m_view->rawPings().empty()) return;
+    if (!m_view || !m_layer || m_view->rawPings().empty()) return;
 
     if (!m_op_mgr) return;
 
@@ -90,17 +91,33 @@ void WaterfallWindow::onRepipeDebounce()
     const bool             seabed_enabled = m_view->seabedEnabled();
     auto raw = m_view->rawPings();   // copy raw pings for the background task
 
+    imaging::SssAmplitudeContextRequest context_request;
+    context_request.store_path = m_layer->artifact_store_path;
+    context_request.store_format = m_layer->artifact_store_format;
+    context_request.artifact_index =
+        std::make_shared<const core::ArtifactIndex>(m_layer->artifact_index);
+    context_request.source_path = m_source_path;
+    context_request.frequency_hz = m_selected_frequency_hz;
+    context_request.params = params;
+
     struct Repipe { std::vector<core::SidescanPing> raw_pings;
                     WaterfallView::WfPipelineResult  pipeline;
+                    std::shared_ptr<const imaging::SssAmplitudeContext> amplitude_context;
                     bool ok = false; };
     m_op_mgr->run<Repipe>(
         tr("Waterfall reprocessing"),
-        [r = std::move(raw), params, seabed_params, seabed_enabled]
+        [r = std::move(raw), params, seabed_params, seabed_enabled,
+         context_request = std::move(context_request)]
         (app::CancellationToken cancel) mutable -> Repipe {
             Repipe out;
             try {
                 if (cancel.isCancelled()) return out;
-                out.pipeline  = WaterfallView::runPipeline(r, params, seabed_params, seabed_enabled);
+                out.amplitude_context = imaging::getOrBuildSssAmplitudeContext(
+                    context_request, cancel);
+                if (cancel.isCancelled()) return out;
+                out.pipeline  = WaterfallView::runPipeline(
+                    r, params, seabed_params, seabed_enabled,
+                    out.amplitude_context.get());
                 out.raw_pings = std::move(r);
                 out.ok = true;
             } catch (...) { out.ok = false; }
@@ -109,13 +126,14 @@ void WaterfallWindow::onRepipeDebounce()
         [this](Repipe r) {
             finishProgress();
             if (!r.ok) { setDataState(ViewerDataState::Failed); return; }
+            m_view->setAmplitudeContext(std::move(r.amplitude_context));
             m_view->setPreassembledRows(std::move(r.raw_pings),
                                         std::move(r.pipeline),
                                         /*preserve_view=*/true);
             setDataState(ViewerDataState::Ready);
         },
         "wf:pipeline",
-        /*heavy=*/false);
+        /*heavy=*/true);
 }
 
 // -----------------------------------------------------------------------------

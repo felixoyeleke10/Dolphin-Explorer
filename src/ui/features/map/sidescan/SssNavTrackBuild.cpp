@@ -1,6 +1,7 @@
 // SssNavTrackBuild.cpp — buildSwathNavTrack implementation.
 // Builds the nav polyline, bounding box, and NavStats from sorted pings.
 #include "ui/features/map/sidescan/SssMapBuild.h"
+#include "ui/features/map/sidescan/SssContinuity.h"
 #include "geo/GeoUtils.h"
 
 #include <algorithm>
@@ -13,20 +14,13 @@
 namespace dolphin::ui {
 
 namespace {
-constexpr double  kMaxSegGapDeg      = 0.05;
-constexpr double  kMaxSegGapM        = 100.0;
 constexpr double  kDegToRad          = std::numbers::pi / 180.0;
 constexpr double  kFallbackRangeM    = 75.0;
-constexpr double  kMaxNavStepM       = 50.0;
-constexpr int64_t kMaxTimestampGapUs = 5'000'000LL;
-
-bool isUsableNavPoint(double lat, double lon)
-{
-    return std::isfinite(lat) && std::isfinite(lon) && (lat != 0.0 || lon != 0.0);
-}
 } // namespace
 
-size_t buildSwathNavTrack(const std::vector<core::SidescanPing>& pings, LayerMapData& ld)
+size_t buildSwathNavTrack(const std::vector<core::SidescanPing>& pings,
+                          LayerMapData& ld,
+                          const SssGeorefParams& params)
 {
     ld.nav_track.clear();
     ld.lon_min =  1e18; ld.lon_max = -1e18;
@@ -38,78 +32,130 @@ size_t buildSwathNavTrack(const std::vector<core::SidescanPing>& pings, LayerMap
     std::stable_sort(order.begin(), order.end(),
         [&](size_t a, size_t b) { return pings[a].timestamp_us < pings[b].timestamp_us; });
 
-    const double max_seg_gap = ld.is_projected ? kMaxSegGapM : kMaxSegGapDeg;
     constexpr double kNaN = std::numeric_limits<double>::quiet_NaN();
-
-    double  prev_lon = kNaN, prev_lat = kNaN;
-    int64_t prev_ts  = 0;
-    core::NavPoint prev_nav_pt;
-    bool    have_prev_nav = false;
-    size_t  n_unique      = 0;
-    double  spacing_sum   = 0.0;
-    size_t  spacing_n     = 0;
 
     ld.nav_stats.total_pings = pings.size();
 
-    for (size_t oi = 0; oi < pings.size(); ++oi) {
-        const auto& p = pings[order[oi]];
+    const std::vector<CorrectedSssNav> corrected =
+        buildCorrectedNavTable(pings, order, params);
 
-        if (!p.nav.valid || !isUsableNavPoint(p.nav.lat, p.nav.lon)) {
+    struct TrackPose {
+        CorrectedSssNav nav;
+        int64_t         timestamp_us = 0;
+        uint32_t        ping_number  = 0;
+    };
+    std::vector<TrackPose> poses;
+    poses.reserve(pings.size());
+
+    for (size_t oi = 0; oi < order.size(); ++oi) {
+        const auto& ping = pings[order[oi]];
+        const auto& nav  = corrected[oi];
+
+        if (!nav.valid)
             ++ld.nav_stats.invalid_nav;
+        if ((nav.flags & kNavFlagInterpolated) != 0)
+            ++ld.nav_stats.interpolated_nav;
+        if (core::hasQcFlag(ping.qc_flags, core::QcFlag::Rejected) || !nav.valid)
             continue;
-        }
+        if (core::hasQcFlag(ping.qc_flags, core::QcFlag::NoNav)
+                && (nav.flags & kNavFlagInterpolated) == 0)
+            continue;
 
-        const double lon = p.nav.lon;
-        const double lat = p.nav.lat;
-
-        // Repeated-fix counter.
-        if (lon == prev_lon && lat == prev_lat) {
+        if (!poses.empty() && nav.lon == poses.back().nav.lon
+                && nav.lat == poses.back().nav.lat) {
             ++ld.nav_stats.repeated_fixes;
             continue;
         }
 
-        // Timestamp gap counter.
-        if (prev_ts > 0 && p.timestamp_us > 0
-                && p.timestamp_us - prev_ts > kMaxTimestampGapUs)
-            ++ld.nav_stats.time_gaps;
+        poses.push_back({nav, ping.timestamp_us, ping.ping_number});
+    }
 
-        // Spacing statistics and spike guard.
-        // Spike points are kept in the nav track so survey lines after legitimate
-        // large gaps remain visible, but excluded from bbox expansion and spacing
-        // stats.  prev_nav_pt is always advanced so the next point is judged
-        // against the current position — without this, the entire second survey
-        // line would be misclassified as spikes because every point compares
-        // against the frozen last-accepted position from line 1.
-        bool is_spike = false;
-        if (have_prev_nav) {
-            const double step_m = geo::navDistanceMetres(prev_nav_pt, p.nav);
-            if (step_m > kMaxNavStepM) {
-                ++ld.nav_stats.nav_spikes;
-                is_spike = true;
+    if (poses.empty())
+        return 0;
+    ld.is_projected = poses.front().nav.is_projected;
+
+    const auto distance = [](const TrackPose& a, const TrackPose& b) {
+        core::NavPoint na{}, nb{};
+        na.lon = a.nav.lon; na.lat = a.nav.lat;
+        nb.lon = b.nav.lon; nb.lat = b.nav.lat;
+        na.is_projected = a.nav.is_projected;
+        nb.is_projected = b.nav.is_projected;
+        return geo::navDistanceMetres(na, nb);
+    };
+
+    std::vector<double> nav_deltas;
+    std::vector<double> time_deltas;
+    std::vector<double> ping_deltas;
+    nav_deltas.reserve(poses.size() - 1);
+    time_deltas.reserve(poses.size() - 1);
+    ping_deltas.reserve(poses.size() - 1);
+    for (size_t i = 1; i < poses.size(); ++i) {
+        nav_deltas.push_back(distance(poses[i - 1], poses[i]));
+        if (poses[i - 1].timestamp_us > 0
+                && poses[i].timestamp_us > poses[i - 1].timestamp_us)
+            time_deltas.push_back(static_cast<double>(
+                poses[i].timestamp_us - poses[i - 1].timestamp_us));
+        if (poses[i - 1].ping_number > 0
+                && poses[i].ping_number > poses[i - 1].ping_number)
+            ping_deltas.push_back(static_cast<double>(
+                poses[i].ping_number - poses[i - 1].ping_number));
+    }
+    const ssscontinuity::Thresholds thresholds = ssscontinuity::fromDeltas(
+        std::move(nav_deltas), std::move(time_deltas), std::move(ping_deltas));
+
+    // Reject only an isolated excursion that returns to the local track. A
+    // one-way large step is a legitimate segment break and must still expand
+    // the bbox; excluding every >50 m step cropped regularly thinned surveys.
+    std::vector<bool> isolated_spike(poses.size(), false);
+    for (size_t i = 1; i + 1 < poses.size(); ++i) {
+        const double before = distance(poses[i - 1], poses[i]);
+        const double after  = distance(poses[i], poses[i + 1]);
+        const double bridge = distance(poses[i - 1], poses[i + 1]);
+        if (before > thresholds.nav_gap_m && after > thresholds.nav_gap_m
+                && bridge <= thresholds.nav_gap_m) {
+            isolated_spike[i] = true;
+            ++ld.nav_stats.nav_spikes;
+        }
+    }
+
+    size_t n_unique = 0;
+    double spacing_sum = 0.0;
+    size_t spacing_n = 0;
+    const TrackPose* previous = nullptr;
+    for (size_t i = 0; i < poses.size(); ++i) {
+        if (isolated_spike[i])
+            continue;
+        const auto& pose = poses[i];
+
+        if (previous) {
+            const double step_m = distance(*previous, pose);
+            const bool time_break = previous->timestamp_us > 0
+                && pose.timestamp_us > previous->timestamp_us
+                && pose.timestamp_us - previous->timestamp_us > thresholds.time_gap_us;
+            const bool ping_break = previous->ping_number > 0
+                && pose.ping_number > 0
+                && (pose.ping_number <= previous->ping_number
+                    || pose.ping_number - previous->ping_number > thresholds.ping_gap);
+            const bool segment_break = step_m > thresholds.nav_gap_m
+                                    || time_break || ping_break;
+            if (segment_break) {
+                ld.nav_track.push_back({kNaN, kNaN});
+                if (time_break)
+                    ++ld.nav_stats.time_gaps;
             } else {
                 spacing_sum += step_m;
                 ++spacing_n;
-                ld.nav_stats.max_spacing_m = std::max(ld.nav_stats.max_spacing_m, step_m);
+                ld.nav_stats.max_spacing_m =
+                    std::max(ld.nav_stats.max_spacing_m, step_m);
             }
         }
 
-        if (!std::isnan(prev_lon) &&
-            (std::abs(lat - prev_lat) > max_seg_gap ||
-             std::abs(lon - prev_lon) > max_seg_gap))
-            ld.nav_track.push_back({kNaN, kNaN});
-
-        ld.nav_track.push_back({lon, lat});
-        if (!is_spike) {
-            ld.lon_min = std::min(ld.lon_min, lon);
-            ld.lon_max = std::max(ld.lon_max, lon);
-            ld.lat_min = std::min(ld.lat_min, lat);
-            ld.lat_max = std::max(ld.lat_max, lat);
-        }
-        prev_lon      = lon;
-        prev_lat      = lat;
-        prev_ts       = p.timestamp_us;
-        prev_nav_pt   = p.nav;
-        have_prev_nav = true;
+        ld.nav_track.push_back({pose.nav.lon, pose.nav.lat});
+        ld.lon_min = std::min(ld.lon_min, pose.nav.lon);
+        ld.lon_max = std::max(ld.lon_max, pose.nav.lon);
+        ld.lat_min = std::min(ld.lat_min, pose.nav.lat);
+        ld.lat_max = std::max(ld.lat_max, pose.nav.lat);
+        previous = &pose;
         ++n_unique;
     }
 

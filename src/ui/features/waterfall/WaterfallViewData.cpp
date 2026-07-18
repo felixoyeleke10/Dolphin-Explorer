@@ -3,6 +3,8 @@
 #include "ui/features/waterfall/WaterfallView.h"
 #include "ui/features/waterfall/processing/SeabedAutoDetector.h"
 #include "ui/features/waterfall/processing/WaterfallPingAssembler.h"
+#include "ui/shared/processing/SssAmplitudeContext.h"
+#include "ui/shared/processing/SssImagingAlgorithms.h"
 #include "ui/mainwindow/AppSettingsDialog.h"
 #include "geo/GeoUtils.h"
 #include <QFutureWatcher>
@@ -23,37 +25,16 @@ namespace dolphin::ui {
 void WaterfallView::setPings(const std::vector<core::SidescanPing>& pings,
                               bool preserve_view)
 {
-    ++m_rebuild_gen;  // discard any in-flight async rebuild against the old ping set
-    if (!preserve_view)
-        m_scroll.resetZoomPan();
+    setPreassembledRows(pings,
+        runPipeline(pings, m_params, m_seabed_auto_params, m_seabed_enabled,
+                    m_amplitude_context.get()),
+        preserve_view);
+}
 
-    m_raw_pings = pings;
-    {
-        std::vector<core::SidescanPing> work = pings;
-        if (m_params.tvg.enabled)  doApplyTvg(work);
-        if (m_params.arc.enabled)  doApplyArc(work);
-        if (m_params.agc.enabled)  doNormalizeRawAmplitudes(work);
-        else                       doStretchRawAmplitudes(work);
-        m_rows = WaterfallPingAssembler::assemble(work, m_params);
-    }
-    // Seabed detection runs on clean calibrated rows (before display enhancements).
-    if (m_seabed_enabled) {
-        SeabedAutoDetector::detectAll(m_rows, m_seabed_auto_params);
-        if (m_seabed_auto_params.smoothing > 0.f)
-            SeabedAutoDetector::smooth(m_rows, static_cast<int>(m_seabed_auto_params.smoothing));
-    }
-    // Post-assembly display enhancements: BPN → ARN → destripe → ML enhance.
-    if (m_params.beam_pattern.enabled) doApplyBeamPattern(m_rows);
-    if (m_params.arn.enabled)          doApplyArn(m_rows);
-    if (m_params.destripe.enabled)     doApplyDestripe(m_rows);
-    if (m_params.ml_enhance.enabled)   doApplyMlEnhance(m_rows);
-    applyManualSeabedPicks();
-    computeAutoStretch();
-    m_dirty              = true;
-    m_gl_data_dirty      = true;
-    m_amp_profile_dirty  = true;
-    m_scroll.scrollToEnd();
-    update();
+void WaterfallView::setAmplitudeContext(
+    std::shared_ptr<const imaging::SssAmplitudeContext> context)
+{
+    m_amplitude_context = std::move(context);
 }
 
 void WaterfallView::setPreassembledRows(std::vector<core::SidescanPing> raw_pings,
@@ -98,7 +79,10 @@ void WaterfallView::setPreassembledRows(std::vector<core::SidescanPing> raw_ping
 
 void WaterfallView::clear()
 {
+    ++m_rebuild_gen;
     m_rows.clear();
+    m_raw_pings.clear();
+    m_amplitude_context.reset();
     // Drop any in-progress feature draft so switching lines can't finish a feature
     // with stale vertices from the previous line.
     m_feature_tool = 0;
@@ -388,10 +372,14 @@ void WaterfallView::redetectSeabed(const SeabedAutoParams& params)
         // Detect on clean calibrated rows (pre-display) so beam/ARN/destripe/ML
         // output cannot bias amplitude structure seen by the detector.
         std::vector<core::SidescanPing> work = m_raw_pings;
-        if (m_params.tvg.enabled)  doApplyTvg(work);
-        if (m_params.arc.enabled)  doApplyArc(work);
-        if (m_params.agc.enabled)  doNormalizeRawAmplitudes(work);
-        else                       doStretchRawAmplitudes(work);
+        if (m_amplitude_context
+                && m_amplitude_context->params_fingerprint
+                    == imaging::sssAmplitudeParamsFingerprint(m_params)) {
+            for (auto& ping : work)
+                imaging::applyPerPingCalibration(ping, m_params);
+        } else {
+            imaging::applyCalibration(work, m_params);
+        }
         std::vector<PingRow> clean = WaterfallPingAssembler::assemble(work, m_params);
         SeabedAutoDetector::detectAll(clean, params);
         if (params.smoothing > 0.f)
@@ -434,7 +422,11 @@ void WaterfallView::setParams(const WaterfallParams& p)
     m_params.display_high = m_stretch_high;
     m_renderer.setParams(m_params);
 
-    if (needs_rebuild && !m_raw_pings.empty()) {
+    const auto context = m_amplitude_context;
+    const bool context_matches = context
+        && context->params_fingerprint
+            == imaging::sssAmplitudeParamsFingerprint(m_params);
+    if (needs_rebuild && !m_raw_pings.empty() && context_matches) {
         auto raw_snap = std::make_shared<std::vector<core::SidescanPing>>(m_raw_pings);
         const auto   par    = m_params;
         const auto   seabed = m_seabed_auto_params;
@@ -454,8 +446,8 @@ void WaterfallView::setParams(const WaterfallParams& p)
                     update();
                 }
             });
-        w->setFuture(QtConcurrent::run([raw_snap, par, seabed, use_sb]() {
-            return runPipeline(*raw_snap, par, seabed, use_sb);
+        w->setFuture(QtConcurrent::run([raw_snap, par, seabed, use_sb, context]() {
+            return runPipeline(*raw_snap, par, seabed, use_sb, context.get());
         }));
     } else {
         m_dirty = true;

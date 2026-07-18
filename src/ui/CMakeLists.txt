@@ -69,6 +69,7 @@ add_library(dolphin-ui-shared STATIC
     shared/panels/LineListPanel.ContextMenu.Layers.cpp
     shared/panels/LineListPanel.ContextMenu.Menus.cpp
     shared/panels/LineListPanel.ContextMenu.Project.cpp
+    shared/processing/SssAmplitudeContext.cpp
     shared/processing/SssImagingAlgorithms.cpp
     shared/widgets/AnimatedToolButton.cpp
     shared/widgets/CollapsibleSection.cpp
@@ -417,6 +418,7 @@ add_library(dolphin-ui-mainwindow STATIC
     mainwindow/coordinators/MainWindow.SubBottomCoordinator.cpp
     mainwindow/coordinators/MainWindow.NodeGraphCoordinator.cpp
     mainwindow/coordinators/MainWindow.ProcessingCoordinator.cpp
+    mainwindow/coordinators/SidescanProcessingCoordinator.cpp
     mainwindow/coordinators/MainWindow.DataLibraryCoordinator.cpp
     mainwindow/coordinators/CorrectionBatchOperator.cpp
     mainwindow/coordinators/ExportController.cpp

@@ -15,9 +15,9 @@ namespace dolphin::ui {
 //
 // Off          — nav track only; no coverage, no image
 // CoverageOnly — ribbon swath footprints + nav track; no amplitude raster
-// Low          — balanced       (1024 px, 10 000 ping groups,  512 samples)
-// Medium       — detailed       (2048 px, 16 000 ping groups, 1024 samples)
-// High         — best available (4096 px, unlimited pings/samples)
+// Low          — balanced (1024 px, 1024 groups / 2048 records, 256 samples)
+// Medium       — detailed (2048 px, 2048 groups / 4096 records, 512 samples)
+// High         — maximum map fidelity (4096 px, 4096 records, 1024 samples)
 //
 // The three image tiers keep their original enum NUMBERS (3/4/5) — they were once
 // labelled Medium/High/Full, renamed to Low/Medium/High — so persisted settings keep
@@ -66,6 +66,9 @@ struct SssPoint {
     double   lon       = 0.0;
     double   lat       = 0.0;
     uint16_t amplitude = 0;
+    // Authoritative across-track ground range used to align adjacent strips.
+    // This avoids warping unequal/non-uniform sample grids by point index.
+    float    ground_range_m = 0.0f;
 };
 
 struct SssStrip {
@@ -74,6 +77,9 @@ struct SssStrip {
     uint32_t              ping_number  = 0;    // XTF PingNumber; 0 = unknown (JSF)
     double                nav_lon      = 0.0;  // vessel centre position (from ping.nav)
     double                nav_lat      = 0.0;
+    // Per-channel source segment. Explicit decoded-but-unusable records advance
+    // it so raster stitching cannot silently paint across rejected data.
+    uint64_t              continuity_segment = 0;
     std::vector<SssPoint> points;
 };
 
@@ -87,6 +93,7 @@ struct NavStats {
     // pings_available counts paired groups. An odd entry count produces an off-by-one.
     size_t total_pings    = 0;   // channel records loaded (both channels combined)
     size_t invalid_nav    = 0;   // pings with missing / unusable nav position
+    size_t interpolated_nav = 0; // pings repaired between trustworthy timed anchors
     size_t repeated_fixes = 0;   // consecutive identical GPS fixes
     size_t nav_spikes     = 0;   // ping-to-ping jumps rejected as GPS spikes
     size_t time_gaps      = 0;   // timestamp gaps > 5 s (survey line breaks)
@@ -106,9 +113,10 @@ struct NavStats {
 
     // Build output counts.
     size_t strips_built           = 0;  // georeferenced strips that entered rasterization
-    size_t cells_attempted        = 0;  // rasterizeCell calls (strips-1 per channel pair)
+    size_t cells_attempted        = 0;  // quadrilateral cells submitted to rasterizer
+    size_t cells_rasterized       = 0;  // valid cells that wrote at least one pixel
     size_t preview_pixels_written = 0;  // non-transparent pixels after rasterization (raw)
-    size_t preview_pixels_filled  = 0;  // pixels added by the 3×3 hole-fill pass (≥5 neighbours)
+    size_t preview_pixels_filled  = 0;  // legacy post-fill count; current rasterizer leaves this 0
     size_t coverage_ribbons_built = 0;  // ribbon polygons across all channels
 
     // Spatial placement diagnostics (for diagnosing blank / misplaced map).
@@ -125,7 +133,7 @@ struct NavStats {
     // -- Build parameters (set by SidescanViewController in background task) -----
     MapSonarQuality quality_used    = MapSonarQuality::Low;
     size_t          pings_available = 0;    // total ping groups in store (before thinning)
-    bool            memory_reduced  = false; // true if Full quality was auto-downgraded
+    bool            memory_reduced  = false; // true if raster dimensions hit memory ceiling
     std::string     crs_label;              // e.g. "EPSG:32632 projected exact"
     std::string     unsupported_crs_id;     // non-empty if any pings used pseudo-degree fallback
 

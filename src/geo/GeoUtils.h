@@ -16,6 +16,12 @@ bool   navUsesProjectedCoordinates(const core::NavPoint& nav);
 double haversineMetres(double lat1_deg, double lon1_deg, double lat2_deg, double lon2_deg);
 double navDistanceMetres(const core::NavPoint& a, const core::NavPoint& b);
 
+// Canonical public longitude and local unwrapping helpers. Internal map geometry
+// may use a continuous branch outside [-180, 180) to cross the antimeridian
+// without a world-spanning discontinuity; UI/export boundaries wrap it again.
+double wrapLongitude180(double lon_deg) noexcept;
+double unwrapLongitudeNear(double lon_deg, double reference_deg) noexcept;
+
 core::SpatialRef spatialRefFromId(std::string_view id);
 core::SpatialRef spatialRefFromLegacy(bool is_projected);
 std::string      spatialRefKindToString(core::SpatialRefKind kind);

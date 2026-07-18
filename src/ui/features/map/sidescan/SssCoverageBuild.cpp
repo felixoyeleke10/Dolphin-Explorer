@@ -2,27 +2,17 @@
 // Builds port and starboard ribbon polygons from corrected nav + slant range.
 #include "ui/features/map/sidescan/SssMapBuild.h"
 #include "ui/features/map/sidescan/SidescanSwathGeoreferencer.h"
+#include "ui/features/map/sidescan/SssContinuity.h"
+#include "ui/features/map/sidescan/SssGeometryPolicy.h"
 #include "geo/GeoUtils.h"
 
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
-#include <limits>
 #include <numbers>
 #include <numeric>
 
 namespace dolphin::ui {
-
-namespace {
-constexpr double  kDegToRad           = std::numbers::pi / 180.0;
-constexpr double  kFallbackRangeM     = 75.0;
-constexpr int64_t kMaxTimestampGapUs  = 5'000'000LL;
-
-bool isUsableNavPoint(double lat, double lon)
-{
-    return std::isfinite(lat) && std::isfinite(lon) && (lat != 0.0 || lon != 0.0);
-}
-} // namespace
 
 void buildSwathCoverage(const std::vector<core::SidescanPing>& pings,
                         LayerMapData& ld,
@@ -40,43 +30,64 @@ void buildSwathCoverage(const std::vector<core::SidescanPing>& pings,
     // -- 1. Build corrected nav table ------------------------------------------
     // Same call as georeferenceSidescanPings uses, so coverage ribbons and the
     // raster mosaic share identical per-ping positions and headings.
-    const double kNoHeading = std::numeric_limits<double>::quiet_NaN();
     const std::vector<CorrectedSssNav> cnav = buildCorrectedNavTable(pings, order, params);
 
-    // Dynamic gap threshold: 2× max slant range.
-    double max_slant_cov = kFallbackRangeM;
-    for (const auto& ping : pings)
-        if (ping.slant_range_m > 0.f)
-            max_slant_cov = std::max(max_slant_cov, static_cast<double>(ping.slant_range_m));
+    const auto usable = [&](size_t pi, core::SidescanChannel channel) {
+        const auto& ping = pings[order[pi]];
+        const auto& nav  = cnav[pi];
+        if (ping.channel != channel || !nav.valid || !nav.heading_valid
+                || ping.samples.empty()
+                || core::hasQcFlag(ping.qc_flags, core::QcFlag::Rejected))
+            return false;
+        return !core::hasQcFlag(ping.qc_flags, core::QcFlag::NoNav)
+            || (nav.flags & kNavFlagInterpolated) != 0;
+    };
 
-    const double cov_gap_m = 2.0 * max_slant_cov;
+    const auto channelThresholds = [&](core::SidescanChannel channel) {
+        std::vector<double> nav_deltas;
+        std::vector<double> time_deltas;
+        std::vector<double> ping_deltas;
+        size_t previous = pings.size();
+        for (size_t pi = 0; pi < pings.size(); ++pi) {
+            if (!usable(pi, channel))
+                continue;
+            if (previous != pings.size()) {
+                core::NavPoint a{}, b{};
+                a.lon = cnav[previous].lon; a.lat = cnav[previous].lat;
+                b.lon = cnav[pi].lon;       b.lat = cnav[pi].lat;
+                a.is_projected = cnav[previous].is_projected;
+                b.is_projected = cnav[pi].is_projected;
+                nav_deltas.push_back(geo::navDistanceMetres(a, b));
 
-    // Compute center latitude directly from pings — ld.lat_min/max may not yet
-    // be populated if buildSwathNavTrack has not been called first.
-    double cov_lat_lo = 1e18, cov_lat_hi = -1e18;
-    for (const auto& ping : pings)
-        if (ping.nav.valid && isUsableNavPoint(ping.nav.lat, ping.nav.lon)) {
-            cov_lat_lo = std::min(cov_lat_lo, ping.nav.lat);
-            cov_lat_hi = std::max(cov_lat_hi, ping.nav.lat);
+                const auto& p0 = pings[order[previous]];
+                const auto& p1 = pings[order[pi]];
+                if (p0.timestamp_us > 0 && p1.timestamp_us > p0.timestamp_us)
+                    time_deltas.push_back(static_cast<double>(
+                        p1.timestamp_us - p0.timestamp_us));
+                if (p0.ping_number > 0 && p1.ping_number > p0.ping_number)
+                    ping_deltas.push_back(static_cast<double>(
+                        p1.ping_number - p0.ping_number));
+            }
+            previous = pi;
         }
-    const double cov_cen_lat = (cov_lat_lo <= cov_lat_hi)
-        ? (cov_lat_lo + cov_lat_hi) * 0.5
-        : 0.0;
-
-    const double cov_gap_lat = ld.is_projected ? cov_gap_m : cov_gap_m / 111320.0;
-    const double cov_gap_lon = ld.is_projected ? cov_gap_m
-        : cov_gap_m / (111320.0 * std::max(0.01, std::cos(cov_cen_lat * kDegToRad)));
+        return ssscontinuity::fromDeltas(
+            std::move(nav_deltas), std::move(time_deltas), std::move(ping_deltas));
+    };
 
     // -- 2. Build ribbon for each channel --------------------------------------
+    bool resolved_frame = false;
     for (const auto channel : {core::SidescanChannel::Port, core::SidescanChannel::Starboard}) {
 
         SwathCoverage cov;
         cov.channel = channel;
+        const ssscontinuity::Thresholds thresholds = channelThresholds(channel);
 
         std::vector<QPointF> seg_inner;   // vessel nav positions
         std::vector<QPointF> seg_outer;   // swath edge positions
-        double   prev_lon = kNoHeading, prev_lat = kNoHeading;   // NaN initially
-        int64_t  prev_ts  = 0;
+        core::NavPoint previous_nav;
+        bool     have_previous = false;
+        int64_t  prev_ts       = 0;
+        uint32_t prev_ping     = 0;
 
         auto flush = [&]() {
             if (seg_inner.size() < 2) { seg_inner.clear(); seg_outer.clear(); return; }
@@ -90,33 +101,59 @@ void buildSwathCoverage(const std::vector<core::SidescanPing>& pings,
             seg_inner.clear();
             seg_outer.clear();
         };
+        auto hardBreak = [&]() {
+            flush();
+            have_previous = false;
+            prev_ts = 0;
+            prev_ping = 0;
+        };
 
         for (size_t pi = 0; pi < pings.size(); ++pi) {
             const auto& ping = pings[order[pi]];
             const auto& cn   = cnav[pi];
-            if (ping.channel != channel) continue;
-            if (!cn.valid || !cn.heading_valid) continue;
+            if (ping.channel != channel)
+                continue;
+            if (!usable(pi, channel)) {
+                hardBreak();
+                continue;
+            }
+
+            if (!resolved_frame) {
+                ld.is_projected = cn.is_projected;
+                resolved_frame = true;
+            }
 
             const double heading_rad = cn.heading_rad;
 
-            // Segment break on spatial gap or timestamp gap.
-            if (!std::isnan(prev_lon) &&
-                    (std::abs(cn.lat - prev_lat) > cov_gap_lat ||
-                     std::abs(cn.lon - prev_lon) > cov_gap_lon ||
-                     (prev_ts > 0 && ping.timestamp_us > 0
-                      && ping.timestamp_us - prev_ts > kMaxTimestampGapUs)))
-                flush();
+            // Coverage and raster share the same retained-cadence continuity
+            // policy, so one cannot show an invented bridge while the other
+            // shows a transparent stripe.
+            core::NavPoint current_nav;
+            current_nav.lat          = cn.lat;
+            current_nav.lon          = cn.lon;
+            current_nav.valid        = true;
+            current_nav.is_projected = cn.is_projected;
+            current_nav.spatial_ref  = cn.spatial_ref;
+            if (have_previous) {
+                const bool nav_break =
+                    geo::navDistanceMetres(previous_nav, current_nav)
+                    > thresholds.nav_gap_m;
+                const bool time_break = prev_ts > 0 && ping.timestamp_us > prev_ts
+                    && ping.timestamp_us - prev_ts > thresholds.time_gap_us;
+                const bool ping_break = prev_ping > 0
+                    && ping.ping_number > 0
+                    && (ping.ping_number <= prev_ping
+                        || ping.ping_number - prev_ping > thresholds.ping_gap);
+                if (nav_break || time_break || ping_break)
+                    flush();
+            }
 
             // Slant → ground range with optional altitude correction.
-            const double slant_m  = ping.slant_range_m > 0.f
-                ? static_cast<double>(ping.slant_range_m)
-                : kFallbackRangeM;
-            const double alt_m    = (ping.bottom_pick.valid() && ping.bottom_pick.source > 0)
-                ? static_cast<double>(ping.bottom_pick.range_m)
-                : std::max(0.0, static_cast<double>(ping.nav.altitude_m));
-            const double ground_m = (alt_m > 0.0 && slant_m > alt_m)
-                ? std::sqrt(slant_m * slant_m - alt_m * alt_m)
-                : slant_m;
+            double ground_m = 0.0;
+            if (!sssOuterGroundRangeMetres(ping, ground_m)) {
+                hardBreak();
+                continue;
+            }
 
             // Perpendicular offset direction for this channel.
             const bool is_port = (channel == core::SidescanChannel::Port) != params.swap_port_starboard;
@@ -134,16 +171,17 @@ void buildSwathCoverage(const std::vector<core::SidescanPing>& pings,
             pos_nav.spatial_ref  = cn.spatial_ref;
 
             double out_lon = 0.0, out_lat = 0.0;
-            if (!geo::offsetNavByGroundMetres(pos_nav, east_m, north_m, out_lon, out_lat))
+            if (!geo::offsetNavByGroundMetres(pos_nav, east_m, north_m, out_lon, out_lat)) {
+                hardBreak();
                 continue;
+            }
 
             // Inner edge: vessel track when SRC applied ("closed"),
             // or nadir dead-zone offset when SRC not applied ("opened").
             if (params.slant_range_corrected) {
                 seg_inner.push_back({cn.lon, cn.lat});
             } else {
-                // Near-nadir dead zone: altitude if known, else 10% of slant range.
-                const double nadir_m = (alt_m > 1.0) ? alt_m : slant_m * 0.10;
+                const double nadir_m = sssInnerGapMetres(ping, params);
                 double inner_lon = 0.0, inner_lat = 0.0;
                 if (!geo::offsetNavByGroundMetres(pos_nav,
                         nadir_m * std::sin(side_rad),
@@ -154,9 +192,10 @@ void buildSwathCoverage(const std::vector<core::SidescanPing>& pings,
                     seg_inner.push_back({inner_lon, inner_lat});
             }
             seg_outer.push_back({out_lon, out_lat});
-            prev_lon = cn.lon;
-            prev_lat = cn.lat;
-            prev_ts  = ping.timestamp_us;
+            previous_nav = current_nav;
+            have_previous = true;
+            prev_ts       = ping.timestamp_us;
+            prev_ping     = ping.ping_number;
         }
         flush();
 

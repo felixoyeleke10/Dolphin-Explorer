@@ -1,6 +1,7 @@
 // MapView3D.Input.cpp — mouse and wheel event handlers.
 
 #include "ui/features/map/MapView3D.h"
+#include "ui/features/map/MapLongitude.h"
 
 #include <QContextMenuEvent>
 #include <QEvent>
@@ -240,8 +241,11 @@ void MapView3D::mouseMoveEvent(QMouseEvent* ev)
     }
 
     QPointF geo;
-    if (groundHit(ev->pos(), geo))
-        emit cursorMoved(geo.x(), geo.y());
+    if (groundHit(ev->pos(), geo)) {
+        const double public_lon = m_is_projected
+            ? geo.x() : maplongitude::canonical(geo.x());
+        emit cursorMoved(public_lon, geo.y());
+    }
     else
         emit cursorMoved(qQNaN(), qQNaN());
 }
@@ -252,8 +256,11 @@ void MapView3D::mouseReleaseEvent(QMouseEvent* ev)
         if (!m_pan_moved) {
             if (m_tool_mode == 4) {  // ContactPick
                 QPointF geo;
-                if (groundHit(ev->pos(), geo))
-                    emit contactPickedAt(geo.x(), geo.y());
+                if (groundHit(ev->pos(), geo)) {
+                    const double public_lon = m_is_projected
+                        ? geo.x() : maplongitude::canonical(geo.x());
+                    emit contactPickedAt(public_lon, geo.y());
+                }
             } else {
                 pickAt(ev->pos());  // left click without drag = select layer
             }

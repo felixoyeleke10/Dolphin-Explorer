@@ -1,5 +1,6 @@
 // MapViewPaint.NavTrack.cpp — graticule grid and nav track line.
 #include "ui/features/map/MapView.h"
+#include "ui/features/map/MapLongitude.h"
 #include "ui/shared/CoordFormat.h"
 #include "ui/shell/Theme.h"
 #include "geo/GeoUtils.h"
@@ -40,6 +41,7 @@ static double snap125(double x)
 
 static QString fmtGeoLon(double lon, int dec)
 {
+    lon = dolphin::ui::maplongitude::canonical(lon);
     const char dir = (lon >= 0.0) ? 'E' : 'W';
     return QString::number(std::abs(lon), 'f', dec) + "\xC2\xB0" + QLatin1Char(dir);
 }
@@ -147,13 +149,17 @@ void MapView::paintGraticule(QPainter& p) const
                 lbl1 = fmtProj(lon, decLon);
             } else if (utm_only) {
                 double e, n; int z; bool nh;
-                if (!dolphin::geo::latLonToUtm(m_ref_lat, lon, z, nh, e, n)) continue;
+                const double display_lon = maplongitude::canonical(lon);
+                if (!dolphin::geo::latLonToUtm(
+                        m_ref_lat, display_lon, z, nh, e, n)) continue;
                 lbl1 = fmtUtmE(e);
             } else {
                 lbl1 = fmtGeoLon(lon, decLon);
                 if (show_both) {
                     double e, n; int z; bool nh;
-                    if (dolphin::geo::latLonToUtm(m_ref_lat, lon, z, nh, e, n))
+                    const double display_lon = maplongitude::canonical(lon);
+                    if (dolphin::geo::latLonToUtm(
+                            m_ref_lat, display_lon, z, nh, e, n))
                         lbl2 = fmtUtmE(e);
                 }
             }
@@ -194,13 +200,17 @@ void MapView::paintGraticule(QPainter& p) const
                 lbl1 = fmtProj(lat, decLat);
             } else if (utm_only) {
                 double e, n; int z; bool nh;
-                if (!dolphin::geo::latLonToUtm(lat, lonCen, z, nh, e, n)) continue;
+                const double display_lon = maplongitude::canonical(lonCen);
+                if (!dolphin::geo::latLonToUtm(
+                        lat, display_lon, z, nh, e, n)) continue;
                 lbl1 = fmtUtmN(n);
             } else {
                 lbl1 = fmtGeoLat(lat, decLat);
                 if (show_both) {
                     double e, n; int z; bool nh;
-                    if (dolphin::geo::latLonToUtm(lat, lonCen, z, nh, e, n))
+                    const double display_lon = maplongitude::canonical(lonCen);
+                    if (dolphin::geo::latLonToUtm(
+                            lat, display_lon, z, nh, e, n))
                         lbl2 = fmtUtmN(n);
                 }
             }

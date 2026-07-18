@@ -96,7 +96,9 @@ public:
         const core::ArtifactIndex& artifact_index,
         const std::string& source_path,
         int max_samples_per_ping = 0,
-        const std::function<void(float)>& progress = {});
+        const std::function<void(float)>& progress = {},
+        const std::function<void(core::SidescanPing&)>& before_sample_compaction = {},
+        const std::function<bool()>& should_cancel = {});
 
     // Load all sub-bottom traces from an artifact store.
     // Thread-safe: takes pre-copied store/index values — do not pass DataLayer* directly.

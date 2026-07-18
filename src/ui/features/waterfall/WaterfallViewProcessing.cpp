@@ -6,6 +6,8 @@
 #include "ui/features/waterfall/processing/WaterfallProcessingAlgorithms.h"
 #include "ui/features/waterfall/processing/WaterfallPingAssembler.h"
 #include "ui/features/waterfall/processing/SeabedAutoDetector.h"
+#include "ui/shared/processing/SssAmplitudeContext.h"
+#include "ui/shared/processing/SssImagingAlgorithms.h"
 #include "app/display/NavCorrection.h"
 
 #include <vector>
@@ -35,84 +37,51 @@ WaterfallView::WfPipelineResult WaterfallView::runPipeline(
     const std::vector<core::SidescanPing>& pings,
     const WaterfallParams&                 params,
     const SeabedAutoParams&                seabed_params,
-    bool                                   seabed_enabled)
+    bool                                   seabed_enabled,
+    const imaging::SssAmplitudeContext*    amplitude_context)
 {
-    using namespace detail;
-    auto work = pings;  // single working copy; original stays intact in the caller
-
-    // Skip corrections that are already baked into the .dlpd data so they are
-    // not double-applied.  All pings in one line share the same correction_flags.
-    const uint32_t baked = pings.empty() ? 0u : pings.front().correction_flags;
-
-    if (params.tvg.enabled && !core::hasCorrectionFlag(baked, core::CorrectionFlag::Tvg))
-        applyTvg(work, params);
-    if (params.arc.enabled && !core::hasCorrectionFlag(baked, core::CorrectionFlag::Arc))
-        applyArc(work, params);
-    if (params.agc.enabled && !core::hasCorrectionFlag(baked, core::CorrectionFlag::GainNormalized))
-        normalizeRawAmplitudes(work, params);
-    else if (!params.agc.enabled)
-        stretchRawAmplitudes(work);
-
-    WfPipelineResult result;
-    result.rows = WaterfallPingAssembler::assemble(work, params);
-
-    if (seabed_enabled) {
-        SeabedAutoDetector::detectAll(result.rows, seabed_params);
-        if (seabed_params.smoothing > 0.f)
-            SeabedAutoDetector::smooth(result.rows,
-                                       static_cast<int>(seabed_params.smoothing));
+    if (amplitude_context
+            && amplitude_context->params_fingerprint
+                != imaging::sssAmplitudeParamsFingerprint(params)) {
+        amplitude_context = nullptr;
     }
 
-    if (params.beam_pattern.enabled) applyBeamPattern(result.rows, params);
-    if (params.arn.enabled)          applyArn(result.rows, params);
-    if (params.destripe.enabled)     applyDestripe(result.rows, params);
-    if (params.ml_enhance.enabled)   applyMlEnhance(result.rows, params);
+    auto calibrated = pings;
+    if (amplitude_context) {
+        for (auto& ping : calibrated)
+            imaging::applyPerPingCalibration(ping, params);
+    } else {
+        imaging::applyCalibration(calibrated, params);
+    }
 
-    // Compute auto-stretch (1st/99th percentile across assembled amplitudes).
-    // Bucket 0 is excluded — it captures water-column / nadir-blanking zeros.
-    // 1024-bin stack histogram: bin = v >> 6, ±0.1% precision vs 65536 bins.
-    {
-        constexpr int kBins  = 1024;
-        constexpr int kShift = 6;   // 65536 / 1024 = 64 = 2^6
-        uint32_t hist[kBins] = {};
-        for (const auto& row : result.rows) {
-            for (uint16_t v : row.port) ++hist[v >> kShift];
-            for (uint16_t v : row.stbd) ++hist[v >> kShift];
-        }
-        uint64_t total = 0;
-        for (int i = 1; i < kBins; ++i) total += hist[i];
+    auto display = calibrated;
+    if (amplitude_context)
+        imaging::applySssAmplitudeContext(display, *amplitude_context);
+    else
+        imaging::applyImagingChain(display, params);
 
-        if (total == 0) {
-            result.stretch_low  = 0.f;
-            result.stretch_high = 1.f;
-        } else {
-            const uint64_t lo_tgt = std::max(uint64_t(1), total / 100u);
-            const uint64_t hi_tgt = total - lo_tgt;
-            int p01 = 1, p99 = kBins - 1;
-            uint64_t cum = 0; bool found_lo = false;
-            for (int i = 1; i < kBins; ++i) {
-                cum += hist[i];
-                if (!found_lo && cum >= lo_tgt) { p01 = i; found_lo = true; }
-                if (cum >= hi_tgt)              { p99 = i; break; }
-            }
-            const int hi = p01 < kBins - 1 ? std::max(p99, p01 + 1) : kBins - 1;
-            result.stretch_low  = float(p01 << kShift) / 65535.f;
-            result.stretch_high = float(hi  << kShift) / 65535.f;
-        }
+    WfPipelineResult result;
+    result.rows = WaterfallPingAssembler::assemble(display, params);
+
+    if (seabed_enabled) {
+        auto clean_rows = WaterfallPingAssembler::assemble(calibrated, params);
+        SeabedAutoDetector::detectAll(clean_rows, seabed_params);
+        if (seabed_params.smoothing > 0.f)
+            SeabedAutoDetector::smooth(clean_rows,
+                                       static_cast<int>(seabed_params.smoothing));
+        const auto count = std::min(result.rows.size(), clean_rows.size());
+        for (size_t i = 0; i < count; ++i) result.rows[i].seabed = clean_rows[i].seabed;
+    }
+    if (amplitude_context && amplitude_context->valid()) {
+        result.stretch_low = amplitude_context->stretch_low;
+        result.stretch_high = amplitude_context->stretch_high;
+    } else {
+        const auto stretch = imaging::computeAutoStretch(display);
+        result.stretch_low = stretch.low;
+        result.stretch_high = stretch.high;
     }
 
     return result;
 }
-
-// -- do* wrappers — bridge rebuildRows/setPings to detail:: free functions -----
-
-void WaterfallView::doApplyTvg(std::vector<core::SidescanPing>& pings)            { detail::applyTvg(pings, m_params); }
-void WaterfallView::doApplyArc(std::vector<core::SidescanPing>& pings)            { detail::applyArc(pings, m_params); }
-void WaterfallView::doNormalizeRawAmplitudes(std::vector<core::SidescanPing>& p)  { detail::normalizeRawAmplitudes(p, m_params); }
-void WaterfallView::doStretchRawAmplitudes(std::vector<core::SidescanPing>& p)    { detail::stretchRawAmplitudes(p); }
-void WaterfallView::doApplyBeamPattern(std::vector<PingRow>& rows)                { detail::applyBeamPattern(rows, m_params); }
-void WaterfallView::doApplyArn(std::vector<PingRow>& rows)                        { detail::applyArn(rows, m_params); }
-void WaterfallView::doApplyDestripe(std::vector<PingRow>& rows)                   { detail::applyDestripe(rows, m_params); }
-void WaterfallView::doApplyMlEnhance(std::vector<PingRow>& rows)                  { detail::applyMlEnhance(rows, m_params); }
 
 } // namespace dolphin::ui

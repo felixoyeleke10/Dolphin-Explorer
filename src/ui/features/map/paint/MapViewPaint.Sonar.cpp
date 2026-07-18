@@ -158,7 +158,12 @@ void MapView::paintSonarLayers(QPainter& p) const
 
     // Sonar preview images (drawn below coverage and overlays).
     {
+        p.save();
         p.setRenderHint(QPainter::Antialiasing, false);
+        // Mosaic rasters are frequently drawn at a different screen scale from
+        // their cached grid. Bilinear image resampling avoids nearest-neighbour
+        // alias bands without changing the underlying amplitude product.
+        p.setRenderHint(QPainter::SmoothPixmapTransform, true);
         forEachVisibleLayer([&](const LayerMapData& ld) {
             if (ld.preview_image.isNull()) return;
             const QPointF tl = geoToPixel(ld.lon_min, ld.lat_max);
@@ -172,7 +177,9 @@ void MapView::paintSonarLayers(QPainter& p) const
             }
             // Blend mode controls how this layer composites over layers already
             // drawn beneath it (visible where surveys overlap):
-            //   0 Blend    — SourceOver at 0.88 (basemap shows through slightly)
+            //   0 Blend    — normal opaque SourceOver. Per-layer opacity remains
+            //                available explicitly; the default must not make
+            //                overlaps darker than single-covered survey areas.
             //   1 Cover up — SourceOver opaque (top fully covers)
             //   2 Lighten  — keep the brighter pixel
             //   3 Darken   — keep the darker pixel
@@ -184,14 +191,14 @@ void MapView::paintSonarLayers(QPainter& p) const
                 case 3: p.setCompositionMode(QPainter::CompositionMode_Darken);
                         p.setOpacity(static_cast<qreal>(ld.opacity)); break;
                 default: p.setCompositionMode(QPainter::CompositionMode_SourceOver);
-                        p.setOpacity(0.88 * static_cast<qreal>(ld.opacity)); break;
+                        p.setOpacity(static_cast<qreal>(ld.opacity)); break;
             }
             p.drawImage(QRectF(tl, br), ld.preview_image);
             p.setOpacity(1.0);
             p.setCompositionMode(QPainter::CompositionMode_SourceOver);
             if (clipped) p.restore();
         });
-        p.setRenderHint(QPainter::Antialiasing, true);
+        p.restore();
     }
 
     // SSS coverage ribbons (only for layers without a preview image).

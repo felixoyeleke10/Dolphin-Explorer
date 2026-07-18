@@ -11,6 +11,7 @@
 #include "ui/shared/widgets/CollapsibleSection.h"
 #include "ui/shared/widgets/SidePanelShell.h"
 #include "ui/systems/DisplayStateManager.h"
+#include "ui/mainwindow/coordinators/SidescanProcessingCoordinator.h"
 #include "ui/features/subbottom/SubBottomWindow.h"
 #include "ui/features/map/sidescan/SidescanViewController.h"
 #include "ui/features/map/MapView.h"
@@ -30,7 +31,9 @@
 #include <QListWidget>
 #include <QMenu>
 #include <QPoint>
+#include <QScrollArea>
 #include <QSettings>
+#include <QSplitter>
 #include <QTimer>
 #include <QStackedWidget>
 #include <QUrl>
@@ -68,15 +71,45 @@ void MainWindow::buildContextPanel(QWidget* parent)
     auto* body   = new QWidget(page);
     auto* layout = makeCompactLayout<QVBoxLayout>(body);
 
+    // File Explorer and the display sections share a user-adjustable boundary.
+    // Let File Explorer take most of the sidebar when needed while the lower
+    // display pane retains a compact, scrollable floor. Remember the user's
+    // preferred split across sessions.
+    auto* sidebar_splitter = new QSplitter(Qt::Vertical, body);
+    sidebar_splitter->setObjectName(QStringLiteral("explorerViewsSplitter"));
+    sidebar_splitter->setHandleWidth(5);
+    layout->addWidget(sidebar_splitter, 1);
+
     // -- Project tree ----------------------------------------------------------
-    m_line_list = new LineListPanel(body, LineListPanel::ContentMode::Explorer);
-    layout->addWidget(m_line_list, 1);
+    m_line_list = new LineListPanel(sidebar_splitter, LineListPanel::ContentMode::Explorer);
+    sidebar_splitter->addWidget(m_line_list);
+
+    // Views has many controls, but its content height must not become the
+    // splitter's minimum height.  A scroll area gives the lower pane an
+    // independent viewport so File Explorer can keep the majority of the dock.
+    auto* display_pane = new QWidget(sidebar_splitter);
+    auto* display_layout = makeCompactLayout<QVBoxLayout>(display_pane);
+
+    auto* display_scroll = new QScrollArea(display_pane);
+    display_scroll->setObjectName(QStringLiteral("explorerViewsScroll"));
+    display_scroll->setWidgetResizable(true);
+    display_scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    display_scroll->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    display_scroll->setFrameShape(QFrame::NoFrame);
+    display_scroll->setMinimumHeight(Theme::kFormBtnH);
+
+    auto* display_sections = new QWidget();
+    auto* sections_layout = makeCompactLayout<QVBoxLayout>(display_sections);
+    display_scroll->setWidget(display_sections);
+    display_layout->addWidget(display_scroll, 1);
+    sidebar_splitter->addWidget(display_pane);
+    sidebar_splitter->setChildrenCollapsible(false);
 
     // -- Views section (SeaView-style per-viewer display settings) --------------
     // Recent Projects moved to the empty-map launcher (MapViewportHost); this
     // slot now hosts MAP | SSS | SBP display controls, incl. the 3D draping
     // surface — so the 3D view no longer has to beg for terrain data.
-    auto* views_sec = new CollapsibleSection(tr("Views"), body);
+    auto* views_sec = new CollapsibleSection(tr("Views"), display_sections);
     views_sec->setIcon(QStringLiteral(":/icons/layers.svg"));
     m_views_panel = new ViewsPanel(views_sec);
 
@@ -87,10 +120,9 @@ void MainWindow::buildContextPanel(QWidget* parent)
         onMapSonarQuality(static_cast<MapSonarQuality>(q));
     });
     connect(m_views_panel, &ViewsPanel::sssPaletteSelected, this, [this](int idx) {
-        if (!m_display_state || !currentProject()) return;
-        const auto* l = currentProject()->findLayer(activeLayerId());
-        if (l && l->modality == app::Modality::Sidescan)
-            m_display_state->setLayerSssPalette(l->id, idx);
+        // SSS uses one universal palette across the map, waterfall, inspector,
+        // and this panel. Route every picker through the same global authority.
+        onPaletteChanged(idx);
     });
     connect(m_views_panel, &ViewsPanel::sbpPaletteSelected, this, [this](int idx) {
         if (!m_display_state || !currentProject()) return;
@@ -163,7 +195,8 @@ void MainWindow::buildContextPanel(QWidget* parent)
         WaterfallParams p = l->sss_display_state.params;
         p.display_low  = static_cast<float>(low);
         p.display_high = static_cast<float>(high);
-        m_display_state->setLayerSssDisplay(l->id, p);
+        if (m_sss_processing)
+            m_sss_processing->commit(currentProject(), {l->id}, p);
         if (m_sss_ctrl) m_sss_ctrl->applyLiveCorrections({l->id});
     });
     connect(m_views_panel, &ViewsPanel::sbpOpacityEdited, this, [this](int pct) {
@@ -178,12 +211,12 @@ void MainWindow::buildContextPanel(QWidget* parent)
             this, &MainWindow::onClearDrapingSurface);
 
     views_sec->setContent(m_views_panel);
-    layout->addWidget(views_sec);
+    sections_layout->addWidget(views_sec);
 
     // -- Recycle Bin section ---------------------------------------------------
     // Soft-deleted contacts (the same project recycle bin the Contact Manager
     // shows). Right-click to Restore / Delete Forever; double-click to restore.
-    auto* recycle_sec = new CollapsibleSection(tr("Recycle Bin"), body);
+    auto* recycle_sec = new CollapsibleSection(tr("Recycle Bin"), display_pane);
     recycle_sec->setIcon(QStringLiteral(":/icons/recycle_bin.svg"));
     recycle_sec->setExpanded(false);
     m_recycle_list = new QListWidget(recycle_sec);
@@ -219,8 +252,24 @@ void MainWindow::buildContextPanel(QWidget* parent)
                 menu.exec(m_recycle_list->viewport()->mapToGlobal(pos));
             });
     recycle_sec->setContent(m_recycle_list);
-    layout->addWidget(recycle_sec);
+    display_layout->addWidget(recycle_sec);
     refreshRecycleBin();
+
+    sidebar_splitter->setStretchFactor(0, 1);
+    sidebar_splitter->setStretchFactor(1, 0);
+    sidebar_splitter->setSizes({520, 150});
+
+    QSettings sidebar_settings(AppInfo::kOrgName, AppInfo::kSettingsApp);
+    const QByteArray saved_split = sidebar_settings.value(
+        QStringLiteral("layout/explorerViewsSplitterV2")).toByteArray();
+    if (!saved_split.isEmpty())
+        sidebar_splitter->restoreState(saved_split);
+    connect(sidebar_splitter, &QSplitter::splitterMoved, this,
+            [sidebar_splitter](int, int) {
+                QSettings(AppInfo::kOrgName, AppInfo::kSettingsApp).setValue(
+                    QStringLiteral("layout/explorerViewsSplitterV2"),
+                    sidebar_splitter->saveState());
+            });
 
     page->setBody(body);
 
@@ -311,7 +360,10 @@ void MainWindow::refreshViewsPanel(bool follow_active)
     const bool sbp = active && active->modality == app::Modality::SubBottom;
     if (sss) {
         const auto& p = active->sss_display_state.params;
-        m_views_panel->setSssLayer(true, active->sss_palette,
+        const int palette = m_display_state
+            ? m_display_state->mapPalette()
+            : PaletteIndex::Greyscale;
+        m_views_panel->setSssLayer(true, palette,
                                    static_cast<int>(active->map_opacity * 100.f + 0.5f),
                                    active->map_blend_mode,
                                    active->map_clip_polygons, active->map_show_beams,

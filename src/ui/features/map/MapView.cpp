@@ -5,6 +5,7 @@
 // Swath build (runs off UI thread): SssMapBuild.cpp
 
 #include "ui/features/map/MapView.h"
+#include "ui/features/map/MapLongitude.h"
 #include "ui/features/map/track/TrackMapBuild.h"
 #include "app/project/Project.h"
 #include "app/layers/DataLayer.h"
@@ -16,6 +17,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -94,6 +96,8 @@ void MapView::setProject(app::Project* project)
     m_nav_track.clear();
     m_needs_fit       = false;
     m_user_interacted = false;
+    m_lon_branch_ref  = 0.0;
+    m_has_lon_branch_ref = false;
     m_bbox_lon_min =  1e18; m_bbox_lon_max = -1e18;
     m_bbox_lat_min =  1e18; m_bbox_lat_max = -1e18;
     update();
@@ -103,6 +107,39 @@ void MapView::setActiveLayer(const std::string& layer_id)
 {
     m_active_layer_id = layer_id;
     rebuildNavTrack();
+}
+
+void MapView::alignLayerLongitudeBranch(const std::string& layer_id,
+                                        LayerMapData& data) const
+{
+    if (data.is_projected || !maplongitude::validBounds(data))
+        return;
+
+    std::optional<double> reference;
+
+    // A rebuild of an existing layer must remain on its previous branch even if
+    // every other layer is currently hidden or still loading.
+    if (const auto same = m_layer_data.find(layer_id);
+            same != m_layer_data.end() && !same->second.is_projected
+            && maplongitude::validBounds(same->second)) {
+        reference = maplongitude::boundsCenter(same->second);
+    } else if (m_has_lon_branch_ref) {
+        // fitToExtent may establish the branch before decoded layer data arrives.
+        reference = m_lon_branch_ref;
+    } else {
+        // All stored geographic layers are aligned on insertion, so any valid
+        // one is a stable reference for the incoming layer.
+        for (const auto& [id, existing] : m_layer_data) {
+            if (id == layer_id || existing.is_projected
+                    || !maplongitude::validBounds(existing))
+                continue;
+            reference = maplongitude::boundsCenter(existing);
+            break;
+        }
+    }
+
+    if (reference)
+        maplongitude::alignLayerToReference(data, *reference);
 }
 
 void MapView::refreshLayerOrder()
@@ -174,6 +211,7 @@ void MapView::rebuildNavTrack()
 
     LayerMapData built = buildTrackLayerMapData(
         layer->artifact_index, type_filter, source_ref, display_ref);
+    alignLayerLongitudeBranch(m_active_layer_id, built);
 
     // Preserve view-state that lives on the main thread.
     LayerMapData& ld        = m_layer_data[m_active_layer_id];
@@ -204,6 +242,8 @@ void MapView::rebuildCombined()
     m_nav_track.clear();
     m_bbox_lon_min =  1e18; m_bbox_lon_max = -1e18;
     m_bbox_lat_min =  1e18; m_bbox_lat_max = -1e18;
+    m_lon_branch_ref = 0.0;
+    m_has_lon_branch_ref = false;
     m_is_projected = false;
     bool first_layer_seen = false;
 
@@ -231,8 +271,22 @@ void MapView::rebuildCombined()
                 }
             }
         }
-        m_bbox_lon_min = std::min(m_bbox_lon_min, data.lon_min);
-        m_bbox_lon_max = std::max(m_bbox_lon_max, data.lon_max);
+        double data_lon_min = data.lon_min;
+        double data_lon_max = data.lon_max;
+        if (!data.is_projected && maplongitude::validBounds(data)) {
+            const double centre = maplongitude::boundsCenter(data);
+            if (!m_has_lon_branch_ref) {
+                m_lon_branch_ref = centre;
+                m_has_lon_branch_ref = true;
+            } else {
+                const double delta = maplongitude::branchShift(
+                    centre, m_lon_branch_ref);
+                data_lon_min += delta;
+                data_lon_max += delta;
+            }
+        }
+        m_bbox_lon_min = std::min(m_bbox_lon_min, data_lon_min);
+        m_bbox_lon_max = std::max(m_bbox_lon_max, data_lon_max);
         m_bbox_lat_min = std::min(m_bbox_lat_min, data.lat_min);
         m_bbox_lat_max = std::max(m_bbox_lat_max, data.lat_max);
         // First visible layer's CRS wins: all layers should share a display CRS,
@@ -291,6 +345,10 @@ void MapView::fitToData()
 
     const double cx = (m_bbox_lon_min + m_bbox_lon_max) * 0.5;
     const double cy = (m_bbox_lat_min + m_bbox_lat_max) * 0.5;
+    if (!m_is_projected) {
+        m_lon_branch_ref = cx;
+        m_has_lon_branch_ref = true;
+    }
     const double sc = bs * m_zoom;
     m_origin = QPointF(-cx * cos_ref * sc, cy * sc);
 
@@ -304,6 +362,25 @@ void MapView::fitToExtent(double lon_min, double lon_max,
     if (m_user_interacted) return;  // preserve user-positioned viewport
     if (lon_min > lon_max || lat_min > lat_max) return;
     if (width() <= 0 || height() <= 0) { m_needs_fit = true; return; }
+
+    if (!is_projected) {
+        const auto interval = maplongitude::shortGeographicInterval(
+            lon_min, lon_max);
+        lon_min = interval.min;
+        lon_max = interval.max;
+        if (m_has_lon_branch_ref) {
+            const double centre = lon_min + (lon_max - lon_min) * 0.5;
+            const double delta = maplongitude::branchShift(
+                centre, m_lon_branch_ref);
+            lon_min += delta;
+            lon_max += delta;
+        }
+        m_lon_branch_ref = lon_min + (lon_max - lon_min) * 0.5;
+        m_has_lon_branch_ref = true;
+    } else {
+        m_lon_branch_ref = 0.0;
+        m_has_lon_branch_ref = false;
+    }
 
     m_is_projected = is_projected;
     m_ref_lat = (lat_min + lat_max) * 0.5;
@@ -354,6 +431,10 @@ void MapView::fitToLayer(const std::string& layer_id)
 
     const double cx = (ld.lon_min + ld.lon_max) * 0.5;
     const double cy = (ld.lat_min + ld.lat_max) * 0.5;
+    if (!ld.is_projected) {
+        m_lon_branch_ref = cx;
+        m_has_lon_branch_ref = true;
+    }
     const double sc = bs * m_zoom;
     m_origin = QPointF(-cx * cos_ref * sc, cy * sc);
     m_user_interacted = true;
@@ -400,6 +481,8 @@ void MapView::setRotationDeg(double deg)
 
 QPointF MapView::geoToPixel(double lon, double lat) const
 {
+    if (!m_is_projected && m_has_lon_branch_ref)
+        lon = maplongitude::unwrapNear(lon, m_lon_branch_ref);
     const double sc      = baseScale() * m_zoom;
     const double cos_ref = m_is_projected
         ? 1.0
@@ -441,6 +524,7 @@ void MapView::setLayerMapData(const std::string& layer_id, LayerMapData data)
             data.beam_spacing  = l->map_beam_spacing;
         }
     }
+    alignLayerLongitudeBranch(layer_id, data);
     auto it = m_layer_data.find(layer_id);
     if (it != m_layer_data.end()) {
         data.visible        = it->second.visible;
@@ -585,6 +669,8 @@ void MapView::clearAllLayerData()
     m_nav_track.clear();
     m_bbox_lon_min =  1e18; m_bbox_lon_max = -1e18;
     m_bbox_lat_min =  1e18; m_bbox_lat_max = -1e18;
+    m_lon_branch_ref = 0.0;
+    m_has_lon_branch_ref = false;
     m_is_projected = false;
     m_combined_dirty = false;  // already reset above; no rebuild needed
     update();

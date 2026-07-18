@@ -28,7 +28,6 @@ namespace dolphin::ui {
 using detail::QualityParams;
 using detail::SidescanLoadResult;
 using detail::paramsForQuality;
-using detail::kFullSafeLimit;
 
 // -- activateLayer -------------------------------------------------------------
 
@@ -105,6 +104,7 @@ void SidescanViewController::activateLayer(const std::string& layer_id,
         project ? project->displaySpatialRef() : core::SpatialRef{};
 
     const int palette_idx = m_palette_idx;
+    const bool auto_stretch_enabled = m_auto_stretch_enabled;
 
     // Display-time nav corrections live on the layer (model-owned). Captured here
     // and applied in the background task — the SAME correction the waterfall uses.
@@ -112,6 +112,8 @@ void SidescanViewController::activateLayer(const std::string& layer_id,
     // Gain/imaging corrections (model-owned) — applied to the mosaic in the
     // background task so the right-panel SSS tools render on the map.
     const WaterfallParams sss_params = layer->sss_display_state.params;
+    SssGeorefParams georef_params = m_georef_params;
+    georef_params.slant_range_corrected = layer->slant_range_corrected;
 
     // Progressive load: the heavy tiers (Medium/High) paint a fast Low preview
     // first, then upgrade to the requested tier in the background (prebuildTier →
@@ -123,7 +125,7 @@ void SidescanViewController::activateLayer(const std::string& layer_id,
     bool            stage_upgrade = false;
     if (m_quality == MapSonarQuality::Medium || m_quality == MapSonarQuality::High) {
         const rastercache::Meta full_meta = rastercache::makeMeta(
-            store_path, nav_params, layer->slant_range_corrected, m_quality,
+            store_path, nav_params, georef_params, m_quality,
             display_ref.id, sss_params);
         const std::string full_path =
             rastercache::cachePath(store_path, layer_id, m_quality);
@@ -161,8 +163,6 @@ void SidescanViewController::activateLayer(const std::string& layer_id,
     }
     if (!m_op_mgr) { emit loadingFinished(); return; }
 
-    SssGeorefParams       georef_params   = m_georef_params;
-    georef_params.slant_range_corrected   = layer->slant_range_corrected;
     const MapSonarQuality current_quality = build_quality;
 
     // Raster-first cache: a fresh persisted raster lets the background task skip
@@ -171,7 +171,7 @@ void SidescanViewController::activateLayer(const std::string& layer_id,
     // image is recoloured from the persisted intensity grid on load (palette is
     // not part of the key).
     const rastercache::Meta cache_meta = rastercache::makeMeta(
-        store_path, nav_params, layer->slant_range_corrected, build_quality,
+        store_path, nav_params, georef_params, build_quality,
         display_ref.id, sss_params);
     const std::string cache_path =
         rastercache::cachePath(store_path, layer_id, build_quality);
@@ -179,7 +179,8 @@ void SidescanViewController::activateLayer(const std::string& layer_id,
     // Apply the result on the main thread (success path). Stale/superseded results
     // are dropped by OperationManager (per-layer key), so no generation guard is
     // needed; busy-state and loadingFinished are balanced in on_finally below.
-    auto on_done = [this, layer_id, palette_idx, build_quality, as_active](SidescanLoadResult res) {
+    auto on_done = [this, layer_id, palette_idx, auto_stretch_enabled,
+                    as_active](SidescanLoadResult res) {
             if (res.load_failed || res.raw_count == 0) {
                 if (as_active && m_status_ping)
                     m_status_ping->setText(
@@ -205,23 +206,11 @@ void SidescanViewController::activateLayer(const std::string& layer_id,
                     ic.disp_high = res.layer_data.intensity_disp_high;
 
                     if (ic.valid()) {
-                        m_layer_intensity_cache[res.layer_id] = ic;
-
-                        // Also populate the quality-tier cache so this quality
-                        // level is immediately available for instant switching.
-                        PrebuiltTier& tier =
-                            m_quality_tier_cache[res.layer_id]
-                                               [static_cast<int>(build_quality)];
-                        tier.coverage        = res.layer_data.coverage;
-                        tier.nav_track       = res.layer_data.nav_track;
-                        tier.lon_min         = res.layer_data.lon_min;
-                        tier.lon_max         = res.layer_data.lon_max;
-                        tier.lat_min         = res.layer_data.lat_min;
-                        tier.lat_max         = res.layer_data.lat_max;
-                        tier.is_projected    = res.layer_data.is_projected;
-                        tier.preview_reduced = res.layer_data.preview_reduced;
-                        tier.nav_stats       = res.layer_data.nav_stats;
-                        tier.intensity       = std::move(ic);
+                        // The persisted raster is the durable quality-tier cache.
+                        // Keep one resident intensity grid for the displayed tier;
+                        // duplicating it in m_quality_tier_cache cost another
+                        // 32 MiB per High layer with no visual benefit.
+                        m_layer_intensity_cache[res.layer_id] = std::move(ic);
                     }
                 }
 
@@ -234,12 +223,15 @@ void SidescanViewController::activateLayer(const std::string& layer_id,
                     const bool palette_changed = (palette_idx != m_palette_idx);
                     const bool params_active = m_display_params.has_value()
                         && !(*m_display_params == SonarDisplayParams{});
+                    const bool stretch_changed =
+                        auto_stretch_enabled != m_auto_stretch_enabled;
                     const auto ic_it = m_layer_intensity_cache.find(res.layer_id);
-                    if ((palette_changed || params_active)
+                    if ((palette_changed || params_active || stretch_changed)
                             && ic_it != m_layer_intensity_cache.end()
                             && ic_it->second.valid())
                         res.layer_data.preview_image = colorizeIntensityCache(
-                            ic_it->second, m_display_params, m_palette_idx);
+                            ic_it->second, m_display_params, m_palette_idx,
+                            m_auto_stretch_enabled);
                 }
                 m_map_view->setLayerMapData(layer_id, std::move(res.layer_data));
                 if (layer_id == m_active_layer_id)
@@ -251,7 +243,6 @@ void SidescanViewController::activateLayer(const std::string& layer_id,
                 if (!as_active && has_raster)
                     m_map_view->setNavTrackVisible(layer_id, false);
                 m_loaded_layers.insert(layer_id);
-                m_layer_pings_cache[res.layer_id] = std::move(res.map_pings_cache);
 
                 if (as_active) emit loadingProgress(100);   // data placed → complete
 
@@ -340,6 +331,7 @@ void SidescanViewController::activateLayer(const std::string& layer_id,
     inputs.layer_low_freq_hz = layer_low_freq_hz;
     inputs.qp                = qp;
     inputs.palette_idx       = palette_idx;
+    inputs.auto_stretch_enabled = auto_stretch_enabled;
     inputs.georef_params     = georef_params;
     inputs.current_quality   = current_quality;
     inputs.nav_params        = nav_params;

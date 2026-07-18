@@ -12,6 +12,7 @@
 #include "ui/mainwindow/coordinators/CorrectionBatchOperator.h"
 #include "ui/mainwindow/coordinators/ToolController.h"
 #include "ui/mainwindow/coordinators/ViewportCoordinator.h"
+#include "ui/mainwindow/coordinators/SidescanProcessingCoordinator.h"
 #include "ui/features/import/ImportProgressDialog.h"
 #include "ui/features/waterfall/WaterfallWindow.h"
 #include "ui/features/subbottom/SubBottomWindow.h"
@@ -52,6 +53,7 @@ MainWindow::MainWindow(QWidget* parent)
     m_session_ctrl = new ProjectSessionController(
         m_undo_stack, m_diag_hub, m_op_mgr, m_import_service, this, this);
     m_layer_ctrl  = new LayerDisplayCoordinator(m_session_ctrl, this);
+    m_sss_processing = new SidescanProcessingCoordinator(m_display_state, this);
 
     // openProject() for cache-only files encodes the path in a "job message"
     // prefixed with __import_cache__: so MainWindow can intercept it.

@@ -9,12 +9,24 @@
 // Staleness is keyed on the source store fingerprint (size + mtime), the nav
 // correction params, slant-range state, and the quality tier. Palette is NOT part
 // of the key (the image is recoloured from the persisted intensity grid on load).
+#include <cstdint>
 #include <string>
 #include "ui/features/map/MapTypes.h"
+#include "ui/features/map/sidescan/SssGeorefParams.h"
 #include "app/display/NavProcessingParams.h"
 #include "app/display/WaterfallParams.h"
 
 namespace dolphin::ui::rastercache {
+
+// The byte layout and the algorithm that produced the derived raster are
+// versioned independently. Bump kCacheFormatVersion when serialization changes;
+// bump kRasterAlgorithmRevision whenever geometry or intensity generation changes
+// in a way that makes previously generated pixels/coverage unsafe to reuse.
+//
+// Format v1 had no algorithm field. Format v2 intentionally rejects every v1
+// artifact so rasters produced by the legacy stitching/processing path rebuild.
+inline constexpr std::uint32_t kCacheFormatVersion      = 2;
+inline constexpr std::uint32_t kRasterAlgorithmRevision = 4;
 
 // Identity / freshness key for a cached raster.
 struct Meta {
@@ -48,7 +60,7 @@ std::string cachePath(const std::string& store_path,
 // it, so a display-CRS change must invalidate the cache.
 Meta makeMeta(const std::string&         store_path,
               const NavProcessingParams& nav,
-              bool                       slant_range_corrected,
+              const SssGeorefParams&     georef,
               MapSonarQuality            quality,
               const std::string&         display_crs_id,
               const WaterfallParams&     sss_params = {});

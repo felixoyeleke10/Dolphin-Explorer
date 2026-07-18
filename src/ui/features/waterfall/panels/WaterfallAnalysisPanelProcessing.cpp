@@ -168,8 +168,8 @@ void WaterfallAnalysisPanel::buildProcessingSection(QVBoxLayout* vl, QWidget* co
 
     // -- Connections -----------------------------------------------------------
     {
-        auto refresh  = [this](auto)   { refreshProcessingDirty(); emit pipelineParamsChanged(); };
-        auto refreshB = [this](bool)   { updateProcessingVisibility(); refreshProcessingDirty(); emit pipelineParamsChanged(); };
+        auto refresh  = [this](auto) { refreshProcessingDirty(); };
+        auto refreshB = [this](bool) { updateProcessingVisibility(); refreshProcessingDirty(); };
 
         // BPN requires SRC — enforce on toggle-on.
         connect(m_bpn_toggle, &WfToggleRow::toggled, this, [this, refreshB](bool on) {
@@ -204,7 +204,6 @@ void WaterfallAnalysisPanel::buildProcessingSection(QVBoxLayout* vl, QWidget* co
                 if (msg->clickedButton() == static_cast<QAbstractButton*>(btn_enable)) {
                     // Auto-enable SRC and let the image section know immediately.
                     m_src_toggle->setChecked(true);
-                    emit slantRangeCorrectionChanged(true);
                 } else {
                     // Revert the BPN toggle silently.
                     QSignalBlocker sb(m_bpn_toggle);
@@ -227,6 +226,7 @@ void WaterfallAnalysisPanel::buildProcessingSection(QVBoxLayout* vl, QWidget* co
     }
 }
 
+#if 0 // Retired duplicate navigation UI; shared main-window tools own this workflow.
 // -----------------------------------------------------------------------------
 //  NAVIGATION PROCESSING visibility + dirty
 // -----------------------------------------------------------------------------
@@ -367,5 +367,7 @@ void WaterfallAnalysisPanel::buildNavSection(QVBoxLayout* vl, QWidget* container
         connect(m_nav_layback_m,      &WfValueRow::valueChanged, this, refresh);
     }
 }
+
+#endif
 
 } // namespace dolphin::ui

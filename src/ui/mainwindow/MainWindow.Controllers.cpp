@@ -25,6 +25,8 @@ void MainWindow::setupFeatureControllers()
     m_sss_ctrl = new SidescanViewController(
         m_map_view,
         /*status_ping=*/nullptr, m_status_bar->posLabel(), /*status_depth=*/nullptr, this);
+    if (m_app_state)
+        m_sss_ctrl->setAutoStretchEnabled(m_app_state->current().auto_stretch);
     m_sss_ctrl->setOperationManager(m_op_mgr);  // owns per-layer map-build ops (keyed)
     connect(m_sss_ctrl, &SidescanViewController::contactPicked,
             this, &MainWindow::onContactPicked);

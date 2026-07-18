@@ -151,16 +151,8 @@ WaterfallWindow::WaterfallWindow(AppState* app_state, QWidget* parent)
                 pushParams();
                 flashProgress();
                 m_status_left->setText(tr("Params applied to all lines"));
-                emit paramsApplied();
                 emit applyToAllRequested();
             });
-    // Any pipeline control change (TVG/ARN/AGC/destripe/BPN/ARC/CLAHE toggle or
-    // value) triggers an immediate debounced repipe so the panel state is always
-    // reflected in the view — no Apply needed for a live preview.  Apply still
-    // commits the params to the stored layer state and rebuilds the map.
-    connect(m_analysis, &WaterfallAnalysisPanel::pipelineParamsChanged,
-            this, [this]() { invalidateProcessedCache(); });
-
     connect(m_analysis, &WaterfallAnalysisPanel::slantRangeCorrectionChanged,
             this, [this](bool src_on) {
                 if (!m_view) return;
@@ -315,18 +307,6 @@ WaterfallWindow::WaterfallWindow(AppState* app_state, QWidget* parent)
                 m_status_left->setText(
                     tr("Feature drawn — %1 vertices").arg(static_cast<int>(verts.size())));
                 emit featureCreated(verts, polygon, is_projected, QString{}, line_id);
-            });
-
-    connect(m_analysis, &WaterfallAnalysisPanel::navProcessThisLineRequested,
-            this, [this](NavProcessingParams params) {
-                scheduleNavProcessing(params);
-                m_status_left->setText(tr("Nav processing applied to this line"));
-            });
-    connect(m_analysis, &WaterfallAnalysisPanel::navProcessAllLinesRequested,
-            this, [this](NavProcessingParams params) {
-                scheduleNavProcessing(params);
-                m_status_left->setText(tr("Nav processing applied — use Apply All to propagate"));
-                emit navProcessAllLinesRequested(params);
             });
 
     connect(m_view, &WaterfallView::contactPicked,

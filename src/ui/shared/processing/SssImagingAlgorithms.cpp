@@ -24,6 +24,42 @@ int maxRowLen(const std::vector<std::vector<uint16_t>*>& rows)
     return ns;
 }
 
+void applyVariableAgc(std::vector<core::SidescanPing>& pings,
+                      const WaterfallParams& params)
+{
+    if (!params.agc.enabled || params.agc.mode != app::AgcMode::Variable)
+        return;
+
+    // A valid store normally has uniform baked flags. Keep a mixed/corrupt
+    // store safe as well: already-normalized records are never processed twice.
+    const auto is_baked = [](const core::SidescanPing& ping) {
+        return core::hasCorrectionFlag(
+            ping.correction_flags, core::CorrectionFlag::GainNormalized);
+    };
+    const size_t baked_count = static_cast<size_t>(std::count_if(
+        pings.cbegin(), pings.cend(), is_baked));
+    if (baked_count == pings.size()) return;
+    if (baked_count == 0) {
+        app::corrections::normalizeAmplitudes(pings, params.agc);
+        return;
+    }
+
+    std::vector<size_t> indices;
+    std::vector<core::SidescanPing> work;
+    indices.reserve(pings.size() - baked_count);
+    work.reserve(pings.size() - baked_count);
+    for (size_t i = 0; i < pings.size(); ++i) {
+        if (is_baked(pings[i])) continue;
+        indices.push_back(i);
+        work.push_back(pings[i]);
+    }
+    if (work.empty()) return;
+
+    app::corrections::normalizeAmplitudes(work, params.agc);
+    for (size_t i = 0; i < work.size(); ++i)
+        pings[indices[i]].samples = std::move(work[i].samples);
+}
+
 } // namespace
 
 // -- Beam pattern normalisation ------------------------------------------------
@@ -285,10 +321,37 @@ void runChannel(std::vector<core::SidescanPing*>& chan, const WaterfallParams& p
         rows[i] = &amp[i];
     }
 
-    if (params.beam_pattern.enabled) beamPatternChannel(rows, params.beam_pattern);
-    if (params.arn.enabled)          arnChannel(rows, params.arn);
-    if (params.destripe.enabled)     destripeChannel(rows, params.destripe);
-    if (params.ml_enhance.enabled)   mlEnhanceChannel(rows, params.ml_enhance);
+    // Beam/destripe can be present in durable stores. Let baked rows contribute
+    // to the line statistics, but restore their samples after that operator so a
+    // mixed/legacy store cannot process them twice. Operators without a durable
+    // correction flag continue to apply uniformly.
+    const auto applyUnlessBaked = [&](core::CorrectionFlag flag,
+                                      const auto& operation) {
+        std::vector<size_t> baked_indices;
+        baked_indices.reserve(chan.size());
+        for (size_t i = 0; i < chan.size(); ++i)
+            if (core::hasCorrectionFlag(chan[i]->correction_flags, flag))
+                baked_indices.push_back(i);
+        if (baked_indices.size() == chan.size()) return;
+
+        std::vector<std::vector<uint16_t>> baked_samples;
+        baked_samples.reserve(baked_indices.size());
+        for (size_t i : baked_indices) baked_samples.push_back(amp[i]);
+        operation();
+        for (size_t i = 0; i < baked_indices.size(); ++i)
+            amp[baked_indices[i]] = std::move(baked_samples[i]);
+    };
+
+    if (params.beam_pattern.enabled)
+        applyUnlessBaked(core::CorrectionFlag::BeamPattern,
+                         [&] { beamPatternChannel(rows, params.beam_pattern); });
+    if (params.arn.enabled)
+        arnChannel(rows, params.arn);
+    if (params.destripe.enabled)
+        applyUnlessBaked(core::CorrectionFlag::Destriping,
+                         [&] { destripeChannel(rows, params.destripe); });
+    if (params.ml_enhance.enabled)
+        mlEnhanceChannel(rows, params.ml_enhance);
 
     for (size_t i = 0; i < chan.size(); ++i) {
         auto& s = chan[i]->samples;
@@ -318,22 +381,80 @@ void applyImagingChain(std::vector<core::SidescanPing>& pings, const WaterfallPa
     fut.get();
 }
 
-void applySssMapCorrections(std::vector<core::SidescanPing>& pings, const WaterfallParams& params)
+void applyPerPingCalibration(core::SidescanPing& ping,
+                             const WaterfallParams& params)
 {
-    if (pings.empty()) return;
+    std::vector<core::SidescanPing> one;
+    one.reserve(1);
+    one.push_back(std::move(ping));
+    auto& item = one.front();
 
-    // Skip corrections already baked into the store so they are not double-applied
-    // (mirrors WaterfallView::runPipeline).  All pings in one line share the flags.
-    const uint32_t baked = pings.front().correction_flags;
+    if (params.tvg.enabled
+            && !core::hasCorrectionFlag(item.correction_flags,
+                                        core::CorrectionFlag::Tvg)) {
+        app::corrections::applyTvg(one, params.tvg);
+    }
+    if (params.arc.enabled
+            && !core::hasCorrectionFlag(item.correction_flags,
+                                        core::CorrectionFlag::Arc)) {
+        app::corrections::applyArc(one, params.arc);
+    }
+    if (params.agc.enabled && params.agc.mode == app::AgcMode::Global
+            && !core::hasCorrectionFlag(item.correction_flags,
+                                        core::CorrectionFlag::GainNormalized)) {
+        app::corrections::normalizeAmplitudes(one, params.agc);
+    }
+    ping = std::move(one.front());
+}
 
-    if (params.tvg.enabled && !core::hasCorrectionFlag(baked, core::CorrectionFlag::Tvg))
-        app::corrections::applyTvg(pings, params.tvg);
-    if (params.arc.enabled && !core::hasCorrectionFlag(baked, core::CorrectionFlag::Arc))
-        app::corrections::applyArc(pings, params.arc);
-    if (params.agc.enabled && !core::hasCorrectionFlag(baked, core::CorrectionFlag::GainNormalized))
-        app::corrections::normalizeAmplitudes(pings, params.agc);
+void applyCalibration(std::vector<core::SidescanPing>& pings,
+                      const WaterfallParams& params)
+{
+    for (auto& ping : pings)
+        applyPerPingCalibration(ping, params);
+    applyVariableAgc(pings, params);
+}
 
+void applyContextCalibrationAndImaging(
+    std::vector<core::SidescanPing>& pings,
+    const WaterfallParams& params)
+{
+    applyVariableAgc(pings, params);
     applyImagingChain(pings, params);
+}
+
+void applyDisplayPipeline(std::vector<core::SidescanPing>& pings, const WaterfallParams& params)
+{
+    applyCalibration(pings, params);
+    applyImagingChain(pings, params);
+}
+
+SssAutoStretch computeAutoStretch(const std::vector<core::SidescanPing>& pings)
+{
+    constexpr int kBins = 1024;
+    uint64_t hist[kBins] = {};
+    for (const auto& ping : pings)
+        for (const auto& sample : ping.samples)
+            if (sample.amplitude > 0) ++hist[sample.amplitude >> 6];
+    uint64_t total = 0;
+    for (int i = 0; i < kBins; ++i) total += hist[i];
+    if (total == 0) return {};
+
+    const uint64_t tail = std::max<uint64_t>(1, total / 100u);
+    const uint64_t hi_target = total - tail;
+    uint64_t cumulative = 0;
+    int low = 0, high = kBins - 1;
+    bool found_low = false;
+    for (int i = 0; i < kBins; ++i) {
+        cumulative += hist[i];
+        if (!found_low && cumulative >= tail) { low = i; found_low = true; }
+        if (cumulative >= hi_target) { high = i; break; }
+    }
+    const uint32_t low_value = static_cast<uint32_t>(low) << 6;
+    const uint32_t high_value = std::min<uint32_t>(
+        (static_cast<uint32_t>(high) + 1u) << 6, 65535u);
+    return {float(low_value) / 65535.f,
+            float(std::max(high_value, low_value + 1u)) / 65535.f};
 }
 
 } // namespace dolphin::ui::imaging

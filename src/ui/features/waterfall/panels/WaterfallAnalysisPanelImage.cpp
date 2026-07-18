@@ -180,7 +180,6 @@ void WaterfallAnalysisPanel::buildImageSection(QVBoxLayout* vl, QWidget* contain
             msg->exec();
             if (msg->clickedButton() == static_cast<QAbstractButton*>(btn_enable)) {
                 m_src_toggle->setChecked(true);
-                emit slantRangeCorrectionChanged(true);
             }
         }
     });
@@ -322,10 +321,10 @@ void WaterfallAnalysisPanel::buildImageSection(QVBoxLayout* vl, QWidget* contain
            "Use before beam-pattern correction or when you want across-track distance to represent seabed ground range."));
     bl->addWidget(m_src_toggle);
 
-    // -- Dirty indicator + live-repipe connections -------------------------
+    // -- Dirty indicator connections --------------------------------------
     {
-        auto refresh = [this](auto) { refreshImageDirty(); emit pipelineParamsChanged(); };
-        auto refreshB = [this](bool) { refreshImageDirty(); emit pipelineParamsChanged(); };
+        auto refresh = [this](auto) { refreshImageDirty(); };
+        auto refreshB = [this](bool) { refreshImageDirty(); };
         connect(m_tvg_toggle,        &WfToggleRow::toggled,      this, refreshB);
         connect(m_arn_toggle,        &WfToggleRow::toggled,      this, refreshB);
         connect(m_agc_enable_toggle, &WfToggleRow::toggled,      this, refreshB);
@@ -351,10 +350,9 @@ void WaterfallAnalysisPanel::buildImageSection(QVBoxLayout* vl, QWidget* contain
                        "Beam Pattern Normalisation in the Processing Tools section.</p>"));
                 return;
             }
-            // SRC has its own repipe path via slantRangeCorrectionChanged — no
-            // pipelineParamsChanged here to avoid a redundant second pipeline run.
+            // SRC has its own immediate repipe path; the remaining processing
+            // controls stay as a draft until the operator presses Apply.
             refreshImageDirty();
-            emit slantRangeCorrectionChanged(on);
         });
         connect(m_tvg_spreading,     &WfValueRow::valueChanged,  this, refresh);
         connect(m_tvg_absorption,    &WfValueRow::valueChanged,  this, refresh);

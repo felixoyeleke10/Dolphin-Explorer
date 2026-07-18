@@ -1,6 +1,7 @@
 // MapViewInput.cpp — resize and pointer/wheel event handlers for MapView
 
 #include "ui/features/map/MapView.h"
+#include "ui/features/map/MapLongitude.h"
 #include "geo/GeoUtils.h"
 
 #include <QContextMenuEvent>
@@ -48,6 +49,13 @@ QCursor cursorForMode(MapView::MapInputMode mode)
     case MapView::ModeZoom:        return zoomCursor();
     default:                       return QCursor(Qt::ArrowCursor);  // ModePan: arrow at rest, hand appears on drag
     }
+}
+
+QPointF publicMapCoordinate(QPointF point, bool is_projected)
+{
+    if (!is_projected)
+        point.setX(maplongitude::canonical(point.x()));
+    return point;
 }
 
 } // namespace
@@ -180,7 +188,8 @@ void MapView::mousePressEvent(QMouseEvent* event)
 
     // Pick-contact mode: emit position; stay in contact-pick mode (sticky tool).
     if (m_input_mode == ModePickContact && event->button() == Qt::LeftButton) {
-        const QPointF geo = pixelToGeo(event->pos());
+        const QPointF geo = publicMapCoordinate(
+            pixelToGeo(event->pos()), m_is_projected);
         emit contactPickedOnMap(geo.x(), geo.y());
         return;
     }
@@ -329,7 +338,8 @@ void MapView::mouseMoveEvent(QMouseEvent* event)
     // Map-tab view options: hover tooltip / highlight (throttled inside).
     updateHoverState(event->pos(), event->globalPosition().toPoint());
 
-    QPointF geo = pixelToGeo(event->pos());
+    const QPointF geo = publicMapCoordinate(
+        pixelToGeo(event->pos()), m_is_projected);
     emit cursorMoved(geo.x(), geo.y());
 }
 

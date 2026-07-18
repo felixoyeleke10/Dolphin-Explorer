@@ -22,6 +22,11 @@
 
 namespace dolphin::ui::imaging {
 
+struct SssAutoStretch {
+    float low  = 0.f;
+    float high = 1.f;
+};
+
 // -- Per-channel cores (operate in place on the pointed-to rows) ---------------
 void beamPatternChannel(std::vector<std::vector<uint16_t>*>& rows, const BeamPatternParams& bp);
 void arnChannel        (std::vector<std::vector<uint16_t>*>& rows, const ArnParams& arn);
@@ -35,10 +40,29 @@ void mlEnhanceChannel  (std::vector<std::vector<uint16_t>*>& rows, const MlEnhan
 // ping.samples[].amplitude.  No-op when nothing is enabled.
 void applyImagingChain(std::vector<core::SidescanPing>& pings, const WaterfallParams& params);
 
-// Apply the *full* SSS amplitude pipeline (TVG/ARC/AGC pre-assembly + the imaging
-// chain) to map pings in place, so the rasterizer produces a corrected mosaic.
-// Honors already-baked correction_flags so nothing is double-applied.  No-op when
-// the layer has no enabled corrections.
-void applySssMapCorrections(std::vector<core::SidescanPing>& pings, const WaterfallParams& params);
+// Local calibration stage used by focused processing and fallback paths. This
+// applies TVG/ARC/AGC while respecting baked flags. Cross-view rendering uses
+// SssAmplitudeContext after the native per-ping stage below.
+void applyCalibration(std::vector<core::SidescanPing>& pings, const WaterfallParams& params);
+
+// Native-sample, per-ping portion of calibration. Map loading calls this before
+// resolution-only sample compaction so TVG/ARC and Global AGC see exactly the
+// same physical sample positions/statistics as the waterfall.
+void applyPerPingCalibration(core::SidescanPing& ping, const WaterfallParams& params);
+
+// Finish calibration that genuinely needs along-track context (Variable AGC),
+// then apply the shared imaging chain. Use after applyPerPingCalibration has
+// already run on every ping in a bounded map product.
+void applyContextCalibrationAndImaging(std::vector<core::SidescanPing>& pings,
+                                       const WaterfallParams& params);
+
+// Complete local display-amplitude product: calibration followed by the enabled
+// beam/ARN/destripe/ML chain, all in native per-channel ping order. It is exact
+// for the supplied set; use SssAmplitudeContext when independent viewer subsets
+// must share one line-level result.
+void applyDisplayPipeline(std::vector<core::SidescanPing>& pings, const WaterfallParams& params);
+
+// Canonical 1st/99th-percentile display range. Zero amplitudes are excluded.
+SssAutoStretch computeAutoStretch(const std::vector<core::SidescanPing>& pings);
 
 } // namespace dolphin::ui::imaging

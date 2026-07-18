@@ -133,7 +133,7 @@ QWidget* ViewsPanel::buildSssPage()
     gl->setColumnStretch(1, 1);
 
     m_sss_palette = makeSssPaletteCombo(page);
-    m_sss_palette->setToolTip(tr("Palette override for the active sidescan line"));
+    m_sss_palette->setToolTip(tr("Palette used by all sidescan views"));
     connect(m_sss_palette, &QComboBox::activated, this, [this](int i) {
         emit sssPaletteSelected(m_sss_palette->itemData(i).toInt());
     });

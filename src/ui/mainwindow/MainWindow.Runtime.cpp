@@ -41,6 +41,7 @@ void MainWindow::setupRuntimeServices()
         if (aspect == DisplayAspect::Palette && layer_id.isEmpty()) {
             const int pal = m_display_state->mapPalette();
             if (m_modal_host)    m_modal_host->setPalette(pal);
+            if (m_waterfall_win) m_waterfall_win->setPalette(pal);
             if (m_sss_ctrl)      m_sss_ctrl->setPaletteIndex(pal);
         }
         // A per-layer display change (palette/gain/visibility/nav) means the project
@@ -107,7 +108,9 @@ void MainWindow::setupRuntimeServices()
     connect(m_app_state, &AppState::soundVelocityChanged, this,
             [reloadWaterfall](double) { reloadWaterfall(); });
     connect(m_app_state, &AppState::autoStretchChanged, this,
-            [this](bool) {
+            [this](bool enabled) {
+                if (m_sss_ctrl)
+                    m_sss_ctrl->setAutoStretchEnabled(enabled);
                 if (m_waterfall_win && m_waterfall_win->isVisible())
                     m_waterfall_win->invalidateProcessedCache();
             });

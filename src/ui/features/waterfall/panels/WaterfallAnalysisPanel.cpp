@@ -45,7 +45,6 @@ WaterfallAnalysisPanel::WaterfallAnalysisPanel(QWidget* parent)
     buildSeabedSection     (vl, container);
     buildContactSection    (vl, container);
     buildProcessingSection (vl, container);
-    buildNavSection        (vl, container);
     vl->addStretch();
 
     // -- APPLY buttons (pinned below scroll) -------------------------------
@@ -156,16 +155,6 @@ WaterfallParams WaterfallAnalysisPanel::currentParams(int palette_index) const
     return p;
 }
 
-NavProcessingParams WaterfallAnalysisPanel::currentNavParams() const
-{
-    NavProcessingParams p;
-    p.smooth_enabled  = m_nav_smooth_toggle  && m_nav_smooth_toggle->isChecked();
-    p.smooth_window   = m_nav_smooth_window  ? m_nav_smooth_window->intValue() : 5;
-    p.layback_enabled = m_nav_layback_toggle && m_nav_layback_toggle->isChecked();
-    p.layback_m       = m_nav_layback_m      ? static_cast<float>(m_nav_layback_m->value()) : 0.f;
-    return p;
-}
-
 void WaterfallAnalysisPanel::setParams(const WaterfallParams& p)
 {
     // TVG
@@ -237,11 +226,9 @@ void WaterfallAnalysisPanel::setParams(const WaterfallParams& p)
     updateAgcVisibility();
     updateDestripeVisibility();
     updateProcessingVisibility();
-    updateNavVisibility();
     refreshImageDirty();
     refreshSeabedDirty();
     refreshProcessingDirty();
-    refreshNavDirty();
 }
 
 void WaterfallAnalysisPanel::setContactPickActive(bool active)

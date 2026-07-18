@@ -287,9 +287,9 @@ void MapView3D::drawDrapes()
             QVector2D(D.bbox_w > 0.f ? 1.f / D.bbox_w : 0.f,
                       D.bbox_h > 0.f ? 1.f / D.bbox_h : 0.f));
         m_drape_shader->setUniformValue(m_loc_drape_vexag, m_v_exag);
-        // 0.85 base blend over terrain; D.opacity is the user's per-layer
-        // transparency (Views ▸ SSS), mirroring the 2D mosaic.
-        m_drape_shader->setUniformValue(m_loc_drape_alpha, 0.85f * D.opacity);
+        // Honour the explicit per-layer opacity exactly. Hidden base multipliers
+        // make overlaps and terrain bleed differ from the 2D mosaic.
+        m_drape_shader->setUniformValue(m_loc_drape_alpha, D.opacity);
 
         if (!m_terrain_layers.empty()) {
             const bool use_lod = m_camera.distance > m_scene_radius * 3.5f;

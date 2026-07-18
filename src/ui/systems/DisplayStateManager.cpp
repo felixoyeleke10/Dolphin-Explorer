@@ -209,6 +209,7 @@ bool DisplayStateManager::setLayerSssDisplay(const std::string& layer_id,
     if (!l) return false;
     l->sss_display_state.params     = params;
     l->sss_display_state.customized = true;
+    l->slant_range_corrected        = params.slant_range_correction;
     emit displayStateChanged(QString::fromStdString(layer_id), DisplayAspect::Gain);
     return true;
 }

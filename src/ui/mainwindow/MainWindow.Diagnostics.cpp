@@ -50,6 +50,23 @@ void MainWindow::onMapDiagnosticsReady(const QString& layer_id, const NavStats& 
             DiagnosticsHub::Severity::Warning, layer_id);
     }
 
+    // -- Nav repair transparency -----------------------------------------------
+    // Bounded interpolation between trusted GPS fixes is a normal part of
+    // georeferencing slow-cadence GPS (0.1 Hz fixes under 10 Hz pings cannot be
+    // placed any other way), but the operator must be able to SEE how much of
+    // the track is measured versus repaired. Every repaired ping passed the
+    // hard speed/distance/cadence gates and carries kNavFlagInterpolated; no
+    // positions are invented across line breaks, resets, or unbounded gaps.
+    if (stats.interpolated_nav > 0) {
+        m_diag_hub->postProblem(
+            tr("%1 of %2 pings (%3%) positioned by bounded interpolation between "
+               "GPS fixes - expected for slow GPS cadence; positions are never "
+               "invented across line breaks or ping resets")
+                .arg(stats.interpolated_nav).arg(stats.total_pings)
+                .arg(pct(stats.interpolated_nav)),
+            DiagnosticsHub::Severity::Info, layer_id);
+    }
+
     // -- Heading ---------------------------------------------------------------
     if (stats.skipped_no_heading == stats.total_pings) {
         m_diag_hub->postProblem(
@@ -94,14 +111,17 @@ void MainWindow::onMapDiagnosticsReady(const QString& layer_id, const NavStats& 
 
     if (stats.nav_spikes > 10) {
         m_diag_hub->postProblem(
-            tr("%1 GPS spikes detected (>50 m jump) - position outliers may distort swath geometry")
+            tr("%1 isolated GPS spikes detected - position outliers were excluded from swath placement")
                 .arg(stats.nav_spikes),
             DiagnosticsHub::Severity::Warning, layer_id);
     }
 
-    // Flag only genuinely sparse nav (>10 m means GPS is updating
-    // at <1 Hz for typical survey speeds of 1–3 knots).
-    if (stats.avg_spacing_m > 10.0 && stats.total_pings > 10) {
+    // Spacing from a decimated preview is not the GPS update cadence. Only
+    // issue this warning when every indexed ping group was loaded.
+    const size_t loaded_groups = stats.total_pings / 2;
+    const bool unthinned = stats.pings_available == 0
+        || loaded_groups >= stats.pings_available;
+    if (unthinned && stats.avg_spacing_m > 10.0 && stats.total_pings > 10) {
         m_diag_hub->postProblem(
             tr("Average ping spacing %1 m - GPS may be updating too slowly for vessel speed")
                 .arg(stats.avg_spacing_m, 0, 'f', 1),
@@ -113,6 +133,19 @@ void MainWindow::onMapDiagnosticsReady(const QString& layer_id, const NavStats& 
         m_diag_hub->postProblem(
             tr("Sonar preview built but no pixels rendered - heading may be incorrect or swath geometry degenerate"),
             DiagnosticsHub::Severity::Warning, layer_id);
+    }
+
+    if (stats.cells_attempted > 0
+            && stats.cells_rasterized < stats.cells_attempted) {
+        const size_t rejected = stats.cells_attempted - stats.cells_rasterized;
+        const double rejected_fraction = static_cast<double>(rejected)
+                                       / static_cast<double>(stats.cells_attempted);
+        if (rejected_fraction > 0.02) {
+            m_diag_hub->postProblem(
+                tr("%1 of %2 sonar cells could not be rasterized - inspect navigation or swath geometry")
+                    .arg(rejected).arg(stats.cells_attempted),
+                DiagnosticsHub::Severity::Warning, layer_id);
+        }
     }
 
     // Only fire "no ribbons" if position/heading aren't already flagged as
@@ -183,14 +216,16 @@ void MainWindow::onMapDiagnosticsReady(const QString& layer_id, const NavStats& 
     // total_pings = loaded channel records (port + stbd combined).
     // pings_available = ping groups in the original index (/ 2).
     m_diag_hub->logOutput(
-        tr("[%1] %2 records · %3 strips · %4 cells · %5 · %6 · "
-           "%7 no-heading · %8 no-pos · %9 spikes · %10 gaps")
+        tr("[%1] %2 records · %3 strips · %4/%5 cells · %6 · %7 · "
+           "%8 repaired-nav · %9 no-heading · %10 no-pos · %11 spikes · %12 gaps")
             .arg(layer_id)
             .arg(stats.total_pings)
             .arg(stats.strips_built)
+            .arg(stats.cells_rasterized)
             .arg(stats.cells_attempted)
             .arg(px_str)
             .arg(ribbons_str)
+            .arg(stats.interpolated_nav)
             .arg(stats.skipped_no_heading)
             .arg(stats.skipped_no_position)
             .arg(stats.nav_spikes)

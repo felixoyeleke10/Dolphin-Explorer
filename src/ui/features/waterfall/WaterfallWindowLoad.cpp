@@ -7,6 +7,7 @@
 #include "ui/features/waterfall/panels/WaterfallAnalysisPanel.h"
 #include "ui/features/waterfall/processing/SeabedAutoDetector.h"
 #include "ui/features/waterfall/processing/WaterfallPingAssembler.h"
+#include "ui/shared/processing/SssAmplitudeContext.h"
 #include "app/layers/DataLayer.h"
 #include "app/services/ImportService.h"
 #include "app/tasks/OperationManager.h"
@@ -86,6 +87,7 @@ void WaterfallWindow::loadWindow(int abs_row)
     struct LoadResult {
         std::vector<core::SidescanPing>  raw_pings;
         WaterfallView::WfPipelineResult  pipeline;
+        std::shared_ptr<const imaging::SssAmplitudeContext> amplitude_context;
         bool ok          = false;  // full success
         bool load_failed = false;  // disk/parse exception (vs. simply no valid pings)
     };
@@ -156,11 +158,25 @@ void WaterfallWindow::loadWindow(int abs_row)
 
                 // TVG/ARC/AGC → assemble → beam/ARN/destripe/ML → seabed → stretch,
                 // entirely off the UI thread.
+                imaging::SssAmplitudeContextRequest context_request;
+                context_request.store_path = store_path;
+                context_request.store_format = store_format;
+                context_request.artifact_index =
+                    std::shared_ptr<const core::ArtifactIndex>(
+                        &idx, [](const core::ArtifactIndex*) {});
+                context_request.source_path = source_path;
+                context_request.frequency_hz = selected_hz;
+                context_request.params = snap_params;
+                result.amplitude_context = imaging::getOrBuildSssAmplitudeContext(
+                    context_request, cancel);
+                if (cancel.isCancelled()) return result;
+
                 result.raw_pings = std::move(normalised);
                 result.pipeline  = WaterfallView::runPipeline(result.raw_pings,
                                                               snap_params,
                                                               snap_seabed_params,
-                                                              snap_seabed_enabled);
+                                                              snap_seabed_enabled,
+                                                              result.amplitude_context.get());
                 result.ok = true;
             } catch (...) {
                 result.load_failed = true;
@@ -200,6 +216,7 @@ void WaterfallWindow::loadWindow(int abs_row)
 
             // Install pre-built rows. Stale case keeps raw_pings for the re-run.
             auto raw_pings = std::move(res.raw_pings);
+            m_view->setAmplitudeContext(std::move(res.amplitude_context));
             if (pipeline_stale)
                 m_view->setPreassembledRows(raw_pings,
                                             std::move(res.pipeline), !reset_view);
@@ -225,29 +242,8 @@ void WaterfallWindow::loadWindow(int abs_row)
             // Re-run the pipeline with corrected params so stale rows are replaced.
             // Same "wf:pipeline" key so a newer load/repipe still supersedes it.
             if (pipeline_stale) {
-                setDataState(ViewerDataState::Processing);
-                m_op_mgr->run<LoadResult>(
-                    tr("Reprocessing waterfall window"),
-                    [raw = std::move(raw_pings), p = current_params,
-                     sp = snap_seabed_params, se = snap_seabed_enabled]
-                    (app::CancellationToken) mutable -> LoadResult {
-                        LoadResult r;
-                        try {
-                            r.pipeline  = WaterfallView::runPipeline(raw, p, sp, se);
-                            r.raw_pings = std::move(raw);
-                            r.ok = true;
-                        } catch (...) { r.load_failed = true; }
-                        return r;
-                    },
-                    [this](LoadResult r) {
-                        if (!r.ok) { setDataState(ViewerDataState::Failed); return; }
-                        m_view->setPreassembledRows(std::move(r.raw_pings),
-                                                    std::move(r.pipeline),
-                                                    /*preserve_view=*/true);
-                        setDataState(ViewerDataState::Ready);
-                    },
-                    "wf:pipeline",
-                    /*heavy=*/false);
+                setDataState(ViewerDataState::Ready);
+                invalidateProcessedCache();
             } else {
                 setDataState(ViewerDataState::Ready);
             }

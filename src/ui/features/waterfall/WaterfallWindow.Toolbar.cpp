@@ -134,13 +134,16 @@ QList<CommandPaletteItem> WaterfallWindow::buildCommandItems()
         true, [this] { emit contactManagerRequested(); });
 
     add("Analysis", tr("Apply Display Params"),   "", "apply params gain",
-        has_layer, [this] { pushParams(); flashProgress(); });
+        has_layer, [this] {
+            pushParams();
+            flashProgress();
+            emit paramsApplied();
+        });
     add("Analysis", tr("Apply to All Lines"),     "", "apply all batch lines",
         has_layer, [this] {
             pushParams();
             flashProgress();
             m_status_left->setText(tr("Params applied to all lines"));
-            emit paramsApplied();
             emit applyToAllRequested();
         });
 

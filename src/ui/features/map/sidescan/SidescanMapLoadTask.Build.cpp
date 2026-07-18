@@ -12,6 +12,7 @@
 #include "app/services/ImportService.h"
 #include "app/layers/DataLayer.h"
 #include "app/display/NavCorrection.h"
+#include "ui/shared/processing/SssAmplitudeContext.h"
 #include "ui/shared/processing/SssImagingAlgorithms.h"
 #include "geo/GeoUtils.h"
 
@@ -51,14 +52,19 @@ SidescanLoadResult buildSidescanLoadResult(const SssLoadInputs&            in,
             // at load start; on_done re-LUTs if palette/params changed since).
             if (!result.layer_data.intensity_cache.empty()) {
                 IntensityCache ic;
-                ic.pixels    = result.layer_data.intensity_cache;
+                // Temporarily transfer ownership instead of copying a High-tier
+                // grid (up to 32 MiB) merely to colourise it, then put it back for
+                // the main-thread intensity cache.
+                ic.pixels    = std::move(result.layer_data.intensity_cache);
                 ic.w         = result.layer_data.intensity_w;
                 ic.h         = result.layer_data.intensity_h;
                 ic.disp_low  = result.layer_data.intensity_disp_low;
                 ic.disp_high = result.layer_data.intensity_disp_high;
                 result.layer_data.preview_image =
                     SidescanViewController::colorizeIntensityCache(
-                        ic, std::nullopt, in.palette_idx);
+                        ic, std::nullopt, in.palette_idx,
+                        in.auto_stretch_enabled);
+                result.layer_data.intensity_cache = std::move(ic.pixels);
             }
             report(100);   // cache hit: instant
             return result;
@@ -75,31 +81,10 @@ SidescanLoadResult buildSidescanLoadResult(const SssLoadInputs&            in,
 
     result.total_ssc_entries =
         map_idx.byType(core::ArtifactType::Sidescan).size();
-    const size_t total_groups = result.total_ssc_entries / 2;
 
-    // Thin to the quality-determined ping group cap.
-    // max_ping_groups == 0 (High quality) means "use all pings", but
-    // if the file exceeds kFullSafeLimit we fall back to Medium params.
-    size_t effective_cap = in.qp.max_ping_groups;
-    if (effective_cap == 0) {
-        if (total_groups > kFullSafeLimit) {
-            effective_cap = paramsForQuality(MapSonarQuality::Medium).max_ping_groups;
-            result.quality_reduced = true;
-        }
-        // else: effective_cap stays 0 → no thinning below
-    }
-
-    if (effective_cap > 0) {
-        auto thin = thinSidescanEntriesForMap(map_idx, effective_cap);
-        map_idx.entries.erase(
-            std::remove_if(map_idx.entries.begin(), map_idx.entries.end(),
-                [](const core::ArtifactIndexEntry& e) {
-                    return e.type == core::ArtifactType::Sidescan;
-                }),
-            map_idx.entries.end());
-        map_idx.entries.insert(map_idx.entries.end(), thin.begin(), thin.end());
-    }
-    // else: Full quality within safe limit — load all ping groups as-is.
+    // Apply both the resolution-aware group cap and the hard decoded-entry cap.
+    // The latter keeps dual-band/malformed groups from defeating the memory bound.
+    boundSidescanIndexForMap(map_idx, in.qp);
 
     if (cancel.isCancelled()) {
         result.load_failed = true; return result;
@@ -109,7 +94,14 @@ SidescanLoadResult buildSidescanLoadResult(const SssLoadInputs&            in,
     auto raw = app::ImportService::loadAllSidescanPingsFromStore(
         in.store_path, in.store_format, map_idx, in.source_path,
         in.qp.max_samples_per_ping,
-        [&report](float f) { report(5 + static_cast<int>(f * 55.f)); });
+        [&report](float f) { report(5 + static_cast<int>(f * 55.f)); },
+        in.qp.max_image_dim > 0
+            ? std::function<void(core::SidescanPing&)>{
+                [params = in.sss_params](core::SidescanPing& ping) {
+                    imaging::applyPerPingCalibration(ping, params);
+                }}
+            : std::function<void(core::SidescanPing&)>{},
+        [&cancel]() { return cancel.isCancelled(); });
 
     result.raw_count = raw.size();
     if (raw.empty()) {
@@ -133,19 +125,44 @@ SidescanLoadResult buildSidescanLoadResult(const SssLoadInputs&            in,
     // waterfall agree. No-op when the layer has none; applied to the source
     // nav before normalize/reprojection.
     raw = applySidescanNavCorrections(std::move(raw), in.nav_params);
+    if (cancel.isCancelled()) {
+        result.load_failed = true; return result;
+    }
     report(66);   // pings read + nav-corrected; reprojecting next
 
     auto map_pings = geo::normalizeSidescanPingsForMap(
         std::move(raw), in.display_ref, &result.unresolved_crs);
+    if (cancel.isCancelled()) {
+        result.load_failed = true; return result;
+    }
 
-    // Gain/imaging corrections (TVG/ARC/AGC + beam/ARN/destripe/ML) — the SAME
-    // algorithms the waterfall applies (ui/shared/processing/SssImagingAlgorithms),
-    // so the right-panel SSS tools render on the map mosaic, not only in the
-    // waterfall. Applied in place, so the cached pings (kept below) reflect the
-    // displayed corrected mosaic. No-op when the layer has no enabled corrections;
-    // skipped when no raster is built (CoverageOnly).
-    if (in.qp.max_image_dim > 0)
-        imaging::applySssMapCorrections(map_pings, in.sss_params);
+    // Finish context-dependent calibration/imaging (Variable AGC plus
+    // beam/ARN/destripe/ML). The native-sample per-ping stage already ran in the
+    // streaming loader before resolution-only sample compaction. CoverageOnly
+    // skips both stages because it never consumes amplitudes.
+    std::shared_ptr<const imaging::SssAmplitudeContext> amplitude_context;
+    if (in.qp.max_image_dim > 0) {
+        imaging::SssAmplitudeContextRequest request;
+        request.store_path = in.store_path;
+        request.store_format = in.store_format;
+        request.artifact_index = std::shared_ptr<const core::ArtifactIndex>(
+            &in.idx, [](const core::ArtifactIndex*) {});
+        request.source_path = in.source_path;
+        request.frequency_hz = in.layer_low_freq_hz == 0.f
+            ? in.layer_freq_hz : 0.f;
+        request.params = in.sss_params;
+        amplitude_context = imaging::getOrBuildSssAmplitudeContext(request, cancel);
+        if (cancel.isCancelled()) {
+            result.load_failed = true; return result;
+        }
+        if (amplitude_context)
+            imaging::applySssAmplitudeContext(map_pings, *amplitude_context);
+        else
+            imaging::applyContextCalibrationAndImaging(map_pings, in.sss_params);
+    }
+    if (cancel.isCancelled()) {
+        result.load_failed = true; return result;
+    }
 
     // -- Coverage + nav track (always built for CoverageOnly+) ---------
     // is_projected must be set before the build calls: both functions use
@@ -156,7 +173,7 @@ SidescanLoadResult buildSidescanLoadResult(const SssLoadInputs&            in,
             break;
         }
 
-    buildSwathNavTrack(map_pings, result.layer_data);
+    buildSwathNavTrack(map_pings, result.layer_data, in.georef_params);
     buildSwathCoverage(map_pings, result.layer_data, in.georef_params);
     report(80);   // coverage + nav track built; rasterizing next
 
@@ -165,14 +182,16 @@ SidescanLoadResult buildSidescanLoadResult(const SssLoadInputs&            in,
         const bool built = buildSwathPreviewImage(
             map_pings, result.layer_data,
             in.qp.max_image_dim, in.palette_idx, *cancel.flag(),
-            in.georef_params, in.qp.min_strip_cos, in.qp.cell_budget_div);
+            in.georef_params, in.qp.min_strip_cos, in.qp.cell_budget_div,
+            /*ping_lines_only=*/false, {},
+            amplitude_context ? amplitude_context->stretch_low : -1.f,
+            amplitude_context ? amplitude_context->stretch_high : -1.f);
         result.quality_reduced = built && result.layer_data.preview_reduced;
     }
     report(98);   // raster done; placing on the map
     // -- Build / CRS fields for diagnostics ---------------------------
-    result.layer_data.nav_stats.quality_used    =
-        result.quality_reduced ? MapSonarQuality::Medium : in.current_quality;
-    result.layer_data.nav_stats.pings_available = total_groups;
+    result.layer_data.nav_stats.quality_used    = in.current_quality;
+    result.layer_data.nav_stats.pings_available = result.total_ssc_entries / 2;
     result.layer_data.nav_stats.memory_reduced  = result.quality_reduced;
 
     {
@@ -242,10 +261,6 @@ SidescanLoadResult buildSidescanLoadResult(const SssLoadInputs&            in,
         sum.quality_reduced    = result.quality_reduced;
         rastercache::save(in.cache_path, in.cache_meta, sum, result.layer_data);
     }
-
-    // Keep the (corrected) normalized pings so a palette change can re-rasterize
-    // without re-reading from disk.
-    result.map_pings_cache = std::move(map_pings);
 
     return result;
 

@@ -2,6 +2,7 @@
 // scale bar, compass rose.  All GL draw calls stay in MapView3D.Paint.cpp.
 
 #include "ui/features/map/MapView3D.h"
+#include "ui/features/map/MapLongitude.h"
 #include "ui/shared/CoordFormat.h"
 #include "ui/shell/Theme.h"
 #include "geo/GeoUtils.h"
@@ -32,6 +33,7 @@ static constexpr int kGratFontSizes[] = { 7, 8, 10 };  // Small / Normal / Large
 
 static QString fmtGeoLon(double lon, int dec)
 {
+    lon = dolphin::ui::maplongitude::canonical(lon);
     const char dir = (lon >= 0.0) ? 'E' : 'W';
     return QString::number(std::abs(lon), 'f', dec) + "\xC2\xB0" + QLatin1Char(dir);
 }
@@ -216,13 +218,17 @@ void MapView3D::drawGridLabels(QPainter& painter)
             lbl1 = fmtProj(toWorldX(lx), dec);
         } else if (utm_only) {
             double e, n; int z; bool nh;
-            if (!dolphin::geo::latLonToUtm(m_origin_y, toWorldX(lx), z, nh, e, n)) continue;
+            const double display_lon = maplongitude::canonical(toWorldX(lx));
+            if (!dolphin::geo::latLonToUtm(
+                    m_origin_y, display_lon, z, nh, e, n)) continue;
             lbl1 = fmtUtmE(e);
         } else {
             lbl1 = fmtGeoLon(toWorldX(lx), dec);
             if (show_both) {
                 double e, n; int z; bool nh;
-                if (dolphin::geo::latLonToUtm(m_origin_y, toWorldX(lx), z, nh, e, n))
+                const double display_lon = maplongitude::canonical(toWorldX(lx));
+                if (dolphin::geo::latLonToUtm(
+                        m_origin_y, display_lon, z, nh, e, n))
                     lbl2 = fmtUtmE(e);
             }
         }
@@ -268,13 +274,17 @@ void MapView3D::drawGridLabels(QPainter& painter)
             lbl1 = fmtProj(toWorldY(ly), dec);
         } else if (utm_only) {
             double e, n; int z; bool nh;
-            if (!dolphin::geo::latLonToUtm(toWorldY(ly), m_origin_x, z, nh, e, n)) continue;
+            const double display_lon = maplongitude::canonical(m_origin_x);
+            if (!dolphin::geo::latLonToUtm(
+                    toWorldY(ly), display_lon, z, nh, e, n)) continue;
             lbl1 = fmtUtmN(n);
         } else {
             lbl1 = fmtGeoLat(toWorldY(ly), dec);
             if (show_both) {
                 double e, n; int z; bool nh;
-                if (dolphin::geo::latLonToUtm(toWorldY(ly), m_origin_x, z, nh, e, n))
+                const double display_lon = maplongitude::canonical(m_origin_x);
+                if (dolphin::geo::latLonToUtm(
+                        toWorldY(ly), display_lon, z, nh, e, n))
                     lbl2 = fmtUtmN(n);
             }
         }
