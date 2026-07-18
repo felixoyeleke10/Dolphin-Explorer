@@ -23,7 +23,19 @@ namespace dolphin::ui {
 
 void SidescanViewController::setGeorefParams(const SssGeorefParams& p)
 {
+    // show_nadir is an operator display preference owned by this controller
+    // (persisted via setShowNadir). Correction-dialog applies and {} resets
+    // must not silently flip it.
+    const bool keep_nadir = m_georef_params.show_nadir;
     m_georef_params = p;
+    m_georef_params.show_nadir = keep_nadir;
+}
+
+void SidescanViewController::setShowNadir(bool show)
+{
+    if (m_georef_params.show_nadir == show) return;
+    m_georef_params.show_nadir = show;
+    QSettings().setValue(QStringLiteral("sss/showNadir"), show);
 }
 
 void SidescanViewController::reloadCurrentLayer()

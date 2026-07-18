@@ -15,6 +15,7 @@
 #include <QFontMetrics>
 #include <QGridLayout>
 #include <QLabel>
+#include <QSettings>
 #include <QSignalBlocker>
 #include <QSpinBox>
 #include <QStackedWidget>
@@ -228,21 +229,36 @@ QWidget* ViewsPanel::buildSssPage()
     gl->addWidget(makeRowLabel(tr("Beam spacing"), page), 6, 0);
     gl->addWidget(m_sss_beam_spacing, 6, 1);
 
+    // Show/hide the near-nadir seabed band. Survey-wide operator preference
+    // (persisted as "sss/showNadir"); toggling re-rasters loaded lines, so the
+    // shell handles the rebuild + progress.
+    m_sss_nadir = new QCheckBox(tr("Show nadir band"), page);
+    m_sss_nadir->setObjectName("viewsCheck");
+    m_sss_nadir->setToolTip(tr(
+        "Show seabed data in the near-nadir zone under the vessel track.\n"
+        "Off leaves the nadir gap open, making the geometrically compressed\n"
+        "near-track zone obvious for QC. Toggling rebuilds loaded lines."));
+    m_sss_nadir->setChecked(
+        QSettings().value(QStringLiteral("sss/showNadir"), true).toBool());
+    connect(m_sss_nadir, &QCheckBox::toggled,
+            this, &ViewsPanel::sssShowNadirToggled);
+    gl->addWidget(m_sss_nadir, 7, 0, 1, 2);
+
     // Dynamic range — black/white points on the amplitude histogram. The
     // handles set SonarDisplayParams::display_low/high; the caller re-rasters
     // on commit (drag release), keeping the histogram itself instant.
-    gl->addWidget(makeRowLabel(tr("Dynamic range"), page), 7, 0, 1, 2);
+    gl->addWidget(makeRowLabel(tr("Dynamic range"), page), 8, 0, 1, 2);
     m_sss_hist = new HistogramRangeSlider(page);
     connect(m_sss_hist, &HistogramRangeSlider::rangeCommitted,
             this, &ViewsPanel::sssDynamicRangeCommitted);
-    gl->addWidget(m_sss_hist, 8, 0, 1, 2);
+    gl->addWidget(m_sss_hist, 9, 0, 1, 2);
 
     m_sss_hint = new QLabel(tr("Select a sidescan line to adjust it here."), page);
     m_sss_hint->setObjectName("viewsHint");
     m_sss_hint->setWordWrap(true);
-    gl->addWidget(m_sss_hint, 9, 0, 1, 2);
+    gl->addWidget(m_sss_hint, 10, 0, 1, 2);
 
-    gl->setRowStretch(10, 1);
+    gl->setRowStretch(11, 1);
     setSssLayer(false, -1);
     return page;
 }

@@ -106,7 +106,15 @@ public:
     int paletteIndex() const { return m_palette_idx; }
 
     // Update heading georef parameters and immediately rebuild the map display.
+    // Preserves the operator's show_nadir preference (owned here, persisted to
+    // QSettings) regardless of the incoming struct's value.
     void setGeorefParams(const SssGeorefParams& p);
+
+    // Operator toggle (Views ▸ SSS "Show nadir band"): display or hide the
+    // near-nadir seabed band. Persists to QSettings; the caller triggers the
+    // rebuild of loaded lines (this changes the raster fingerprint).
+    void setShowNadir(bool show);
+    bool showNadir() const { return m_georef_params.show_nadir; }
 
     // Evict the current layer from the loaded cache and rebuild the map display.
     void reloadCurrentLayer();

@@ -71,6 +71,15 @@ struct SssGeorefParams {
     // visible gap that represents the unprocessed water column.
     // When true the gap is closed — the inner edge sits on the vessel track.
     bool slant_range_corrected = false;
+
+    // Show the near-nadir band. Samples are always placed at their true
+    // flat-bottom ground range (water column itself is never drawn); this
+    // only controls whether real seabed data with ground range below the
+    // altitude is DISPLAYED (true, default) or excluded as a QC gap that
+    // makes the geometrically compressed near-nadir zone obvious (false).
+    // Operator preference (Views ▸ SSS "Show nadir band"); the controller
+    // owns and persists it — setGeorefParams() preserves the current value.
+    bool show_nadir = true;
 };
 
 // -- Per-file diagnostics ------------------------------------------------------

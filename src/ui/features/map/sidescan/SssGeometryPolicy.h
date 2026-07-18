@@ -64,7 +64,7 @@ inline bool sssOuterGroundRangeMetres(const core::SidescanPing& ping,
 inline double sssInnerGapMetres(const core::SidescanPing& ping,
                                 const SssGeorefParams& params)
 {
-    if (params.slant_range_corrected)
+    if (params.slant_range_corrected || params.show_nadir)
         return 0.0;
     const double altitude_m = sssUncorrectedAltitudeMetres(ping);
     const double slant_m = ping.slant_range_m > 0.0f

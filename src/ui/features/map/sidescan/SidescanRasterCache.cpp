@@ -440,6 +440,7 @@ Meta makeMeta(const std::string&         store_path,
     h = fnvMix (h, georef.smoothing_window);
     h = fnvMix (h, georef.debug_ping_lines_only);
     h = fnvMix (h, georef.slant_range_corrected);
+    h = fnvMix (h, georef.show_nadir);
     for (char c : display_crs_id) h = fnvMix(h, c);
 
     // Gain/imaging corrections — changing any re-rasterizes the mosaic. Floats are

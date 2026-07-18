@@ -38,6 +38,11 @@ SidescanViewController::SidescanViewController(MapView*            map_view,
                      QStringLiteral("Gray")).toString());
     }
 
+    // Operator display preference: show the near-nadir seabed band (default)
+    // or leave the QC gap open. Owned here; Views ▸ SSS toggles it.
+    m_georef_params.show_nadir =
+        qs.value(QStringLiteral("sss/showNadir"), true).toBool();
+
     // Staged-load upgrade: when a heavy tier (High/Full) was requested, activateLayer
     // paints a fast Medium preview, then prebuilds the full tier in the background.
     // When it lands, swap it in — but only if the user hasn't switched quality since

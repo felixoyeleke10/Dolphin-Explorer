@@ -69,6 +69,8 @@ signals:
     void sssClipPolygonsToggled(bool on);
     void sssShowBeamsToggled(bool on);
     void sssBeamSpacingChanged(int spacing);
+    // Show/hide the near-nadir seabed band — survey-wide; re-rasters loaded lines.
+    void sssShowNadirToggled(bool on);
     // SSS dynamic range (black/white points in [0,1]). Committed fires on drag
     // release → the caller does the mosaic re-raster there.
     void sssDynamicRangeCommitted(double low, double high);
@@ -99,6 +101,7 @@ private:
     QCheckBox*      m_sss_clip     = nullptr;
     QCheckBox*      m_sss_beams        = nullptr;
     QSpinBox*       m_sss_beam_spacing = nullptr;
+    QCheckBox*      m_sss_nadir        = nullptr;
     HistogramRangeSlider* m_sss_hist = nullptr;
     QLabel*         m_sss_hint     = nullptr;
     QComboBox*      m_sbp_palette  = nullptr;

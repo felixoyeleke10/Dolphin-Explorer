@@ -599,6 +599,9 @@ void testCoverageAndRasterShareNadirPolicy()
         ui::SssGeorefParams params;
         params.heading_source = ui::SssHeadingSource::FishSensor;
         params.slant_range_corrected = close_nadir;
+        // This case exercises the open QC gap, so opt out of the default
+        // "show nadir band" display preference (which sets the gap to zero).
+        params.show_nadir = false;
 
         const auto georef = ui::georeferenceSidescanPings(case_pings, params);
         ui::LayerMapData data;
@@ -634,6 +637,22 @@ void testCoverageAndRasterShareNadirPolicy()
     verify(false, false); // Raw sample geometry with an open water column.
     verify(true, false);  // UI-only close; sample ranges are still raw slant.
     verify(true, true);   // SlantRangeNode-baked ground ranges.
+
+    // Default operator preference (show_nadir = true): even without slant
+    // correction the near-nadir seabed band is displayed — the inner edge
+    // reaches (close to) the track instead of leaving the QC gap open.
+    {
+        ui::SssGeorefParams band_params;
+        band_params.heading_source = ui::SssHeadingSource::FishSensor;
+        CHECK(band_params.show_nadir);   // default must be "band shown"
+        const auto georef = ui::georeferenceSidescanPings(pings, band_params);
+        CHECK(georef.strips.size() == 2);
+        if (georef.strips.size() == 2) {
+            const auto& inner = georef.strips[0].points.front();
+            CHECK(std::hypot(inner.lon - pings[0].nav.lon,
+                             inner.lat - pings[0].nav.lat) < 1.0);
+        }
+    }
 
     auto baked_zero = pings.front();
     baked_zero.samples = {{1'000, 0.0f}, {1'500, 0.0f}, {2'000, 16.0f}};
