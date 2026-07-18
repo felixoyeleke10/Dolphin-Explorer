@@ -73,8 +73,16 @@ public:
     // centring, status bar). as_active=false: load its raster as part of the survey
     // overview without taking selection — used on open to show every cached line's
     // raster, not just the active one. Cache-first either way (no ping decode on hit).
-    void activateLayer(const std::string& layer_id, app::Project* project,
-                       bool as_active = true);
+    // cache_only=true (project open, D-06): display persisted work ONLY — load the
+    // best already-fresh raster tier at or below the current quality, and if none
+    // exists leave the line as its nav track. Never decodes pings, never
+    // rasterizes, never stages background tier upgrades. The mosaic builds when
+    // the OPERATOR acts: selecting the line, Apply, or changing quality.
+    // Returns false ONLY when a cache_only call found no persisted raster and
+    // deferred to the operator (callers use it to count/announce deferred
+    // lines); all other paths return true.
+    bool activateLayer(const std::string& layer_id, app::Project* project,
+                       bool as_active = true, bool cache_only = false);
 
     // Draw a layer's nav track straight from the in-memory artifact index (no ping
     // I/O, no raster) for an instant survey overview. No-op if the layer is already

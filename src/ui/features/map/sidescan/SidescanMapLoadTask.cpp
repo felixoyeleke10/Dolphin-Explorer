@@ -31,9 +31,10 @@ using detail::paramsForQuality;
 
 // -- activateLayer -------------------------------------------------------------
 
-void SidescanViewController::activateLayer(const std::string& layer_id,
+bool SidescanViewController::activateLayer(const std::string& layer_id,
                                            app::Project*      project,
-                                           bool               as_active)
+                                           bool               as_active,
+                                           bool               cache_only)
 {
     // as_active=false: load this line's raster onto the map as part of the survey
     // overview WITHOUT making it the selected layer (no active-layer state, no
@@ -47,19 +48,19 @@ void SidescanViewController::activateLayer(const std::string& layer_id,
         if (as_active && m_map_view) m_map_view->setActiveLayer(layer_id);
         if (as_active && m_status_ping) m_status_ping->setText(tr("Map sonar off"));
         emit loadingFinished();
-        return;
+        return true;
     }
 
     if (m_loaded_layers.count(layer_id)) {
         emit loadingFinished();
-        return;
+        return true;
     }
 
     auto* layer = project ? project->findLayer(layer_id) : nullptr;
     if (!layer) {
         deactivate(false);
         emit loadingFinished();
-        return;
+        return true;
     }
 
     // Defensive guard: this controller only processes Sidescan layers.
@@ -68,20 +69,20 @@ void SidescanViewController::activateLayer(const std::string& layer_id,
     if (layer->modality != app::Modality::Sidescan &&
         layer->modality != app::Modality::Unknown) {
         emit loadingFinished();
-        return;
+        return true;
     }
 
     if (!layer->index_built) {
         if (as_active && m_status_ping) m_status_ping->setText(tr("Layer not yet indexed"));
         emit loadingFinished();
-        return;
+        return true;
     }
     if (layer->sidescanCount() == 0) {
         if (as_active && m_status_ping)
             m_status_ping->setText(
                 tr("No sidescan data  (%1 artifacts total)").arg(layer->artifactCount()));
         emit loadingFinished();
-        return;
+        return true;
     }
 
     auto* src = project->findSource(layer->source_id);
@@ -134,6 +135,37 @@ void SidescanViewController::activateLayer(const std::string& layer_id,
             stage_upgrade = true;
         }
     }
+
+    // Open-time policy (cache_only): display persisted work, never start new
+    // processing. Pick the best already-fresh raster tier at or below the
+    // requested quality; if none exists, the line stays as its nav track and
+    // the operator builds the mosaic explicitly (line selection, Apply, or a
+    // quality change). Never stage background upgrades from this path — D-06:
+    // index-first, visible-first, no eager hydration.
+    if (cache_only) {
+        stage_upgrade = false;
+        static constexpr MapSonarQuality kTierLadder[] = {
+            MapSonarQuality::High, MapSonarQuality::Medium, MapSonarQuality::Low };
+        MapSonarQuality found = MapSonarQuality::Off;
+        for (MapSonarQuality q : kTierLadder) {
+            if (static_cast<int>(q) > static_cast<int>(m_quality)) continue;
+            const rastercache::Meta tier_meta = rastercache::makeMeta(
+                store_path, nav_params, georef_params, q,
+                display_ref.id, sss_params);
+            if (rastercache::isFresh(
+                    rastercache::cachePath(store_path, layer_id, q), tier_meta)) {
+                found = q;
+                break;
+            }
+        }
+        if (found == MapSonarQuality::Off) {
+            // Nothing persisted — nav track (already drawn by the caller) is
+            // the honest display. Balance the caller's pending-load counter.
+            emit loadingFinished();
+            return false;   // deferred to the operator
+        }
+        build_quality = found;
+    }
     const QualityParams qp = paramsForQuality(build_quality);
 
     if (as_active && m_status_ping) m_status_ping->setText(tr("Loading…"));
@@ -159,9 +191,9 @@ void SidescanViewController::activateLayer(const std::string& layer_id,
         if (as_active && m_status_ping)
             m_status_ping->setText(tr("Layer has no artifact store — reimport required"));
         emit loadingFinished();
-        return;
+        return true;
     }
-    if (!m_op_mgr) { emit loadingFinished(); return; }
+    if (!m_op_mgr) { emit loadingFinished(); return true; }
 
     const MapSonarQuality current_quality = build_quality;
 
@@ -377,6 +409,7 @@ void SidescanViewController::activateLayer(const std::string& layer_id,
     // Stage 2: upgrade to the full requested tier in the background. When it lands,
     // prebuildTierComplete swaps it in (guarded on still-current quality + layer).
     if (stage_upgrade) prebuildTier(layer_id, m_quality, project);
+    return true;
 }
 
 // -- showNavTrackFromIndex -----------------------------------------------------

@@ -210,19 +210,21 @@ void MainWindow::setupFeatureControllers()
                         }
                     } else if (needs_map_build) {
                         // Reindexed non-active sidescan layer: instant nav-track
-                        // overview, then load its raster as a non-active overview
-                        // layer (cache-first; builds + caches on miss) so the whole
-                        // survey shows as raster, not just the active line.
+                        // overview, plus any raster already persisted. The mosaic
+                        // itself builds when the OPERATOR selects the line — a
+                        // recovery reindex must not fan out into unrequested
+                        // rasterization of every recovered line (same display-only
+                        // policy as project open).
                         m_sss_ctrl->showNavTrackFromIndex(layer_id, currentProject());
                         m_sss_ctrl->activateLayer(layer_id, currentProject(),
-                                                  /*as_active=*/false);
+                                                  /*as_active=*/false,
+                                                  /*cache_only=*/true);
                     } else if (layer->modality == M::SubBottom) {
-                        // SSS/SBP parity: a reindexed non-active SBP line shows on
-                        // the map too — instant track, then the profile ribbon.
+                        // SSS/SBP parity: a reindexed non-active SBP line shows as
+                        // its nav track; the profile ribbon (disk-heavy trace read)
+                        // builds when the operator selects the line.
                         if (m_sss_ctrl)
                             m_sss_ctrl->showNavTrackFromIndex(layer_id, currentProject());
-                        if (m_op_mgr) m_op_mgr->setLaneCap("sbp:open", 2);
-                        buildSbpProfileMap(layer, "sbp:open");
                     }
                     // Refresh the tree so the reindexed layer shows ready.
                     if (m_line_list) m_line_list->refresh();
