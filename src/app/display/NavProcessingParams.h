@@ -11,7 +11,7 @@ namespace dolphin::ui {
 struct NavProcessingParams {
     // -- Position ----------------------------------------------------------
     bool  smooth_enabled  = false;
-    int   smooth_window   = 5;    // running-average half-window in pings
+    int   smooth_window   = 5;    // total running-average window length in pings
     bool  layback_enabled = false;
     float layback_m       = 0.f;  // horizontal cable layback distance (m)
 

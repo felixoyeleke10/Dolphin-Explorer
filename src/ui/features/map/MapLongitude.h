@@ -106,6 +106,13 @@ inline double alignLayerToReference(LayerMapData& data,
                 if (std::isfinite(point.x()))
                     point.setX(point.x() + delta);
 
+    for (SidescanBeamRay& ray : data.beam_rays) {
+        if (std::isfinite(ray.origin.x()))
+            ray.origin.setX(ray.origin.x() + delta);
+        if (std::isfinite(ray.outer.x()))
+            ray.outer.setX(ray.outer.x() + delta);
+    }
+
     shiftRange(data.nav_stats.nav_lon_min,
                data.nav_stats.nav_lon_max, delta);
     shiftRange(data.nav_stats.strip_lon_min,

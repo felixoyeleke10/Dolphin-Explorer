@@ -66,17 +66,13 @@ void LineListPanel::showLayerContextMenu(QTreeWidgetItem* item,
             else       emit runLayerRequested(ids.front());
         });
 
-    menu.addSeparator();
-
-    // Raster layers can export to GeoTIFF (GDAL); other modalities' export is
-    // not implemented yet, so it stays disabled per D-05.
+    // Raster layers can export to GeoTIFF (GDAL).
     if (static_cast<app::Modality>(item->data(0, kRoleModality).toInt())
             == app::Modality::Raster) {
+        menu.addSeparator();
         menu.addAction(tr("Export GeoTIFF…"), this, [this, ids] {
             emit exportLayersRequested(ids, QStringLiteral("geotiff"));
         });
-    } else {
-        menu.addMenu(tr("Export"))->setEnabled(false);
     }
 
     menu.addSeparator();

@@ -51,9 +51,7 @@ QFrame* MainWindow::buildActivityBar(QWidget* parent)
     // add a ··· overflow button so secondary panels can be reached without
     // knowing which feature flags are on.
     constexpr bool kHasSecondary = Features::kDataLibrary || Features::kNodeGraph
-                                || Features::kContacts    || Features::kAnalyze
-                                || Features::kAI          || Features::kPresent
-                                || Features::kReport;
+                                || Features::kContacts;
 
     if constexpr (Features::kDataLibrary)
         addBtn(":/icons/database.svg",
@@ -63,15 +61,6 @@ QFrame* MainWindow::buildActivityBar(QWidget* parent)
         addBtn(":/icons/run_all.svg",   "Processing",       PanelProcessing);
     if constexpr (Features::kContacts)
         addBtn(":/icons/contacts.svg",  "Contacts",         PanelContacts);
-    if constexpr (Features::kAnalyze)
-        addBtn(":/icons/analyze.svg",   "Analyze",          PanelAnalyze);
-    if constexpr (Features::kAI)
-        addBtn(":/icons/ai.svg",        "AI",               PanelAI);
-    if constexpr (Features::kPresent)
-        addBtn(":/icons/present.svg",   "Present",          PanelPresent);
-    if constexpr (Features::kReport)
-        addBtn(":/icons/report.svg",    "Report Generator", PanelReport);
-
     if constexpr (kHasSecondary) {
         layout->addSpacing(2);
         auto* more_btn = new AnimatedToolButton(bar);
@@ -87,10 +76,6 @@ QFrame* MainWindow::buildActivityBar(QWidget* parent)
                 PanelEntry{Features::kDataLibrary, ":/icons/database.svg", "Data Library",    PanelDataLibrary},
                 PanelEntry{Features::kNodeGraph,   ":/icons/run_all.svg",  "Processing",      PanelProcessing},
                 PanelEntry{Features::kContacts,    ":/icons/contacts.svg", "Contacts",        PanelContacts},
-                PanelEntry{Features::kAnalyze,     ":/icons/analyze.svg",  "Analyze",         PanelAnalyze},
-                PanelEntry{Features::kAI,          ":/icons/ai.svg",       "AI",              PanelAI},
-                PanelEntry{Features::kPresent,     ":/icons/present.svg",  "Present",         PanelPresent},
-                PanelEntry{Features::kReport,      ":/icons/report.svg",   "Report Generator",PanelReport},
             }) {
             auto* act = more_menu->addAction(Theme::icon(e.icon), tr(e.label),
                                              this, [this, panel = e.panel]{ togglePanel(panel); });

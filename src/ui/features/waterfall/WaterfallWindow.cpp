@@ -158,6 +158,8 @@ WaterfallWindow::WaterfallWindow(AppState* app_state, QWidget* parent)
                 if (!m_view) return;
                 WaterfallParams p = m_view->params();
                 p.slant_range_correction = src_on;
+                if (src_on)
+                    m_view->redetectSeabed(m_analysis->currentSeabedAutoParams());
                 // Keep seabed line visible when SRC is on — it is the altitude
                 // reference SRC depends on; hiding it removes the user's only
                 // way to verify the pick quality.

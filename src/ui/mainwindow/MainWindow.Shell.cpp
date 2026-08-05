@@ -1,6 +1,6 @@
 // MainWindow.Shell.cpp — setupCentralWidget.
 // Panel construction is split across companion files:
-//   MainWindow.ContextPanels.cpp  — buildContextPanel, makeContextPlaceholder
+//   MainWindow.ContextPanels.cpp  — buildContextPanel
 //   MainWindow.MainArea.cpp       — buildMainArea, buildPropertiesPanel
 //   MainWindow.ToolBar.cpp        — buildActivityBar, setupToolBar
 #include "ui/mainwindow/MainWindow.h"

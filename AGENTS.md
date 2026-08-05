@@ -79,17 +79,7 @@ A layer must never depend on anything above it. `src/io/` and `src/pipeline/` do
 - Sources → Layers: one sonar file produces multiple layer interpretations.
 - Loading policy: index/extents first, visible-first decode, background refinement second. Never require full-file decode for layer activation.
 
-## Staged Implementation Process
-
-This project follows a strict staged plan. Before changing any code, read:
-
-1. `docs/README.md` — navigation hub
-2. `docs/00_control/DECISION_LOG.md` — **locked product policy**; follow it, don't rewrite it
-3. `docs/00_control/STAGE_GATE_CHECKLIST.md` — stage entry/exit criteria
-4. `docs/00_control/CLAUDE_EXECUTION_BRIEF.md` — execution rules for implementation agents
-5. The current active stage doc under `docs/10_plan/`
-
-**Conflict resolution precedence:** `DECISION_LOG` > `STAGE_GATE_CHECKLIST` > active stage doc > `CLAUDE_EXECUTION_BRIEF`.
+## Working Conventions
 
 Key locked decisions to respect:
 - **D-02** Dataset identity = normalized absolute path + size/mtime fingerprint (no SHA-256 yet).
@@ -98,7 +88,7 @@ Key locked decisions to respect:
 - **D-06** Prefer index-first, visible-first loading over eager full-data hydration.
 - **D-14** Default concurrency cap for heavy import/decode jobs is 2.
 
-**Work in slices:** one behavioral goal, one file cluster, one test theme, one closure note. After each slice write a closure note to `docs/90_closure_notes/STAGE_XX_SLICE_YY_CLOSURE.md`.
+**Work in slices:** one behavioral goal, one file cluster, one test theme. Record the *why* in the commit message and, when it's durable cross-session knowledge (not just what changed), in memory — not in a standalone docs file. Prior planning docs and closure notes were intentionally cleared; don't recreate that pattern.
 
 **Stop and ask** (do not guess) if the work would require deciding: content-hash vs. path identity, true cross-project shared artifacts, local vs. network registry, or shipping partial UI as if it works.
 

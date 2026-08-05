@@ -139,11 +139,6 @@ void MainWindow::toggleProperties()
     setPropertiesOpen(!m_props_open);
 }
 
-void MainWindow::onViewTabChanged(int /*index*/)
-{
-    // Reserved — Phase 2
-}
-
 void MainWindow::setPropertiesOpen(bool open)
 {
     if (!m_props_panel) return;

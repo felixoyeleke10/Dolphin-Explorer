@@ -39,8 +39,8 @@ SbpSignalModule::SbpSignalModule(QWidget* parent) : QWidget(parent)
     m_envelope_en = new QCheckBox(tr("Envelope"), container);
     m_envelope_en->setObjectName("ctrlToggle");
     m_envelope_en->setToolTip(
-        tr("Compute instantaneous amplitude (Hilbert envelope) of each trace.\n"
-           "Rectifies the signal so both positive and negative half-cycles\n"
+        tr("Compute the full-wave rectified amplitude of each trace.\n"
+           "Positive and negative half-cycles both contribute\n"
            "contribute equally to brightness.\n"
            "Useful for analysing reflection strength without polarity ambiguity.\n"
            "Requires Apply."));

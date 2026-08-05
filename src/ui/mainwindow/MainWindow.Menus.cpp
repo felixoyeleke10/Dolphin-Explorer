@@ -3,7 +3,6 @@
 #include "ui/mainwindow/MainWindow.h"
 #include "ui/features/map/sidescan/SidescanViewController.h"
 #include "ui/shared/AppCommands.h"
-#include "ui/shared/dialogs/SettingsDialog.h"
 #include "ui/shell/Features.h"
 #include "ui/shell/Theme.h"
 

@@ -26,6 +26,7 @@ constexpr quint64 kMaxTotalPoints          = 8ULL * 1024ULL * 1024ULL;
 constexpr quint64 kMaxCoverageCollections = 64;
 constexpr quint64 kMaxRibbonsPerCoverage  = 1024ULL * 1024ULL;
 constexpr quint64 kMaxTotalRibbons         = 2ULL * 1024ULL * 1024ULL;
+constexpr quint64 kMaxBeamRays             = 4ULL * 1024ULL * 1024ULL;
 constexpr qint32  kMaxRasterDimension      = 16384;
 constexpr quint64 kMaxRasterPixels         = 64ULL * 1024ULL * 1024ULL;
 constexpr quint32 kMaxDiagnosticStringBytes = 64U * 1024U;
@@ -293,6 +294,15 @@ bool validateForSave(const LayerMapData& data) {
             if (!validatePointsForSave(ribbon, total_points)) return false;
     }
 
+    if (data.beam_rays.size() > kMaxBeamRays)
+        return false;
+    for (const auto& ray : data.beam_rays) {
+        if (!isKnownChannel(static_cast<quint8>(ray.channel)) ||
+            !std::isfinite(ray.origin.x()) || !std::isfinite(ray.origin.y()) ||
+            !std::isfinite(ray.outer.x()) || !std::isfinite(ray.outer.y()))
+            return false;
+    }
+
     quint64 raw_bytes = 0;
     if (!validateRasterLayout(data.intensity_w, data.intensity_h,
                               static_cast<quint64>(data.intensity_cache.size()),
@@ -512,6 +522,15 @@ bool save(const std::string&  path,
         for (const auto& ribbon : cov.ribbons) writePoints(ds, ribbon);
     }
 
+
+    ds << static_cast<quint64>(data.beam_rays.size());
+    for (const auto& ray : data.beam_rays) {
+        ds << static_cast<quint8>(ray.channel)
+           << static_cast<qint64>(ray.timestamp_us)
+           << static_cast<quint32>(ray.ping_number)
+           << ray.origin << ray.outer;
+    }
+
     // Intensity grid (the raster itself).
     ds << static_cast<qint32>(data.intensity_w)
        << static_cast<qint32>(data.intensity_h)
@@ -617,6 +636,36 @@ bool load(const std::string& path,
                 coverage.ribbons.push_back(std::move(ribbon));
             }
             decoded.coverage.push_back(std::move(coverage));
+        }
+
+        quint64 beam_count = 0;
+        ds >> beam_count;
+        constexpr quint64 kSerializedBeamBytes =
+            sizeof(quint8) + sizeof(qint64) + sizeof(quint32)
+            + 2ULL * kSerializedPointBytes;
+        quint64 minimum_beam_bytes = 0;
+        if (ds.status() != QDataStream::Ok || beam_count > kMaxBeamRays ||
+            !fitsSizeT(beam_count) ||
+            !checkedMultiply(beam_count, kSerializedBeamBytes,
+                             minimum_beam_bytes) ||
+            !hasRemainingBytes(ds, minimum_beam_bytes))
+            return false;
+        decoded.beam_rays.reserve(static_cast<size_t>(beam_count));
+        for (quint64 i = 0; i < beam_count; ++i) {
+            quint8 channel = 0;
+            qint64 timestamp = 0;
+            quint32 ping_number = 0;
+            QPointF origin;
+            QPointF outer;
+            ds >> channel >> timestamp >> ping_number >> origin >> outer;
+            if (ds.status() != QDataStream::Ok || !isKnownChannel(channel) ||
+                !std::isfinite(origin.x()) || !std::isfinite(origin.y()) ||
+                !std::isfinite(outer.x()) || !std::isfinite(outer.y()))
+                return false;
+            decoded.beam_rays.push_back({
+                static_cast<core::SidescanChannel>(channel),
+                static_cast<int64_t>(timestamp),
+                static_cast<uint32_t>(ping_number), origin, outer});
         }
 
         qint32 iw = 0, ih = 0;

@@ -55,8 +55,17 @@ applySidescanNavCorrections(std::vector<core::SidescanPing> pings,
     }
 
     if (do_hdg || do_pitch || do_roll) {
+        auto offsetHeading = [offset = params.heading_offset_deg](float& heading) {
+            if (!std::isfinite(heading) || heading == 0.f) return;
+            heading = std::fmod(heading + offset, 360.f);
+            if (heading < 0.f) heading += 360.f;
+        };
         for (auto& ping : pings) {
-            if (do_hdg)   ping.nav.heading_deg += params.heading_offset_deg;
+            if (do_hdg) {
+                offsetHeading(ping.nav.heading_deg);
+                offsetHeading(ping.nav.sensor_heading_deg);
+                offsetHeading(ping.nav.ship_heading_deg);
+            }
             if (do_pitch) ping.nav.pitch_deg   += params.pitch_offset_deg;
             if (do_roll)  ping.nav.roll_deg    += params.roll_offset_deg;
         }
@@ -109,7 +118,9 @@ void applySbpNavCorrections(std::vector<core::SubBottomTrace>& traces,
 
     // 1. GPS smoothing: gap-aware moving average of positions.
     if (do_smooth && n >= 2) {
-        const int hw = std::max(1, params.smooth_window);
+        const int window = std::max(1, params.smooth_window);
+        const int left = (window - 1) / 2;
+        const int right = window / 2;
         std::vector<core::NavPoint> smoothed(n);
         for (size_t i = 0; i < n; ++i) smoothed[i] = traces[i].nav;
 
@@ -117,21 +128,29 @@ void applySbpNavCorrections(std::vector<core::SubBottomTrace>& traces,
             if (!traces[i].nav.valid) continue;
             double sum_lat = 0.0, sum_lon = 0.0;
             int    count   = 0;
-            const int lo = static_cast<int>(i) - hw;
-            const int hi = static_cast<int>(i) + hw;
+            const int lo = static_cast<int>(i) - left;
+            const int hi = static_cast<int>(i) + right;
             for (int j = lo; j <= hi; ++j) {
                 if (j < 0 || static_cast<size_t>(j) >= n) continue;
                 if (!traces[static_cast<size_t>(j)].nav.valid) continue;
                 if (std::llabs(traces[static_cast<size_t>(j)].timestamp_us
                                - traces[i].timestamp_us) > kMaxTimestampGapUs)
                     continue;
-                sum_lat += traces[static_cast<size_t>(j)].nav.lat;
-                sum_lon += traces[static_cast<size_t>(j)].nav.lon;
+                const auto& candidate = traces[static_cast<size_t>(j)].nav;
+                sum_lat += candidate.lat;
+                if (traces[i].nav.is_projected) {
+                    sum_lon += candidate.lon;
+                } else {
+                    sum_lon += traces[i].nav.lon
+                             + std::remainder(candidate.lon - traces[i].nav.lon, 360.0);
+                }
                 ++count;
             }
             if (count > 1) {
                 smoothed[i].lat = sum_lat / count;
                 smoothed[i].lon = sum_lon / count;
+                if (!traces[i].nav.is_projected)
+                    smoothed[i].lon = std::remainder(smoothed[i].lon, 360.0);
             }
         }
         for (size_t i = 0; i < n; ++i) traces[i].nav = smoothed[i];

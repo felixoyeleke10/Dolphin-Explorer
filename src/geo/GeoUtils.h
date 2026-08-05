@@ -13,6 +13,8 @@ namespace dolphin::geo {
 bool isFiniteCoordinate(double lat, double lon);
 bool isFiniteNav(const core::NavPoint& nav);
 bool   navUsesProjectedCoordinates(const core::NavPoint& nav);
+// Historical name retained for source compatibility. Computes the WGS84
+// ellipsoidal inverse-geodesic distance, not a spherical haversine estimate.
 double haversineMetres(double lat1_deg, double lon1_deg, double lat2_deg, double lon2_deg);
 double navDistanceMetres(const core::NavPoint& a, const core::NavPoint& b);
 
@@ -27,9 +29,7 @@ core::SpatialRef spatialRefFromLegacy(bool is_projected);
 std::string      spatialRefKindToString(core::SpatialRefKind kind);
 core::SpatialRefKind spatialRefKindFromString(std::string_view text);
 
-// True if normalizeNavForMap can transform ref to/from WGS84.
-// Geographic CRS always return true (treated as ≈ WGS84).
-// Projected: only UTM zones (WGS84, ETRS89, NAD83, GDA94, GDA2020) return true.
+// True if PROJ can construct a transformation between ref and WGS84.
 bool isTransformableCrs(const core::SpatialRef& ref);
 
 double headingFromNavDeltaRad(const core::NavPoint& from, const core::NavPoint& to);

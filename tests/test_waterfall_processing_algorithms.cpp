@@ -105,6 +105,33 @@ int main()
         assert(std::fabs(result.stretch_high - stretch.high) < 1e-6f);
     }
 
+    // SRC implicitly requires a bottom track when acquisition altitude is
+    // absent, even if the user previously hid/cleared the seabed overlay.
+    {
+        WaterfallParams params;
+        params.slant_range_correction = true;
+        auto port = makePing(0.0f, 20.0f, 20, 10);
+        auto stbd = port;
+        port.channel = core::SidescanChannel::Port;
+        stbd.channel = core::SidescanChannel::Starboard;
+        port.timestamp_us = stbd.timestamp_us = 1'000;
+        for (size_t i = 0; i < port.samples.size(); ++i) {
+            const float range = 20.0f * static_cast<float>(i)
+                / static_cast<float>(port.samples.size() - 1);
+            port.samples[i].range_m = range;
+            stbd.samples[i].range_m = range;
+        }
+        port.samples[8].amplitude = 50'000;
+        stbd.samples[8].amplitude = 50'000;
+        port.samples[9].amplitude = 30'000;
+        stbd.samples[9].amplitude = 30'000;
+        const auto result = dolphin::ui::WaterfallView::runPipeline(
+            {port, stbd}, params, {}, false);
+        assert(result.rows.size() == 1);
+        assert(result.rows[0].seabed.detected);
+        assert(result.rows[0].seabed.range_m > 0.0f);
+    }
+
     // Resolution-only map compaction occurs after native-sample per-ping
     // calibration. Retained samples must therefore equal those from the full
     // waterfall product, even for range- and sample-statistic-dependent stages.
@@ -420,6 +447,52 @@ int main()
             assert(row.stbd[1] == 0);
             assert(near(static_cast<float>(row.stbd[2]), 32768.f));
         }
+    }
+
+    // TVG must use authoritative per-sample ranges rather than assuming bins
+    // are uniformly spaced across the ping metadata range.
+    {
+        WaterfallParams params;
+        params.tvg.enabled = true;
+        params.tvg.spreading = 20.0f;
+        auto ping = makePing(1.0f, 10.0f, 3, 1000);
+        ping.samples[0].range_m = 1.0f;
+        ping.samples[1].range_m = 2.0f;
+        ping.samples[2].range_m = 10.0f;
+        std::vector<core::SidescanPing> pings{ping};
+        wf::applyTvg(pings, params);
+        assert(near(static_cast<float>(pings[0].samples[1].amplitude), 2000.0f));
+    }
+
+    // Tow depth is depth below the surface, not sensor altitude above seabed.
+    // It cannot define ARC grazing angle without a bottom pick/nav altitude.
+    {
+        WaterfallParams params;
+        params.arc.enabled = true;
+        params.arc.exponent = 1.0f;
+        params.arc.gain_cap_db = 40.0f;
+        auto ping = makePing(0.0f, 10.0f, 2, 1000);
+        ping.tow_depth_m = 5.0f;
+        std::vector<core::SidescanPing> no_altitude{ping};
+        wf::applyArc(no_altitude, params);
+        assert(no_altitude[0].samples.back().amplitude == 1000);
+
+        ping.nav.altitude_m = 5.0f;
+        std::vector<core::SidescanPing> with_altitude{ping};
+        wf::applyArc(with_altitude, params);
+        assert(near(static_cast<float>(with_altitude[0].samples.back().amplitude), 2000.0f));
+    }
+
+    // The canonical algorithm must honor its own enabled contract, independent
+    // of whether a caller remembered to guard it.
+    {
+        WaterfallParams params;
+        params.agc.enabled = false;
+        auto ping = makePing(0.0f, 10.0f, 4, 1000);
+        std::vector<core::SidescanPing> pings{ping};
+        wf::normalizeRawAmplitudes(pings, params);
+        for (const auto& sample : pings[0].samples)
+            assert(sample.amplitude == 1000);
     }
 
     return 0;

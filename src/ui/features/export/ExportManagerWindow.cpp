@@ -22,8 +22,7 @@ struct Target {
     QString     title;
     QString     desc;
     QString     icon;
-    QStringList formats;   // selectable formats; empty + !enabled = coming soon
-    bool        enabled;
+    QStringList formats;
 };
 
 const QList<Target>& targets()
@@ -31,20 +30,14 @@ const QList<Target>& targets()
     static const QList<Target> kTargets = {
         { "contacts",   QObject::tr("Contacts"),
           QObject::tr("All contacts in the project, as a spreadsheet (CSV) or a formatted report."),
-          ":/icons/contacts.svg", { "CSV", "PDF", "Word" }, true },
+          ":/icons/contacts.svg", { "CSV", "PDF", "Word" } },
         { "screenshot", QObject::tr("Screenshot"),
           QObject::tr("A PNG image of the current map / application view."),
-          ":/icons/export.svg", { "PNG" }, true },
+          ":/icons/export.svg", { "PNG" } },
         { "geotiff",    QObject::tr("Raster Layers"),
           QObject::tr("Project raster layers — depth/bathy grids and georeferenced "
                       "imagery — written as GeoTIFF."),
-          ":/icons/export_geotiff.svg", { "GeoTIFF" }, true },
-        { "kmz",        QObject::tr("Google Earth (KMZ)"),
-          QObject::tr("Contacts and track lines as a KMZ overlay."),
-          ":/icons/export_kmz.svg", {}, false },
-        { "nav",        QObject::tr("Navigation Track"),
-          QObject::tr("Per-line navigation as CSV / GPX."),
-          ":/icons/export_nav.svg", {}, false },
+          ":/icons/export_geotiff.svg", { "GeoTIFF" } },
     };
     return kTargets;
 }
@@ -99,14 +92,9 @@ QWidget* ExportManagerWindow::buildNavPane()
     const auto& ts = targets();
     for (int i = 0; i < ts.size(); ++i) {
         auto* it = new QTreeWidgetItem(m_nav);
-        it->setText(0, ts[i].enabled ? ts[i].title
-                                     : ts[i].title + tr("  · soon"));
+        it->setText(0, ts[i].title);
         it->setIcon(0, Theme::icon(ts[i].icon));
         it->setData(0, Qt::UserRole, i);
-        if (!ts[i].enabled) {
-            it->setFlags(it->flags() & ~Qt::ItemIsSelectable);
-            it->setForeground(0, Theme::textDisabledColor());
-        }
     }
     return m_nav;
 }
@@ -217,12 +205,9 @@ void ExportManagerWindow::selectTarget(int index)
         m_formats->insertWidget(m_formats->count() - 1, b);   // before the stretch
     }
 
-    m_export->setEnabled(t.enabled && !t.formats.isEmpty());
-    if (t.enabled)
-        m_pv_detail->setText(tr("Exports the whole project's %1.\nClick Export to choose a file.")
-                                 .arg(t.title.toLower()));
-    else
-        m_pv_detail->setText(tr("Not yet available in this version."));
+    m_export->setEnabled(!t.formats.isEmpty());
+    m_pv_detail->setText(tr("Exports the whole project's %1.\nClick Export to choose a file.")
+                             .arg(t.title.toLower()));
 }
 
 void ExportManagerWindow::doExport()

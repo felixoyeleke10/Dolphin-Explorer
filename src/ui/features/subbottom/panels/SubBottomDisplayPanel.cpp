@@ -240,7 +240,7 @@ SubBottomDisplayPanel::SubBottomDisplayPanel(QWidget* parent)
         m_speed_spin->setSuffix(tr(" m/s"));
         m_speed_spin->setValue(1500.0);
         m_speed_spin->setToolTip(
-            tr("Two-way acoustic speed in water (default 1500 m/s).\n"
+            tr("Acoustic propagation speed in water (default 1500 m/s).\n"
                "Used to convert two-way travel time to estimated depth:\n"
                "  depth = travel_time × speed ÷ 2\n"
                "Typical values: 1480–1530 m/s for seawater."));

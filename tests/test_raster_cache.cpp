@@ -43,6 +43,12 @@ static LayerMapData makeSample()
     cov.ribbons = { { {0.0, 0.0}, {1.0, 1.0}, {2.0, 0.0} },
                     { {3.0, 3.0}, {4.0, 4.0} } };
     d.coverage = { cov };
+    d.beam_rays = {
+        {core::SidescanChannel::Port, 1'000'000, 7,
+         QPointF(-16.20, 57.30), QPointF(-16.21, 57.31)},
+        {core::SidescanChannel::Starboard, 1'000'000, 7,
+         QPointF(-16.20, 57.30), QPointF(-16.19, 57.29)}
+    };
 
     d.intensity_w = 4; d.intensity_h = 3;
     d.intensity_disp_low = 0.10f; d.intensity_disp_high = 0.90f;
@@ -100,6 +106,7 @@ struct CacheOffsets {
     qint64 coverage_count = -1;
     qint64 first_ribbon_count = -1;
     qint64 first_ribbon_point_count = -1;
+    qint64 beam_count = -1;
     qint64 intensity_width = -1;
     qint64 intensity_height = -1;
     qint64 pixel_count = -1;
@@ -157,6 +164,17 @@ static bool locateCacheOffsets(const std::string& path, CacheOffsets& offsets)
                 ds >> point;
             }
         }
+    }
+
+    offsets.beam_count = file.pos();
+    quint64 beam_count = 0;
+    ds >> beam_count;
+    for (quint64 i = 0; i < beam_count; ++i) {
+        ds >> u8;
+        qint64 timestamp = 0;
+        quint32 ping_number = 0;
+        QPointF origin, outer;
+        ds >> timestamp >> ping_number >> origin >> outer;
     }
 
     offsets.intensity_width = file.pos();
@@ -246,6 +264,12 @@ int main()
         CHECK(out.coverage[0].ribbons.size() == 2, "ribbon count mismatch");
         CHECK(out.coverage[0].ribbons[0].size() == 3, "ribbon[0] size mismatch");
         CHECK(out.coverage[0].ribbons[0][1] == src.coverage[0].ribbons[0][1], "ribbon point mismatch");
+        CHECK(out.beam_rays.size() == src.beam_rays.size(), "beam-ray count mismatch");
+        CHECK(out.beam_rays[0].channel == src.beam_rays[0].channel, "beam-ray channel mismatch");
+        CHECK(out.beam_rays[0].timestamp_us == src.beam_rays[0].timestamp_us, "beam-ray timestamp mismatch");
+        CHECK(out.beam_rays[0].ping_number == src.beam_rays[0].ping_number, "beam-ray ping mismatch");
+        CHECK(out.beam_rays[0].origin == src.beam_rays[0].origin, "beam-ray origin mismatch");
+        CHECK(out.beam_rays[0].outer == src.beam_rays[0].outer, "beam-ray endpoint mismatch");
 
         CHECK(out.intensity_w == 4 && out.intensity_h == 3, "intensity dims mismatch");
         CHECK(out.intensity_disp_low == src.intensity_disp_low, "disp_low mismatch");
@@ -357,6 +381,12 @@ int main()
               "failed to corrupt ribbon point count");
         CHECK(rejectsWithoutMutation(corrupt_path, meta),
               "load accepted huge ribbon point count or mutated outputs");
+
+        CHECK(copyFile(path, corrupt_path), "failed to copy beam-count fixture");
+        CHECK(overwriteValue(corrupt_path, offsets.beam_count, impossible_count),
+              "failed to corrupt beam count");
+        CHECK(rejectsWithoutMutation(corrupt_path, meta),
+              "load accepted huge beam count or mutated outputs");
 
         CHECK(copyFile(path, corrupt_path), "failed to copy negative-dimension fixture");
         CHECK(overwriteValue(corrupt_path, offsets.intensity_width,

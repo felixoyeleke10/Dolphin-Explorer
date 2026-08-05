@@ -78,8 +78,11 @@ size_t buildSwathNavTrack(const std::vector<core::SidescanPing>& pings,
         core::NavPoint na{}, nb{};
         na.lon = a.nav.lon; na.lat = a.nav.lat;
         nb.lon = b.nav.lon; nb.lat = b.nav.lat;
+        na.valid = nb.valid = true;
         na.is_projected = a.nav.is_projected;
         nb.is_projected = b.nav.is_projected;
+        na.spatial_ref = a.nav.spatial_ref;
+        nb.spatial_ref = b.nav.spatial_ref;
         return geo::navDistanceMetres(na, nb);
     };
 

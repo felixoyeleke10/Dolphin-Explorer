@@ -1,16 +1,17 @@
 #include "app/corrections/SidescanCorrectionService.h"
 #include "app/corrections/CorrectionAlgorithms.h"
+#include "app/artifacts/ArtifactSidecar.h"
 #include "app/services/ImportService.h"
 #include "io/cache/ParsedCache.h"
 #include "io/xtf/XtfReader.h"
 #include "io/jsf/JsfReader.h"
 #include "core/Artifact.h"
+#include "core/SidescanGeometry.h"
 #include "core/SidescanPing.h"
 
 #include <QFutureWatcher>
 #include <QtConcurrent/QtConcurrent>
 #include <cctype>
-#include <filesystem>
 #include <unordered_map>
 
 namespace dolphin::app {
@@ -55,6 +56,30 @@ struct CorrectionResult {
     bool                skipped = false;
 };
 
+template<typename Eligible, typename Apply>
+bool applyToUnbaked(std::vector<core::SidescanPing>& pings,
+                    core::CorrectionFlag flag,
+                    Eligible&& eligible,
+                    Apply&& apply)
+{
+    std::vector<size_t> indices;
+    std::vector<core::SidescanPing> work;
+    for (size_t i = 0; i < pings.size(); ++i) {
+        if (core::hasCorrectionFlag(pings[i].correction_flags, flag)
+            || !eligible(pings[i]))
+            continue;
+        indices.push_back(i);
+        work.push_back(pings[i]);
+    }
+    if (work.empty()) return false;
+    apply(work);
+    for (size_t i = 0; i < work.size(); ++i) {
+        pings[indices[i]].samples = std::move(work[i].samples);
+        pings[indices[i]].correction_flags |= flag;
+    }
+    return true;
+}
+
 CorrectionResult execute(const CorrectionRequest& req)
 {
     CorrectionResult result;
@@ -84,17 +109,8 @@ CorrectionResult execute(const CorrectionRequest& req)
         // for stores written before the marker existed — when the filename carries the
         // legacy "_<layerId>" suffix. Re-applies overwrite that sidecar in place
         // rather than nesting another suffix.
-        namespace fs = std::filesystem;
-        const fs::path p(req.store_path);
-        const std::string suffix = "_" + req.layer_id;
-        const std::string stem   = p.stem().string();
-        const bool legacy_named = stem.size() > suffix.size()
-            && stem.compare(stem.size() - suffix.size(), suffix.size(), suffix) == 0;
-        const bool already_sidecar =
-            (meta.artifact_role == io::kArtifactRoleSidecar) || legacy_named;
-        write_path = already_sidecar
-            ? req.store_path
-            : (p.parent_path() / (stem + suffix + ".dlpd")).string();
+        write_path = dolphin::app::sidecarArtifactPath(
+            req.store_path, req.layer_id, meta.artifact_role);
         meta.artifact_role = io::kArtifactRoleSidecar;  // formal marker on the output
     }
 
@@ -106,31 +122,27 @@ CorrectionResult execute(const CorrectionRequest& req)
         return result;
     }
 
-    // AND of all ping flags: only skip a correction if every ping already has it.
-    uint32_t already_baked = ~0u;
-    for (const auto& p : pings) already_baked &= p.correction_flags;
     bool modified = false;
 
-    if (req.params.tvg.enabled &&
-        !core::hasCorrectionFlag(already_baked, core::CorrectionFlag::Tvg)) {
-        corrections::applyTvg(pings, req.params.tvg);
-        for (auto& p : pings) p.correction_flags |= core::CorrectionFlag::Tvg;
-        modified = true;
-    }
+    if (req.params.tvg.enabled)
+        modified |= applyToUnbaked(pings, core::CorrectionFlag::Tvg,
+            [](const auto& ping) {
+                return ping.samples.size() >= 2 && ping.slant_range_m > ping.blanking_m;
+            },
+            [&](auto& work) { corrections::applyTvg(work, req.params.tvg); });
 
-    if (req.params.arc.enabled &&
-        !core::hasCorrectionFlag(already_baked, core::CorrectionFlag::Arc)) {
-        corrections::applyArc(pings, req.params.arc);
-        for (auto& p : pings) p.correction_flags |= core::CorrectionFlag::Arc;
-        modified = true;
-    }
+    if (req.params.arc.enabled)
+        modified |= applyToUnbaked(pings, core::CorrectionFlag::Arc,
+            [](const auto& ping) {
+                return ping.samples.size() >= 2 && ping.slant_range_m > 0.0f
+                    && core::sidescanAltitudeMetres(ping).has_value();
+            },
+            [&](auto& work) { corrections::applyArc(work, req.params.arc); });
 
-    if (req.params.agc.enabled &&
-        !core::hasCorrectionFlag(already_baked, core::CorrectionFlag::GainNormalized)) {
-        corrections::normalizeAmplitudes(pings, req.params.agc);
-        for (auto& p : pings) p.correction_flags |= core::CorrectionFlag::GainNormalized;
-        modified = true;
-    }
+    if (req.params.agc.enabled)
+        modified |= applyToUnbaked(pings, core::CorrectionFlag::GainNormalized,
+            [](const auto& ping) { return !ping.samples.empty(); },
+            [&](auto& work) { corrections::normalizeAmplitudes(work, req.params.agc); });
 
     // Merge bottom picks from the viewer into the DLPD pings (same write pass).
     // Picks are matched by timestamp_us; only source>0 (detected/user-edited) picks

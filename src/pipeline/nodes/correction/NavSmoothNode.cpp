@@ -1,6 +1,7 @@
 #include "pipeline/nodes/correction/NavSmoothNode.h"
 #include "core/SidescanPing.h"
 #include <algorithm>
+#include <cmath>
 #include <vector>
 
 namespace dolphin::pipeline {
@@ -28,7 +29,8 @@ ArtifactBuffer NavSmoothNode::process(const ArtifactBuffer& input,
     for (auto& a : output)
         if (auto* p = std::get_if<core::SidescanPing>(&a)) pings.push_back(p);
 
-    const int half = window / 2;
+    const int left = (window - 1) / 2;
+    const int right = window / 2;
     const int n    = static_cast<int>(pings.size());
 
     std::vector<double> lats(n), lons(n);
@@ -36,19 +38,25 @@ ArtifactBuffer NavSmoothNode::process(const ArtifactBuffer& input,
 
     for (int i = 0; i < n; ++i) {
         if (!pings[i]->nav.valid) continue;
-        int lo = std::max(0, i - half);
-        int hi = std::min(n - 1, i + half);
+        int lo = std::max(0, i - left);
+        int hi = std::min(n - 1, i + right);
         double sum_lat = 0, sum_lon = 0;
         int cnt = 0;
         for (int j = lo; j <= hi; ++j) {
             if (!pings[j]->nav.valid) continue;
             sum_lat += lats[j];
-            sum_lon += lons[j];
+            if (pings[i]->nav.is_projected) {
+                sum_lon += lons[j];
+            } else {
+                sum_lon += lons[i] + std::remainder(lons[j] - lons[i], 360.0);
+            }
             ++cnt;
         }
         if (cnt > 0) {
             pings[i]->nav.lat = sum_lat / cnt;
             pings[i]->nav.lon = sum_lon / cnt;
+            if (!pings[i]->nav.is_projected)
+                pings[i]->nav.lon = std::remainder(pings[i]->nav.lon, 360.0);
             pings[i]->correction_flags |= core::CorrectionFlag::NavSmoothed;
         }
     }

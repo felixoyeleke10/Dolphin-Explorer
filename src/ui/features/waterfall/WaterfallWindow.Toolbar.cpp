@@ -29,17 +29,6 @@ void WaterfallWindow::buildToolbar()
     connect(m_toolbar, &ViewerToolbar::settingsRequested, this, &WaterfallWindow::settingsRequested);
 
     // -- SSS-specific right section --------------------------------------------
-    auto* btn_measure = m_toolbar->addButton(":/icons/measure.svg",
-        tr("Measure distance on the waterfall. Shortcut: M. This tool is not enabled yet."));
-    auto* btn_bttrack = m_toolbar->addButton(":/icons/bottom_track.svg",
-        tr("Sub-bottom Viewer. Shortcut: B. Open the sub-bottom profiler for the current survey."));
-    auto* btn_range   = m_toolbar->addButton(":/icons/zoom.svg",
-        tr("Range Gate tool for limiting inspection to a range interval. Shortcut: R. This tool is not enabled yet."));
-
-    btn_measure->setEnabled(false);
-    btn_bttrack->setEnabled(false);
-    btn_range->setEnabled(false);
-
     m_freq_selector = new QComboBox(m_toolbar);
     m_freq_selector->setObjectName("wfFreqSelector");
     m_freq_selector->setFixedHeight(kWfFreqSelectorH);

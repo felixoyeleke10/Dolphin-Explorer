@@ -2,7 +2,7 @@
 #include "ui/features/waterfall/panels/WaterfallInspectorPanel.h"
 #include "render/sonar/SSSPalette.h"
 #include "ui/features/waterfall/components/WfValueRow.h"
-#include "ui/shared/dialogs/SettingsDialog.h"
+#include "ui/shared/settings/SettingsKeys.h"
 #include "ui/shared/UiUtils.h"
 #include "ui/shell/Theme.h"
 
@@ -137,7 +137,7 @@ WaterfallInspectorPanel::WaterfallInspectorPanel(QWidget* parent)
                 m_palette_combo->setCurrentIndex(sss_idx.toInt());
             } else {
                 m_palette_combo->setCurrentIndex(SSSPalette::indexFromName(
-                    qs.value(SettingsDialog::kKeyDefaultPalette,
+                    qs.value(SettingsKeys::kDefaultPalette,
                              QStringLiteral("Gray")).toString()));
             }
         }

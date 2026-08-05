@@ -5,7 +5,6 @@
     <file>icons/save.svg</file>
     <file>icons/import.svg</file>
     <file>icons/export.svg</file>
-    <file>icons/exit.svg</file>
     <file>icons/cursor.svg</file>
     <file>icons/select.svg</file>
     <file>icons/zoom.svg</file>
@@ -15,28 +14,19 @@
     <file>icons/database.svg</file>
     <file>icons/contacts.svg</file>
     <file>icons/analyze.svg</file>
-    <file>icons/ai.svg</file>
-    <file>icons/present.svg</file>
     <file>icons/settings.svg</file>
-    <file>icons/line_props.svg</file>
     <file>icons/renumber.svg</file>
     <file>icons/run_all.svg</file>
     <file>icons/run_line.svg</file>
     <file>icons/reset_raw.svg</file>
-    <file>icons/node_graph.svg</file>
     <file>icons/add_contact.svg</file>
     <file>icons/contact_edit.svg</file>
-    <file>icons/feature.svg</file>
     <file>icons/draw_polygon.svg</file>
     <file>icons/draw_line.svg</file>
     <file>icons/draw_pen.svg</file>
-    <file>icons/export_kmz.svg</file>
     <file>icons/export_csv.svg</file>
     <file>icons/clear_contacts.svg</file>
     <file>icons/export_geotiff.svg</file>
-    <file>icons/export_pdf.svg</file>
-    <file>icons/export_nav.svg</file>
-    <file>icons/report.svg</file>
     <file>icons/dolphin_logo.svg</file>
     <file>icons/bottom_track.svg</file>
     <file>icons/seabed_track.svg</file>
@@ -69,8 +59,6 @@
     <file>icons/panel_enhancement.svg</file>
     <file>icons/recent_projects.svg</file>
     <file>icons/recycle_bin.svg</file>
-    <file>icons/lock.svg</file>
-    <file>icons/history.svg</file>
     <file>icons/more.svg</file>
   </qresource>
 </RCC>

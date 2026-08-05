@@ -1,6 +1,7 @@
 // SubBottomView.Paint.cpp — QPainter-based trace rendering and overlay.
 
 #include "ui/features/subbottom/SubBottomView.h"
+#include "ui/features/subbottom/SubBottomViewMath.h"
 #include "ui/features/subbottom/SubBottomPalette.h"
 #include "ui/shell/Theme.h"
 #include <QPainter>
@@ -122,13 +123,23 @@ void SubBottomView::paintEvent(QPaintEvent*)
         p.fillRect(rect(), Qt::black);
 
     // -- Depth grid --------------------------------------------------------
-    if (m_style.grid_show && m_px_per_sample > 0.f) {
+    if (m_style.grid_show && m_px_per_sample > 0.f && !m_traces.empty()) {
+        float sample_rate_hz = 0.f;
+        const int first = std::clamp(m_first_trace, 0,
+                                     static_cast<int>(m_traces.size()) - 1);
+        for (int i = first; i < static_cast<int>(m_traces.size()); ++i) {
+            if (m_traces[static_cast<size_t>(i)].sample_rate_hz > 0.f) {
+                sample_rate_hz = m_traces[static_cast<size_t>(i)].sample_rate_hz;
+                break;
+            }
+        }
+
         // Determine interval in ms (two-way travel time).
         // Auto: pick a nice round value giving roughly 6-8 visible lines.
         float interval_ms = m_style.grid_interval_ms;
         if (interval_ms <= 0.f) {
-            // Total visible time window in ms
-            const float visible_ms = static_cast<float>(height()) / m_px_per_sample;
+            const float visible_ms = subBottomVisibleTimeMs(
+                height(), sample_rate_hz, m_px_per_sample);
             // Nice intervals (ms): 1, 2, 5, 10, 20, 50, 100, 200, ...
             static const float kNice[] = { 0.5f, 1.f, 2.f, 5.f, 10.f, 20.f, 50.f,
                                            100.f, 200.f, 500.f, 1000.f };
@@ -138,17 +149,8 @@ void SubBottomView::paintEvent(QPaintEvent*)
             }
         }
 
-        // Samples per ms
-        const float samples_per_ms = m_px_per_sample > 0.f
-            ? 1.0f / m_px_per_sample   // each sample = 1 unit; ms conversion depends on sampleRate
-            : 1.0f;
-        // In the data model each sample index is a unit of two-way travel time.
-        // 1 sample = (1 / sample_rate) seconds, but we don't have sample_rate here.
-        // We use m_px_per_sample (px per sample) to convert interval_ms to pixels:
-        //   pixel_interval = interval_ms * (1 sample / 1 ms) * m_px_per_sample
-        // This assumes 1 sample ≈ 1 ms resolution which is approximate.
-        // The user controls the interval via the settings dialog.
-        const float px_interval = interval_ms * m_px_per_sample;
+        const float px_interval = subBottomGridIntervalPixels(
+            interval_ms, sample_rate_hz, m_px_per_sample);
         if (px_interval >= 2.f) {
             QColor gc = m_style.grid_color;
             gc.setAlphaF(m_style.grid_opacity / 100.0);

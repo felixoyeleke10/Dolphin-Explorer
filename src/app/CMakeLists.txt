@@ -1,4 +1,5 @@
 add_library(dolphin-app STATIC
+    artifacts/ArtifactSidecar.cpp
     # Project — lifecycle + per-domain CRUD + serialization
     project/Project.cpp
     project/Project.Sources.cpp
@@ -27,6 +28,7 @@ add_library(dolphin-app STATIC
 
     # Corrections
     corrections/CorrectionAlgorithms.cpp
+    corrections/SubBottomCorrectionAlgorithms.cpp
     corrections/SidescanCorrectionService.cpp
     corrections/SubBottomCorrectionService.cpp
 

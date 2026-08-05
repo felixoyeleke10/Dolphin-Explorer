@@ -63,7 +63,10 @@ WaterfallView::WfPipelineResult WaterfallView::runPipeline(
     WfPipelineResult result;
     result.rows = WaterfallPingAssembler::assemble(display, params);
 
-    if (seabed_enabled) {
+    // SRC cannot be evaluated without altitude. When recorded altitude is
+    // absent, always derive a reviewable bottom track even if its overlay was
+    // previously cleared; the renderer uses this pick as the altitude source.
+    if (seabed_enabled || params.slant_range_correction) {
         auto clean_rows = WaterfallPingAssembler::assemble(calibrated, params);
         SeabedAutoDetector::detectAll(clean_rows, seabed_params);
         if (seabed_params.smoothing > 0.f)

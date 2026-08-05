@@ -129,14 +129,6 @@ QString qssAcousticViews()
         "  padding: 4px 0; font-size: @fontSm; text-align: left;"
         "}"
 
-        // Phase 2 placeholder text buttons (Gain Brush / Threshold Brush) — barely visible
-        "#wfBrushBtn {"
-        "  background: transparent; border: none;"
-        "  border-radius: @radius3; padding: 5px 8px;"
-        "  color: @textDisabled; font-family: @font; font-size: @fontSm; font-weight: 600;"
-        "}"
-        "#wfBrushBtn:disabled { color: @textDisabled; }"
-
         // Seabed manual tool icon buttons (Pen / Insert / Eraser)
         "#wfSeabedTool {"
         "  background: transparent; border: 1px solid transparent;"
@@ -263,16 +255,6 @@ QString qssAcousticViews()
         "}"
 
         "QFrame#avHRule { background: @border; max-height: 1px; border: none; }"
-
-        // Processing tool checkboxes (Phase 2 — shown disabled in inspector panel)
-        "QCheckBox#wfProcessingCheck {"
-        "  color: @textMuted; font-family: @font; font-size: @fontSm; spacing: 6px;"
-        "}"
-        "QCheckBox#wfProcessingCheck::indicator {"
-        "  width: 13px; height: 13px; border-radius: @radius1;"
-        "  border: 1px solid rgba(255,255,255,0.10); background: rgba(255,255,255,0.03);"
-        "}"
-        "QCheckBox#wfProcessingCheck:disabled { color: @textDisabled; }"
 
         // Bottom progress bar — thin accent stripe, no text
         "QProgressBar#wfProgressBar {"

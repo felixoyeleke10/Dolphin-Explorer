@@ -87,7 +87,7 @@ SbpGainModule::SbpGainModule(QWidget* parent) : QWidget(parent)
     ag->setSpacing(3);
     ag->setColumnStretch(1, 1);
 
-    auto* agc_lbl = new QLabel(tr("Window"), agc_grid);
+    auto* agc_lbl = new QLabel(tr("Half-window"), agc_grid);
     agc_lbl->setObjectName("ctrlParamLabel");
     m_agc_window = new QSpinBox(agc_grid);
     m_agc_window->setObjectName("ctrlSpinBox");

@@ -82,7 +82,6 @@ add_library(dolphin-ui-shared STATIC
     shared/dialogs/CommandPaletteDialog.cpp
     shared/dialogs/CommandPaletteDelegate.cpp
     shared/dialogs/CrsPickerDialog.cpp
-    shared/dialogs/SettingsDialog.cpp
 )
 target_include_directories(dolphin-ui-shared PUBLIC ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(dolphin-ui-shared

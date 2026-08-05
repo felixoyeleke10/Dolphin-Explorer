@@ -1,5 +1,4 @@
-// MainWindow.ContextPanels.cpp — buildContextPanel, makeContextPlaceholder,
-//   refreshSidebarSections.
+// MainWindow.ContextPanels.cpp — buildContextPanel, refreshSidebarSections.
 #include "ui/mainwindow/MainWindow.h"
 #include "app/project/Project.h"
 #include "ui/shared/UiUtils.h"
@@ -318,29 +317,6 @@ void MainWindow::refreshRecycleBin()
         if (!c.classification.empty()) tip += QStringLiteral(" · ") + QString::fromStdString(c.classification);
         item->setToolTip(tip);
     }
-}
-
-QWidget* MainWindow::makeContextPlaceholder(const QString& title, const QString& body)
-{
-    auto* page = new QWidget(m_context_stack);
-    auto* layout = makeCompactLayout<QVBoxLayout>(page);
-
-    auto* hdr = new QFrame(page);
-    hdr->setObjectName("panelHdr");
-    auto* hdr_l = new QHBoxLayout(hdr);
-    hdr_l->setContentsMargins(Theme::kSpacing4, 10, Theme::kSpacing4, 10);
-    auto* ttl = new QLabel(title, hdr);
-    ttl->setObjectName("panelTitle");
-    hdr_l->addWidget(ttl);
-    layout->addWidget(hdr);
-
-    auto* body_lbl = new QLabel(body, page);
-    body_lbl->setObjectName("panelPlaceholder");
-    body_lbl->setWordWrap(true);
-    body_lbl->setAlignment(Qt::AlignTop | Qt::AlignLeft);
-    layout->addWidget(body_lbl);
-    layout->addStretch();
-    return page;
 }
 
 // -- Views panel sync + draping surface -----------------------------------------

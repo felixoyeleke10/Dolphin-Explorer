@@ -6,7 +6,7 @@
 //                                setPaletteIndex, unloadLayer, deactivate
 #include "ui/features/map/sidescan/SidescanViewController.h"
 #include "ui/features/map/MapView.h"
-#include "ui/shared/dialogs/SettingsDialog.h"
+#include "ui/shared/settings/SettingsKeys.h"
 #include "render/sonar/SSSPalette.h"
 
 #include <QSettings>
@@ -27,14 +27,14 @@ SidescanViewController::SidescanViewController(MapView*            map_view,
     // Initialise palette from QSettings.
     // "sss/paletteIdx" is the SSS-specific override written by setPaletteIndex().
     // If absent (first launch or migrated install) fall back to the app-wide
-    // default palette stored by SettingsDialog / AppSettingsDialog as a name string.
+    // The application settings store the default palette as a name string.
     QSettings qs;
     const QVariant sss_var = qs.value(QStringLiteral("sss/paletteIdx"));
     if (sss_var.isValid()) {
         m_palette_idx = sss_var.toInt();
     } else {
         m_palette_idx = SSSPalette::indexFromName(
-            qs.value(SettingsDialog::kKeyDefaultPalette,
+            qs.value(SettingsKeys::kDefaultPalette,
                      QStringLiteral("Gray")).toString());
     }
 

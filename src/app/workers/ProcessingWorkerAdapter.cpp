@@ -1,11 +1,10 @@
 #include "app/workers/ProcessingWorkerAdapter.h"
+#include "app/artifacts/ArtifactSidecar.h"
 #include "app/project/Project.h"
 #include "app/layers/DataLayer.h"
 #include "app/contracts/ContractEnvelope.h"
 #include "app/contracts/ContractTypes.h"
 #include "io/cache/ParsedCache.h"
-
-#include <filesystem>
 
 namespace dolphin::app::workers {
 
@@ -55,20 +54,8 @@ std::vector<contracts::ContractEnvelope> ProcessingWorkerAdapter::collectOutputs
     // Always write to a per-layer sidecar — never overwrite the original parsed
     // store (D-04). "Already our sidecar" = formal role marker (preferred) or the
     // legacy "_<layerId>" filename suffix; re-runs overwrite that sidecar in place.
-    std::string write_path;
-    {
-        namespace fs = std::filesystem;
-        const fs::path p(base_path);
-        const std::string suffix = "_" + context.worker->id;
-        const std::string stem   = p.stem().string();
-        const bool legacy_named = stem.size() > suffix.size()
-            && stem.compare(stem.size() - suffix.size(), suffix.size(), suffix) == 0;
-        const bool already_sidecar =
-            (meta.artifact_role == io::kArtifactRoleSidecar) || legacy_named;
-        write_path = already_sidecar
-            ? base_path
-            : (p.parent_path() / (stem + suffix + ".dlpd")).string();
-    }
+    const std::string write_path = dolphin::app::sidecarArtifactPath(
+        base_path, context.worker->id, meta.artifact_role);
     meta.artifact_role = io::kArtifactRoleSidecar;  // formal marker on the output
 
     core::ArtifactIndex out_index;

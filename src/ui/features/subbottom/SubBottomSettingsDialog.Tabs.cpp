@@ -132,7 +132,7 @@ void SubBottomSettingsDialog::buildAcquisitionTab(QTabWidget* tabs)
     m_speed_spin->setDecimals(0);
     m_speed_spin->setSuffix(tr(" m/s"));
     m_speed_spin->setToolTip(
-        tr("Two-way round-trip acoustic speed in the water column.\n"
+        tr("Acoustic propagation speed in the water column.\n"
            "Used to convert two-way travel time to depth:\n"
            "    depth [m] = time [s] × speed [m/s] ÷ 2\n\n"
            "Typical values:\n"

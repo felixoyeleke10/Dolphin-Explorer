@@ -9,7 +9,6 @@
 #include "render/sonar/SSSPalette.h"
 #include "render/sonar/SonarDisplayParams.h"
 #include "app/tasks/OperationManager.h"
-#include "ui/shared/dialogs/SettingsDialog.h"
 
 #include <QFutureWatcher>
 #include <QLabel>

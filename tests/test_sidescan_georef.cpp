@@ -17,6 +17,7 @@
 #include "ui/features/map/sidescan/SidescanSwathGeoreferencer.h"
 #include "ui/features/map/sidescan/SssMapBuild.h"
 #include "ui/features/map/sidescan/SwathRasterizer.h"
+#include "ui/features/map/MapLongitude.h"
 
 #include <algorithm>
 #include <atomic>
@@ -1002,6 +1003,75 @@ void testLatLonToProjected()
     }
 }
 
+void testBeamRaysRetainPhysicalPerPingGeometry()
+{
+    std::vector<core::SidescanPing> pings;
+
+    auto port = makePing(200.0, 100.0, 90.0f, 1'000'000);
+    port.channel = core::SidescanChannel::Port;
+    port.ping_number = 1;
+    port.nav.sensor_heading_deg = 90.0f;
+    port.nav.altitude_m = 12.0f;
+    port.bottom_pick = {5.0f, 0.9f, 1};
+    pings.push_back(port);
+
+    auto stbd = makePing(210.0, 110.0, 90.0f, 2'000'000);
+    stbd.channel = core::SidescanChannel::Starboard;
+    stbd.ping_number = 2;
+    stbd.nav.sensor_heading_deg = 90.0f;
+    stbd.nav.altitude_m = 12.0f;
+    stbd.bottom_pick = {5.0f, 0.9f, 1};
+    pings.push_back(stbd);
+
+    // A rejected record must create neither coverage nor an overlay ray.
+    auto rejected = makePing(220.0, 120.0, 0.0f, 3'000'000);
+    rejected.channel = core::SidescanChannel::Port;
+    rejected.nav.sensor_heading_deg = 0.0f;
+    rejected.qc_flags |= static_cast<uint8_t>(core::QcFlag::Rejected);
+    pings.push_back(rejected);
+
+    ui::SssGeorefParams params;
+    params.heading_source = ui::SssHeadingSource::FishSensor;
+    params.show_nadir = false;
+
+    ui::LayerMapData data;
+    ui::buildSwathCoverage(pings, data, params);
+    CHECK(data.coverage.empty()); // one usable record per side cannot form ribbons
+    CHECK(data.beam_rays.size() == 2);
+    if (data.beam_rays.size() != 2)
+        return;
+
+    const auto& port_ray = data.beam_rays[0];
+    const auto& stbd_ray = data.beam_rays[1];
+    CHECK(port_ray.channel == core::SidescanChannel::Port);
+    CHECK(stbd_ray.channel == core::SidescanChannel::Starboard);
+    CHECK(port_ray.ping_number == 1);
+    CHECK(stbd_ray.ping_number == 2);
+
+    // Bottom pick (5 m), not nav altitude (12 m), controls ground range.
+    const double expected_ground = std::sqrt(20.0 * 20.0 - 5.0 * 5.0);
+    CHECK(std::abs(port_ray.origin.x() - 100.0) < 1e-9);
+    CHECK(std::abs(port_ray.origin.y() - 200.0) < 1e-9);
+    CHECK(std::abs(stbd_ray.origin.x() - 110.0) < 1e-9);
+    CHECK(std::abs(stbd_ray.origin.y() - 210.0) < 1e-9);
+    CHECK(std::abs(port_ray.outer.x() - 100.0) < 1e-6);
+    CHECK(std::abs(port_ray.outer.y() - (200.0 + expected_ground)) < 1e-6);
+    CHECK(std::abs(stbd_ray.outer.x() - 110.0) < 1e-6);
+    CHECK(std::abs(stbd_ray.outer.y() - (210.0 - expected_ground)) < 1e-6);
+
+    // Longitude-branch alignment must move ray endpoints with all other layer
+    // geometry or the overlay separates from its mosaic at the antimeridian.
+    data.is_projected = false;
+    data.lon_min = -179.9;
+    data.lon_max = -179.8;
+    data.beam_rays[0].origin = QPointF(-179.9, 10.0);
+    data.beam_rays[0].outer = QPointF(-179.8, 10.0);
+    const double shift = ui::maplongitude::alignLayerToReference(data, 180.1);
+    CHECK(std::abs(shift - 360.0) < 1e-9);
+    CHECK(std::abs(data.beam_rays[0].origin.x() - 180.1) < 1e-9);
+    CHECK(std::abs(data.beam_rays[0].outer.x() - 180.2) < 1e-9);
+}
+
 } // namespace
 
 int main()
@@ -1028,6 +1098,7 @@ int main()
     testUnequalStripSampleCountsUseFullSwath();
     testXtfProjectedHintWithDegreeCoordsNormalizesToWgs84();
     testLatLonToProjected();
+    testBeamRaysRetainPhysicalPerPingGeometry();
 
     if (g_fail != 0) {
         std::fprintf(stderr, "\n%d checks passed, %d failed\n", g_pass, g_fail);

@@ -25,8 +25,8 @@ namespace dolphin::ui::rastercache {
 //
 // Format v1 had no algorithm field. Format v2 intentionally rejects every v1
 // artifact so rasters produced by the legacy stitching/processing path rebuild.
-inline constexpr std::uint32_t kCacheFormatVersion      = 2;
-inline constexpr std::uint32_t kRasterAlgorithmRevision = 4;
+inline constexpr std::uint32_t kCacheFormatVersion      = 3;
+inline constexpr std::uint32_t kRasterAlgorithmRevision = 5;
 
 // Identity / freshness key for a cached raster.
 struct Meta {

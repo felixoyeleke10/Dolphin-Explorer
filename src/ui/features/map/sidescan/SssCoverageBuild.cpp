@@ -19,6 +19,7 @@ void buildSwathCoverage(const std::vector<core::SidescanPing>& pings,
                         const SssGeorefParams& params)
 {
     ld.coverage.clear();
+    ld.beam_rays.clear();
     if (pings.empty()) return;
 
     // Sort by timestamp (matches georeferenceSidescanPings ordering).
@@ -55,8 +56,11 @@ void buildSwathCoverage(const std::vector<core::SidescanPing>& pings,
                 core::NavPoint a{}, b{};
                 a.lon = cnav[previous].lon; a.lat = cnav[previous].lat;
                 b.lon = cnav[pi].lon;       b.lat = cnav[pi].lat;
+                a.valid = true; b.valid = true;
                 a.is_projected = cnav[previous].is_projected;
                 b.is_projected = cnav[pi].is_projected;
+                a.spatial_ref = cnav[previous].spatial_ref;
+                b.spatial_ref = cnav[pi].spatial_ref;
                 nav_deltas.push_back(geo::navDistanceMetres(a, b));
 
                 const auto& p0 = pings[order[previous]];
@@ -64,9 +68,13 @@ void buildSwathCoverage(const std::vector<core::SidescanPing>& pings,
                 if (p0.timestamp_us > 0 && p1.timestamp_us > p0.timestamp_us)
                     time_deltas.push_back(static_cast<double>(
                         p1.timestamp_us - p0.timestamp_us));
-                if (p0.ping_number > 0 && p1.ping_number > p0.ping_number)
-                    ping_deltas.push_back(static_cast<double>(
-                        p1.ping_number - p0.ping_number));
+                // Near-simultaneous multi-frequency records can log a few
+                // ping numbers out of strict order, so learn the cadence
+                // from the step magnitude rather than only forward pairs.
+                if (p0.ping_number > 0 && p1.ping_number > 0)
+                    ping_deltas.push_back(std::fabs(
+                        static_cast<double>(p1.ping_number)
+                        - static_cast<double>(p0.ping_number)));
             }
             previous = pi;
         }
@@ -140,10 +148,15 @@ void buildSwathCoverage(const std::vector<core::SidescanPing>& pings,
                     > thresholds.nav_gap_m;
                 const bool time_break = prev_ts > 0 && ping.timestamp_us > prev_ts
                     && ping.timestamp_us - prev_ts > thresholds.time_gap_us;
-                const bool ping_break = prev_ping > 0
-                    && ping.ping_number > 0
-                    && (ping.ping_number <= prev_ping
-                        || ping.ping_number - prev_ping > thresholds.ping_gap);
+                // Near-simultaneous multi-frequency records can log a few
+                // ping numbers out of strict order, so gate on step
+                // magnitude rather than direction — a small backward step
+                // is the same cadence noise as a small forward one; only a
+                // step past the learned tolerance is a real coverage break.
+                const bool ping_break = prev_ping > 0 && ping.ping_number > 0
+                    && std::fabs(static_cast<double>(ping.ping_number)
+                                 - static_cast<double>(prev_ping))
+                       > thresholds.ping_gap;
                 if (nav_break || time_break || ping_break)
                     flush();
             }
@@ -175,6 +188,12 @@ void buildSwathCoverage(const std::vector<core::SidescanPing>& pings,
                 hardBreak();
                 continue;
             }
+
+            // A display gap at nadir does not move the acoustic origin: every
+            // beam ray starts at the corrected sonar position.
+            ld.beam_rays.push_back({
+                channel, ping.timestamp_us, ping.ping_number,
+                QPointF(cn.lon, cn.lat), QPointF(out_lon, out_lat)});
 
             // Inner edge: vessel track when SRC applied ("closed"),
             // or nadir dead-zone offset when SRC not applied ("opened").

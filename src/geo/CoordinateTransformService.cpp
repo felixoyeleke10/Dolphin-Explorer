@@ -10,13 +10,7 @@ bool CoordinateTransformService::canTransform(const core::SpatialRef& src,
     if (src.empty() || dst.empty()) return false;
     if (!src.id.empty() && src.id == dst.id) return true;
 
-    const bool src_geo = core::spatialRefIsGeographic(src);
-    const bool dst_geo = core::spatialRefIsGeographic(dst);
-
-    if (src_geo && dst_geo) return true;
-    if (src_geo && isTransformableCrs(dst)) return true;
-    if (dst_geo && isTransformableCrs(src)) return true;
-    return false;
+    return isTransformableCrs(src) && isTransformableCrs(dst);
 }
 
 bool CoordinateTransformService::canTransformToWgs84(const core::SpatialRef& src) const

@@ -42,6 +42,7 @@ ssscontinuity::Thresholds stitchThresholds(
         core::NavPoint a{}, b{};
         a.lon = previous.nav_lon; a.lat = previous.nav_lat;
         b.lon = current.nav_lon;  b.lat = current.nav_lat;
+        a.valid = b.valid = true;
         a.is_projected = b.is_projected = is_projected;
         nav_deltas.push_back(geo::navDistanceMetres(a, b));
 
@@ -50,10 +51,13 @@ ssscontinuity::Thresholds stitchThresholds(
             time_deltas.push_back(static_cast<double>(
                 current.timestamp_us - previous.timestamp_us));
 
-        if (previous.ping_number > 0
-                && current.ping_number > previous.ping_number)
-            ping_deltas.push_back(static_cast<double>(
-                current.ping_number - previous.ping_number));
+        // Near-simultaneous multi-frequency records can log a few ping
+        // numbers out of strict order, so learn the cadence from the
+        // magnitude of the step rather than only forward-increasing pairs.
+        if (previous.ping_number > 0 && current.ping_number > 0)
+            ping_deltas.push_back(std::fabs(
+                static_cast<double>(current.ping_number)
+                - static_cast<double>(previous.ping_number)));
     }
 
     return ssscontinuity::fromDeltas(
@@ -321,8 +325,10 @@ bool buildSwathPreviewImage(const std::vector<core::SidescanPing>& pings,
             {
                 core::NavPoint nav_prev{}, nav_curr{};
                 nav_prev.lon = prev.nav_lon;  nav_prev.lat = prev.nav_lat;
+                nav_prev.valid = true;
                 nav_prev.is_projected = is_proj;
                 nav_curr.lon = curr.nav_lon;  nav_curr.lat = curr.nav_lat;
+                nav_curr.valid = true;
                 nav_curr.is_projected = is_proj;
                 if (geo::navDistanceMetres(nav_prev, nav_curr) > thresholds.nav_gap_m) {
                     ++ld.nav_stats.stitch_nav_rejects;
@@ -338,9 +344,15 @@ bool buildSwathPreviewImage(const std::vector<core::SidescanPing>& pings,
             }
 
             // Ping-number cadence guard (XTF only; JSF has ping_number == 0).
+            // Near-simultaneous multi-frequency records can log a few ping
+            // numbers out of strict order, so gate on step magnitude rather
+            // than direction — a small backward step is the same cadence
+            // noise as a small forward one; only a step past the learned
+            // tolerance is a real stitch break.
             if (prev.ping_number > 0 && curr.ping_number > 0
-                    && (curr.ping_number <= prev.ping_number
-                        || curr.ping_number - prev.ping_number > thresholds.ping_gap)) {
+                    && std::fabs(static_cast<double>(curr.ping_number)
+                                 - static_cast<double>(prev.ping_number))
+                       > thresholds.ping_gap) {
                 ++ld.nav_stats.stitch_ping_rejects;
                 continue;
             }

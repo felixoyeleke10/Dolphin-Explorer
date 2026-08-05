@@ -1,4 +1,6 @@
 #include "app/corrections/SubBottomCorrectionService.h"
+#include "app/artifacts/ArtifactSidecar.h"
+#include "app/corrections/SubBottomCorrectionAlgorithms.h"
 #include "app/services/ImportService.h"
 #include "io/cache/ParsedCache.h"
 #include "core/Artifact.h"
@@ -9,7 +11,6 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
-#include <filesystem>
 #include <vector>
 
 namespace dolphin::app {
@@ -69,17 +70,8 @@ SbpCorrectionResult execute(const SbpCorrectionRequest& req)
         // full-store Apply must not replace it). "Already our sidecar" = formal role
         // marker (preferred) or the legacy "_<layerId>" filename suffix; re-applies
         // overwrite that sidecar in place rather than nesting another suffix.
-        namespace fs = std::filesystem;
-        const fs::path p(req.store_path);
-        const std::string suffix = "_" + req.layer_id;
-        const std::string stem   = p.stem().string();
-        const bool legacy_named = stem.size() > suffix.size()
-            && stem.compare(stem.size() - suffix.size(), suffix.size(), suffix) == 0;
-        const bool already_sidecar =
-            (meta.artifact_role == io::kArtifactRoleSidecar) || legacy_named;
-        write_path = already_sidecar
-            ? req.store_path
-            : (p.parent_path() / (stem + suffix + ".dlpd")).string();
+        write_path = dolphin::app::sidecarArtifactPath(
+            req.store_path, req.layer_id, meta.artifact_role);
         meta.artifact_role = io::kArtifactRoleSidecar;  // formal marker on the output
     }
 
@@ -91,90 +83,19 @@ SbpCorrectionResult execute(const SbpCorrectionRequest& req)
         return result;
     }
 
-    // AND of all trace flags: only skip a correction if every trace already has it.
-    uint32_t baked = ~0u;
-    for (const auto& t : traces) baked &= t.correction_flags;
     bool modified = false;
-
-    for (auto& t : traces) {
-        auto& s = t.samples;
-        if (s.empty()) continue;
-        const int n = static_cast<int>(s.size());
-
-        if (req.signal.dc_removal_en &&
-            !core::hasSbpCorrectionFlag(baked, core::SbpCorrectionFlag::DcRemoval)) {
-            float sum = 0.f;
-            for (float v : s) sum += v;
-            const float mean = sum / static_cast<float>(n);
-            for (float& v : s) v -= mean;
-            t.correction_flags |= core::SbpCorrectionFlag::DcRemoval;
-            modified = true;
-        }
-
-        if (req.signal.envelope_en &&
-            !core::hasSbpCorrectionFlag(baked, core::SbpCorrectionFlag::Envelope)) {
-            for (float& v : s) v = std::abs(v);
-            t.correction_flags |= core::SbpCorrectionFlag::Envelope;
-            modified = true;
-        }
-
-        if (req.gain.normalize_en &&
-            !core::hasSbpCorrectionFlag(baked, core::SbpCorrectionFlag::Normalize)) {
-            float mx = 0.f;
-            for (float v : s) mx = std::max(mx, std::abs(v));
-            if (mx > 0.f)
-                for (float& v : s) v /= mx;
-            t.correction_flags |= core::SbpCorrectionFlag::Normalize;
-            modified = true;
-        }
-
-        if (req.gain.static_gain_en && req.gain.static_gain_db != 0.f &&
-            !core::hasSbpCorrectionFlag(baked, core::SbpCorrectionFlag::StaticGain)) {
-            const float factor = std::pow(10.f, req.gain.static_gain_db / 20.f);
-            for (float& v : s) v *= factor;
-            t.correction_flags |= core::SbpCorrectionFlag::StaticGain;
-            modified = true;
-        }
+    for (const auto& trace : traces) {
+        const uint32_t flags = trace.correction_flags;
+        modified = modified
+            || (req.signal.dc_removal_en && !core::hasSbpCorrectionFlag(flags, core::SbpCorrectionFlag::DcRemoval))
+            || (req.signal.envelope_en && !core::hasSbpCorrectionFlag(flags, core::SbpCorrectionFlag::Envelope))
+            || (req.signal.bandpass_en && !core::hasSbpCorrectionFlag(flags, core::SbpCorrectionFlag::BandPass))
+            || (req.gain.normalize_en && !core::hasSbpCorrectionFlag(flags, core::SbpCorrectionFlag::Normalize))
+            || (req.gain.static_gain_en && req.gain.static_gain_db != 0.f
+                && !core::hasSbpCorrectionFlag(flags, core::SbpCorrectionFlag::StaticGain))
+            || (req.gain.agc_en && !core::hasSbpCorrectionFlag(flags, core::SbpCorrectionFlag::Agc));
     }
-
-    if (req.gain.agc_en &&
-        !core::hasSbpCorrectionFlag(baked, core::SbpCorrectionFlag::Agc)) {
-        const int n_t = static_cast<int>(traces.size());
-        const int hw  = std::max(1, req.gain.agc_window);
-
-        std::vector<float> trace_energy(n_t, 0.f);
-        std::vector<int>   trace_count (n_t, 0);
-        for (int i = 0; i < n_t; ++i) {
-            for (float v : traces[i].samples) trace_energy[i] += v * v;
-            trace_count[i] = static_cast<int>(traces[i].samples.size());
-        }
-
-        float window_energy = 0.f;
-        int   window_count  = 0;
-        int   left = 0, right = -1;
-
-        for (int ti = 0; ti < n_t; ++ti) {
-            const int new_right = std::min(n_t - 1, ti + hw);
-            while (right < new_right) {
-                ++right;
-                window_energy += trace_energy[right];
-                window_count  += trace_count[right];
-            }
-            const int new_left = std::max(0, ti - hw);
-            while (left < new_left) {
-                window_energy -= trace_energy[left];
-                window_count  -= trace_count[left];
-                ++left;
-            }
-            if (window_count > 0) {
-                const float rms = std::sqrt(window_energy / static_cast<float>(window_count));
-                if (rms > 0.f)
-                    for (float& v : traces[ti].samples) v /= rms;
-            }
-        }
-        for (auto& t : traces) t.correction_flags |= core::SbpCorrectionFlag::Agc;
-        modified = true;
-    }
+    corrections::applySubBottomCorrections(traces, req.gain, req.signal);
 
     if (!modified) {
         result.ok        = true;

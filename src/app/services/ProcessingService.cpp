@@ -1,4 +1,5 @@
 #include "app/services/ProcessingService.h"
+#include "app/artifacts/ArtifactSidecar.h"
 #include "app/layers/DataLayer.h"
 #include "core/Artifact.h"
 #include "io/jsf/JsfReader.h"
@@ -11,7 +12,6 @@
 #include <QPointer>
 #include <QtConcurrent/QtConcurrent>
 #include <cctype>
-#include <filesystem>
 #include <memory>
 #include <set>
 
@@ -102,20 +102,8 @@ RunResult executeRequest(const RunRequest& request)
     // sidecar" when its formal role marker says so (preferred), or — for stores
     // written before the marker existed — when the filename carries the legacy
     // "_<layerId>" suffix; re-runs overwrite that sidecar in place.
-    std::string write_path;
-    {
-        namespace fs = std::filesystem;
-        const fs::path p(request.artifact_path);
-        const std::string suffix = "_" + request.layer_id;
-        const std::string stem   = p.stem().string();
-        const bool legacy_named = stem.size() > suffix.size()
-            && stem.compare(stem.size() - suffix.size(), suffix.size(), suffix) == 0;
-        const bool already_sidecar =
-            (meta.artifact_role == io::kArtifactRoleSidecar) || legacy_named;
-        write_path = already_sidecar
-            ? request.artifact_path
-            : (p.parent_path() / (stem + suffix + ".dlpd")).string();
-    }
+    const std::string write_path = dolphin::app::sidecarArtifactPath(
+        request.artifact_path, request.layer_id, meta.artifact_role);
     meta.artifact_role = io::kArtifactRoleSidecar;  // formal marker on the output
 
     pipeline::GraphJob job;

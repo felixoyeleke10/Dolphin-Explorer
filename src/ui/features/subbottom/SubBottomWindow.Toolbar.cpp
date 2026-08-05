@@ -29,18 +29,10 @@ void SubBottomWindow::buildToolbar()
     connect(m_toolbar, &ViewerToolbar::settingsRequested, this, &SubBottomWindow::settingsRequested);
 
     // -- SBP-specific right section --------------------------------------------
-    auto* btn_measure = m_toolbar->addButton(":/icons/measure.svg",
-        tr("Measure distance on the seismic section. This tool is not enabled yet."));
     m_btn_bottom_track_tb = m_toolbar->addButton(":/icons/bottom_track.svg",
         tr("Toggle bottom track overlay. Shortcut: B."));
     m_btn_bottom_track_tb->setCheckable(true);
     m_btn_bottom_track_tb->setChecked(true);
-    auto* btn_zoom = m_toolbar->addButton(":/icons/zoom.svg",
-        tr("Range gate tool. This tool is not enabled yet."));
-
-    btn_measure->setEnabled(false);
-    btn_zoom->setEnabled(false);
-
     // Feature drawing tools — polygon / line / pen on the section (same icons
     // and semantics as the main-window and waterfall toolbars). Contact picking
     // remains a right-panel section; contact editing is the button below.

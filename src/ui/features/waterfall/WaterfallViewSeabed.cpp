@@ -24,18 +24,21 @@ void WaterfallView::applySeabedPicksToPings(std::vector<core::SidescanPing>& pin
 
     // Build timestamp → (range_m, source) from assembled rows first (source=1),
     // then overlay m_manual_seabed entries (source=2) so user edits win.
-    std::unordered_map<int64_t, std::pair<float, uint8_t>> picks;
+    std::unordered_map<int64_t, core::BottomPick> picks;
     picks.reserve(m_rows.size() + m_manual_seabed.size());
 
     for (const auto& row : m_rows) {
         if (row.timestamp_us == 0) continue;
         if (row.seabed.detected && row.seabed.range_m > 0.f && !row.seabed.is_manual)
-            picks.emplace(row.timestamp_us, std::make_pair(row.seabed.range_m, uint8_t{1}));
+            picks.emplace(row.timestamp_us, core::BottomPick{
+                row.seabed.range_m,
+                std::clamp(row.seabed.confidence, 0.0f, 1.0f),
+                uint8_t{1}});
     }
 
     for (const auto& [ts, range_m] : m_manual_seabed) {
         if (range_m > 0.f)
-            picks.insert_or_assign(ts, std::make_pair(range_m, uint8_t{2}));
+            picks.insert_or_assign(ts, core::BottomPick{range_m, 1.0f, uint8_t{2}});
     }
 
     if (picks.empty()) return;
@@ -43,9 +46,7 @@ void WaterfallView::applySeabedPicksToPings(std::vector<core::SidescanPing>& pin
     for (auto& ping : pings) {
         const auto it = picks.find(ping.timestamp_us);
         if (it == picks.end()) continue;
-        ping.bottom_pick.range_m    = it->second.first;
-        ping.bottom_pick.confidence = 1.f;
-        ping.bottom_pick.source     = it->second.second;
+        ping.bottom_pick = it->second;
     }
 }
 

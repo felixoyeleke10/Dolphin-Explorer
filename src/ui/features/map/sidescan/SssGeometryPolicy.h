@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/SidescanPing.h"
+#include "core/SidescanGeometry.h"
 #include "ui/features/map/sidescan/SssGeorefParams.h"
 
 #include <algorithm>
@@ -16,9 +17,7 @@ inline bool sssHasBakedGroundRanges(const core::SidescanPing& ping)
 
 inline double sssUncorrectedAltitudeMetres(const core::SidescanPing& ping)
 {
-    return (ping.bottom_pick.valid() && ping.bottom_pick.source > 0)
-        ? static_cast<double>(ping.bottom_pick.range_m)
-        : std::max(0.0, static_cast<double>(ping.nav.altitude_m));
+    return core::sidescanAltitudeMetres(ping).value_or(0.0);
 }
 
 // Return the outer edge of the actual sample product. Baked pings carry ground
@@ -38,23 +37,21 @@ inline bool sssOuterGroundRangeMetres(const core::SidescanPing& ping,
         }
         if (ground_m > 0.0)
             return true;
+        return false;
     }
 
     const double slant_m = ping.slant_range_m > 0.0f
         ? static_cast<double>(ping.slant_range_m)
         : 75.0;
-    const double altitude_m = baked
-        ? (ping.nav.altitude_m > 0.0f
-            ? static_cast<double>(ping.nav.altitude_m) : 1.0)
-        : sssUncorrectedAltitudeMetres(ping);
+    const double altitude_m = sssUncorrectedAltitudeMetres(ping);
     if (altitude_m <= 0.0) {
         ground_m = slant_m;
         return true;
     }
-    if (slant_m <= altitude_m)
-        return false;
-    ground_m = std::sqrt(slant_m * slant_m - altitude_m * altitude_m);
-    return std::isfinite(ground_m);
+    const auto corrected = core::slantToGroundRangeMetres(slant_m, altitude_m);
+    if (!corrected) return false;
+    ground_m = *corrected;
+    return true;
 }
 
 // Canonical inner edge for both coverage and amplitude geometry. An applied

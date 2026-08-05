@@ -57,6 +57,16 @@ struct SwathCoverage {
     std::vector<std::vector<QPointF>> ribbons;
 };
 
+// One physically resolved across-track ray for a single channel record. Unlike
+// coverage ribbons, this retains ping identity and the true sonar position.
+struct SidescanBeamRay {
+    core::SidescanChannel channel = core::SidescanChannel::Port;
+    int64_t               timestamp_us = 0;
+    uint32_t              ping_number = 0;
+    QPointF               origin;
+    QPointF               outer;
+};
+
 // -- Mosaic types (reserved for future on-demand tiled mosaic builder) ---------
 //
 // NOT built automatically. A future "Build Mosaic" action will generate these
@@ -204,6 +214,10 @@ struct LayerMapData {
 
     // Coverage footprints (port + starboard swath outlines).
     std::vector<SwathCoverage> coverage;
+
+    // Per-ping overlay geometry generated from the same corrected pose and
+    // slant/ground-range policy used by the mosaic.
+    std::vector<SidescanBeamRay> beam_rays;
 
     // Nav track: (lon, lat) points in display CRS; NaN = segment break.
     std::vector<QPointF> nav_track;

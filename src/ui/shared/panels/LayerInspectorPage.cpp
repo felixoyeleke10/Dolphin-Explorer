@@ -7,7 +7,7 @@
 #include "render/sonar/SSSPalette.h"
 #include "render/sonar/SonarDisplayParams.h"
 #include "ui/shared/CoordFormat.h"
-#include "ui/shared/dialogs/SettingsDialog.h"
+#include "ui/shared/settings/SettingsKeys.h"
 #include <QComboBox>
 #include <QDateTime>
 #include <QSettings>
@@ -140,7 +140,7 @@ void LayerInspectorPage::build()
                     m_palette->setCurrentIndex(sss_idx.toInt());
                 } else {
                     m_palette->setCurrentIndex(SSSPalette::indexFromName(
-                        qs.value(SettingsDialog::kKeyDefaultPalette,
+                        qs.value(SettingsKeys::kDefaultPalette,
                                  QStringLiteral("Gray")).toString()));
                 }
             }
@@ -208,7 +208,7 @@ void LayerInspectorPage::refresh(app::DataLayer* layer)
             const QVariant v = qs.value(QStringLiteral("sss/paletteIdx"));
             pal = v.isValid() ? v.toInt()
                               : SSSPalette::indexFromName(
-                                    qs.value(SettingsDialog::kKeyDefaultPalette,
+                                    qs.value(SettingsKeys::kDefaultPalette,
                                              QStringLiteral("Gray")).toString());
         }
         QSignalBlocker sb(m_palette);

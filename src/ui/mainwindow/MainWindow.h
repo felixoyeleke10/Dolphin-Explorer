@@ -217,7 +217,6 @@ private slots:
     void toggleProperties();
 
     // Viewport — switch main view
-    void onViewTabChanged(int index);
 
     // Data events
     void onLayerSelected(const std::string& layer_id);
@@ -262,10 +261,6 @@ private:
         PanelDataLibrary,
         PanelProcessing,
         PanelContacts,
-        PanelAnalyze,
-        PanelAI,
-        PanelPresent,
-        PanelReport,
         PanelSettings,
         PanelGeodesy,      // left context panel — CRS / coordinate management
         PanelCount
@@ -337,7 +332,6 @@ private:
     // Re-apply (or clear) the stored nav corrections for a layer on SBP open.
     void applyStoredSbpNavParams(const std::string& layer_id);
 
-    QWidget* makeContextPlaceholder(const QString& title, const QString& body);
     void     refreshSidebarSections(const QStringList& paths);
     // Sync the Views panel with the display-state authority, the active
     // layer's palettes, and the project's draping surface.

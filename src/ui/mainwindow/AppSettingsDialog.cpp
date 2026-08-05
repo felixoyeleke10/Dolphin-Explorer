@@ -250,7 +250,7 @@ void AppSettingsDialog::onApply()
     qs.setValue(kKeyGridLabelRotated,  s.grid_label_rotated);
     qs.setValue(kKeyGratCoord,         s.graticule_coord);
 
-    // Mirror to legacy SettingsDialog keys so existing readers (SidescanViewController,
+    // Mirror to legacy keys so existing readers (SidescanViewController,
     // RightPanel.Display, LayerInspectorPage) pick up the change without restart.
     qs.setValue("display/units", s.units_system == 0 ? "m" : "ft");
     static constexpr const char* kPaletteNames[] = {
@@ -299,7 +299,7 @@ AppSettingsDialog::Settings AppSettingsDialog::loadDefaults()
     s.grid_label_rotated = qs.value(kKeyGridLabelRotated,  s.grid_label_rotated).toBool();
     s.graticule_coord    = qs.value(kKeyGratCoord,          s.graticule_coord).toInt();
 
-    // One-time migration from legacy SettingsDialog keys (first run after upgrade).
+    // One-time migration from legacy settings keys (first run after upgrade).
     if (!qs.contains(kKeyUnits) && qs.contains("display/units"))
         s.units_system = qs.value("display/units").toString() == "ft" ? 1 : 0;
     if (!qs.contains(kKeyDefaultPalette) && qs.contains("display/palette")) {

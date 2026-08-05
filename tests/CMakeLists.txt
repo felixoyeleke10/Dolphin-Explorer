@@ -24,6 +24,12 @@ target_link_libraries(test_processing_service PRIVATE dolphin-app Qt6::Core)
 set_target_properties(test_processing_service PROPERTIES CXX_STANDARD 20 AUTOMOC OFF)
 add_test(NAME ProcessingService COMMAND test_processing_service)
 
+add_executable(test_artifact_sidecar test_artifact_sidecar.cpp)
+target_include_directories(test_artifact_sidecar PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_artifact_sidecar PRIVATE dolphin-app)
+set_target_properties(test_artifact_sidecar PROPERTIES CXX_STANDARD 20 AUTOMOC OFF)
+add_test(NAME ArtifactSidecar COMMAND test_artifact_sidecar)
+
 # -- NodeGraph persistence: transactional validation and complete round-trip --
 add_executable(test_node_graph
     test_node_graph.cpp
@@ -32,6 +38,12 @@ target_include_directories(test_node_graph PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_node_graph PRIVATE dolphin-pipeline)
 set_target_properties(test_node_graph PROPERTIES CXX_STANDARD 20 AUTOMOC OFF)
 add_test(NAME NodeGraph COMMAND test_node_graph)
+
+add_executable(test_slant_range_node test_slant_range_node.cpp)
+target_include_directories(test_slant_range_node PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_slant_range_node PRIVATE dolphin-pipeline)
+set_target_properties(test_slant_range_node PROPERTIES CXX_STANDARD 20 AUTOMOC OFF)
+add_test(NAME SlantRangeNode COMMAND test_slant_range_node)
 
 # -- AppStyle tokenization: no malformed/unresolved typography declarations --
 add_executable(test_app_style
@@ -51,6 +63,12 @@ target_link_libraries(test_parsed_cache PRIVATE dolphin-io dolphin-geo)
 set_target_properties(test_parsed_cache PROPERTIES CXX_STANDARD 20)
 
 add_test(NAME ParsedCache COMMAND test_parsed_cache)
+
+add_executable(test_geo_utils test_geo_utils.cpp)
+target_include_directories(test_geo_utils PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_geo_utils PRIVATE dolphin-geo)
+set_target_properties(test_geo_utils PROPERTIES CXX_STANDARD 20 AUTOMOC OFF)
+add_test(NAME GeoUtils COMMAND test_geo_utils)
 
 # -- Project storage model regression tests ------------------------------------
 add_executable(test_project_storage
@@ -195,6 +213,17 @@ set_target_properties(test_nav_corrections PROPERTIES
 )
 
 add_test(NAME NavCorrections COMMAND test_nav_corrections)
+
+add_executable(test_subbottom_view_math test_subbottom_view_math.cpp)
+target_include_directories(test_subbottom_view_math PRIVATE ${CMAKE_SOURCE_DIR}/src)
+set_target_properties(test_subbottom_view_math PROPERTIES CXX_STANDARD 20 AUTOMOC OFF)
+add_test(NAME SubBottomViewMath COMMAND test_subbottom_view_math)
+
+add_executable(test_subbottom_corrections test_subbottom_corrections.cpp)
+target_include_directories(test_subbottom_corrections PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_subbottom_corrections PRIVATE dolphin-app)
+set_target_properties(test_subbottom_corrections PROPERTIES CXX_STANDARD 20 AUTOMOC OFF)
+add_test(NAME SubBottomCorrections COMMAND test_subbottom_corrections)
 
 add_executable(test_seabed_auto_detector
     test_seabed_auto_detector.cpp

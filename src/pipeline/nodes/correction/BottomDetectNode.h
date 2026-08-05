@@ -15,6 +15,11 @@ public:
     ArtifactBuffer process(const ArtifactBuffer& input,
                            const NodeParams&     params) const override;
 
+    // Estimates the first seabed return and records an automatic bottom pick.
+    // Manual picks are never overwritten. Percentage bounds are clamped.
+    static bool detectBottom(core::SidescanPing& ping, float threshold,
+                             float search_start_pct, float search_end_pct);
+
 private:
     int findBottom(const core::SidescanPing& ping, float threshold,
                    int search_start, int search_end) const;

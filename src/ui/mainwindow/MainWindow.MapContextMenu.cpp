@@ -92,14 +92,6 @@ void MainWindow::onMapContextMenu(QPoint globalPos)
 
     entries.push_back(ME::separator());
 
-    entries.push_back(ME::submenu(tr("Group"), {
-        ME::action(tr("Create group from selection"), {}, false),
-        ME::action(tr("Move to group"),               {}, false),
-    }, has_layer));
-    entries.push_back(ME::submenu(tr("Tags"), {
-        ME::action(tr("Add tag"),    {}, false),
-        ME::action(tr("Clear tags"), {}, false),
-    }, has_layer));
     entries.push_back(ME::action(tr("Edit navigation"),
         [this] { onRenumberContacts(); }, is_sidescan));
 
@@ -123,7 +115,6 @@ void MainWindow::onMapContextMenu(QPoint globalPos)
     entries.push_back(ME::submenu(tr("Import"), {
         ME::action(tr("Import survey files..."), [this] { onImportFile(); }, has_project),
     }));
-    entries.push_back(ME::submenu(tr("Export"), {}, /*enabled=*/false));  // not implemented (D-05)
 
     entries.push_back(ME::separator());
 

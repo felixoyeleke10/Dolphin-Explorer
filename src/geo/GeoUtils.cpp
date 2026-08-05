@@ -1,29 +1,68 @@
 #include "geo/GeoUtils.h"
 
+#include <geodesic.h>
+#include <proj.h>
+
 #include <algorithm>
 #include <cmath>
 #include <cctype>
 #include <limits>
+#include <memory>
 #include <optional>
 #include <string>
+#include <unordered_map>
 
 namespace dolphin::geo {
-
 namespace {
 
 constexpr double kPi = 3.14159265358979323846;
-constexpr double kDegToRad = kPi / 180.0;
 constexpr double kRadToDeg = 180.0 / kPi;
 constexpr double kWgs84A = 6378137.0;
 constexpr double kWgs84F = 1.0 / 298.257223563;
-constexpr double kUtmScale = 0.9996;
-constexpr double kFalseEasting = 500000.0;
-constexpr double kFalseNorthingSouth = 10000000.0;
-constexpr double kMetresPerDegLat = 111320.0;
+// Standard UTM validity range. Beyond these latitudes UTM projections become
+// severely distorted; this codebase has no polar-stereographic/UPS support,
+// so fail cleanly here rather than silently returning a badly warped point.
+constexpr double kUtmMinLat = -80.0;
+constexpr double kUtmMaxLat = 84.0;
 
-struct UtmZone {
-    int  zone = 0;
-    bool north_hemisphere = true;
+using ContextPtr = std::unique_ptr<PJ_CONTEXT, decltype(&proj_context_destroy)>;
+using ProjPtr = std::unique_ptr<PJ, decltype(&proj_destroy)>;
+
+ContextPtr makeProjContext()
+{
+    ContextPtr context(proj_context_create(), proj_context_destroy);
+#ifdef DOLPHIN_PROJ_DATA_DIR
+    if (context) {
+        const char* paths[] = {DOLPHIN_PROJ_DATA_DIR};
+        proj_context_set_search_paths(context.get(), 1, paths);
+    }
+#endif
+    return context;
+}
+
+struct TransformCache {
+    ContextPtr context = makeProjContext();
+    std::unordered_map<std::string, PJ*> operations;
+
+    ~TransformCache()
+    {
+        for (auto& [key, operation] : operations) proj_destroy(operation);
+    }
+
+    PJ* get(const std::string& source, const std::string& target)
+    {
+        const std::string key = source + '\n' + target;
+        if (const auto found = operations.find(key); found != operations.end())
+            return found->second;
+        if (!context) return nullptr;
+        ProjPtr raw(proj_create_crs_to_crs(context.get(), source.c_str(), target.c_str(), nullptr),
+                    proj_destroy);
+        if (!raw) return nullptr;
+        PJ* operation = proj_normalize_for_visualization(context.get(), raw.get());
+        if (!operation) return nullptr;
+        operations.emplace(key, operation);
+        return operation;
+    }
 };
 
 std::string upperTrimmed(std::string_view text)
@@ -32,7 +71,6 @@ std::string upperTrimmed(std::string_view text)
     size_t end = text.size();
     while (start < end && std::isspace(static_cast<unsigned char>(text[start]))) ++start;
     while (end > start && std::isspace(static_cast<unsigned char>(text[end - 1]))) --end;
-
     std::string out;
     out.reserve(end - start);
     for (size_t i = start; i < end; ++i)
@@ -43,225 +81,75 @@ std::string upperTrimmed(std::string_view text)
 std::optional<int> parseInteger(std::string_view text)
 {
     if (text.empty()) return std::nullopt;
-
     int value = 0;
-    for (char ch : text) {
-        if (!std::isdigit(static_cast<unsigned char>(ch)))
-            return std::nullopt;
+    for (const char ch : text) {
+        if (!std::isdigit(static_cast<unsigned char>(ch))) return std::nullopt;
         value = value * 10 + (ch - '0');
     }
     return value;
 }
 
-std::optional<UtmZone> parseUtmZone(std::string_view crs)
+std::string projCrsId(std::string_view id)
 {
-    const std::string norm = upperTrimmed(crs);
-    if (norm.empty()) return std::nullopt;
-
-    if (norm.rfind("EPSG:", 0) == 0) {
-        auto code = parseInteger(std::string_view(norm).substr(5));
-        if (!code) return std::nullopt;
-        // WGS84 UTM (canonical)
-        if (*code >= 32601 && *code <= 32660)
-            return UtmZone{*code - 32600, true};
-        if (*code >= 32701 && *code <= 32760)
-            return UtmZone{*code - 32700, false};
-        // ETRS89 UTM North (EPSG:25827–25838, zones 27–38) — same ellipsoid as WGS84
-        if (*code >= 25827 && *code <= 25838)
-            return UtmZone{*code - 25800, true};
-        // NAD83 UTM North (EPSG:26901–26923, zones 1–23) — essentially WGS84 ellipsoid
-        if (*code >= 26901 && *code <= 26923)
-            return UtmZone{*code - 26900, true};
-        // GDA94 MGA (EPSG:28349–28356, zones 49–56) — GRS80 ≈ WGS84 at cm level
-        if (*code >= 28349 && *code <= 28356)
-            return UtmZone{*code - 28300, true};
-        // GDA2020 MGA (EPSG:7849–7856, zones 49–56) — GRS80 datum aligned to WGS84
-        if (*code >= 7849 && *code <= 7856)
-            return UtmZone{*code - 7800, true};
-        // ED50 / UTM North (EPSG:23028–23038, zones 28–38) — International 1924 ellipsoid.
-        // Approximated with WGS84 constants: ~100-200 m offset in North Sea area, acceptable
-        // for chart display. Proper Helmert shift would require a full datum transform library.
-        if (*code >= 23028 && *code <= 23038)
-            return UtmZone{*code - 23000, true};
-        return std::nullopt;
-    }
-
-    if (norm.rfind("UTM:", 0) == 0) {
-        const std::string_view body(norm.data() + 4, norm.size() - 4);
-        if (body.size() < 2) return std::nullopt;
-        const char hemi = body.back();
-        auto zone = parseInteger(body.substr(0, body.size() - 1));
-        if (!zone || *zone < 1 || *zone > 60) return std::nullopt;
-        if (hemi != 'N' && hemi != 'S') return std::nullopt;
-        return UtmZone{*zone, hemi == 'N'};
-    }
-
-    return std::nullopt;
-}
-
-} // namespace (anonymous)
-
-// -- Public: latLonToUtm / latLonToProjected ----------------------------------
-
-namespace {
-
-// Forward UTM projection core with an explicit zone + hemisphere (WGS84
-// ellipsoid — adequate for the ETRS89 / NAD83 / GDA datums we recognise, which
-// share the ellipsoid to sub-metre level). Shared by latLonToUtm (auto-zone)
-// and latLonToProjected (zone taken from a target CRS).
-bool utmForward(double lat_deg, double lon_deg, int zone, bool north_hemi,
-                double& easting_out, double& northing_out)
-{
-    if (!std::isfinite(lat_deg) || !std::isfinite(lon_deg)) return false;
-    if (lat_deg < -90.0 || lat_deg > 90.0)   return false;
-    if (lon_deg < -180.0 || lon_deg > 180.0) return false;
-
-    const double phi  = lat_deg * kDegToRad;
-    const double lam  = lon_deg * kDegToRad;
-    const double lam0 = ((static_cast<double>(zone) - 1.0) * 6.0 - 180.0 + 3.0) * kDegToRad;
-
-    const double e2       = kWgs84F * (2.0 - kWgs84F);
-    const double e_prime2 = e2 / (1.0 - e2);
-    const double sin_phi  = std::sin(phi);
-    const double cos_phi  = std::cos(phi);
-    const double tan_phi  = std::tan(phi);
-
-    const double N_rad = kWgs84A / std::sqrt(1.0 - e2 * sin_phi * sin_phi);
-    const double T     = tan_phi * tan_phi;
-    const double C     = e_prime2 * cos_phi * cos_phi;
-    const double A     = (lam - lam0) * cos_phi;
-
-    // Meridional arc
-    const double M = kWgs84A * (
-          (1.0  - e2/4.0 - 3.0*e2*e2/64.0  - 5.0*e2*e2*e2/256.0) * phi
-        - (3.0*e2/8.0 + 3.0*e2*e2/32.0 + 45.0*e2*e2*e2/1024.0)   * std::sin(2.0*phi)
-        + (15.0*e2*e2/256.0 + 45.0*e2*e2*e2/1024.0)               * std::sin(4.0*phi)
-        - (35.0*e2*e2*e2/3072.0)                                   * std::sin(6.0*phi)
-    );
-
-    const double A2 = A*A, A3 = A*A2, A4 = A*A3, A5 = A*A4, A6 = A*A5;
-
-    const double easting = kUtmScale * N_rad * (
-        A
-        + (1.0 - T + C) * A3 / 6.0
-        + (5.0 - 18.0*T + T*T + 72.0*C - 58.0*e_prime2) * A5 / 120.0
-    ) + kFalseEasting;
-
-    double northing = kUtmScale * (
-        M + N_rad * tan_phi * (
-              A2 / 2.0
-            + (5.0 - T + 9.0*C + 4.0*C*C) * A4 / 24.0
-            + (61.0 - 58.0*T + T*T + 600.0*C - 330.0*e_prime2) * A6 / 720.0
-        )
-    );
-    if (!north_hemi) northing += kFalseNorthingSouth;
-
-    if (!std::isfinite(easting) || !std::isfinite(northing)) return false;
-
-    easting_out  = easting;
-    northing_out = northing;
-    return true;
-}
-
-} // namespace
-
-bool latLonToUtm(double lat_deg, double lon_deg,
-                 int& zone_out, bool& north_out,
-                 double& easting_out, double& northing_out)
-{
-    if (!std::isfinite(lon_deg) || lon_deg < -180.0 || lon_deg > 180.0) return false;
-    // Clamp the antimeridian (lon == 180.0 → zone 61) into the valid 1–60 range.
-    const int  zone  = std::min(60, static_cast<int>((lon_deg + 180.0) / 6.0) + 1);
-    const bool north = lat_deg >= 0.0;
-    if (!utmForward(lat_deg, lon_deg, zone, north, easting_out, northing_out))
-        return false;
-    zone_out  = zone;
-    north_out = north;
-    return true;
-}
-
-bool latLonToProjected(double lat_deg, double lon_deg,
-                       const core::SpatialRef& target,
-                       double& northing_out, double& easting_out)
-{
-    const auto zone = parseUtmZone(target.id);
-    if (!zone) return false;
-    return utmForward(lat_deg, lon_deg, zone->zone, zone->north_hemisphere,
-                      easting_out, northing_out);
-}
-
-namespace {
-
-bool utmToLatLon(const UtmZone& zone,
-                 double         easting,
-                 double         northing,
-                 double&        out_lat_deg,
-                 double&        out_lon_deg)
-{
-    if (!std::isfinite(easting) || !std::isfinite(northing)) return false;
-    if (zone.zone < 1 || zone.zone > 60) return false;
-
-    const double e_sq = kWgs84F * (2.0 - kWgs84F);
-    const double e_prime_sq = e_sq / (1.0 - e_sq);
-    const double e1 = (1.0 - std::sqrt(1.0 - e_sq)) / (1.0 + std::sqrt(1.0 - e_sq));
-
-    const double x = easting - kFalseEasting;
-    double y = northing;
-    if (!zone.north_hemisphere)
-        y -= kFalseNorthingSouth;
-
-    const double lon0 = ((static_cast<double>(zone.zone) - 1.0) * 6.0 - 180.0 + 3.0) * kDegToRad;
-    const double m = y / kUtmScale;
-    const double mu = m / (kWgs84A * (1.0 - e_sq / 4.0 - 3.0 * e_sq * e_sq / 64.0
-                                    - 5.0 * e_sq * e_sq * e_sq / 256.0));
-
-    const double j1 = 3.0 * e1 / 2.0 - 27.0 * std::pow(e1, 3) / 32.0;
-    const double j2 = 21.0 * e1 * e1 / 16.0 - 55.0 * std::pow(e1, 4) / 32.0;
-    const double j3 = 151.0 * std::pow(e1, 3) / 96.0;
-    const double j4 = 1097.0 * std::pow(e1, 4) / 512.0;
-
-    const double fp = mu
-        + j1 * std::sin(2.0 * mu)
-        + j2 * std::sin(4.0 * mu)
-        + j3 * std::sin(6.0 * mu)
-        + j4 * std::sin(8.0 * mu);
-
-    const double sin_fp = std::sin(fp);
-    const double cos_fp = std::cos(fp);
-    const double tan_fp = std::tan(fp);
-
-    const double c1 = e_prime_sq * cos_fp * cos_fp;
-    const double t1 = tan_fp * tan_fp;
-    const double n1 = kWgs84A / std::sqrt(1.0 - e_sq * sin_fp * sin_fp);
-    const double r1 = kWgs84A * (1.0 - e_sq)
-        / std::pow(1.0 - e_sq * sin_fp * sin_fp, 1.5);
-    const double d = x / (n1 * kUtmScale);
-
-    const double q1 = n1 * tan_fp / r1;
-    const double q2 = d * d / 2.0;
-    const double q3 = (5.0 + 3.0 * t1 + 10.0 * c1 - 4.0 * c1 * c1 - 9.0 * e_prime_sq)
-        * std::pow(d, 4) / 24.0;
-    const double q4 = (61.0 + 90.0 * t1 + 298.0 * c1 + 45.0 * t1 * t1
-        - 252.0 * e_prime_sq - 3.0 * c1 * c1) * std::pow(d, 6) / 720.0;
-
-    const double q5 = d;
-    const double q6 = (1.0 + 2.0 * t1 + c1) * std::pow(d, 3) / 6.0;
-    const double q7 = (5.0 - 2.0 * c1 + 28.0 * t1 - 3.0 * c1 * c1
-        + 8.0 * e_prime_sq + 24.0 * t1 * t1) * std::pow(d, 5) / 120.0;
-
-    const double lat = fp - q1 * (q2 - q3 + q4);
-    const double lon = lon0 + (q5 - q6 + q7) / cos_fp;
-
-    out_lat_deg = lat * kRadToDeg;
-    out_lon_deg = lon * kRadToDeg;
-    return std::isfinite(out_lat_deg) && std::isfinite(out_lon_deg);
+    const std::string norm = upperTrimmed(id);
+    if (norm.rfind("UTM:", 0) != 0) return norm;
+    const std::string_view body(norm.data() + 4, norm.size() - 4);
+    if (body.size() < 2) return {};
+    const auto zone = parseInteger(body.substr(0, body.size() - 1));
+    const char hemisphere = body.back();
+    if (!zone || *zone < 1 || *zone > 60 || (hemisphere != 'N' && hemisphere != 'S'))
+        return {};
+    return "EPSG:" + std::to_string((hemisphere == 'N' ? 32600 : 32700) + *zone);
 }
 
 core::SpatialRef effectiveNavSpatialRef(const core::NavPoint& nav)
 {
-    if (!nav.spatial_ref.empty())
-        return nav.spatial_ref;
-    return spatialRefFromLegacy(nav.is_projected);
+    return nav.spatial_ref.empty() ? spatialRefFromLegacy(nav.is_projected) : nav.spatial_ref;
+}
+
+bool transformCoordinate(std::string_view source_id, std::string_view target_id,
+                         double source_x, double source_y,
+                         double& target_x, double& target_y)
+{
+    if (!std::isfinite(source_x) || !std::isfinite(source_y)) return false;
+    const std::string source = projCrsId(source_id);
+    const std::string target = projCrsId(target_id);
+    if (source.empty() || target.empty()) return false;
+    if (source == target) {
+        target_x = source_x;
+        target_y = source_y;
+        return true;
+    }
+
+    thread_local TransformCache cache;
+    PJ* operation = cache.get(source, target);
+    if (!operation) return false;
+
+    proj_errno_reset(operation);
+    const PJ_COORD result = proj_trans(operation, PJ_FWD,
+                                       proj_coord(source_x, source_y, 0.0, 0.0));
+    if (proj_errno(operation) != 0 || !std::isfinite(result.xy.x)
+        || !std::isfinite(result.xy.y))
+        return false;
+    target_x = result.xy.x;
+    target_y = result.xy.y;
+    return true;
+}
+
+const geod_geodesic& wgs84Geodesic()
+{
+    static const geod_geodesic geodesic = [] {
+        geod_geodesic value{};
+        geod_init(&value, kWgs84A, kWgs84F);
+        return value;
+    }();
+    return geodesic;
+}
+
+bool validGeographic(double lat_deg, double lon_deg)
+{
+    return std::isfinite(lat_deg) && std::isfinite(lon_deg)
+        && lat_deg >= -90.0 && lat_deg <= 90.0;
 }
 
 } // namespace
@@ -286,8 +174,7 @@ double wrapLongitude180(double lon_deg) noexcept
 
 double unwrapLongitudeNear(double lon_deg, double reference_deg) noexcept
 {
-    if (!std::isfinite(lon_deg) || !std::isfinite(reference_deg))
-        return lon_deg;
+    if (!std::isfinite(lon_deg) || !std::isfinite(reference_deg)) return lon_deg;
     return reference_deg + std::remainder(lon_deg - reference_deg, 360.0);
 }
 
@@ -298,105 +185,99 @@ bool navUsesProjectedCoordinates(const core::NavPoint& nav)
 
 double haversineMetres(double lat1_deg, double lon1_deg, double lat2_deg, double lon2_deg)
 {
-    constexpr double kEarthR = 6371000.0;
-    const double dlat     = (lat2_deg - lat1_deg) * kDegToRad;
-    const double dlon     = (lon2_deg - lon1_deg) * kDegToRad;
-    const double sin_dlat = std::sin(dlat * 0.5);
-    const double sin_dlon = std::sin(dlon * 0.5);
-    const double h = sin_dlat * sin_dlat
-                   + std::cos(lat1_deg * kDegToRad) * std::cos(lat2_deg * kDegToRad)
-                   * sin_dlon * sin_dlon;
-    return kEarthR * 2.0 * std::atan2(std::sqrt(h), std::sqrt(1.0 - h));
+    if (!validGeographic(lat1_deg, lon1_deg) || !validGeographic(lat2_deg, lon2_deg))
+        return std::numeric_limits<double>::quiet_NaN();
+    double distance_m = 0.0;
+    geod_inverse(&wgs84Geodesic(), lat1_deg, lon1_deg, lat2_deg, lon2_deg,
+                 &distance_m, nullptr, nullptr);
+    return distance_m;
 }
 
 double navDistanceMetres(const core::NavPoint& a, const core::NavPoint& b)
 {
-    if (navUsesProjectedCoordinates(a) || navUsesProjectedCoordinates(b))
+    if (!isFiniteNav(a) || !isFiniteNav(b))
+        return std::numeric_limits<double>::quiet_NaN();
+    const auto a_ref = effectiveNavSpatialRef(a);
+    const auto b_ref = effectiveNavSpatialRef(b);
+    if (core::spatialRefIsProjected(a_ref) && a_ref.id == b_ref.id)
         return std::hypot(b.lon - a.lon, b.lat - a.lat);
-    return haversineMetres(a.lat, a.lon, b.lat, b.lon);
+
+    core::NavPoint a_wgs84;
+    core::NavPoint b_wgs84;
+    const auto wgs84 = core::makeWgs84SpatialRef();
+    if (!normalizeNavForMap(a, wgs84, a_wgs84)
+        || !normalizeNavForMap(b, wgs84, b_wgs84))
+        return std::numeric_limits<double>::quiet_NaN();
+    return haversineMetres(a_wgs84.lat, a_wgs84.lon, b_wgs84.lat, b_wgs84.lon);
 }
 
 core::SpatialRef spatialRefFromId(std::string_view id)
 {
     const std::string norm = upperTrimmed(id);
-    if (norm.empty())
-        return {};
-
-    if (norm == "EPSG:4326") {
-        return core::makeWgs84SpatialRef();
-    }
-
-    if (norm == "DISPLAY:PSEUDO_WGS84") {
-        return core::makePseudoWgs84SpatialRef();
-    }
-
+    if (norm.empty()) return {};
+    if (norm == "EPSG:4326") return core::makeWgs84SpatialRef();
+    if (norm == "DISPLAY:PSEUDO_WGS84") return core::makePseudoWgs84SpatialRef();
     if (norm.rfind("LOCAL:", 0) == 0) {
-        core::SpatialRef ref;
-        ref.id = norm;
-        ref.kind = core::SpatialRefKind::Local;
-        ref.exact = false;
+        core::SpatialRef ref{norm, core::SpatialRefKind::Local, false};
         return ref;
     }
-
-    if (norm.rfind("PROJECTED:", 0) == 0) {
+    if (norm.rfind("PROJECTED:", 0) == 0)
         return core::makeUnknownProjectedSpatialRef(norm);
-    }
 
-    if (parseUtmZone(norm)) {
-        core::SpatialRef ref;
-        ref.id = norm;
-        ref.kind = core::SpatialRefKind::Projected;
-        ref.exact = true;
-        return ref;
-    }
-
-    if (norm.rfind("EPSG:", 0) == 0) {
-        auto code = parseInteger(std::string_view(norm).substr(5));
-        if (code) {
-            core::SpatialRef ref;
-            ref.id = norm;
-            if (*code >= 4000 && *code < 5000) {
-                // Geographic CRS: treated as ≈ WGS84 for display purposes.
-                ref.kind  = core::SpatialRefKind::Geographic;
-                ref.exact = true;
-            } else {
-                // Projected CRS not caught by parseUtmZone above.
-                // We recognise the code but may not have a transform for it.
-                // exact=false signals that the user should confirm via Geodesy.
-                ref.kind  = core::SpatialRefKind::Projected;
-                ref.exact = false;
-            }
-            return ref;
-        }
-    }
-
+    const std::string crs_id = projCrsId(norm);
+    ContextPtr context = makeProjContext();
+    ProjPtr crs(context && !crs_id.empty() ? proj_create(context.get(), crs_id.c_str()) : nullptr,
+                proj_destroy);
     core::SpatialRef ref;
     ref.id = norm;
-    ref.kind = core::SpatialRefKind::Unknown;
-    ref.exact = false;
+    if (!crs) return ref;
+    switch (proj_get_type(crs.get())) {
+    case PJ_TYPE_GEOGRAPHIC_2D_CRS:
+    case PJ_TYPE_GEOGRAPHIC_3D_CRS:
+        ref.kind = core::SpatialRefKind::Geographic;
+        break;
+    case PJ_TYPE_PROJECTED_CRS:
+        ref.kind = core::SpatialRefKind::Projected;
+        break;
+    default:
+        ref.kind = core::SpatialRefKind::Unknown;
+        break;
+    }
+    ref.exact = ref.kind != core::SpatialRefKind::Unknown;
     return ref;
 }
 
 bool isTransformableCrs(const core::SpatialRef& ref)
 {
-    if (core::spatialRefIsGeographic(ref)) return true;
-    if (!core::spatialRefIsProjected(ref)) return false;
-    return parseUtmZone(ref.id).has_value();
+    if (ref.empty() || ref.kind == core::SpatialRefKind::Unknown
+        || ref.kind == core::SpatialRefKind::Local
+        || ref.id == "DISPLAY:PSEUDO_WGS84")
+        return false;
+    double x = 0.0;
+    double y = 0.0;
+    return transformCoordinate(ref.id, "EPSG:4326", 0.0, 0.0, x, y);
 }
 
 double headingFromNavDeltaRad(const core::NavPoint& from, const core::NavPoint& to)
 {
     if (!isFiniteNav(from) || !isFiniteNav(to)) return 0.0;
-
-    double de = to.lon - from.lon;
-    double dn = to.lat - from.lat;
-    if (!navUsesProjectedCoordinates(from) && !navUsesProjectedCoordinates(to)) {
-        const double mean_lat_rad = ((from.lat + to.lat) * 0.5) * kDegToRad;
-        de *= std::max(1e-6, std::cos(mean_lat_rad));
+    const auto from_ref = effectiveNavSpatialRef(from);
+    const auto to_ref = effectiveNavSpatialRef(to);
+    if (core::spatialRefIsProjected(from_ref) && from_ref.id == to_ref.id) {
+        const double east = to.lon - from.lon;
+        const double north = to.lat - from.lat;
+        return east == 0.0 && north == 0.0 ? 0.0 : std::atan2(east, north);
     }
-
-    if (de == 0.0 && dn == 0.0) return 0.0;
-    return std::atan2(de, dn);
+    core::NavPoint a;
+    core::NavPoint b;
+    const auto wgs84 = core::makeWgs84SpatialRef();
+    if (!normalizeNavForMap(from, wgs84, a) || !normalizeNavForMap(to, wgs84, b))
+        return 0.0;
+    double distance_m = 0.0;
+    double azimuth_deg = 0.0;
+    geod_inverse(&wgs84Geodesic(), a.lat, a.lon, b.lat, b.lon,
+                 &distance_m, &azimuth_deg, nullptr);
+    return distance_m == 0.0 ? 0.0 : azimuth_deg / kRadToDeg;
 }
 
 double blendAngleRad(double previous, double next, double alpha)
@@ -406,81 +287,73 @@ double blendAngleRad(double previous, double next, double alpha)
     return previous + delta * alpha;
 }
 
-bool offsetNavByGroundMetres(const core::NavPoint& nav,
-                             double               east_m,
-                             double               north_m,
-                             double&              out_lon,
-                             double&              out_lat)
+bool latLonToProjected(double lat_deg, double lon_deg, const core::SpatialRef& target,
+                       double& northing_out, double& easting_out)
 {
-    if (!isFiniteNav(nav)) return false;
+    const auto resolved_target = target.kind == core::SpatialRefKind::Unknown
+        ? spatialRefFromId(target.id) : target;
+    if (!validGeographic(lat_deg, lon_deg) || !core::spatialRefIsProjected(resolved_target))
+        return false;
+    return transformCoordinate("EPSG:4326", resolved_target.id, lon_deg, lat_deg,
+                               easting_out, northing_out);
+}
 
+bool latLonToUtm(double lat_deg, double lon_deg, int& zone_out, bool& north_out,
+                 double& easting_out, double& northing_out)
+{
+    if (!validGeographic(lat_deg, lon_deg) || lon_deg < -180.0 || lon_deg > 180.0
+        || lat_deg < kUtmMinLat || lat_deg > kUtmMaxLat)
+        return false;
+    zone_out = std::min(60, static_cast<int>((lon_deg + 180.0) / 6.0) + 1);
+    north_out = lat_deg >= 0.0;
+    const auto target = spatialRefFromId("EPSG:" + std::to_string(
+        (north_out ? 32600 : 32700) + zone_out));
+    return latLonToProjected(lat_deg, lon_deg, target, northing_out, easting_out);
+}
+
+bool offsetNavByGroundMetres(const core::NavPoint& nav, double east_m, double north_m,
+                             double& out_lon, double& out_lat)
+{
+    if (!isFiniteNav(nav) || !std::isfinite(east_m) || !std::isfinite(north_m)) return false;
     if (navUsesProjectedCoordinates(nav)) {
         out_lon = nav.lon + east_m;
         out_lat = nav.lat + north_m;
         return isFiniteCoordinate(out_lat, out_lon);
     }
-
-    const double cos_lat = std::cos(nav.lat * kDegToRad);
-    if (std::abs(cos_lat) < 1e-6) return false;
-    out_lon = nav.lon + east_m / (kMetresPerDegLat * cos_lat);
-    out_lat = nav.lat + north_m / kMetresPerDegLat;
-    return isFiniteCoordinate(out_lat, out_lon);
+    if (!validGeographic(nav.lat, nav.lon)) return false;
+    const double distance_m = std::hypot(east_m, north_m);
+    if (distance_m == 0.0) {
+        out_lon = nav.lon;
+        out_lat = nav.lat;
+        return true;
+    }
+    const double azimuth_deg = std::atan2(east_m, north_m) * kRadToDeg;
+    geod_direct(&wgs84Geodesic(), nav.lat, nav.lon, azimuth_deg, distance_m,
+                &out_lat, &out_lon, nullptr);
+    // Preserve the caller's continuous longitude branch across the date line.
+    out_lon = unwrapLongitudeNear(out_lon, nav.lon);
+    return validGeographic(out_lat, out_lon);
 }
 
-bool normalizeNavForMap(const core::NavPoint& input,
-                        const core::SpatialRef& display_ref,
-                        core::NavPoint&       output)
+bool normalizeNavForMap(const core::NavPoint& input, const core::SpatialRef& display_ref,
+                        core::NavPoint& output)
 {
     output = input;
     if (!isFiniteCoordinate(input.lat, input.lon)) return false;
-
-    const core::SpatialRef source_ref = effectiveNavSpatialRef(input);
-    const core::SpatialRef target_ref = display_ref.empty()
-        ? core::makeWgs84SpatialRef()
-        : display_ref;
-
-    if (!navUsesProjectedCoordinates(input)) {
-        if (!core::spatialRefIsGeographic(target_ref))
-            return false;
-        output.spatial_ref = target_ref;
-        output.is_projected = false;
-        output.valid = isFiniteCoordinate(output.lat, output.lon);
-        return output.valid;
-    }
-
-    if (target_ref.id == source_ref.id && !target_ref.id.empty()) {
-        output.spatial_ref = target_ref;
-        output.is_projected = core::spatialRefIsProjected(target_ref);
-        output.valid = isFiniteCoordinate(output.lat, output.lon);
-        return output.valid;
-    }
-
-    auto zone = parseUtmZone(source_ref.id);
-    if (!zone) {
-        if (!core::spatialRefIsGeographic(target_ref)) {
-            // Both source and target are projected: pass raw coordinates through.
-            output.is_projected = true;
-            output.valid = isFiniteCoordinate(output.lat, output.lon);
-            return output.valid;
-        }
-        // Source is projected but no transform to geographic is available.
-        // Return false so the caller can apply the pseudo-degree fallback and
-        // post a CRS diagnostic instead of silently displaying raw metres.
-        return false;
-    }
-    if (!core::spatialRefIsGeographic(target_ref))
+    const auto source = effectiveNavSpatialRef(input);
+    const auto target = display_ref.empty() ? core::makeWgs84SpatialRef() : display_ref;
+    if (source.empty() || target.empty() || source.id == "DISPLAY:PSEUDO_WGS84"
+        || target.id == "DISPLAY:PSEUDO_WGS84")
         return false;
 
-    double lat_deg = 0.0;
-    double lon_deg = 0.0;
-    if (!utmToLatLon(*zone, input.lon, input.lat, lat_deg, lon_deg))
-        return false;
-
-    output.lat = lat_deg;
-    output.lon = lon_deg;
-    output.spatial_ref = target_ref;
-    output.is_projected = false;
-    output.valid = isFiniteCoordinate(lat_deg, lon_deg);
+    double x = 0.0;
+    double y = 0.0;
+    if (!transformCoordinate(source.id, target.id, input.lon, input.lat, x, y)) return false;
+    output.lon = x;
+    output.lat = y;
+    output.spatial_ref = target;
+    output.is_projected = core::spatialRefIsProjected(target);
+    output.valid = isFiniteCoordinate(y, x);
     return output.valid;
 }
 
