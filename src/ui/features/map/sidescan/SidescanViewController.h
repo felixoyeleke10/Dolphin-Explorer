@@ -43,6 +43,7 @@ struct IntensityCache {
 // raster remains the durable tier cache; this object is consumed when displayed.
 struct PrebuiltTier {
     std::vector<SwathCoverage> coverage;
+    std::vector<SidescanBeamRay> beam_rays;
     std::vector<QPointF>       nav_track;
     double lon_min =  1e18, lon_max = -1e18;
     double lat_min =  1e18, lat_max = -1e18;
@@ -73,11 +74,12 @@ public:
     // centring, status bar). as_active=false: load its raster as part of the survey
     // overview without taking selection — used on open to show every cached line's
     // raster, not just the active one. Cache-first either way (no ping decode on hit).
-    // cache_only=true (project open, D-06): display persisted work ONLY — load the
+    // cache_only=true: display persisted work ONLY — load the
     // best already-fresh raster tier at or below the current quality, and if none
     // exists leave the line as its nav track. Never decodes pings, never
-    // rasterizes, never stages background tier upgrades. The mosaic builds when
-    // the OPERATOR acts: selecting the line, Apply, or changing quality.
+    // rasterizes, and never stages background tier upgrades. Normal project-open
+    // overview loading uses cache_only=false; non-active uncached Medium/High
+    // lines are bounded to a Low preview and do not require user selection.
     // Returns false ONLY when a cache_only call found no persisted raster and
     // deferred to the operator (callers use it to count/announce deferred
     // lines); all other paths return true.

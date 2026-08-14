@@ -511,7 +511,7 @@ bool save(const std::string&  path,
     // LayerMapData
     ds << static_cast<quint8>(data.kind)
        << data.lon_min << data.lon_max << data.lat_min << data.lat_max
-       << data.is_projected << data.show_nav_track << data.preview_reduced;
+       << data.is_projected << data.preview_reduced;
 
     writePoints(ds, data.nav_track);
 
@@ -590,8 +590,7 @@ bool load(const std::string& path,
         decoded.kind = static_cast<LayerMapKind>(kind);
         ds >> decoded.lon_min >> decoded.lon_max
            >> decoded.lat_min >> decoded.lat_max
-           >> decoded.is_projected >> decoded.show_nav_track
-           >> decoded.preview_reduced;
+           >> decoded.is_projected >> decoded.preview_reduced;
         if (ds.status() != QDataStream::Ok) return false;
 
         ReadBudget budget;

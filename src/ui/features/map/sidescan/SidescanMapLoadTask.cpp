@@ -136,6 +136,13 @@ bool SidescanViewController::activateLayer(const std::string& layer_id,
         }
     }
 
+    // Survey overview loads are intentionally bounded to the fast Low tier when
+    // the requested Medium/High tier is not already cached. This makes every
+    // indexed line appear without requiring selection while preserving active-
+    // line priority and avoiding an automatic full-resolution fan-out.
+    if (!as_active)
+        stage_upgrade = false;
+
     // Open-time policy (cache_only): display persisted work, never start new
     // processing. Pick the best already-fresh raster tier at or below the
     // requested quality; if none exists, the line stays as its nav track and

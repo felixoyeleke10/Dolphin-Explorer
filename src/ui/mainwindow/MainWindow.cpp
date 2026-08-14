@@ -117,39 +117,31 @@ MainWindow::MainWindow(QWidget* parent)
             onLayerSelected(first_layer_id);
         }
 
-        // …and show the whole survey, not just the active line — from PERSISTED
-        // work only (D-06 + operator control: opening a project displays what
-        // exists; it never starts processing). Every other indexed line draws
-        // its nav track instantly from the index (zero I/O); SSS lines whose
-        // raster is already cached fresh load it (cheap disk read, no decode).
-        // Anything without persisted display state stays a nav track until the
-        // OPERATOR builds it: selecting the line, Apply, or a quality change.
-        // (Previously this loop decoded + rasterized every stale line and then
-        // staged background tier upgrades — minutes of unrequested processing
-        // that made the app crawl right after open.)
-        int deferred_lines = 0;
+        // Show the whole survey, not only the selected line. Index tracks appear
+        // immediately, then non-active SSS lines load through the bounded map lane.
+        // A fresh cache is still the fast path; an uncached Medium/High overview
+        // builds only the Low tier, never an automatic full-resolution upgrade.
+        int queued_lines = 0;
         for (const auto& layer : proj->layers()) {
             if (!layer || layer->id == first_layer_id) continue;
             if (!layer->index_built || layer->artifact_index.empty()) continue;
             if (layer->modality == app::Modality::Sidescan && m_sss_ctrl) {
                 m_sss_ctrl->showNavTrackFromIndex(layer->id, proj.get());
                 if (m_import_ctrl) m_import_ctrl->onMapLoadPending();
-                if (!m_sss_ctrl->activateLayer(layer->id, proj.get(),
-                                               /*as_active=*/false,
-                                               /*cache_only=*/true))
-                    ++deferred_lines;
+                m_sss_ctrl->activateLayer(layer->id, proj.get(),
+                                          /*as_active=*/false,
+                                          /*cache_only=*/false);
+                ++queued_lines;
             } else if (layer->modality == app::Modality::SubBottom) {
                 // Track only at open; the profile ribbon (a disk-heavy trace
                 // read) builds when the operator selects the line.
                 if (m_sss_ctrl)
                     m_sss_ctrl->showNavTrackFromIndex(layer->id, proj.get());
-                ++deferred_lines;
             }
         }
-        if (deferred_lines > 0)
-            appendJobMessage(tr("%1 line(s) shown as nav track from saved data — "
-                                "select a line to build its map imagery.")
-                                 .arg(deferred_lines));
+        if (queued_lines > 0)
+            appendJobMessage(tr("Loading %1 additional side-scan line(s) in the background.")
+                                 .arg(queued_lines));
 
         // Self-heal dead placeholders: a layer persisted WITHOUT its parsed
         // data (app closed or crashed mid-import) used to sit dead in the

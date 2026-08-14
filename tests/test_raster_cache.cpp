@@ -32,6 +32,8 @@ static LayerMapData makeSample()
     d.lon_min = -16.2; d.lon_max = -16.1; d.lat_min = 57.3; d.lat_max = 57.4;
     d.is_projected   = false;
     d.show_nav_track = true;
+    d.show_beams = true;
+    d.beam_spacing = 37;
     d.preview_reduced = true;
 
     d.nav_track = { {-16.20, 57.30}, {-16.15, 57.35},
@@ -136,7 +138,7 @@ static bool locateCacheOffsets(const std::string& path, CacheOffsets& offsets)
     offsets.summary_total = file.pos();
     ds >> u64 >> u64 >> flag;
 
-    ds >> u8 >> d >> d >> d >> d >> flag >> flag >> flag;
+    ds >> u8 >> d >> d >> d >> d >> flag >> flag;
 
     offsets.nav_count = file.pos();
     quint64 nav_count = 0;
@@ -250,7 +252,12 @@ int main()
         CHECK(out.lon_min == src.lon_min && out.lon_max == src.lon_max, "lon bounds mismatch");
         CHECK(out.lat_min == src.lat_min && out.lat_max == src.lat_max, "lat bounds mismatch");
         CHECK(out.is_projected == src.is_projected, "is_projected mismatch");
-        CHECK(out.show_nav_track == src.show_nav_track, "show_nav_track mismatch");
+        CHECK(!out.show_nav_track,
+              "cache restored live nav-track visibility state");
+        CHECK(!out.show_beams,
+              "cache restored project-owned beam visibility state");
+        CHECK(out.beam_spacing == 10,
+              "cache restored project-owned beam spacing state");
         CHECK(out.preview_reduced == src.preview_reduced, "preview_reduced mismatch");
 
         CHECK(out.nav_track.size() == src.nav_track.size(), "nav_track size mismatch");

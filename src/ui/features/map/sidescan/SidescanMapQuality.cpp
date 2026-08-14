@@ -99,6 +99,7 @@ bool SidescanViewController::applyCachedTier(const std::string& layer_id,
     if (tier_map_it->second.empty()) m_quality_tier_cache.erase(tier_map_it);
     LayerMapData ld;
     ld.coverage        = std::move(tier.coverage);
+    ld.beam_rays       = std::move(tier.beam_rays);
     ld.nav_track       = std::move(tier.nav_track);
     ld.lon_min         = tier.lon_min;
     ld.lon_max         = tier.lon_max;
@@ -252,6 +253,7 @@ void SidescanViewController::prebuildTier(const std::string& layer_id,
                 LayerMapData cached;
                 if (rastercache::load(cache_path, cache_meta, cached, sum)) {
                     res.tier.coverage        = std::move(cached.coverage);
+                    res.tier.beam_rays       = std::move(cached.beam_rays);
                     res.tier.nav_track       = std::move(cached.nav_track);
                     res.tier.lon_min         = cached.lon_min;
                     res.tier.lon_max         = cached.lon_max;
@@ -368,6 +370,7 @@ void SidescanViewController::prebuildTier(const std::string& layer_id,
             }
 
             res.tier.coverage        = std::move(ld.coverage);
+            res.tier.beam_rays       = std::move(ld.beam_rays);
             res.tier.nav_track       = std::move(ld.nav_track);
             res.tier.lon_min         = ld.lon_min;
             res.tier.lon_max         = ld.lon_max;
