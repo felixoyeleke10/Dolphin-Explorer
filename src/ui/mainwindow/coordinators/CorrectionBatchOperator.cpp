@@ -1,6 +1,7 @@
 #include "ui/mainwindow/coordinators/CorrectionBatchOperator.h"
 #include "app/corrections/SidescanCorrectionService.h"
 #include "app/corrections/SubBottomCorrectionService.h"
+#include "app/artifacts/BaselineArtifactResolver.h"
 #include "app/layers/DataLayer.h"
 #include "app/display/WaterfallParams.h"   // toCorrectionParams (per-layer SSS bake)
 #include "app/project/Project.h"
@@ -8,6 +9,21 @@
 #include "ui/features/import/ImportProgressDialog.h"
 
 namespace dolphin::ui {
+
+namespace {
+struct BakeInput {
+    std::string path;
+    std::string format;
+    core::ArtifactIndex index;
+};
+
+BakeInput cleanBakeInput(const app::DataLayer& layer)
+{
+    const auto baseline = app::resolveBaselineArtifact(layer);
+    if (!baseline) return {baseline.path, baseline.format, {}};
+    return {baseline.path, baseline.format, baseline.index};
+}
+}
 
 CorrectionBatchOperator::CorrectionBatchOperator(DiagnosticsHub*          hub,
                                                   ExecutionProgressDialog* overlay,
@@ -56,8 +72,9 @@ void CorrectionBatchOperator::applySSS(app::DataLayer*                      laye
     m_job_generations[lid] = m_generation;
     m_overlay->addJob(lid, label, QStringLiteral("COR"), 0.f);
 
-    m_sss_svc->applyToLine(lid, layer->artifact_store_path, layer->artifact_store_format,
-                            layer->artifact_index, source_path, params,
+    const BakeInput input = cleanBakeInput(*layer);
+    m_sss_svc->applyToLine(lid, input.path, input.format,
+                            input.index, source_path, params,
                             std::move(viewer_pings));
 }
 
@@ -133,9 +150,10 @@ void CorrectionBatchOperator::bakeCustomized(app::Project& project)
                 // only dispatched items (≤ kMaxConcurrent) appear as [RUNNING].
                 const std::string lid        = l->id;
                 const std::string label_s    = l->label;
-                const std::string store_path = l->artifact_store_path;
-                const std::string store_fmt  = l->artifact_store_format;
-                const core::ArtifactIndex ai = l->artifact_index;
+                const BakeInput input = cleanBakeInput(*l);
+                const std::string store_path = input.path;
+                const std::string store_fmt  = input.format;
+                const core::ArtifactIndex ai = input.index;
                 const auto* src = project.findSource(l->source_id);
                 const std::string src_path   = src ? src->path : std::string{};
                 const app::SidescanCorrectionParams params =
@@ -225,10 +243,11 @@ void CorrectionBatchOperator::bakeCustomized(app::Project& project)
 
 void CorrectionBatchOperator::onSssPersisted(const std::string& lid,
                                               const std::string& path,
-                                              const core::ArtifactIndex& idx)
+                                              const core::ArtifactIndex& idx,
+                                              uint32_t flags)
 {
     if (!acceptCurrentGeneration(lid)) return;
-    jobPersisted(lid, path, idx);
+    jobPersisted(lid, path, idx, flags);
     if (m_sss_batch_layer_ids.erase(lid) > 0)
         settleSss(true);
 }
@@ -252,10 +271,11 @@ void CorrectionBatchOperator::onSssFailed(const std::string& lid,
 
 void CorrectionBatchOperator::onSbpPersisted(const std::string& lid,
                                               const std::string& path,
-                                              const core::ArtifactIndex& idx)
+                                              const core::ArtifactIndex& idx,
+                                              uint32_t flags)
 {
     if (!acceptCurrentGeneration(lid)) return;
-    jobPersisted(lid, path, idx);
+    jobPersisted(lid, path, idx, flags);
     if (m_sbp_batch_layer_ids.erase(lid) > 0)
         settleSbp(true);
 }
@@ -398,7 +418,8 @@ void CorrectionBatchOperator::dispatchNextSbp()
 
 void CorrectionBatchOperator::jobPersisted(const std::string& lid,
                                             const std::string& path,
-                                            const core::ArtifactIndex& idx)
+                                            const core::ArtifactIndex& idx,
+                                            uint32_t flags)
 {
     m_overlay->finishJob(lid, tr("Corrections applied"));
     const auto it = m_job_ids.find(lid);
@@ -406,7 +427,7 @@ void CorrectionBatchOperator::jobPersisted(const std::string& lid,
         m_hub->endJob(it->second, tr("Corrections applied"));
         m_job_ids.erase(it);
     }
-    emit correctionPersisted(lid, path, idx);
+    emit correctionPersisted(lid, path, idx, flags);
 }
 
 void CorrectionBatchOperator::jobSkipped(const std::string& lid)

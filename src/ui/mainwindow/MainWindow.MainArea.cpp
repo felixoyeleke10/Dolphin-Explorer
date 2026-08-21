@@ -185,6 +185,13 @@ QWidget* MainWindow::buildMainArea(QWidget* parent)
     // blinks it when shown during project open; an in-window overlay cannot.
     m_import_overlay = new ExecutionProgressDialog(m_viewport_host);
     m_import_overlay->embedIn(m_viewport_host);
+    connect(m_import_overlay, &ExecutionProgressDialog::hostHidden,
+            this, [this](QWidget* host) {
+                // If an initiating viewer closes while work continues, keep the
+                // task surface reachable by returning it to the main viewport.
+                if (m_import_overlay && host != m_viewport_host)
+                    m_import_overlay->attachTo(m_viewport_host);
+            });
 
     return area;
 }
@@ -261,10 +268,10 @@ void MainWindow::buildPropertiesPanel(QWidget* parent)
     {
         auto* mp = m_map_display_panel;
         connect(mp, &MapDisplayPanel::tooltipsToggled, this, [this](bool on) {
-            if (m_map_view) m_map_view->setHoverTooltipsEnabled(on);
+            if (m_viewport_host) m_viewport_host->setHoverTooltipsEnabled(on);
         });
         connect(mp, &MapDisplayPanel::hoverHighlightToggled, this, [this](bool on) {
-            if (m_map_view) m_map_view->setHoverHighlightEnabled(on);
+            if (m_viewport_host) m_viewport_host->setHoverHighlightEnabled(on);
         });
         connect(mp, &MapDisplayPanel::azimuthEdited, this, [this](double deg) {
             if (m_viewport_host) m_viewport_host->setRotationDeg(deg);

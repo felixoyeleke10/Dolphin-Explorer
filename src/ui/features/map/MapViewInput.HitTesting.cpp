@@ -15,6 +15,7 @@ namespace dolphin::ui {
 void MapView::setHoverTooltipsEnabled(bool on)
 {
     m_hover_tooltips = on;
+    m_hover_test_px = QPoint(-9999, -9999);
     if (!on) QToolTip::hideText();
 }
 
@@ -42,17 +43,23 @@ void MapView::updateHoverState(QPoint pos, QPoint global_pos)
         m_hover_layer_id = hit;
         if (m_hover_highlight) update();
 
-        if (m_hover_tooltips) {
-            QString label;
-            if (!hit.empty() && m_project) {
-                if (const auto* layer = m_project->findLayer(hit))
-                    label = QString::fromStdString(layer->label.empty() ? layer->id
-                                                                        : layer->label);
-            }
-            if (label.isEmpty()) QToolTip::hideText();
-            else                 QToolTip::showText(global_pos, label, this);
-        }
     }
+    if (m_hover_tooltips) {
+        const QString label = layerDisplayName(hit);
+        if (label.isEmpty()) QToolTip::hideText();
+        else                 QToolTip::showText(global_pos, label, this);
+    }
+}
+
+QString MapView::layerDisplayName(const std::string& id) const
+{
+    if (id.empty()) return {};
+    if (m_project) {
+        if (const auto* layer = m_project->findLayer(id))
+            return QString::fromStdString(layer->label.empty() ? layer->id
+                                                                : layer->label);
+    }
+    return QString::fromStdString(id);
 }
 
 std::string MapView::hitTestLayer(QPoint px) const

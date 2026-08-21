@@ -1,6 +1,7 @@
 // NodeGraph.Execution.cpp — execute() with caching and per-node timing.
 #include "pipeline/NodeGraph.h"
 #include "pipeline/GraphJob.h"
+#include "pipeline/ProcessingContract.h"
 #include <chrono>
 #include <set>
 #include <stdexcept>
@@ -69,14 +70,35 @@ ArtifactBuffer NodeGraph::execute(const ArtifactBuffer& source, GraphJob& job)
 
         ArtifactBuffer input;
         bool has_upstream = false;
+        std::string order_error;
         for (const auto& e : m_edges) {
             if (e.to_node != id) continue;
             has_upstream = true;
+            if (const auto upstream = findNode(e.from_node); upstream) {
+                const std::string error = validateProcessingOrder(*upstream, *node);
+                if (!error.empty() && order_error.empty()) order_error = error;
+            }
             auto it = m_cache.find(e.from_node);
             if (it != m_cache.end()) appendUnique(input, it->second);
         }
         if (!has_upstream) input = source;
         result.input_count = input.size();
+
+        const std::string invocation_error =
+            validateProcessingInvocation(*node, input);
+        const std::string contract_error = !order_error.empty()
+            ? order_error : invocation_error;
+        if (
+            !contract_error.empty()) {
+            result.failed = true;
+            result.error = "processing contract: " + contract_error;
+            result.output_count = input.size();
+            m_cache[id] = input;
+            m_dirty[id] = false;
+            last_output = input;
+            job.node_results.push_back(std::move(result));
+            continue;
+        }
 
         const int64_t t0 = nowUs();
         try {

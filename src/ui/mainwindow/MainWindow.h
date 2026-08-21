@@ -81,6 +81,7 @@ class ExportController;
 class ProjectOperationCoordinator;
 class ToolController;
 class ViewportCoordinator;
+class SurveyDisplayCoordinator;
 class ConversationPanel;
 class CommandBar;
 class PanelChatWidget;
@@ -224,6 +225,7 @@ private slots:
     void onRemoveLayers(const std::vector<std::string>& layer_ids);
     void onRenameLayer(const std::string& layer_id);
     void onRunLayers(const std::vector<std::string>& layer_ids);
+    void onRevertProcessedLayer(const std::string& layer_id);
     void onExportLayers(const std::vector<std::string>& layer_ids, const QString& format);
     void onRemoveContact(uint64_t contact_id);
     void onRevealSource(const std::string& source_id);
@@ -379,6 +381,7 @@ private:
     ProjectOperationCoordinator*  m_op_coord      = nullptr;
     ToolController*               m_tool_ctrl     = nullptr;
     ViewportCoordinator*          m_viewport_coord = nullptr;
+    SurveyDisplayCoordinator*     m_survey_display = nullptr;
 
     // Map sonar preview quality actions (index == MapSonarQuality int value)
     std::array<QAction*, 6> m_act_map_quality{};

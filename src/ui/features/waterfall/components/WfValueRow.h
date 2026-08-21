@@ -26,6 +26,11 @@ namespace dolphin::ui {
 class WfValueRow : public QWidget {
     Q_OBJECT
 public:
+    // Shared form geometry for companion controls (combos, selectors).  Keeping
+    // these here prevents mixed rows from drifting onto different columns.
+    static constexpr int controlWidth() { return 116; }
+    static constexpr int controlRightMargin() { return 10; }
+
     WfValueRow(const QString& label,
                double lo, double hi, double value,
                double step,

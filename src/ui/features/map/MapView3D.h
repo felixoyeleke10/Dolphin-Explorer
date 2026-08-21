@@ -66,6 +66,7 @@ public:
                         const LayerMapData& data,
                         QColor color);
     void removeLayer(const std::string& layer_id);
+    int navLayerCount() const { return static_cast<int>(m_layers.size()); }
 
     // -- Terrain API (Phase 2) ---------------------------------------------
     // Load an XYZ/CSV bathy file in a background thread; render as depth mesh.
@@ -131,6 +132,8 @@ public:
     void setLayerOpacity      (const std::string& layer_id, float opacity);  // drapes, [0,1]
     void setActiveLayer    (const std::string& layer_id);
     void setSelectedLayers (const std::vector<std::string>& ids);
+    void setHoverTooltipsEnabled(bool on);
+    void setHoverHighlightEnabled(bool on);
 
     // -- Camera ------------------------------------------------------------
     void resetCamera();
@@ -169,6 +172,7 @@ signals:
     // mpp = metres per pixel (approximation from camera distance + viewport height).
     // rotation_deg = camera yaw in degrees [0, 360).
     void viewportChanged(double metres_per_pixel, double rotation_deg);
+    void hoverLayerChanged(const std::string& layer_id, QPoint global_pos);
 
 protected:
     void initializeGL() override;
@@ -178,6 +182,7 @@ protected:
     void mouseMoveEvent    (QMouseEvent*)        override;
     void mouseReleaseEvent (QMouseEvent*)        override;
     void wheelEvent        (QWheelEvent*)        override;
+    bool event(QEvent*) override;
     // NOTE: QWindow has no leaveEvent/contextMenuEvent — the right-click context menu
     // is emitted from mouseReleaseEvent instead (see MapView3D.Input.cpp).
 
@@ -400,6 +405,10 @@ private:
     bool      m_panning          = false;
     bool      m_pan_moved        = false;
     bool      m_camera_user_moved = false;  // suppresses auto-fit after user pans/orbits
+    bool      m_hover_tooltips = false;
+    bool      m_hover_highlight = false;
+    std::string m_hover_layer_id;
+    QPoint      m_hover_test_px { -9999, -9999 };
 
     // Screen-space layer pick; emits layerClicked / layersSelected.
     void pickAt(QPoint px);

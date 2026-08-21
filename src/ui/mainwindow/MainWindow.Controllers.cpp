@@ -4,12 +4,14 @@
 #include "ui/features/import/ImportController.h"
 #include "ui/features/import/ImportProgressDialog.h"
 #include "ui/features/map/MapView.h"
+#include "ui/features/map/MapViewportHost.h"
 #include "ui/features/map/sidescan/SidescanViewController.h"
 #include "ui/features/processing/ProcessingController.h"
 #include "ui/mainwindow/MainStatusBar.h"
 #include "ui/mainwindow/ProjectSessionController.h"
 #include "ui/mainwindow/coordinators/CorrectionBatchOperator.h"
 #include "ui/mainwindow/coordinators/ProjectOperationCoordinator.h"
+#include "ui/mainwindow/coordinators/SurveyDisplayCoordinator.h"
 #include "ui/shared/panels/LineListPanel.h"
 #include "ui/systems/ProjectEventBus.h"
 #include "ui/systems/WindowRegistry.h"
@@ -30,20 +32,23 @@ void MainWindow::setupFeatureControllers()
     m_sss_ctrl->setOperationManager(m_op_mgr);  // owns per-layer map-build ops (keyed)
     connect(m_sss_ctrl, &SidescanViewController::contactPicked,
             this, &MainWindow::onContactPicked);
-    connect(m_sss_ctrl, &SidescanViewController::loadingStarted, this, [this]() {
+    connect(m_sss_ctrl, &SidescanViewController::loadingStarted, this,
+            [this](uint64_t task_id, const QString& layer_name) {
         // A sidescan map build reports real 0→100 progress (loadingProgress), so mark
         // it progress-driven up front — otherwise refreshLoadingIndicator would flash
         // the indeterminate spinner before the first progress tick (the whole show on
         // a fast/cached load). The determinate bar appears with the first tick.
         m_map_progress_active = true;
         refreshLoadingIndicator();
+        if (m_import_ctrl)
+            m_import_ctrl->onMapLoadPending(task_id, layer_name);
     });
-    connect(m_sss_ctrl, &SidescanViewController::loadingFinished, this, [this]() {
+    connect(m_sss_ctrl, &SidescanViewController::loadingFinished, this, [this](uint64_t task_id) {
         // Only clear the indicator if no other viewer (or concurrent map build)
         // is still busy — the controller's state is updated before this fires.
         refreshLoadingIndicator();
         if (m_import_ctrl)
-            m_import_ctrl->onMapLoadDone();
+            m_import_ctrl->onMapLoadDone(task_id);
     });
     // Determinate progress for the active layer's map build (0→100): fills the
     // status-bar bar from start to end instead of the indeterminate bounce.
@@ -55,6 +60,7 @@ void MainWindow::setupFeatureControllers()
             // frameless window). Cleared by refreshLoadingIndicator when idle.
             m_status_bar->setBusyText(tr("Building map…"));
         }
+        if (m_import_ctrl) m_import_ctrl->onMapLoadProgress(pct);
     });
     // Per-line progress for a bottom-bar Apply batch: update that line's dialog card
     // with a readable phase (the map build reports ~5–55 decode, ~66 corrections,
@@ -84,10 +90,22 @@ void MainWindow::setupFeatureControllers()
     });
     connect(m_sss_ctrl, &SidescanViewController::mapDiagnosticsReady,
             this, &MainWindow::onMapDiagnosticsReady);
+    connect(m_sss_ctrl, &SidescanViewController::mapLoadFailed,
+            this, [this](const QString& layer_id, const QString& message) {
+                m_diag_hub->postProblem(
+                    tr("Map imagery failed for %1: %2").arg(layer_id, message),
+                    DiagnosticsHub::Severity::Error, layer_id);
+                appendJobMessage(
+                    tr("Map imagery failed for %1: %2").arg(layer_id, message));
+            });
 
     // Register the map controller so WindowRegistry broadcasts reach it.
     // Uses m_map_view as the host widget for auto-cleanup on destroy.
     m_window_registry->registerViewer(m_map_view, m_sss_ctrl);
+
+    m_survey_display = new SurveyDisplayCoordinator(m_sss_ctrl, m_map_view, this);
+    connect(m_survey_display, &SurveyDisplayCoordinator::selectionRequested,
+            this, &MainWindow::onLayerSelected);
 
     // Single source of truth for correction bakes (SSS + SBP).
     // CorrectionBatchOperator owns both services and routes lifecycle events
@@ -157,21 +175,21 @@ void MainWindow::setupFeatureControllers()
                 this, [this](const std::string& layer_id) {
                     // Only Sidescan layers trigger a background map-build task.
                     // For all other modalities onLayerSelected returns synchronously
-                    // and loadingFinished never fires, so don't call onMapLoadPending.
+                    // and no asynchronous map task is registered.
                     const auto* layer = currentProject() ? currentProject()->findLayer(layer_id) : nullptr;
                     const bool  needs_map_build = layer
                         && layer->modality == app::Modality::Sidescan;
-                    if (needs_map_build)
-                        m_import_ctrl->onMapLoadPending();
-                    // Evict stale map data so activateLayer() does a fresh load.
-                    if (m_sss_ctrl)
-                        m_sss_ctrl->unloadLayer(layer_id);
                     // For SBP layers, clear the stale map profile so onLayerSelected
                     // rebuilds it. On fresh import m_map_view has no data for this
                     // layer yet so this is a no-op; on reindex it forces a rebuild.
                     if (layer && layer->modality == app::Modality::SubBottom && m_map_view)
                         m_map_view->removeLayerData(layer_id);
-                    onLayerSelected(layer_id);
+                    if (needs_map_build && m_survey_display) {
+                        m_survey_display->materializeImportedSidescan(
+                            currentProject(), layer_id, activeLayerId());
+                    } else {
+                        onLayerSelected(layer_id);
+                    }
                     // Broadcast to all open viewers (handles the reindex case where a
                     // viewer already showing this layer holds stale pre-reindex data).
                     m_event_bus->postLayerDataChanged(layer_id);
@@ -181,6 +199,12 @@ void MainWindow::setupFeatureControllers()
                     // shows the correct sections for the newly indexed layer.
                     if (m_line_list) m_line_list->refresh();
                     refreshInspectorModalities();
+                });
+        connect(m_import_ctrl, &ExecutionController::batchCompleted,
+                this, [this](app::ImportJobManager::BatchSummary summary) {
+                    const int materialized = summary.imported + summary.rebuilt;
+                    if (m_survey_display)
+                        m_survey_display->completeImportBatch(materialized);
                 });
         connect(m_import_ctrl, &ExecutionController::cacheLayerReady,
                 this, [this](const std::string& layer_id) {
@@ -198,11 +222,9 @@ void MainWindow::setupFeatureControllers()
                     // but unloaded, so opening a project with N lines doesn't rebuild
                     // N mosaics — only the one the user is looking at.
                     if (activeLayerId().empty()) {
-                        if (needs_map_build) m_import_ctrl->onMapLoadPending();
                         onLayerSelected(layer_id);
                     } else if (layer_id == activeLayerId()) {
                         if (needs_map_build) {
-                            m_import_ctrl->onMapLoadPending();
                             m_sss_ctrl->activateLayer(layer_id, currentProject());
                         } else if (m_map_view) {
                             m_map_view->setActiveLayer(layer_id);
@@ -249,6 +271,8 @@ void MainWindow::setupFeatureControllers()
         // Feed processing jobs into the overlay dialog and DiagnosticsHub.
         connect(m_proc_ctrl, &ProcessingController::layerRunStarted,
                 this, [this](const std::string& id, const QString& label) {
+                    if (m_import_overlay && m_viewport_host)
+                        m_import_overlay->attachTo(m_viewport_host);
                     m_import_job_ids[id] = m_diag_hub->beginJob(
                         tr("Processing: %1").arg(label), QString::fromStdString(id));
                     m_import_overlay->addJob(id, label, "RUN", 0.f);

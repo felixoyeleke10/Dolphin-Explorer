@@ -14,6 +14,7 @@
 // Entry point: ctest --output-on-failure
 
 #include "app/project/Project.h"
+#include "app/project/ProjectRecovery.h"
 #include "app/layers/DataLayer.h"
 #include "core/ArtifactIndex.h"
 #include "core/Artifact.h"
@@ -195,6 +196,7 @@ static void testReopenInvalidatesMissingStore()
     if (!layer) return;
 
     injectIndexEntry(layer);
+
     layer->artifact_store_path   = "/nonexistent/survey.dlpd";  // file never created
     layer->artifact_store_format = "dlpd";
     layer->artifact_index.source_id = src->id;
@@ -922,6 +924,53 @@ static void testDisplayParamsRoundTrip()
     CHECK(layer != nullptr);
     if (!layer) return;
     injectIndexEntry(layer);
+    layer->artifact_store_path = (tmp.path() + "/line1_processed.dlpd").toStdString();
+    layer->artifact_store_format = "dlpd";
+    layer->source_artifact_store_path =
+        (tmp.path() + "/line1_imported.dlpd").toStdString();
+
+    auto& sss = layer->sss_display_state;
+    sss.customized                    = true;
+    sss.params.agc.enabled            = true;
+    sss.params.agc.mode               = dolphin::app::AgcMode::Variable;
+    sss.params.agc.strength           = 0.65f;
+    sss.params.agc.along_track_win    = 75;
+    sss.params.agc.smoothing_type     = dolphin::app::AgcSmoothingType::Median;
+    sss.params.agc.smoothing_win      = 9;
+    sss.params.agc.edge_skip_samples  = 37;
+    sss.params.agc.noise_floor_pct    = 3.f;
+    sss.params.agc.gain_cap_db        = 18.f;
+    sss.params.agc.target_mean        = 24000.f;
+    sss.params.tvg.enabled            = true;
+    sss.params.tvg.spreading          = 17.f;
+    sss.params.tvg.absorption         = 0.35f;
+    sss.params.tvg.fallback_blanking_m = 2.75f;
+    sss.params.arc.enabled            = true;
+    sss.params.arc.exponent           = 2.2f;
+    sss.params.arc.gain_cap_db        = 16.f;
+    layer->pipeline_applied            = true;
+    layer->processing_origin           = dolphin::app::ProcessingOrigin::Waterfall;
+    layer->applied_graph_json          = "{\"nodes\":[],\"edges\":[]}";
+    layer->baked_correction_flags      =
+        static_cast<uint32_t>(dolphin::core::CorrectionFlag::Tvg)
+        | static_cast<uint32_t>(dolphin::core::CorrectionFlag::Arc);
+    sss.params.arn.enabled            = true;
+    sss.params.arn.strength           = 0.72f;
+    sss.params.arn.gain_cap_db        = 9.f;
+    sss.params.arn.column_smooth      = 13;
+    sss.params.destripe.enabled       = true;
+    sss.params.destripe.window        = 61;
+    sss.params.destripe.subdivision   = 7;
+    sss.params.destripe.capping       = 2.4f;
+    sss.params.destripe.threshold_db  = 1.75f;
+    sss.params.beam_pattern.enabled   = true;
+    sss.params.beam_pattern.strength  = 0.84f;
+    sss.params.beam_pattern.smooth_radius = 17;
+    sss.params.beam_pattern.gain_cap_db = 11.f;
+    sss.params.ml_enhance.enabled     = true;
+    sss.params.ml_enhance.tile_pings  = 96;
+    sss.params.ml_enhance.tile_samps  = 192;
+    sss.params.ml_enhance.clip_limit  = 3.25f;
 
     auto& d = layer->sbp_display_state;
     d.display_customized       = true;
@@ -936,6 +985,7 @@ static void testDisplayParamsRoundTrip()
     d.gain.static_gain_db      = 6.0f;
     d.gain.agc_en              = true;
     d.gain.agc_window          = 128;
+    d.gain.agc_gain_cap_db     = 32.f;
     d.signal.envelope_en       = true;
     d.signal.bandpass_en       = true;
     d.signal.bp_lo_hz          = 500.0f;
@@ -951,6 +1001,50 @@ static void testDisplayParamsRoundTrip()
     if (!ll) return;
 
     const auto& r = ll->sbp_display_state;
+    const auto& rs = ll->sss_display_state;
+    CHECK(rs.customized);
+    CHECK(rs.params.agc.enabled);
+    CHECK(rs.params.agc.mode == dolphin::app::AgcMode::Variable);
+    CHECK(std::fabs(rs.params.agc.strength - 0.65f) < 1e-4f);
+    CHECK(rs.params.agc.along_track_win == 75);
+    CHECK(rs.params.agc.smoothing_type == dolphin::app::AgcSmoothingType::Median);
+    CHECK(rs.params.agc.smoothing_win == 9);
+    CHECK(rs.params.agc.edge_skip_samples == 37);
+    CHECK(std::fabs(rs.params.agc.noise_floor_pct - 3.f) < 1e-4f);
+    CHECK(std::fabs(rs.params.agc.gain_cap_db - 18.f) < 1e-4f);
+    CHECK(std::fabs(rs.params.agc.target_mean - 24000.f) < 1e-4f);
+    CHECK(rs.params.tvg.enabled);
+    CHECK(std::fabs(rs.params.tvg.spreading - 17.f) < 1e-4f);
+    CHECK(std::fabs(rs.params.tvg.absorption - 0.35f) < 1e-4f);
+    CHECK(std::fabs(rs.params.tvg.fallback_blanking_m - 2.75f) < 1e-4f);
+    CHECK(rs.params.arc.enabled);
+    CHECK(std::fabs(rs.params.arc.exponent - 2.2f) < 1e-4f);
+    CHECK(std::fabs(rs.params.arc.gain_cap_db - 16.f) < 1e-4f);
+    CHECK(ll->pipeline_applied);
+    CHECK(ll->source_artifact_store_path == layer->source_artifact_store_path);
+    CHECK(ll->processing_origin == dolphin::app::ProcessingOrigin::Waterfall);
+    CHECK(ll->applied_graph_json == layer->applied_graph_json);
+    CHECK(dolphin::core::hasCorrectionFlag(
+        ll->baked_correction_flags, dolphin::core::CorrectionFlag::Tvg));
+    CHECK(dolphin::core::hasCorrectionFlag(
+        ll->baked_correction_flags, dolphin::core::CorrectionFlag::Arc));
+    CHECK(rs.params.arn.enabled);
+    CHECK(std::fabs(rs.params.arn.strength - 0.72f) < 1e-4f);
+    CHECK(std::fabs(rs.params.arn.gain_cap_db - 9.f) < 1e-4f);
+    CHECK(rs.params.arn.column_smooth == 13);
+    CHECK(rs.params.destripe.enabled);
+    CHECK(rs.params.destripe.window == 61);
+    CHECK(rs.params.destripe.subdivision == 7);
+    CHECK(std::fabs(rs.params.destripe.capping - 2.4f) < 1e-4f);
+    CHECK(std::fabs(rs.params.destripe.threshold_db - 1.75f) < 1e-4f);
+    CHECK(rs.params.beam_pattern.enabled);
+    CHECK(std::fabs(rs.params.beam_pattern.strength - 0.84f) < 1e-4f);
+    CHECK(rs.params.beam_pattern.smooth_radius == 17);
+    CHECK(std::fabs(rs.params.beam_pattern.gain_cap_db - 11.f) < 1e-4f);
+    CHECK(rs.params.ml_enhance.enabled);
+    CHECK(rs.params.ml_enhance.tile_pings == 96);
+    CHECK(rs.params.ml_enhance.tile_samps == 192);
+    CHECK(std::fabs(rs.params.ml_enhance.clip_limit - 3.25f) < 1e-4f);
     CHECK(r.display_customized && r.gain_customized && r.signal_customized);
     CHECK(std::fabs(r.display.gain - 2.5f) < 1e-4f);
     CHECK(std::fabs(r.display.contrast - 1.4f) < 1e-4f);
@@ -961,10 +1055,85 @@ static void testDisplayParamsRoundTrip()
     CHECK(std::fabs(r.gain.static_gain_db - 6.0f) < 1e-4f);
     CHECK(r.gain.agc_en);
     CHECK(r.gain.agc_window == 128);
+    CHECK(std::fabs(r.gain.agc_gain_cap_db - 32.f) < 1e-4f);
     CHECK(r.signal.envelope_en);
     CHECK(r.signal.bandpass_en);
     CHECK(std::fabs(r.signal.bp_lo_hz - 500.0f) < 1e-2f);
     CHECK(std::fabs(r.signal.bp_hi_hz - 8000.0f) < 1e-2f);
+}
+
+// Recovery planning is source-wide and must never borrow CRS from another
+// source in a mixed-coordinate-system project.
+static void testMissingArtifactRecoveryPlan()
+{
+    dolphin::app::Project project;
+
+    auto exact = [](const char* id) {
+        dolphin::core::SpatialRef ref;
+        ref.id = id;
+        ref.kind = dolphin::core::SpatialRefKind::Projected;
+        ref.exact = true;
+        return ref;
+    };
+
+    auto* source_a = project.addSource("/survey/a.xtf", "xtf");
+    source_a->source_spatial_ref = exact("EPSG:32620");
+    const std::string source_a_path = source_a->path;
+    auto* a_hf = project.addLayer(source_a->id, "A HF");
+    auto* a_lf = project.addLayer(source_a->id, "A LF");
+
+    auto* source_b = project.addSource("/survey/b.xtf", "xtf");
+    const std::string source_b_path = source_b->path;
+    auto* b = project.addLayer(source_b->id, "B");
+
+    // This exact CRS belongs to another source and must not leak into B.
+    auto* source_c = project.addSource("/survey/c.xtf", "xtf");
+    source_c->source_spatial_ref = exact("EPSG:26921");
+    auto* c = project.addLayer(source_c->id, "C");
+    injectIndexEntry(c); // healthy: no recovery request
+
+    const auto plan = dolphin::app::planMissingArtifactRecovery(project);
+    CHECK(plan.size() == 2);
+    if (plan.size() != 2) return;
+
+    CHECK(plan[0].source_path == source_a_path);
+    CHECK(plan[0].layer_id == a_hf->id);
+    CHECK(plan[0].layer_id != a_lf->id); // one request for both siblings
+    CHECK(plan[0].source_crs.id == "EPSG:32620");
+    CHECK(plan[0].source_crs.exact);
+
+    CHECK(plan[1].source_path == source_b_path);
+    CHECK(plan[1].layer_id == b->id);
+    CHECK(plan[1].source_crs.empty());
+    CHECK(!plan[1].source_crs.exact);
+}
+
+static void testInvalidLegacySettingsAreRecovered()
+{
+    QTemporaryDir tmp;
+    CHECK(tmp.isValid());
+    if (!tmp.isValid()) return;
+    const std::string manifest = (tmp.path() + "/legacy-settings.dlp").toStdString();
+    auto project = dolphin::app::Project::create("legacy-settings", manifest);
+    auto* source = project->addSource("/missing/legacy.xtf", "xtf");
+    auto* layer = project->addLayer(source->id, "Legacy line");
+    layer->sss_display_state.customized = true;
+    layer->sss_display_state.params.arc.enabled = true;
+    layer->sss_display_state.params.arc.exponent = 99.f;
+    CHECK(project->save());
+
+    std::string error;
+    auto loaded = dolphin::app::Project::open(manifest, &error);
+    CHECK(loaded != nullptr);
+    CHECK(error.empty());
+    if (!loaded) return;
+    CHECK(!loaded->loadWarnings().empty());
+    const auto* restored = loaded->findLayer(layer->id);
+    CHECK(restored != nullptr);
+    if (restored) {
+        CHECK(!restored->sss_display_state.customized);
+        CHECK(!restored->sss_display_state.params.arc.enabled);
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -992,6 +1161,8 @@ int main(int argc, char** argv)
     testSchemaVersionGuard();
     testManifestValidation();
     testDisplayParamsRoundTrip();
+    testMissingArtifactRecoveryPlan();
+    testInvalidLegacySettingsAreRecovered();
 
     std::printf("\n%d passed, %d failed\n", g_pass, g_fail);
     return (g_fail == 0) ? 0 : 1;

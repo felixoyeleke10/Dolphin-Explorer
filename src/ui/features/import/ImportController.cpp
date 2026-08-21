@@ -67,13 +67,8 @@ bool ExecutionController::importsBusy() const
 void ExecutionController::importBatch(const QList<FileImportAction>& actions)
 {
     if (!m_project) return;
-    m_dialog->setQueueTotal(
-        m_manager->pendingCount() + (m_manager->busy() ? 1 : 0)
-        + static_cast<int>(
-            std::count_if(actions.begin(), actions.end(), [](const FileImportAction& a) {
-                return a.kind != FileImportAction::Kind::Skip
-                    && a.kind != FileImportAction::Kind::ReuseExisting;
-            })));
+    m_dialog->addToQueueTotal(
+        app::ImportJobManager::effectiveQueuedJobCount(actions));
     m_manager->importBatch(actions);
 }
 
@@ -84,16 +79,21 @@ void ExecutionController::reindexLayer(const std::string& source_path,
     m_manager->reindexLayer(source_path, layer_id, user_crs);
 }
 
-void ExecutionController::onMapLoadPending()
+void ExecutionController::onMapLoadPending(uint64_t task_id, const QString& layer_name)
 {
     if (m_dialog)
-        m_dialog->onMapLoadPending();
+        m_dialog->onMapLoadPending(task_id, layer_name);
 }
 
-void ExecutionController::onMapLoadDone()
+void ExecutionController::onMapLoadProgress(int percent)
+{
+    if (m_dialog) m_dialog->onMapLoadProgress(percent);
+}
+
+void ExecutionController::onMapLoadDone(uint64_t task_id)
 {
     if (m_dialog)
-        m_dialog->onMapLoadDone();
+        m_dialog->onMapLoadDone(task_id);
 }
 
 void ExecutionController::onJobStarted(const std::string& layer_id,
@@ -136,8 +136,8 @@ void ExecutionController::onJobCompleted(const std::string& layer_id)
         }
     }
 
-    // Fire importCompleted BEFORE finishJob so MainWindow can call
-    // onMapLoadPending(); checkAllDone() inside finishJob then sees
+    // Fire importCompleted BEFORE finishJob so activateLayer can emit loadingStarted;
+    // checkAllDone() inside finishJob then sees
     // m_pending_map_loads > 0 and withholds "All Done" until the rasteriser finishes.
     emit importCompleted(layer_id);
     m_dialog->finishJob(layer_id, artifacts, freq_khz, coord_sys);

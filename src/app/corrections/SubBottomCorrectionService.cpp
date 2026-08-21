@@ -1,6 +1,7 @@
 #include "app/corrections/SubBottomCorrectionService.h"
 #include "app/artifacts/ArtifactSidecar.h"
 #include "app/corrections/SubBottomCorrectionAlgorithms.h"
+#include "app/contracts/ProcessingSettingsContract.h"
 #include "app/services/ImportService.h"
 #include "io/cache/ParsedCache.h"
 #include "core/Artifact.h"
@@ -42,12 +43,18 @@ struct SbpCorrectionResult {
     std::string         error;
     bool                ok      = false;
     bool                skipped = false;
+    uint32_t            baked_correction_flags = 0;
 };
 
 SbpCorrectionResult execute(const SbpCorrectionRequest& req)
 {
     SbpCorrectionResult result;
     result.layer_id = req.layer_id;
+    if (const std::string error = contracts::validate(req.gain, req.signal);
+        !error.empty()) {
+        result.error = "Invalid sub-bottom correction settings: " + error;
+        return result;
+    }
 
     const std::string fmt = normaliseFormat(req.store_format);
     if (fmt != "dlpd" && fmt != "dpcache") {
@@ -83,19 +90,12 @@ SbpCorrectionResult execute(const SbpCorrectionRequest& req)
         return result;
     }
 
-    bool modified = false;
-    for (const auto& trace : traces) {
-        const uint32_t flags = trace.correction_flags;
-        modified = modified
-            || (req.signal.dc_removal_en && !core::hasSbpCorrectionFlag(flags, core::SbpCorrectionFlag::DcRemoval))
-            || (req.signal.envelope_en && !core::hasSbpCorrectionFlag(flags, core::SbpCorrectionFlag::Envelope))
-            || (req.signal.bandpass_en && !core::hasSbpCorrectionFlag(flags, core::SbpCorrectionFlag::BandPass))
-            || (req.gain.normalize_en && !core::hasSbpCorrectionFlag(flags, core::SbpCorrectionFlag::Normalize))
-            || (req.gain.static_gain_en && req.gain.static_gain_db != 0.f
-                && !core::hasSbpCorrectionFlag(flags, core::SbpCorrectionFlag::StaticGain))
-            || (req.gain.agc_en && !core::hasSbpCorrectionFlag(flags, core::SbpCorrectionFlag::Agc));
-    }
+    uint32_t flags_before = 0;
+    for (const auto& trace : traces) flags_before |= trace.correction_flags;
     corrections::applySubBottomCorrections(traces, req.gain, req.signal);
+    uint32_t flags_after = 0;
+    for (const auto& trace : traces) flags_after |= trace.correction_flags;
+    const bool modified = flags_after != flags_before;
 
     if (!modified) {
         result.ok        = true;
@@ -107,8 +107,10 @@ SbpCorrectionResult execute(const SbpCorrectionRequest& req)
 
     std::vector<core::Artifact> buffer;
     buffer.reserve(traces.size());
-    for (auto& t : traces)
+    for (auto& t : traces) {
+        result.baked_correction_flags |= t.correction_flags;
         buffer.emplace_back(std::move(t));
+    }
 
     core::ArtifactIndex out_index;
     if (!io::writeArtifactBufferToCache(write_path, buffer, meta, out_index)) {
@@ -161,7 +163,8 @@ void SubBottomCorrectionService::applyToLine(
                 } else if (res.skipped) {
                     emit applySkipped(res.layer_id);
                 } else {
-                    emit correctionsPersisted(res.layer_id, res.new_path, res.new_index);
+                    emit correctionsPersisted(res.layer_id, res.new_path, res.new_index,
+                                              res.baked_correction_flags);
                 }
             });
     watcher->setFuture(QtConcurrent::run([req]() {

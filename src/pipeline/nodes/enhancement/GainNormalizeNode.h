@@ -3,7 +3,7 @@
 
 namespace dolphin::pipeline {
 
-// Normalizes each ping's mean amplitude to a target value.
+// Applies one stable line-level gain per channel to a target mean.
 class GainNormalizeNode : public IProcessingNode {
 public:
     std::string typeId() const override { return "gain_normalize"; }

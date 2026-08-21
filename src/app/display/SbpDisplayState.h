@@ -17,4 +17,11 @@ struct SbpDisplayState {
     bool signal_customized  = false;
 };
 
+inline bool hasSbpProcessing(const dolphin::app::SbpGainParams& gain,
+                             const dolphin::app::SbpSignalParams& signal) noexcept
+{
+    return gain.static_gain_en || gain.agc_en || gain.normalize_en
+        || signal.envelope_en || signal.dc_removal_en || signal.bandpass_en;
+}
+
 } // namespace dolphin::ui

@@ -118,6 +118,8 @@ std::string Project::toJson() const
         jl["artifact_store_path"] = util::JsonValue(
             pathForManifest(l->artifact_store_path, m_manifest_path));
         jl["artifact_store_format"] = util::JsonValue(l->artifact_store_format);
+        jl["source_artifact_store_path"] = util::JsonValue(
+            pathForManifest(l->source_artifact_store_path, m_manifest_path));
         jl["modality"]  = util::JsonValue(modalityToString(l->modality));
         jl["source_spatial_ref"] = spatialRefToJson(l->source_spatial_ref);
         jl["uses_project_graph"] = util::JsonValue(l->uses_project_graph);
@@ -125,6 +127,12 @@ std::string Project::toJson() const
         jl["visible"]     = util::JsonValue(l->visible);
         jl["slant_range_corrected"] = util::JsonValue(l->slant_range_corrected);
         jl["pipeline_applied"]      = util::JsonValue(l->pipeline_applied);
+        jl["baked_correction_flags"] = util::JsonValue(
+            static_cast<double>(l->baked_correction_flags));
+        jl["processing_origin"] = util::JsonValue(
+            static_cast<int>(l->processing_origin));
+        if (!l->applied_graph_json.empty())
+            jl["applied_graph_json"] = util::JsonValue(l->applied_graph_json);
         jl["bottom_track_kind"] = util::JsonValue(static_cast<int>(l->bottom_track_kind));
         jl["qc_viewed_fraction"] = util::JsonValue(static_cast<double>(l->qc_viewed_fraction));
         jl["sss_palette"] = util::JsonValue(l->sss_palette);
@@ -178,14 +186,21 @@ std::string Project::toJson() const
             jd["tvg_en"]     = util::JsonValue(p.tvg.enabled);
             jd["tvg_spread"] = util::JsonValue(static_cast<double>(p.tvg.spreading));
             jd["tvg_absorb"] = util::JsonValue(static_cast<double>(p.tvg.absorption));
+            jd["tvg_fallback_blank"] = util::JsonValue(static_cast<double>(p.tvg.fallback_blanking_m));
             jd["agc_en"]     = util::JsonValue(p.agc.enabled);
             jd["agc_mode"]   = util::JsonValue(static_cast<int>(p.agc.mode));
             jd["agc_str"]    = util::JsonValue(static_cast<double>(p.agc.strength));
             jd["agc_win"]    = util::JsonValue(p.agc.along_track_win);
+            jd["agc_smooth_type"] = util::JsonValue(static_cast<int>(p.agc.smoothing_type));
+            jd["agc_smooth_win"]  = util::JsonValue(p.agc.smoothing_win);
+            jd["agc_edge_skip"]   = util::JsonValue(p.agc.edge_skip_samples);
+            jd["agc_noise_floor"] = util::JsonValue(static_cast<double>(p.agc.noise_floor_pct));
+            jd["agc_gain_cap"]    = util::JsonValue(static_cast<double>(p.agc.gain_cap_db));
+            jd["agc_target"]      = util::JsonValue(static_cast<double>(p.agc.target_mean));
             jd["arc_en"]     = util::JsonValue(p.arc.enabled);
             jd["arc_exp"]    = util::JsonValue(static_cast<double>(p.arc.exponent));
             jd["arc_cap"]    = util::JsonValue(static_cast<double>(p.arc.gain_cap_db));
-            // Imaging chain (ARN / Destripe / Beam Pattern / ML Enhance) — must be
+            // Imaging chain (ARN / Destripe / Beam Pattern / Adaptive Contrast) — must be
             // persisted: they feed the map raster-cache fingerprint, so losing them
             // on reopen invalidates the cached mosaic and forces a full rebuild.
             jd["arn_en"]     = util::JsonValue(p.arn.enabled);
@@ -196,9 +211,11 @@ std::string Project::toJson() const
             jd["ds_win"]     = util::JsonValue(p.destripe.window);
             jd["ds_sub"]     = util::JsonValue(p.destripe.subdivision);
             jd["ds_cap"]     = util::JsonValue(static_cast<double>(p.destripe.capping));
+            jd["ds_thresh"]  = util::JsonValue(static_cast<double>(p.destripe.threshold_db));
             jd["bpn_en"]     = util::JsonValue(p.beam_pattern.enabled);
             jd["bpn_str"]    = util::JsonValue(static_cast<double>(p.beam_pattern.strength));
             jd["bpn_rad"]    = util::JsonValue(p.beam_pattern.smooth_radius);
+            jd["bpn_cap"]    = util::JsonValue(static_cast<double>(p.beam_pattern.gain_cap_db));
             jd["ml_en"]      = util::JsonValue(p.ml_enhance.enabled);
             jd["ml_tp"]      = util::JsonValue(p.ml_enhance.tile_pings);
             jd["ml_ts"]      = util::JsonValue(p.ml_enhance.tile_samps);
@@ -224,6 +241,7 @@ std::string Project::toJson() const
             jd["gain_static_db"]  = util::JsonValue(static_cast<double>(d.gain.static_gain_db));
             jd["gain_agc_en"]     = util::JsonValue(d.gain.agc_en);
             jd["gain_agc_win"]    = util::JsonValue(d.gain.agc_window);
+            jd["gain_agc_cap"]    = util::JsonValue(static_cast<double>(d.gain.agc_gain_cap_db));
             jd["gain_norm_en"]    = util::JsonValue(d.gain.normalize_en);
             jd["sig_env_en"]      = util::JsonValue(d.signal.envelope_en);
             jd["sig_dc_en"]       = util::JsonValue(d.signal.dc_removal_en);

@@ -12,6 +12,7 @@
 #include <unordered_map>
 #include <vector>
 #include "ui/features/map/MapTypes.h"
+#include "ui/features/map/sidescan/SidescanInvalidation.h"
 #include "ui/features/map/sidescan/SssGeorefParams.h"
 #include "core/SidescanPing.h"
 
@@ -74,12 +75,11 @@ public:
     // centring, status bar). as_active=false: load its raster as part of the survey
     // overview without taking selection — used on open to show every cached line's
     // raster, not just the active one. Cache-first either way (no ping decode on hit).
-    // cache_only=true: display persisted work ONLY — load the
+    // cache_only=true (project open, D-06): display persisted work ONLY — load the
     // best already-fresh raster tier at or below the current quality, and if none
     // exists leave the line as its nav track. Never decodes pings, never
-    // rasterizes, and never stages background tier upgrades. Normal project-open
-    // overview loading uses cache_only=false; non-active uncached Medium/High
-    // lines are bounded to a Low preview and do not require user selection.
+    // rasterizes, never stages background tier upgrades. The mosaic builds when
+    // the OPERATOR acts: selecting the line, Apply, or changing quality.
     // Returns false ONLY when a cache_only call found no persisted raster and
     // deferred to the operator (callers use it to count/announce deferred
     // lines); all other paths return true.
@@ -186,6 +186,13 @@ public:
     // and ready (no blank). Rebuilds line-by-line on a cap-1 lane.
     void applyLiveCorrections(const std::vector<std::string>& layer_ids);
 
+    // Recolour resident intensity rasters for per-layer gain/contrast/stretch
+    // changes. No ping decode, georeferencing, or mosaic construction.
+    void applyDisplayParams(const std::vector<std::string>& layer_ids);
+    // Central invalidation entry point: coalesces repeated requests per layer and
+    // selects recolour, background reraster, or authoritative reload.
+    void applyInvalidations(const std::vector<SidescanInvalidationRequest>& requests);
+
     // Build a colored QImage from an IntensityCache without any disk I/O.
     // dp supplies stretch/gain overrides. When auto_stretch_enabled is true,
     // identity display bounds use the cache's canonical line-level stretch;
@@ -198,13 +205,14 @@ public:
 
 signals:
     void contactPicked(double lat, double lon, uint64_t artifact_id, uint32_t sample_idx);
-    void loadingStarted();   // emitted when a background map-build task kicks off
-    void loadingFinished();  // emitted when the task completes (success, failure, or cancel)
+    void loadingStarted(uint64_t task_id, const QString& layer_name);
+    void loadingFinished(uint64_t task_id);  // same ID; zero means no async build started
     // 0–100 progress for the ACTIVE layer's map build (drives the status-bar bar).
     // Marshalled to the main thread from the background task.
     void loadingProgress(int percent);
     // Emitted after a successful map build with the per-build diagnostics stats.
     void mapDiagnosticsReady(const QString& layer_id, const dolphin::ui::NavStats& stats);
+    void mapLoadFailed(const QString& layer_id, const QString& message);
     // Emitted by prebuildTier() when the background build for one tier completes.
     void prebuildTierComplete(const std::string& layer_id, MapSonarQuality quality);
     // Emitted on EVERY prebuild outcome (success / fail / cancel) — unlike
@@ -224,12 +232,16 @@ private:
     app::Project*         m_project         = nullptr;
     std::string           m_active_layer_id;
     std::set<std::string> m_loaded_layers;   // layers currently on the map
+    // Actual tier currently resident in MapView. Without this, every click on an
+    // already-loaded Medium/High line launched another disk-cache load/prebuild.
+    std::unordered_map<std::string, MapSonarQuality> m_resident_quality;
 
     // Aggregate background-build state for viewerDataState(). m_active_builds
     // counts in-flight activateLayer tasks (layers can load concurrently); the
     // controller reports Loading while any are running and Ready once they end.
     ViewerDataState m_data_state    = ViewerDataState::Idle;
     int             m_active_builds = 0;
+    uint64_t        m_next_load_task_id = 1;
 
     MapSonarQuality  m_quality        = MapSonarQuality::CoverageOnly;
     SssGeorefParams  m_georef_params;

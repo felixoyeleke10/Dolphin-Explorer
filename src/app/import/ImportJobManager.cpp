@@ -21,6 +21,27 @@ int ImportJobManager::maxConcurrentJobs()
     return static_cast<int>(std::max(2u, hc));
 }
 
+int ImportJobManager::effectiveQueuedJobCount(
+    const QList<FileImportAction>& actions)
+{
+    QSet<QString> seen_paths;
+    int count = 0;
+    for (const auto& action : actions) {
+        if (!action.path.isEmpty()) {
+            const QString norm = QFileInfo(action.path).canonicalFilePath();
+            const QString key = norm.isEmpty() ? action.path : norm;
+            if (seen_paths.contains(key)) continue;
+            seen_paths.insert(key);
+        }
+        if (action.kind == FileImportAction::Kind::Skip
+            || action.kind == FileImportAction::Kind::ReuseExisting) {
+            continue;
+        }
+        ++count;
+    }
+    return count;
+}
+
 ImportJobManager::ImportJobManager(ImportService* service, QObject* parent)
     : QObject(parent)
     , m_service(service)

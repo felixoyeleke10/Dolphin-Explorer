@@ -42,6 +42,31 @@ struct QualityParams {
     int    cell_budget_div;
 };
 
+struct QualityLoadPlan {
+    MapSonarQuality build_quality = MapSonarQuality::Low;
+    bool stage_upgrade = false;
+};
+
+inline QualityLoadPlan qualityLoadPlan(MapSonarQuality requested,
+                                       bool requested_fresh,
+                                       bool low_fresh,
+                                       bool active_layer) noexcept
+{
+    (void)low_fresh;
+    if (requested != MapSonarQuality::Medium
+            && requested != MapSonarQuality::High)
+        return {requested, false};
+    if (requested_fresh)
+        return {requested, false};
+    if (!active_layer)
+        return {MapSonarQuality::Low, false};
+    // An uncached active Medium/High line must never block first paint on the
+    // expensive requested tier.  Low may itself need building, but its bounded
+    // 1024 px / 1024-group workload is still the prompt preview contract; once
+    // it lands, activateLayer schedules the requested tier as an upgrade.
+    return {MapSonarQuality::Low, true};
+}
+
 // During rasterization each retained sample exists once in the decoded ping and
 // once as an expanded georeferenced SssPoint. Keep that combined payload bounded;
 // this deliberately accounts for SssPoint::ground_range_m and struct padding.

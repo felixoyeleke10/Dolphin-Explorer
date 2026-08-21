@@ -41,6 +41,7 @@ private:
     QDoubleSpinBox* m_static_db      = nullptr;
     QCheckBox*      m_agc_en         = nullptr;
     QSpinBox*       m_agc_window     = nullptr;
+    QDoubleSpinBox* m_agc_gain_cap   = nullptr;
     QCheckBox*      m_normalize_en   = nullptr;
 };
 

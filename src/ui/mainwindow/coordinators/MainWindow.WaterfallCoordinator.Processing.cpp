@@ -20,6 +20,7 @@
 #include "ui/mainwindow/coordinators/SidescanProcessingCoordinator.h"
 #include "ui/shared/dialogs/CrsPickerDialog.h"
 #include "ui/features/map/MapView.h"
+#include "ui/features/map/MapViewportHost.h"
 #include "ui/mainwindow/MainStatusBar.h"
 #include "ui/features/map/sidescan/SidescanViewController.h"
 #include "ui/features/import/ImportProgressDialog.h"
@@ -34,6 +35,7 @@
 
 #include <algorithm>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace dolphin::ui {
 
@@ -146,6 +148,8 @@ void MainWindow::applyActiveTools(bool all_lines)
 {
     auto* proj = currentProject();
     if (!proj || !m_display_state) return;
+    if (m_import_overlay && m_viewport_host)
+        m_import_overlay->attachTo(m_viewport_host);
     const std::string active = activeLayerId();
     const auto* layer = proj->findLayer(active);
     if (!layer) return;
@@ -200,8 +204,37 @@ void MainWindow::applyActiveTools(bool all_lines)
         if (m_heading_panel) m_heading_panel->writeInto(nav);
 
         // One workflow owns scope filtering and every SSS model mutation.
+        SidescanProcessingCoordinator::Result commit_result;
         if (m_sss_processing)
-            m_sss_processing->commit(proj, target_ids, disp, &nav);
+            commit_result = m_sss_processing->commit(proj, target_ids, disp, &nav);
+
+        // Applied model state is authoritative. Discard per-line editor drafts so
+        // selecting a target line reloads the checked tools and exact persisted
+        // values instead of an older uncommitted UI snapshot.
+        for (const auto& id : target_ids) m_sss_control_drafts.erase(id);
+        if (m_gain_panel) m_gain_panel->setParams(disp);
+        if (m_imaging_panel) m_imaging_panel->setParams(disp);
+
+        // An explicitly empty SSS chain means "use imported data" for every
+        // selected target, independent of which workflow produced its sidecar.
+        for (const auto& id : commit_result.revert_layer_ids)
+            onRevertProcessedLayer(id);
+        std::unordered_set<std::string> reverted(
+            commit_result.revert_layer_ids.begin(),
+            commit_result.revert_layer_ids.end());
+        std::vector<SidescanInvalidationRequest> invalidations;
+        for (const auto& id : commit_result.display_changed_layer_ids)
+            if (!reverted.count(id)) invalidations.push_back(
+                {id, SidescanInvalidation::Appearance});
+        for (const auto& id : commit_result.pipeline_changed_layer_ids)
+            if (!reverted.count(id)) invalidations.push_back(
+                {id, SidescanInvalidation::Amplitude});
+        for (const auto& id : commit_result.geometry_changed_layer_ids)
+            if (!reverted.count(id)) invalidations.push_back(
+                {id, SidescanInvalidation::Geometry});
+        for (const auto& id : commit_result.nav_changed_layer_ids)
+            if (!reverted.count(id)) invalidations.push_back(
+                {id, SidescanInvalidation::Geometry});
 
         // Keep the live waterfall in sync if it is open.
         if (m_waterfall_win && m_waterfall_win->isVisible()
@@ -218,21 +251,25 @@ void MainWindow::applyActiveTools(bool all_lines)
         if (disp.arn.enabled)            tools << QStringLiteral("ARN");
         if (disp.destripe.enabled)       tools << QStringLiteral("Destripe");
         if (disp.beam_pattern.enabled)   tools << QStringLiteral("Beam Pattern");
-        if (disp.ml_enhance.enabled)     tools << QStringLiteral("ML Enhance");
+        if (disp.ml_enhance.enabled)     tools << QStringLiteral("Adaptive Contrast");
         if (nav.smooth_enabled || nav.layback_enabled ||
             nav.heading_offset_deg != 0.f || nav.pitch_offset_deg != 0.f ||
             nav.roll_offset_deg != 0.f)  tools << tr("Nav");
-        const QString summary = tools.isEmpty() ? tr("display only")
+        const QString summary = tools.isEmpty() ? tr("unprocessed")
                                                 : tools.join(QStringLiteral(", "));
 
         // Only lines currently on the map rebuild now (cards mirror that); others
         // pick up the stored params lazily when first activated.
         std::vector<std::string> rebuild;
         if (m_sss_ctrl) {
+            const auto plan = coalesceSidescanInvalidations(invalidations);
             const auto loaded = m_sss_ctrl->loadedLayers();
-            for (const auto& id : target_ids)
-                if (std::find(loaded.begin(), loaded.end(), id) != loaded.end())
+            for (const auto& id : loaded) {
+                const auto it = plan.find(id);
+                if (it != plan.end()
+                        && it->second != SidescanRefreshAction::Recolour)
                     rebuild.push_back(id);
+            }
         }
 
         // ONE card per rebuilding line; advances through phases + closes when done.
@@ -241,7 +278,7 @@ void MainWindow::applyActiveTools(bool all_lines)
         // Line-by-line rebuild (keeps the old mosaic until ready). Routed through
         // applyLiveCorrections → prebuildTier so prebuildTierProgress/Finished update
         // and close each line's dialog card.
-        if (m_sss_ctrl) m_sss_ctrl->applyLiveCorrections(rebuild);
+        if (m_sss_ctrl) m_sss_ctrl->applyInvalidations(invalidations);
 
         recordActivity(ActivityKind::DisplayParams,
             all_lines ? tr("Tools applied to all sidescan lines")
@@ -250,29 +287,43 @@ void MainWindow::applyActiveTools(bool all_lines)
     else if (mod == M::SubBottom) {
         auto* gm = m_modal_host ? m_modal_host->sbpGainModule()   : nullptr;
         auto* sm = m_modal_host ? m_modal_host->sbpSignalModule() : nullptr;
+        const app::SbpGainParams gain = gm ? gm->currentParams()
+                                           : layer->sbp_display_state.gain;
+        const app::SbpSignalParams signal = sm ? sm->currentParams()
+                                                : layer->sbp_display_state.signal;
         NavProcessingParams nav = layer->nav_state;
         if (m_sbp_nav_panel)     m_sbp_nav_panel->writeInto(nav);
         if (m_sbp_heading_panel) m_sbp_heading_panel->writeInto(nav);
 
         // Store gain/signal/nav on every target line.
         for (const auto& id : target_ids) {
-            if (gm) m_display_state->setLayerSbpGain(id, gm->currentParams());
-            if (sm) m_display_state->setLayerSbpSignal(id, sm->currentParams());
+            if (gm) m_display_state->setLayerSbpGain(id, gain);
+            if (sm) m_display_state->setLayerSbpSignal(id, signal);
             m_display_state->setLayerNav(id, nav);
+        }
+        std::unordered_set<std::string> reverted;
+        if (!hasSbpProcessing(gain, signal)) {
+            for (const auto& id : target_ids) {
+                const auto* target = proj->findLayer(id);
+                if (target && target->pipeline_applied) {
+                    reverted.insert(id);
+                    onRevertProcessedLayer(id);
+                }
+            }
         }
         // Push gain/signal live to the SBP window (display-state only — no .dlpd bake).
         if (m_sbp_win) {
-            if (gm) m_sbp_win->applyGainParams(gm->currentParams());
-            if (sm) m_sbp_win->applySignalParams(sm->currentParams());
+            if (gm) m_sbp_win->applyGainParams(gain);
+            if (sm) m_sbp_win->applySignalParams(signal);
             m_sbp_win->applyNavToLine(nav);
         }
 
         QStringList tools;
-        if (gm) { const auto g = gm->currentParams();
+        if (gm) { const auto& g = gain;
             if (g.static_gain_en) tools << QStringLiteral("Static Gain");
             if (g.agc_en)         tools << QStringLiteral("AGC");
             if (g.normalize_en)   tools << QStringLiteral("Normalize"); }
-        if (sm) { const auto s = sm->currentParams();
+        if (sm) { const auto& s = signal;
             if (s.envelope_en)    tools << QStringLiteral("Envelope");
             if (s.dc_removal_en)  tools << QStringLiteral("DC Removal");
             if (s.bandpass_en)    tools << QStringLiteral("Bandpass"); }
@@ -285,7 +336,8 @@ void MainWindow::applyActiveTools(bool all_lines)
         // Only lines already on the map rebuild now; others apply lazily on select.
         std::vector<std::string> rebuild;
         for (const auto& id : target_ids)
-            if (m_map_view && m_map_view->layerData(id)) rebuild.push_back(id);
+            if (!reverted.count(id) && m_map_view && m_map_view->layerData(id))
+                rebuild.push_back(id);
 
         openCards(rebuild, summary, QStringLiteral("SBP"), !tools.isEmpty());
 
@@ -312,6 +364,8 @@ void MainWindow::applyActiveTools(bool all_lines)
 // have applied corrections.
 void MainWindow::onBakeCorrections()
 {
+    if (m_import_overlay && m_viewport_host)
+        m_import_overlay->attachTo(m_viewport_host);
     if (!currentProject() || !m_corr_op) return;
 
     int n = 0;

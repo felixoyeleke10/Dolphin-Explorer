@@ -1,13 +1,76 @@
 #include "app/corrections/SubBottomCorrectionAlgorithms.h"
+#include "app/contracts/ProcessingSettingsContract.h"
 
 #include <algorithm>
 #include <cassert>
 #include <cmath>
 #include <iostream>
+#include <limits>
 
 int main()
 {
     using namespace dolphin;
+
+    // Every execution/persistence entry point shares these validation rules.
+    assert(app::contracts::validate(ui::WaterfallParams{}).empty());
+    assert(app::contracts::validate(ui::SubBottomDisplayParams{}).empty());
+    assert(app::contracts::validate(app::SbpGainParams{}, app::SbpSignalParams{}).empty());
+    assert(app::contracts::validate(ui::NavProcessingParams{}).empty());
+    app::SbpGainParams disabled_agc;
+    disabled_agc.agc_en = false;
+    disabled_agc.agc_window = 999999; // irrelevant while disabled
+    assert(app::contracts::validate(disabled_agc, app::SbpSignalParams{}).empty());
+
+    ui::WaterfallParams bad_sss;
+    bad_sss.agc.strength = std::numeric_limits<float>::quiet_NaN();
+    assert(!app::contracts::validate(bad_sss).empty());
+    bad_sss = {};
+    bad_sss.agc.gain_cap_db = 100.f;
+    assert(!app::contracts::validate(bad_sss).empty());
+    bad_sss = {};
+    bad_sss.agc.mode = static_cast<app::AgcMode>(99);
+    assert(!app::contracts::validate(bad_sss).empty());
+    bad_sss = {};
+    bad_sss.arc.exponent = std::numeric_limits<float>::quiet_NaN();
+    assert(!app::contracts::validate(bad_sss).empty());
+    bad_sss = {};
+    bad_sss.arc.gain_cap_db = 100.f;
+    assert(!app::contracts::validate(bad_sss).empty());
+    bad_sss = {};
+    bad_sss.arn.strength = std::numeric_limits<float>::quiet_NaN();
+    assert(!app::contracts::validate(bad_sss).empty());
+    bad_sss = {};
+    bad_sss.arn.column_smooth = -1;
+    assert(!app::contracts::validate(bad_sss).empty());
+    bad_sss = {};
+    bad_sss.destripe.capping = 0.5f;
+    assert(!app::contracts::validate(bad_sss).empty());
+    bad_sss = {};
+    bad_sss.destripe.threshold_db = std::numeric_limits<float>::quiet_NaN();
+    assert(!app::contracts::validate(bad_sss).empty());
+    bad_sss = {};
+    bad_sss.beam_pattern.gain_cap_db = std::numeric_limits<float>::infinity();
+    assert(!app::contracts::validate(bad_sss).empty());
+    bad_sss = {};
+    bad_sss.ml_enhance.tile_pings = 0;
+    assert(!app::contracts::validate(bad_sss).empty());
+    bad_sss = {};
+    bad_sss.ml_enhance.clip_limit = std::numeric_limits<float>::quiet_NaN();
+    assert(!app::contracts::validate(bad_sss).empty());
+    ui::SubBottomDisplayParams bad_display;
+    bad_display.sound_speed_ms = 0.f;
+    assert(!app::contracts::validate(bad_display).empty());
+    app::SbpSignalParams bad_signal;
+    bad_signal.bandpass_en = true;
+    bad_signal.bp_lo_hz = 500.f;
+    bad_signal.bp_hi_hz = 100.f;
+    assert(!app::contracts::validate(app::SbpGainParams{}, bad_signal).empty());
+    app::SbpGainParams bad_sbp_gain;
+    bad_sbp_gain.agc_gain_cap_db = 100.f;
+    assert(!app::contracts::validate(bad_sbp_gain, {}).empty());
+    ui::NavProcessingParams bad_nav;
+    bad_nav.smooth_window = 0;
+    assert(!app::contracts::validate(bad_nav).empty());
 
     std::vector<core::SubBottomTrace> traces(2);
     traces[0].samples = {2.0f};
@@ -20,6 +83,31 @@ int main()
     assert(app::corrections::applySubBottomCorrections(traces, gain, signal));
     assert(std::abs(traces[0].samples[0] - 2.0f) < 1e-6f);
     assert(std::abs(traces[1].samples[0] - 4.0f) < 1e-5f);
+
+    // Running-RMS AGC is bounded and ignores already-corrected traces when
+    // estimating a mixed legacy store's remaining gains.
+    app::SbpGainParams capped_agc;
+    capped_agc.agc_en = true;
+    capped_agc.agc_window = 5;
+    capped_agc.agc_gain_cap_db = 20.f;
+    core::SubBottomTrace weak;
+    weak.samples = {1.0e-6f};
+    std::vector<core::SubBottomTrace> weak_traces{weak};
+    assert(app::corrections::applySubBottomCorrections(
+        weak_traces, capped_agc, {}));
+    assert(std::abs(weak_traces[0].samples[0] - 1.0e-5f) < 1.0e-8f);
+
+    core::SubBottomTrace baked_agc;
+    baked_agc.samples = {1.f};
+    baked_agc.correction_flags |= core::SbpCorrectionFlag::Agc;
+    core::SubBottomTrace raw_agc;
+    raw_agc.samples = {2.f};
+    std::vector<core::SubBottomTrace> mixed_agc{baked_agc, raw_agc};
+    capped_agc.agc_gain_cap_db = 40.f;
+    assert(app::corrections::applySubBottomCorrections(
+        mixed_agc, capped_agc, {}));
+    assert(std::abs(mixed_agc[0].samples[0] - 1.f) < 1e-6f);
+    assert(std::abs(mixed_agc[1].samples[0] - 1.f) < 1e-6f);
 
     core::SubBottomTrace filtered;
     filtered.sample_rate_hz = 1000.0f;
@@ -84,6 +172,19 @@ int main()
     tiny.samples = {1.0f, 1.0f, 1.0f};
     std::vector<core::SubBottomTrace> tiny_traces{tiny};
     assert(app::corrections::applySubBottomCorrections(tiny_traces, {}, signal));
+
+    // Empty/identity inputs do not acquire provenance merely because a control
+    // was enabled.
+    app::SbpGainParams identity_gain;
+    identity_gain.normalize_en = true;
+    core::SubBottomTrace zero_trace;
+    zero_trace.samples.assign(16, 0.f);
+    std::vector<core::SubBottomTrace> zero_traces{zero_trace};
+    assert(app::corrections::applySubBottomCorrections(
+        zero_traces, identity_gain, {}));
+    assert(!core::hasSbpCorrectionFlag(
+        zero_traces.front().correction_flags,
+        core::SbpCorrectionFlag::Normalize));
 
     std::cout << "Sub-bottom correction tests passed\n";
     return 0;

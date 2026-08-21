@@ -145,6 +145,10 @@ void WaterfallAnalysisPanel::buildImageSection(QVBoxLayout* vl, QWidget* contain
         m_arn_gain_cap->setToolTip(
             tr("Maximum gain ARN may apply to any range column.\n"
                "Start at 12 dB. Lower values are safer; higher values can lift noise and water-column clutter."));
+        addValueRow(arn_bl, tr("Smooth Radius"), m_arn_smooth,
+                    0, 100, 5, 1, 0, tr(" samp"));
+        m_arn_smooth->setToolTip(
+            tr("Half-window used to smooth the learned range-response profile."));
     }
     bl->addWidget(m_arn_body);
 
@@ -245,8 +249,8 @@ void WaterfallAnalysisPanel::buildImageSection(QVBoxLayout* vl, QWidget* contain
         addValueRow(agc_bl, tr("Smoothing Window"),
                     m_agc_smooth_win, 1, 50, 5, 1, 0);
         m_agc_smooth_win->setToolTip(
-            tr("Smooths the AGC gain curve across range samples.\n"
-               "Start at 5. Increase if the image looks patchy; decrease if detail becomes smeared."));
+            tr("Smooths the AGC gain curve along-track across neighbouring pings.\n"
+               "Start at 5. Increase if gain changes look patchy."));
         addValueRow(agc_bl, tr("Edge Skip"),
                     m_agc_edge_skip, 0, 500, 50, 5, 0, tr(" smpl"));
         m_agc_edge_skip->setToolTip(
@@ -257,6 +261,11 @@ void WaterfallAnalysisPanel::buildImageSection(QVBoxLayout* vl, QWidget* contain
         m_agc_noise_floor->setToolTip(
             tr("Lowest percentage treated as noise during AGC.\n"
                "Start at 2%. Increase if low-level noise is being amplified."));
+        addValueRow(agc_bl, tr("Gain Cap"),
+                    m_agc_gain_cap, 0, 60, 24, 1, 0, tr(" dB"));
+        m_agc_gain_cap->setToolTip(
+            tr("Maximum positive gain AGC may apply.\n"
+               "Start at 24 dB. Lower values are safer for noisy or weak records."));
     }
     bl->addWidget(m_agc_body);
 
@@ -271,18 +280,18 @@ void WaterfallAnalysisPanel::buildImageSection(QVBoxLayout* vl, QWidget* contain
         s->setObjectName("avHRule"); return s; }());
 
     {
-        auto* sub = new QLabel(tr("Destripping"), container);
+        auto* sub = new QLabel(tr("Destriping"), container);
         sub->setObjectName("wfSubSectionLabel");
         sub->setContentsMargins(kLabelL, 6, kRowR, 2);
         bl->addWidget(sub);
     }
 
-    m_destripe_toggle = new WfToggleRow(tr("Enable Destripping"), false, container);
+    m_destripe_toggle = new WfToggleRow(tr("Enable Destriping"), false, container);
     m_destripe_toggle->setToolTip(
         tr("Removes horizontal banding caused by ping-to-ping gain variations.\n"
-           "Divides the swath into range subdivisions and normalises each\n"
-           "independently using a local-mean / global-mean correction.\n"
-           "Suggested start: Window 50 pings, Subdivision 4, Capping 2.0."));
+           "Uses robust local medians in independent range zones and only\n"
+           "corrects deviations above the selected stripe threshold.\n"
+           "Suggested start: Window 50 pings, 4 zones, 1 dB threshold."));
     bl->addWidget(m_destripe_toggle);
     m_destripe_body = new QWidget(container);
     m_destripe_body->setVisible(false);
@@ -303,6 +312,10 @@ void WaterfallAnalysisPanel::buildImageSection(QVBoxLayout* vl, QWidget* contain
         m_destripe_cap->setToolTip(
             tr("Limits how strong the destripe correction can become.\n"
                "Start at 2.0. Lower is safer; higher removes stronger stripes but can alter true seabed texture."));
+        addValueRow(ds_bl, tr("Stripe Threshold"), m_destripe_threshold,
+                    0.0, 12.0, 1.0, 0.25, 2, tr(" dB"));
+        m_destripe_threshold->setToolTip(
+            tr("Minimum robust local-level deviation treated as a stripe."));
     }
     bl->addWidget(m_destripe_body);
 
@@ -318,7 +331,7 @@ void WaterfallAnalysisPanel::buildImageSection(QVBoxLayout* vl, QWidget* contain
     m_src_toggle->setToolTip(
         tr("Remap slant range to ground range using seabed altitude.\n"
            "Requires seabed tracking data.\n"
-           "Use before beam-pattern correction or when you want across-track distance to represent seabed ground range."));
+           "Required with beam-pattern correction so displayed across-track distance represents seabed ground range."));
     bl->addWidget(m_src_toggle);
 
     // -- Dirty indicator connections --------------------------------------
@@ -340,8 +353,8 @@ void WaterfallAnalysisPanel::buildImageSection(QVBoxLayout* vl, QWidget* contain
                        "Beam Pattern Normalisation is active.</b>"
                        "<p>Beam Pattern Normalisation works column-by-column across "
                        "the swath. For the correction to represent the transducer's "
-                       "true across-track sensitivity pattern, samples must first be "
-                       "remapped from slant range to ground range.</p>"
+                       "true across-track sensitivity pattern, its corrected amplitudes "
+                       "must be displayed using ground-range geometry.</p>"
                        "<p>Without Slant Range Correction, each column contains "
                        "samples at different grazing angles, causing the normalisation "
                        "to overcorrect near-nadir and undercorrect far-range — "
@@ -358,14 +371,17 @@ void WaterfallAnalysisPanel::buildImageSection(QVBoxLayout* vl, QWidget* contain
         connect(m_tvg_absorption,    &WfValueRow::valueChanged,  this, refresh);
         connect(m_arn_strength,      &WfValueRow::valueChanged,  this, refresh);
         connect(m_arn_gain_cap,      &WfValueRow::valueChanged,  this, refresh);
+        connect(m_arn_smooth,        &WfValueRow::valueChanged,  this, refresh);
         connect(m_agc_strength,      &WfValueRow::valueChanged,  this, refresh);
         connect(m_agc_along_track,   &WfValueRow::valueChanged,  this, refresh);
         connect(m_agc_smooth_win,    &WfValueRow::valueChanged,  this, refresh);
         connect(m_agc_edge_skip,     &WfValueRow::valueChanged,  this, refresh);
         connect(m_agc_noise_floor,   &WfValueRow::valueChanged,  this, refresh);
+        connect(m_agc_gain_cap,      &WfValueRow::valueChanged,  this, refresh);
         connect(m_destripe_window,   &WfValueRow::valueChanged,  this, refresh);
         connect(m_destripe_subdiv,   &WfValueRow::valueChanged,  this, refresh);
         connect(m_destripe_cap,      &WfValueRow::valueChanged,  this, refresh);
+        connect(m_destripe_threshold,&WfValueRow::valueChanged,  this, refresh);
     }
 
 }

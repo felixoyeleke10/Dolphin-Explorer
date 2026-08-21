@@ -2,6 +2,7 @@
 
 #include "app/services/ImportService.h"
 #include "ui/shared/processing/SssImagingAlgorithms.h"
+#include "pipeline/SidescanRadiometryAlgorithms.h"
 
 #include <algorithm>
 #include <cmath>
@@ -131,6 +132,42 @@ core::ArtifactIndex contextIndex(const core::ArtifactIndex& source,
     return result;
 }
 
+std::vector<core::SidescanPing> contextSeed(
+    const std::vector<core::SidescanPing>& source)
+{
+    if (source.empty()) return {};
+    struct Span { size_t begin = 0; size_t end = 0; };
+    std::vector<Span> groups;
+    groups.reserve(source.size());
+    const bool use_ping_number = source.front().ping_number != 0;
+    for (size_t begin = 0; begin < source.size();) {
+        size_t end = begin + 1;
+        while (end < source.size()
+               && (use_ping_number
+                   ? source[end].ping_number == source[begin].ping_number
+                   : source[end].timestamp_us == source[begin].timestamp_us)) {
+            ++end;
+        }
+        groups.push_back({begin, end});
+        begin = end;
+    }
+    if (groups.size() <= kContextPingGroups && source.size() <= kContextEntries)
+        return source;
+
+    std::vector<core::SidescanPing> selected;
+    selected.reserve(std::min(kContextEntries, source.size()));
+    const size_t group_count = std::min(kContextPingGroups, groups.size());
+    for (size_t i = 0; i < group_count; ++i) {
+        const size_t gi = group_count == 1 ? 0
+            : i * (groups.size() - 1) / (group_count - 1);
+        for (size_t at = groups[gi].begin;
+             at < groups[gi].end && selected.size() < kContextEntries; ++at) {
+            selected.push_back(source[at]);
+        }
+    }
+    return selected;
+}
+
 float gainAt(const SssAmplitudeContextRow& row, float sample_fraction) noexcept
 {
     const float position = std::clamp(sample_fraction, 0.f, 1.f)
@@ -162,7 +199,9 @@ ResidentRepository& repository()
     return value;
 }
 
-std::string repositoryKey(const SssAmplitudeContextRequest& request)
+std::string repositoryKey(
+    const SssAmplitudeContextRequest& request,
+    const std::vector<core::SidescanPing>* calibrated_seed)
 {
     namespace fs = std::filesystem;
     std::error_code ec;
@@ -182,10 +221,25 @@ std::string repositoryKey(const SssAmplitudeContextRequest& request)
             index_fingerprint = mix(index_fingerprint, entry.ping_number);
         }
     }
+    uint64_t geometry_fingerprint = 1469598103934665603ull;
+    if (calibrated_seed) {
+        for (const auto& ping : *calibrated_seed) {
+            geometry_fingerprint = mix(geometry_fingerprint, ping.id);
+            geometry_fingerprint = mix(geometry_fingerprint,
+                static_cast<uint64_t>(ping.timestamp_us));
+            geometry_fingerprint = mixFloat(geometry_fingerprint, ping.slant_range_m);
+            geometry_fingerprint = mixFloat(geometry_fingerprint, ping.blanking_m);
+            geometry_fingerprint = mixFloat(geometry_fingerprint, ping.bottom_pick.range_m);
+            geometry_fingerprint = mix(geometry_fingerprint, ping.bottom_pick.source);
+            geometry_fingerprint = mixFloat(
+                geometry_fingerprint, static_cast<float>(ping.nav.altitude_m));
+        }
+    }
     return request.store_path + '|' + std::to_string(safe_size) + '|'
          + std::to_string(safe_mtime) + '|'
          + std::to_string(static_cast<int>(std::llround(request.frequency_hz))) + '|'
          + std::to_string(index_fingerprint) + '|'
+         + std::to_string(geometry_fingerprint) + '|'
          + std::to_string(sssAmplitudeParamsFingerprint(request.params));
 }
 
@@ -194,9 +248,11 @@ std::string repositoryKey(const SssAmplitudeContextRequest& request)
 uint64_t sssAmplitudeParamsFingerprint(const WaterfallParams& p) noexcept
 {
     uint64_t h = 1469598103934665603ull;
-    h = mix(h, 2); // canonical context algorithm revision
+    h = mix(h, pipeline::enhancement::kAlgorithmRevision);
+    h = mix(h, pipeline::radiometry::kAlgorithmRevision);
     h = mix(h, p.tvg.enabled);             h = mixFloat(h, p.tvg.spreading);
     h = mixFloat(h, p.tvg.absorption);
+    h = mixFloat(h, p.tvg.fallback_blanking_m);
     h = mix(h, p.arc.enabled);             h = mixFloat(h, p.arc.exponent);
     h = mixFloat(h, p.arc.gain_cap_db);
     h = mix(h, p.agc.enabled);             h = mix(h, static_cast<uint64_t>(p.agc.mode));
@@ -204,12 +260,16 @@ uint64_t sssAmplitudeParamsFingerprint(const WaterfallParams& p) noexcept
     h = mix(h, static_cast<uint64_t>(p.agc.smoothing_type));
     h = mix(h, p.agc.smoothing_win);       h = mix(h, p.agc.edge_skip_samples);
     h = mixFloat(h, p.agc.noise_floor_pct);
+    h = mixFloat(h, p.agc.gain_cap_db);
+    h = mixFloat(h, p.agc.target_mean);
     h = mix(h, p.beam_pattern.enabled);    h = mixFloat(h, p.beam_pattern.strength);
     h = mix(h, p.beam_pattern.smooth_radius);
+    h = mixFloat(h, p.beam_pattern.gain_cap_db);
     h = mix(h, p.arn.enabled);             h = mixFloat(h, p.arn.strength);
     h = mixFloat(h, p.arn.gain_cap_db);    h = mix(h, p.arn.column_smooth);
     h = mix(h, p.destripe.enabled);        h = mix(h, p.destripe.window);
     h = mix(h, p.destripe.subdivision);    h = mixFloat(h, p.destripe.capping);
+    h = mixFloat(h, p.destripe.threshold_db);
     h = mix(h, p.ml_enhance.enabled);      h = mix(h, p.ml_enhance.tile_pings);
     h = mix(h, p.ml_enhance.tile_samps);   h = mixFloat(h, p.ml_enhance.clip_limit);
     return h;
@@ -273,7 +333,8 @@ buildSssAmplitudeContextFromCalibrated(
 
 std::shared_ptr<const SssAmplitudeContext>
 getOrBuildSssAmplitudeContext(const SssAmplitudeContextRequest& request,
-                              const app::CancellationToken& cancel)
+                              const app::CancellationToken& cancel,
+                              const std::vector<core::SidescanPing>* calibrated_seed)
 {
     if (!request.artifact_index || request.artifact_index->empty()
             || request.store_path.empty()
@@ -281,7 +342,14 @@ getOrBuildSssAmplitudeContext(const SssAmplitudeContextRequest& request,
         return {};
     }
 
-    const std::string key = repositoryKey(request);
+    std::vector<core::SidescanPing> bounded_seed;
+    const std::vector<core::SidescanPing>* calibrated = calibrated_seed;
+    if (calibrated && !calibrated->empty()) {
+        bounded_seed = contextSeed(*calibrated);
+        calibrated = &bounded_seed;
+    }
+
+    const std::string key = repositoryKey(request, calibrated);
     auto& repo = repository();
     {
         std::lock_guard lock(repo.mutex);
@@ -289,18 +357,22 @@ getOrBuildSssAmplitudeContext(const SssAmplitudeContextRequest& request,
             return it->second;
     }
 
-    core::ArtifactIndex index = contextIndex(
-        *request.artifact_index, request.frequency_hz);
-    auto calibrated = app::ImportService::loadAllSidescanPingsFromStore(
-        request.store_path, request.store_format, index, request.source_path,
-        kContextSamples, {},
-        [params = request.params](core::SidescanPing& ping) {
-            applyPerPingCalibration(ping, params);
-        },
-        [&cancel]() { return cancel.isCancelled(); });
-    if (calibrated.empty() || cancel.isCancelled()) return {};
+    std::vector<core::SidescanPing> decoded;
+    if (!calibrated || calibrated->empty()) {
+        core::ArtifactIndex index = contextIndex(
+            *request.artifact_index, request.frequency_hz);
+        decoded = app::ImportService::loadAllSidescanPingsFromStore(
+            request.store_path, request.store_format, index, request.source_path,
+            kContextSamples, {},
+            [params = request.params](core::SidescanPing& ping) {
+                applyPerPingCalibration(ping, params);
+            },
+            [&cancel]() { return cancel.isCancelled(); });
+        calibrated = &decoded;
+    }
+    if (!calibrated || calibrated->empty() || cancel.isCancelled()) return {};
 
-    auto built = buildSssAmplitudeContextFromCalibrated(calibrated, request.params);
+    auto built = buildSssAmplitudeContextFromCalibrated(*calibrated, request.params);
     if (!built || cancel.isCancelled()) return {};
 
     std::lock_guard lock(repo.mutex);

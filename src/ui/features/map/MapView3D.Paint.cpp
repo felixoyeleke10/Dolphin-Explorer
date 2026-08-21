@@ -172,12 +172,14 @@ void MapView3D::drawNavLayers()
 
     const bool has_active    = !m_active_layer_id.empty();
     const bool has_selected  = !m_selected_layer_ids.empty();
-    const bool any_highlight = has_active || has_selected;
+    const bool has_hover = m_hover_highlight && !m_hover_layer_id.empty();
+    const bool any_highlight = has_active || has_selected || has_hover;
 
     auto isHighlighted = [&](const std::string& id) -> bool {
         if (has_active && id == m_active_layer_id) return true;
         for (const auto& sid : m_selected_layer_ids)
             if (sid == id) return true;
+        if (has_hover && id == m_hover_layer_id) return true;
         return false;
     };
 
@@ -255,12 +257,14 @@ void MapView3D::drawTerrain()
 
 void MapView3D::drawDrapeOutlines()
 {
-    if (m_active_layer_id.empty() && m_selected_layer_ids.empty()) return;
+    if (m_active_layer_id.empty() && m_selected_layer_ids.empty()
+            && (!m_hover_highlight || m_hover_layer_id.empty())) return;
 
     auto isHighlighted = [&](const std::string& id) {
         if (id == m_active_layer_id) return true;
         for (const auto& sid : m_selected_layer_ids)
             if (sid == id) return true;
+        if (m_hover_highlight && id == m_hover_layer_id) return true;
         return false;
     };
 

@@ -22,8 +22,11 @@ ProcessingController::ProcessingController(app::ProcessingService* processing_se
             this, [this](const std::string& id,
                          const std::string& proc_path,
                          const core::ArtifactIndex& proc_index,
-                         bool slant_range_corrected) {
-                emit processingPersisted(id, proc_path, proc_index, slant_range_corrected);
+                         bool slant_range_corrected,
+                         uint32_t baked_correction_flags) {
+                emit processingPersisted(id, proc_path, proc_index,
+                                         slant_range_corrected,
+                                         baked_correction_flags);
             });
 }
 

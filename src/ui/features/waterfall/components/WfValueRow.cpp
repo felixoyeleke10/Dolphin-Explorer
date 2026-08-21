@@ -18,9 +18,9 @@ namespace dolphin::ui {
 
 // -- Layout (logical px) -------------------------------------------------------
 static constexpr int    kRowH     = 28;   // widget fixed height
-static constexpr int    kPillW    = 92;   // total pill width
+static constexpr int    kPillW    = WfValueRow::controlWidth(); // shared control column
 static constexpr int    kPillH    = 22;   // pill height
-static constexpr int    kPillR    = 10;   // pill right margin
+static constexpr int    kPillR    = WfValueRow::controlRightMargin();
 static constexpr int    kLabelL   = 14;   // label left margin
 static constexpr double kPillRad  = 5.0;
 static constexpr int    kArrowW   = 20;   // arrow column width inside pill

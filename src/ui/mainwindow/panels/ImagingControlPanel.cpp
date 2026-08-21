@@ -58,8 +58,12 @@ ImagingControlPanel::ImagingControlPanel(QWidget* parent) : QWidget(parent)
     m_arn_gain_cap->setToolTip(
         tr("Maximum gain ARN may apply to any range column.\n"
            "Start at 12 dB. Lower values are safer; higher values can lift noise and water-column clutter."));
+    m_arn_smooth = new WfValueRow(tr("Smooth Radius"), 0, 100, 5, 1, 0, " samp", arn_rows);
+    m_arn_smooth->setToolTip(
+        tr("Half-window used to smooth the learned range-response profile."));
     arn_l->addWidget(m_arn_strength);
     arn_l->addWidget(m_arn_gain_cap);
+    arn_l->addWidget(m_arn_smooth);
     vl->addWidget(arn_rows);
 
     // -- Destripe --------------------------------------------------------------
@@ -95,6 +99,11 @@ ImagingControlPanel::ImagingControlPanel(QWidget* parent) : QWidget(parent)
            "Start at 2.0×. Increase if heavy banding persists;\n"
            "reduce if fine along-track detail is being suppressed."));
     ds_l->addWidget(m_destripe_capping);
+    m_destripe_threshold = new WfValueRow(tr("Stripe Threshold"), 0.0, 12.0, 1.0, 0.25, 2, " dB", ds_rows);
+    m_destripe_threshold->setToolTip(
+        tr("Minimum local level deviation treated as a stripe.\n"
+           "Increase it to preserve stronger natural along-track variation."));
+    ds_l->addWidget(m_destripe_threshold);
     vl->addWidget(ds_rows);
 
     // -- Beam Pattern ----------------------------------------------------------
@@ -125,16 +134,21 @@ ImagingControlPanel::ImagingControlPanel(QWidget* parent) : QWidget(parent)
         tr("Smooths the estimated beam pattern across range samples.\n"
            "Start at 10 samples. Increase for cleaner correction; decrease to preserve narrow changes."));
     bpn_l->addWidget(m_bpn_smooth);
+    m_bpn_gain_cap = new WfValueRow(tr("Gain Cap"), 0, 40, 12, 1, 0, " dB", bpn_rows);
+    m_bpn_gain_cap->setToolTip(
+        tr("Symmetric limit on beam-pattern amplification or attenuation.\n"
+           "Start at 12 dB to prevent weak columns from lifting noise."));
+    bpn_l->addWidget(m_bpn_gain_cap);
     vl->addWidget(bpn_rows);
 
-    // -- ML Enhance ------------------------------------------------------------
+    // -- Adaptive Contrast (CLAHE) ---------------------------------------------
     auto* div3 = new QFrame(container); div3->setObjectName("ctrlDivider");
     div3->setFixedHeight(Theme::kSepSz); vl->addWidget(div3);
 
-    m_ml_en = new QCheckBox(tr("ML Enhance"), container);
+    m_ml_en = new QCheckBox(tr("Adaptive Contrast"), container);
     m_ml_en->setObjectName("ctrlToggle");
     m_ml_en->setToolTip(
-        tr("Adaptive local contrast enhancement (CLAHE-like).\n"
+        tr("Contrast-Limited Adaptive Histogram Equalisation (CLAHE).\n"
            "Divides the image into tiles and independently equalises each tile's\n"
            "histogram — revealing both shadow and highlight detail simultaneously.\n"
            "Useful for high dynamic-range bottom types. Requires Apply."));
@@ -181,15 +195,18 @@ void ImagingControlPanel::writeInto(WaterfallParams& p) const
     p.arn.enabled          = m_arn_en->isChecked();
     p.arn.strength         = static_cast<float>(m_arn_strength->value());
     p.arn.gain_cap_db      = static_cast<float>(m_arn_gain_cap->value());
+    p.arn.column_smooth    = m_arn_smooth->intValue();
 
     p.destripe.enabled     = m_destripe_en->isChecked();
     p.destripe.window      = m_destripe_window->intValue();
     p.destripe.subdivision = m_destripe_subdiv->intValue();
     p.destripe.capping     = static_cast<float>(m_destripe_capping->value());
+    p.destripe.threshold_db = static_cast<float>(m_destripe_threshold->value());
 
     p.beam_pattern.enabled       = m_bpn_en->isChecked();
     p.beam_pattern.strength      = static_cast<float>(m_bpn_strength->value());
     p.beam_pattern.smooth_radius = m_bpn_smooth->intValue();
+    p.beam_pattern.gain_cap_db   = static_cast<float>(m_bpn_gain_cap->value());
 
     p.ml_enhance.enabled    = m_ml_en->isChecked();
     p.ml_enhance.tile_pings = m_ml_tile_pings->intValue();
@@ -204,25 +221,31 @@ void ImagingControlPanel::setParams(const WaterfallParams& p)
 {
     m_params = p;
 
-    const QSignalBlocker b1(m_arn_en),      b2(m_arn_strength), b3(m_arn_gain_cap);
-    const QSignalBlocker b4(m_destripe_en), b5(m_destripe_capping);
+    const QSignalBlocker b1(m_arn_en), b2(m_arn_strength), b3(m_arn_gain_cap),
+                         b3a(m_arn_smooth);
+    const QSignalBlocker b4(m_destripe_en), b5(m_destripe_capping),
+                         b5a(m_destripe_threshold);
     const QSignalBlocker b5b(m_destripe_window), b5c(m_destripe_subdiv);
     const QSignalBlocker b6(m_bpn_en),      b7(m_bpn_strength), b7b(m_bpn_smooth);
+    const QSignalBlocker b7c(m_bpn_gain_cap);
     const QSignalBlocker b8(m_ml_en),       b9(m_ml_clip_limit);
     const QSignalBlocker b9b(m_ml_tile_pings), b9c(m_ml_tile_samps);
 
     m_arn_en->setChecked(p.arn.enabled);
     m_arn_strength->setValue(p.arn.strength);
     m_arn_gain_cap->setValue(p.arn.gain_cap_db);
+    m_arn_smooth->setValue(p.arn.column_smooth);
 
     m_destripe_en->setChecked(p.destripe.enabled);
     m_destripe_window->setValue(p.destripe.window);
     m_destripe_subdiv->setValue(p.destripe.subdivision);
     m_destripe_capping->setValue(p.destripe.capping);
+    m_destripe_threshold->setValue(p.destripe.threshold_db);
 
     m_bpn_en->setChecked(p.beam_pattern.enabled);
     m_bpn_strength->setValue(p.beam_pattern.strength);
     m_bpn_smooth->setValue(p.beam_pattern.smooth_radius);
+    m_bpn_gain_cap->setValue(p.beam_pattern.gain_cap_db);
 
     m_ml_en->setChecked(p.ml_enhance.enabled);
     m_ml_tile_pings->setValue(p.ml_enhance.tile_pings);
@@ -236,15 +259,18 @@ void ImagingControlPanel::updateControlStates()
 {
     m_arn_strength->setEnabled(m_arn_en->isChecked());
     m_arn_gain_cap->setEnabled(m_arn_en->isChecked());
+    m_arn_smooth->setEnabled(m_arn_en->isChecked());
 
     const bool ds = m_destripe_en->isChecked();
     m_destripe_window->setEnabled(ds);
     m_destripe_subdiv->setEnabled(ds);
     m_destripe_capping->setEnabled(ds);
+    m_destripe_threshold->setEnabled(ds);
 
     const bool bpn = m_bpn_en->isChecked();
     m_bpn_strength->setEnabled(bpn);
     m_bpn_smooth->setEnabled(bpn);
+    m_bpn_gain_cap->setEnabled(bpn);
 
     const bool ml = m_ml_en->isChecked();
     m_ml_tile_pings->setEnabled(ml);

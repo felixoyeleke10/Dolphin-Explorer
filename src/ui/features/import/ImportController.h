@@ -45,8 +45,9 @@ public:
     // main-window close guard so parses aren't silently abandoned.
     bool importsBusy() const;
 
-    void onMapLoadPending();
-    void onMapLoadDone();
+    void onMapLoadPending(uint64_t task_id, const QString& layer_name = {});
+    void onMapLoadProgress(int percent);
+    void onMapLoadDone(uint64_t task_id);
 
 signals:
     void importCompleted(const std::string& layer_id);

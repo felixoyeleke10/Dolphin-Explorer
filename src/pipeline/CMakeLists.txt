@@ -6,6 +6,9 @@ add_library(dolphin-pipeline STATIC
     NodeGraph.Serialization.cpp
     NodeRegistry.cpp
     GraphRunner.cpp
+    ProcessingContract.cpp
+    SidescanEnhancementAlgorithms.cpp
+    SidescanRadiometryAlgorithms.cpp
 
     # DataIn nodes
     nodes/input/SidescanInputNode.cpp
@@ -14,6 +17,7 @@ add_library(dolphin-pipeline STATIC
 
     # Correction nodes
     nodes/correction/TvgNode.cpp
+    nodes/correction/ArcNode.cpp
     nodes/correction/BandPassNode.cpp
     nodes/correction/BottomDetectNode.cpp
     nodes/correction/SlantRangeNode.cpp
@@ -29,6 +33,7 @@ add_library(dolphin-pipeline STATIC
     nodes/enhancement/GainNormalizeNode.cpp
     nodes/enhancement/ContrastEnhanceNode.cpp
     nodes/enhancement/HistogramEqNode.cpp
+    nodes/enhancement/SidescanEnhancementNode.cpp
 
     # Analysis nodes
     nodes/analysis/ShadowDetectNode.cpp

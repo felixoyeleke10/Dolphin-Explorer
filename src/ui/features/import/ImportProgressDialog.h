@@ -1,7 +1,11 @@
 #pragma once
 #include <QDialog>
+#include <QPoint>
 #include <QString>
+#include <cstdint>
 #include <string>
+#include <unordered_set>
+#include <unordered_map>
 #include <vector>
 
 class QFrame;
@@ -30,6 +34,7 @@ public:
     explicit ExecutionProgressDialog(QWidget* parent = nullptr);
 
     void setQueueTotal(int n);
+    void addToQueueTotal(int n);
 
     void addJob(const std::string& layer_id,
                 const QString&     filename,
@@ -53,13 +58,18 @@ public:
 
     // Called when a map-build task starts / finishes for an imported layer.
     // "All Done" is withheld until all pending map loads have completed.
-    void onMapLoadPending();
-    void onMapLoadDone();
+    void onMapLoadPending(uint64_t task_id, const QString& layer_name = {});
+    void onMapLoadProgress(int percent);
+    void onMapLoadDone(uint64_t task_id);
+
+    // Reopen a batch hidden with "Run in Background". No-op while idle.
+    void reopen();
+    bool hasDisplayableState() const;
 
     // Drop all batch/map-phase state and hide. Call when the project changes: the
     // previous project's in-flight builds are cancelled, so its counters/cards must
     // not carry into the next project (which would leave the panel stale or stuck).
-    // Bumps a generation so a late onMapLoadDone from a cancelled build is ignored.
+    // Clears tracked task IDs so late completions from cancelled builds are ignored.
     void resetState();
 
     // Embed this panel as a child overlay of `host` (instead of a top-level window).
@@ -68,7 +78,15 @@ public:
     // over the host and repositioned on host resize.
     void embedIn(QWidget* host);
 
+    // Move the shared task surface to the window that initiated the current
+    // operation. It is a modeless owned Tool window: stacking/minimize behavior
+    // follows that owner, while the user may drag it anywhere on the desktop.
+    void attachTo(QWidget* host);
+
     void reanchor() {} // no-op; kept for API compatibility with old overlay
+
+signals:
+    void hostHidden(QWidget* host);
 
 protected:
     void closeEvent(QCloseEvent* event) override;
@@ -80,10 +98,13 @@ private slots:
 private:
     struct FileRow {
         std::string  layer_id;
+        QString      full_name;
         QString      display_name;
         QString      format;
         float        size_mb    = 0.f;
         int          percent    = 0;   // reading progress (no per-row bar widget now)
+        qint64       started_ms = 0;
+        QString      last_status;
 
         QFrame*      card       = nullptr;
         QLabel*      badge      = nullptr;
@@ -108,9 +129,10 @@ private:
     void     updateStages();           // refresh stage chips + "now" line from state
     void     runInBackground();
     void     showForActiveBatch();
-    void     positionInParent();   // anchor bottom-centre within the embed host
+    void     positionInParent();   // initial placement relative to current owner
 
     QLabel*       m_title_lbl   = nullptr;
+    QWidget*      m_header      = nullptr;
     QLabel*       m_sub_lbl     = nullptr;
     QProgressBar* m_overall_bar = nullptr;
     QWidget*      m_list_body   = nullptr;
@@ -133,13 +155,17 @@ private:
     std::vector<FileRow> m_rows;
     int    m_queue_total        = 0;
     int    m_pending_map_loads  = 0;
-    // Map-load "done" events still expected from builds cancelled by a project change.
-    // They fire late (the cancelled worker finishes shortly after) and must be absorbed
-    // so they don't decrement the NEW project's pending count.
-    int    m_stale_done_expected = 0;
+    std::unordered_set<uint64_t> m_pending_map_task_ids;
+    std::unordered_map<uint64_t, QString> m_map_task_names;
+    QString m_active_map_name;
+    int     m_map_percent = 0;
+    bool   m_queue_total_armed  = false;
     bool   m_all_done           = false;
     bool   m_backgrounded       = false;
     bool   m_embedded           = false;   // child overlay (no top-level window)
+    bool   m_dragging           = false;
+    bool   m_user_positioned    = false;
+    QPoint m_drag_offset;
     QWidget* m_host             = nullptr; // embed host (viewport area)
     QTimer* m_timer      = nullptr;
     qint64  m_start_ms   = 0;

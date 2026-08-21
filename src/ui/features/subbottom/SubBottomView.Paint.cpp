@@ -1,6 +1,7 @@
 // SubBottomView.Paint.cpp — QPainter-based trace rendering and overlay.
 
 #include "ui/features/subbottom/SubBottomView.h"
+#include "ui/shared/BottomTrackDisplayPolicy.h"
 #include "ui/features/subbottom/SubBottomViewMath.h"
 #include "ui/features/subbottom/SubBottomPalette.h"
 #include "ui/shell/Theme.h"
@@ -98,7 +99,11 @@ void SubBottomView::rebuildImage()
         }
 
         // Bottom track stripe
-        if (m_show_bottom_track && trace.bottom_sample_idx >= 0) {
+        // SBP has vertical depth geometry, not side-scan slant-range geometry.
+        // It still uses the shared pick/display policy so the stored bottom
+        // track remains independent of whether its QC stripe is presented.
+        if (shouldPaintBottomTrack(m_show_bottom_track, false, false)
+                && trace.bottom_sample_idx >= 0) {
             const int y_pick = static_cast<int>(
                 static_cast<float>(trace.bottom_sample_idx) * m_px_per_sample);
             for (int dy = 0; dy < bt_h; ++dy) {

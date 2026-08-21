@@ -15,6 +15,18 @@ inline bool sssHasBakedGroundRanges(const core::SidescanPing& ping)
         ping.correction_flags, core::CorrectionFlag::SlantRange);
 }
 
+// A processed ping flag is authoritative. Layer metadata requests the same
+// presentation for unbaked data only when that ping has an altitude reference;
+// without one SRC cannot actually run and must not silently hide raw imagery.
+inline bool sssCorrectionPresented(const core::SidescanPing& ping,
+                                   const SssGeorefParams& params)
+{
+    if (sssHasBakedGroundRanges(ping))
+        return true;
+    return params.slant_range_corrected
+        && core::sidescanAltitudeMetres(ping).has_value();
+}
+
 inline double sssUncorrectedAltitudeMetres(const core::SidescanPing& ping)
 {
     return core::sidescanAltitudeMetres(ping).value_or(0.0);
@@ -22,8 +34,7 @@ inline double sssUncorrectedAltitudeMetres(const core::SidescanPing& ping)
 
 // Return the outer edge of the actual sample product. Baked pings carry ground
 // ranges in each sample, so their farthest valid bin is authoritative. The
-// metadata fallback mirrors SlantRangeNode exactly (nav altitude, or 1 m when
-// unavailable). Unbaked pings retain the bottom-pick-preferred map geometry.
+// Unbaked pings retain the bottom-pick-preferred map geometry.
 inline bool sssOuterGroundRangeMetres(const core::SidescanPing& ping,
                                       double& ground_m)
 {
@@ -61,7 +72,7 @@ inline bool sssOuterGroundRangeMetres(const core::SidescanPing& ping,
 inline double sssInnerGapMetres(const core::SidescanPing& ping,
                                 const SssGeorefParams& params)
 {
-    if (params.slant_range_corrected || params.show_nadir)
+    if (sssCorrectionPresented(ping, params) || params.show_nadir)
         return 0.0;
     const double altitude_m = sssUncorrectedAltitudeMetres(ping);
     const double slant_m = ping.slant_range_m > 0.0f

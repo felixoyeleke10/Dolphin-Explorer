@@ -34,6 +34,7 @@ void SidescanViewController::setMapSonarQuality(MapSonarQuality quality)
         m_op_mgr->cancelByPrefix("sss:prebuild:");
     }
     m_quality_tier_cache.clear();
+    m_resident_quality.clear();
     m_quality = quality;
 
     // Any old-tier load/prebuild is now cancelled, and no transient tier result is
@@ -42,7 +43,7 @@ void SidescanViewController::setMapSonarQuality(MapSonarQuality quality)
     if (!m_project) return;
 
     if (quality == MapSonarQuality::Off) {
-        emit loadingFinished();
+        emit loadingFinished(0);
         if (m_map_view) {
             for (const auto& id : m_loaded_layers)
                 m_map_view->removeLayerData(id);
@@ -113,6 +114,7 @@ bool SidescanViewController::applyCachedTier(const std::string& layer_id,
         m_auto_stretch_enabled);
     m_layer_intensity_cache[layer_id] = std::move(tier.intensity);
     if (m_map_view) m_map_view->setLayerMapData(layer_id, std::move(ld));
+    m_resident_quality[layer_id] = quality;
     return true;
 }
 
@@ -324,8 +326,11 @@ void SidescanViewController::prebuildTier(const std::string& layer_id,
                 context_request.frequency_hz = layer_low_freq_hz == 0.f
                     ? layer_freq_hz : 0.f;
                 context_request.params = sss_params;
+                // Reuse the calibrated tier decode on a repository miss. In the
+                // normal progressive path the Low first paint has already seeded
+                // this context, making the High upgrade a cache hit.
                 amplitude_context = imaging::getOrBuildSssAmplitudeContext(
-                    context_request, cancel);
+                    context_request, cancel, &raw);
                 if (amplitude_context)
                     imaging::applySssAmplitudeContext(raw, *amplitude_context);
                 else if (!cancel.isCancelled())

@@ -5,6 +5,7 @@
 
 #include "app/project/Project.h"
 #include "app/project/Project_p.h"
+#include "app/contracts/ProcessingSettingsContract.h"
 #include "app/layers/LayerUtils.h"
 #include "geo/GeoUtils.h"
 #include "io/cache/ParsedCache.h"
@@ -13,6 +14,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <filesystem>
 #include <limits>
 #include <type_traits>
 #include <unordered_set>
@@ -120,6 +122,9 @@ bool Project::restoreLayersFromJson(const util::JsonValue& root, int version)
         layer->artifact_store_path =
             resolveStoredPath(jl.get("artifact_store_path").asString(), m_manifest_path);
         layer->artifact_store_format = jl.get("artifact_store_format").asString();
+        layer->source_artifact_store_path = jl.has("source_artifact_store_path")
+            ? resolveStoredPath(jl.get("source_artifact_store_path").asString(), m_manifest_path)
+            : std::string{};
         layer->modality  = modalityFromString(jl.get("modality").asString());
         layer->source_spatial_ref = spatialRefFromJson(
             jl.get("source_spatial_ref"), {});
@@ -134,6 +139,35 @@ bool Project::restoreLayersFromJson(const util::JsonValue& root, int version)
         layer->visible     = !jl.get("visible").isNull() ? jl.get("visible").asBool() : true;
         layer->slant_range_corrected = jl.get("slant_range_corrected").asBool();
         layer->pipeline_applied = jl.has("pipeline_applied") ? jl.get("pipeline_applied").asBool() : false;
+        layer->baked_correction_flags = jl.has("baked_correction_flags")
+            ? static_cast<uint32_t>(std::max(0, jl.get("baked_correction_flags").asInt()))
+            : 0u;
+        layer->processing_origin = jl.has("processing_origin")
+            ? static_cast<ProcessingOrigin>(std::clamp(
+                jl.get("processing_origin").asInt(), 0, 3))
+            : (layer->pipeline_applied ? ProcessingOrigin::LegacyUnknown
+                                       : ProcessingOrigin::None);
+        layer->applied_graph_json = jl.has("applied_graph_json")
+            ? jl.get("applied_graph_json").asString() : std::string{};
+        // Migrate older manifests that retained only the active sidecar path.
+        // Accept a recovered baseline only after validating its cache footer.
+        if (layer->source_artifact_store_path.empty()) {
+            if (!layer->pipeline_applied) {
+                layer->source_artifact_store_path = layer->artifact_store_path;
+            } else {
+                namespace fs = std::filesystem;
+                const fs::path active(layer->artifact_store_path);
+                const std::string suffix = "_" + layer->id;
+                const std::string stem = active.stem().string();
+                if (stem.size() > suffix.size()
+                    && stem.compare(stem.size() - suffix.size(), suffix.size(), suffix) == 0) {
+                    const fs::path candidate = active.parent_path()
+                        / (stem.substr(0, stem.size() - suffix.size()) + ".dlpd");
+                    if (io::parsedCacheIsValid(candidate.string()))
+                        layer->source_artifact_store_path = candidate.string();
+                }
+            }
+        }
         layer->bottom_track_kind = static_cast<BottomTrackKind>(std::clamp(
             jl.get("bottom_track_kind").asInt(),
             static_cast<int>(BottomTrackKind::Unknown),
@@ -189,11 +223,26 @@ bool Project::restoreLayersFromJson(const util::JsonValue& root, int version)
             p.tvg.enabled    = jd.get("tvg_en").asBool();
             p.tvg.spreading  = jd.get("tvg_spread").asFloat();
             p.tvg.absorption = jd.get("tvg_absorb").asFloat();
+            if (jd.has("tvg_fallback_blank"))
+                p.tvg.fallback_blanking_m = jd.get("tvg_fallback_blank").asFloat();
             p.agc.enabled         = jd.get("agc_en").asBool();
             p.agc.mode = static_cast<dolphin::app::AgcMode>(
                 std::clamp(jd.get("agc_mode").asInt(), 0, 1));
             p.agc.strength        = jd.get("agc_str").asFloat();
             p.agc.along_track_win = jd.get("agc_win").asInt();
+            if (jd.has("agc_smooth_type"))
+                p.agc.smoothing_type = static_cast<dolphin::app::AgcSmoothingType>(
+                    std::clamp(jd.get("agc_smooth_type").asInt(), 0, 1));
+            if (jd.has("agc_smooth_win"))
+                p.agc.smoothing_win = jd.get("agc_smooth_win").asInt();
+            if (jd.has("agc_edge_skip"))
+                p.agc.edge_skip_samples = jd.get("agc_edge_skip").asInt();
+            if (jd.has("agc_noise_floor"))
+                p.agc.noise_floor_pct = jd.get("agc_noise_floor").asFloat();
+            if (jd.has("agc_gain_cap"))
+                p.agc.gain_cap_db = jd.get("agc_gain_cap").asFloat();
+            if (jd.has("agc_target"))
+                p.agc.target_mean = jd.get("agc_target").asFloat();
             p.arc.enabled      = jd.get("arc_en").asBool();
             p.arc.exponent     = jd.get("arc_exp").asFloat();
             p.arc.gain_cap_db  = jd.get("arc_cap").asFloat();
@@ -210,11 +259,15 @@ bool Project::restoreLayersFromJson(const util::JsonValue& root, int version)
                 p.destripe.window      = jd.get("ds_win").asInt();
                 p.destripe.subdivision = jd.get("ds_sub").asInt();
                 p.destripe.capping     = jd.get("ds_cap").asFloat();
+                if (jd.has("ds_thresh"))
+                    p.destripe.threshold_db = jd.get("ds_thresh").asFloat();
             }
             if (jd.has("bpn_en")) {
                 p.beam_pattern.enabled      = jd.get("bpn_en").asBool();
                 p.beam_pattern.strength     = jd.get("bpn_str").asFloat();
                 p.beam_pattern.smooth_radius = jd.get("bpn_rad").asInt();
+                if (jd.has("bpn_cap"))
+                    p.beam_pattern.gain_cap_db = jd.get("bpn_cap").asFloat();
             }
             if (jd.has("ml_en")) {
                 p.ml_enhance.enabled    = jd.get("ml_en").asBool();
@@ -223,6 +276,12 @@ bool Project::restoreLayersFromJson(const util::JsonValue& root, int version)
                 p.ml_enhance.clip_limit = jd.get("ml_clip").asFloat();
             }
             layer->sss_display_state.customized = true;
+            if (const auto error = contracts::validate(p); !error.empty()) {
+                m_load_warnings.push_back("Layer '" + layer->label
+                    + "': ignored invalid sidescan settings (" + error + ").");
+                p = dolphin::ui::WaterfallParams{};
+                layer->sss_display_state.customized = false;
+            }
         }
 
         if (jl.has("sbp_display")) {
@@ -240,12 +299,28 @@ bool Project::restoreLayersFromJson(const util::JsonValue& root, int version)
             d.gain.static_gain_db = jd.get("gain_static_db").asFloat();
             d.gain.agc_en         = jd.get("gain_agc_en").asBool();
             d.gain.agc_window     = jd.get("gain_agc_win").asInt();
+            if (jd.has("gain_agc_cap"))
+                d.gain.agc_gain_cap_db = jd.get("gain_agc_cap").asFloat();
             d.gain.normalize_en   = jd.get("gain_norm_en").asBool();
             d.signal.envelope_en   = jd.get("sig_env_en").asBool();
             d.signal.dc_removal_en = jd.get("sig_dc_en").asBool();
             d.signal.bandpass_en   = jd.get("sig_bp_en").asBool();
             d.signal.bp_lo_hz      = jd.get("sig_bp_lo").asFloat();
             d.signal.bp_hi_hz      = jd.get("sig_bp_hi").asFloat();
+            if (const auto error = contracts::validate(d.display); !error.empty()) {
+                m_load_warnings.push_back("Layer '" + layer->label
+                    + "': ignored invalid sub-bottom display settings (" + error + ").");
+                d.display = dolphin::ui::SubBottomDisplayParams{};
+                d.display_customized = false;
+            }
+            if (const auto error = contracts::validate(d.gain, d.signal); !error.empty()) {
+                m_load_warnings.push_back("Layer '" + layer->label
+                    + "': ignored invalid sub-bottom processing settings (" + error + ").");
+                d.gain = SbpGainParams{};
+                d.signal = SbpSignalParams{};
+                d.gain_customized = false;
+                d.signal_customized = false;
+            }
         }
 
         if (jl.has("nav_state")) {
@@ -259,6 +334,12 @@ bool Project::restoreLayersFromJson(const util::JsonValue& root, int version)
             nv.pitch_offset_deg   = jn.get("pitch_off").asFloat();
             nv.roll_offset_deg    = jn.get("roll_off").asFloat();
             layer->nav_customized = true;
+            if (const auto error = contracts::validate(nv); !error.empty()) {
+                m_load_warnings.push_back("Layer '" + layer->label
+                    + "': ignored invalid navigation settings (" + error + ").");
+                nv = dolphin::ui::NavProcessingParams{};
+                layer->nav_customized = false;
+            }
         }
 
         layer->sonar_name  = jl.get("sonar_name").asString();
@@ -390,8 +471,10 @@ bool Project::restoreLayersFromJson(const util::JsonValue& root, int version)
                         // Back-fill pipeline_applied for old projects: non-zero
                         // correction_flags_seen means corrections are baked in.
                         // metadata() after buildIndex() returns the updated value.
+                        layer->baked_correction_flags |=
+                            cache_reader.metadata().correction_flags_seen;
                         if (!layer->pipeline_applied
-                                && cache_reader.metadata().correction_flags_seen != 0)
+                                && layer->baked_correction_flags != 0)
                             layer->pipeline_applied = true;
                     }
                 }
@@ -471,6 +554,19 @@ bool Project::restoreLayersFromJson(const util::JsonValue& root, int version)
             m_load_error = "Project layer contains an unsupported or invalid processing graph.";
             return false;
         }
+        if (layer->processing_origin == ProcessingOrigin::LegacyUnknown) {
+            const auto& graph = layer->uses_project_graph
+                ? processing_graph : layer->node_graph;
+            const bool has_processing_node = std::any_of(
+                graph.nodes().cbegin(), graph.nodes().cend(), [](const auto& node) {
+                    if (!node) return false;
+                    const auto category = node->schema().category;
+                    return category != "Input" && category != "Output"
+                        && category != "Merge";
+                });
+            if (has_processing_node)
+                layer->processing_origin = ProcessingOrigin::NodeGraph;
+        }
 
         // Tags and group membership
         for (const auto& jt : jl.get("tags").elements())
@@ -504,6 +600,7 @@ bool Project::restoreLayersFromJson(const util::JsonValue& root, int version)
                     ex->source_id             = layer->source_id;
                     ex->artifact_store_path   = layer->artifact_store_path;
                     ex->artifact_store_format = layer->artifact_store_format;
+                    ex->source_artifact_store_path = layer->source_artifact_store_path;
                     ex->modality              = modalityForType(fam_type);
                     ex->source_spatial_ref    = layer->source_spatial_ref;
                     ex->index_built           = layer->index_built;
@@ -517,6 +614,9 @@ bool Project::restoreLayersFromJson(const util::JsonValue& root, int version)
                     ex->frequency_hz          = layer->frequency_hz;
                     ex->slant_range_corrected = layer->slant_range_corrected;
                     ex->pipeline_applied      = layer->pipeline_applied;
+                    ex->baked_correction_flags = layer->baked_correction_flags;
+                    ex->processing_origin      = layer->processing_origin;
+                    ex->applied_graph_json     = layer->applied_graph_json;
                     ex->bottom_track_kind     = layer->bottom_track_kind;
                     ex->qc_viewed_fraction    = layer->qc_viewed_fraction;
                     ex->group_id              = layer->group_id;

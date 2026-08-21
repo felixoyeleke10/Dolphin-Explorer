@@ -5,6 +5,7 @@
 // identical corrections.  They operate on a list of pointers to mutable amplitude
 // rows for a single channel.
 #include "ui/shared/processing/SssImagingAlgorithms.h"
+#include "pipeline/SidescanEnhancementAlgorithms.h"
 #include "app/corrections/CorrectionAlgorithms.h"
 
 #include <algorithm>
@@ -24,11 +25,21 @@ int maxRowLen(const std::vector<std::vector<uint16_t>*>& rows)
     return ns;
 }
 
-void applyVariableAgc(std::vector<core::SidescanPing>& pings,
-                      const WaterfallParams& params)
+float medianValue(std::vector<float> values)
 {
-    if (!params.agc.enabled || params.agc.mode != app::AgcMode::Variable)
-        return;
+    if (values.empty()) return 0.f;
+    const size_t middle = values.size() / 2;
+    std::nth_element(values.begin(), values.begin() + middle, values.end());
+    if (values.size() % 2 != 0) return values[middle];
+    const float upper = values[middle];
+    const float lower = *std::max_element(values.begin(), values.begin() + middle);
+    return 0.5f * (lower + upper);
+}
+
+void applyAgc(std::vector<core::SidescanPing>& pings,
+              const WaterfallParams& params)
+{
+    if (!params.agc.enabled) return;
 
     // A valid store normally has uniform baked flags. Keep a mixed/corrupt
     // store safe as well: already-normalized records are never processed twice.
@@ -56,20 +67,20 @@ void applyVariableAgc(std::vector<core::SidescanPing>& pings,
     if (work.empty()) return;
 
     app::corrections::normalizeAmplitudes(work, params.agc);
-    for (size_t i = 0; i < work.size(); ++i)
+    for (size_t i = 0; i < work.size(); ++i) {
         pings[indices[i]].samples = std::move(work[i].samples);
+        pings[indices[i]].correction_flags = work[i].correction_flags;
+    }
 }
 
 } // namespace
 
 // -- Beam pattern normalisation ------------------------------------------------
-void beamPatternChannel(std::vector<std::vector<uint16_t>*>& rows, const BeamPatternParams& bp)
+static void legacyBeamPatternChannel(std::vector<std::vector<uint16_t>*>& rows, const BeamPatternParams& bp)
 {
     if (!bp.enabled || rows.empty()) return;
     const int ns = maxRowLen(rows);
     if (ns == 0) return;
-
-    constexpr float kRefLevel = 32768.f;
 
     std::vector<float> mean(ns, 0.f);
     std::vector<int>   cnt(ns, 0);
@@ -77,42 +88,61 @@ void beamPatternChannel(std::vector<std::vector<uint16_t>*>& rows, const BeamPat
         for (int ci = 0; ci < static_cast<int>(row->size()) && ci < ns; ++ci)
             if ((*row)[ci] > 0) { mean[ci] += (*row)[ci]; ++cnt[ci]; }
     for (int ci = 0; ci < ns; ++ci)
-        mean[ci] = cnt[ci] > 0 ? mean[ci] / cnt[ci] : kRefLevel;
+        if (cnt[ci] > 0) mean[ci] /= cnt[ci];
 
     if (bp.smooth_radius > 0) {
         std::vector<float> smooth(ns, 0.f);
+        std::vector<double> prefix(static_cast<size_t>(ns) + 1, 0.0);
+        std::vector<int> valid_prefix(static_cast<size_t>(ns) + 1, 0);
         for (int ci = 0; ci < ns; ++ci) {
-            float sum = 0.f; int k = 0;
-            for (int j = std::max(0, ci - bp.smooth_radius);
-                     j <= std::min(ns - 1, ci + bp.smooth_radius); ++j) { sum += mean[j]; ++k; }
-            smooth[ci] = k > 0 ? sum / k : mean[ci];
+            prefix[static_cast<size_t>(ci) + 1] = prefix[static_cast<size_t>(ci)] + mean[ci];
+            valid_prefix[static_cast<size_t>(ci) + 1] =
+                valid_prefix[static_cast<size_t>(ci)] + (cnt[ci] > 0 ? 1 : 0);
+        }
+        for (int ci = 0; ci < ns; ++ci) {
+            const int begin = std::max(0, ci - bp.smooth_radius);
+            const int end = std::min(ns - 1, ci + bp.smooth_radius);
+            const double sum = prefix[static_cast<size_t>(end) + 1]
+                             - prefix[static_cast<size_t>(begin)];
+            const int valid = valid_prefix[static_cast<size_t>(end) + 1]
+                            - valid_prefix[static_cast<size_t>(begin)];
+            smooth[ci] = valid > 0 ? static_cast<float>(sum / valid) : 0.f;
         }
         mean = std::move(smooth);
     }
 
+    std::vector<float> valid_profile;
+    valid_profile.reserve(ns);
+    for (float value : mean) if (value > 0.f) valid_profile.push_back(value);
+    const float reference = medianValue(std::move(valid_profile));
+    if (!(reference > 0.f)) return;
+    const float gain_cap = std::pow(10.f, std::clamp(bp.gain_cap_db, 0.f, 40.f) / 20.f);
+    const float strength = std::clamp(bp.strength, 0.f, 1.f);
+
     for (auto* row : rows)
         for (int ci = 0; ci < static_cast<int>(row->size()) && ci < ns; ++ci) {
-            const float ref     = std::max(1024.f, mean[ci]);
-            const float factor  = kRefLevel / ref;
-            const float blended = (*row)[ci] * (1.f + (factor - 1.f) * bp.strength);
+            if ((*row)[ci] == 0 || !(mean[ci] > 0.f)) continue;
+            const float requested = std::clamp(reference / mean[ci],
+                                               1.f / gain_cap, gain_cap);
+            const float factor = std::pow(requested, strength);
+            const float blended = (*row)[ci] * factor;
             (*row)[ci] = static_cast<uint16_t>(std::clamp(blended, 0.f, 65535.f));
         }
 }
 
 // -- Adaptive range normalisation ----------------------------------------------
-void arnChannel(std::vector<std::vector<uint16_t>*>& rows, const ArnParams& arn)
+static void legacyArnChannel(std::vector<std::vector<uint16_t>*>& rows, const ArnParams& arn)
 {
     if (!arn.enabled || rows.empty()) return;
     const int ns = maxRowLen(rows);
     if (ns == 0) return;
 
     const int n_rows = static_cast<int>(rows.size());
-    constexpr float kRefLevel = 32768.f;
     constexpr float kPctFrac  = 0.40f;
     const float gain_cap = std::max(1.f, std::pow(10.f, arn.gain_cap_db / 20.f));
     const float strength = std::clamp(arn.strength, 0.f, 1.f);
 
-    std::vector<float>    ref(ns, kRefLevel);
+    std::vector<float>    ref(ns, 0.f);
     std::vector<bool>     valid(ns, false);
     std::vector<uint16_t> col_vals;
     col_vals.reserve(n_rows);
@@ -126,40 +156,61 @@ void arnChannel(std::vector<std::vector<uint16_t>*>& rows, const ArnParams& arn)
         const int k = std::clamp(static_cast<int>(col_vals.size() * kPctFrac),
                                  0, static_cast<int>(col_vals.size()) - 1);
         std::nth_element(col_vals.begin(), col_vals.begin() + k, col_vals.end());
-        ref[ci] = std::max(1024.f, static_cast<float>(col_vals[k]));
+        ref[ci] = static_cast<float>(col_vals[k]);
         valid[ci] = true;
     }
 
     if (arn.column_smooth > 0) {
         std::vector<float> smooth(ns);
         std::vector<bool>  smooth_valid(ns, false);
+        std::vector<double> prefix(static_cast<size_t>(ns) + 1, 0.0);
+        std::vector<int> count_prefix(static_cast<size_t>(ns) + 1, 0);
         for (int ci = 0; ci < ns; ++ci) {
-            float sum = 0.f; int cnt = 0;
-            for (int k = std::max(0, ci - arn.column_smooth);
-                      k <= std::min(ns - 1, ci + arn.column_smooth); ++k)
-                if (valid[k]) { sum += ref[k]; ++cnt; }
-            smooth[ci] = cnt > 0 ? sum / cnt : ref[ci];
+            prefix[static_cast<size_t>(ci) + 1] = prefix[static_cast<size_t>(ci)]
+                + (valid[ci] ? ref[ci] : 0.f);
+            count_prefix[static_cast<size_t>(ci) + 1] =
+                count_prefix[static_cast<size_t>(ci)] + (valid[ci] ? 1 : 0);
+        }
+        for (int ci = 0; ci < ns; ++ci) {
+            const int begin = std::max(0, ci - arn.column_smooth);
+            const int end = std::min(ns - 1, ci + arn.column_smooth);
+            const double sum = prefix[static_cast<size_t>(end) + 1]
+                             - prefix[static_cast<size_t>(begin)];
+            const int cnt = count_prefix[static_cast<size_t>(end) + 1]
+                          - count_prefix[static_cast<size_t>(begin)];
+            smooth[ci] = cnt > 0 ? static_cast<float>(sum / cnt) : ref[ci];
             smooth_valid[ci] = cnt > 0;
         }
         ref = std::move(smooth);
         valid = std::move(smooth_valid);
     }
 
+    std::vector<float> valid_reference;
+    valid_reference.reserve(ns);
+    for (int ci = 0; ci < ns; ++ci)
+        if (valid[ci] && ref[ci] > 0.f) valid_reference.push_back(ref[ci]);
+    const float target = medianValue(std::move(valid_reference));
+    if (!(target > 0.f)) return;
+
     for (auto* row : rows)
         for (int ci = 0; ci < static_cast<int>(row->size()) && ci < ns; ++ci) {
             if (!valid[ci] || ref[ci] < 1.f) continue;
-            const float factor  = std::clamp(kRefLevel / ref[ci], 1.f / gain_cap, gain_cap);
-            const float blended = (*row)[ci] * (1.f + (factor - 1.f) * strength);
+            if ((*row)[ci] == 0) continue;
+            const float requested = std::clamp(target / ref[ci], 1.f / gain_cap, gain_cap);
+            const float factor = std::pow(requested, strength);
+            const float blended = (*row)[ci] * factor;
             (*row)[ci] = static_cast<uint16_t>(std::clamp(blended, 0.f, 65535.f));
         }
 }
 
 // -- Destripe ------------------------------------------------------------------
-void destripeChannel(std::vector<std::vector<uint16_t>*>& rows, const DestripeParams& d)
+static void legacyDestripeChannel(std::vector<std::vector<uint16_t>*>& rows, const DestripeParams& d)
 {
     if (!d.enabled || rows.empty()) return;
     const int n     = static_cast<int>(rows.size());
-    const int hw    = std::max(1, d.window / 2);
+    const int window = std::max(1, d.window);
+    const int left_extent = (window - 1) / 2;
+    const int right_extent = window / 2;
     const int nsegs = std::max(1, d.subdivision);
     const float cap = std::max(1.001f, d.capping);
     const int ns    = maxRowLen(rows);
@@ -181,22 +232,33 @@ void destripeChannel(std::vector<std::vector<uint16_t>*>& rows, const DestripePa
             for (int ci = c0; ci < c1 && ci < static_cast<int>(orig[i].size()); ++ci)
                 if (orig[i][ci] > 0) { seg_sum[i] += orig[i][ci]; ++seg_cnt[i]; }
 
-        double gsum = 0.0; int gcnt = 0;
-        for (int i = 0; i < n; ++i) { gsum += seg_sum[i]; gcnt += seg_cnt[i]; }
-        if (gcnt == 0) continue;
-        const float global_mean = static_cast<float>(gsum / gcnt);
-        if (global_mean < 1.f) continue;
+        std::vector<float> ping_mean(static_cast<size_t>(n), 0.f);
+        for (int i = 0; i < n; ++i)
+            if (seg_cnt[i] > 0)
+                ping_mean[static_cast<size_t>(i)] = static_cast<float>(
+                    seg_sum[i] / static_cast<double>(seg_cnt[i]));
+        std::vector<float> neighbours;
+        neighbours.reserve(static_cast<size_t>(window));
 
         for (int i = 0; i < n; ++i) {
-            double lsum = 0.0; int lcnt = 0;
-            for (int k = std::max(0, i - hw); k <= std::min(n - 1, i + hw); ++k) {
-                lsum += seg_sum[k]; lcnt += seg_cnt[k];
-            }
-            if (lcnt == 0) continue;
-            const float local_mean = static_cast<float>(lsum / lcnt);
-            if (local_mean < 1.f) continue;
+            const float current = ping_mean[static_cast<size_t>(i)];
+            if (!(current > 0.f)) continue;
+            neighbours.clear();
+            const int begin = std::max(0, i - left_extent);
+            const int end = std::min(n - 1, i + right_extent);
+            for (int k = begin; k <= end; ++k)
+                if (ping_mean[static_cast<size_t>(k)] > 0.f)
+                    neighbours.push_back(ping_mean[static_cast<size_t>(k)]);
+            const float local_reference = medianValue(neighbours);
+            if (!(local_reference > 0.f)) continue;
 
-            const float factor = std::clamp(global_mean / local_mean, 1.f / cap, cap);
+            const float requested = local_reference / current;
+            // A destriper must not continuously flatten legitimate along-track
+            // gain/geology trends.  Treat small deviations from the robust local
+            // reference as signal and only correct a meaningful stripe outlier.
+            // 0.12 nepers is approximately 1.04 dB (12.7% in amplitude).
+            if (std::fabs(std::log(requested)) < 0.12f) continue;
+            const float factor = std::clamp(requested, 1.f / cap, cap);
             auto& side = *rows[i];
             for (int ci = c0; ci < c1 && ci < static_cast<int>(side.size()); ++ci)
                 side[ci] = static_cast<uint16_t>(
@@ -205,8 +267,8 @@ void destripeChannel(std::vector<std::vector<uint16_t>*>& rows, const DestripePa
     }
 }
 
-// -- ML enhance (CLAHE-like) ---------------------------------------------------
-void mlEnhanceChannel(std::vector<std::vector<uint16_t>*>& rows, const MlEnhanceParams& me)
+// -- Adaptive local contrast (CLAHE) -------------------------------------------
+static void legacyMlEnhanceChannel(std::vector<std::vector<uint16_t>*>& rows, const MlEnhanceParams& me)
 {
     if (!me.enabled || rows.empty()) return;
     const int   n_rows = static_cast<int>(rows.size());
@@ -218,24 +280,52 @@ void mlEnhanceChannel(std::vector<std::vector<uint16_t>*>& rows, const MlEnhance
 
     auto buildCdf = [&](const std::vector<uint16_t>& vals) -> std::array<uint16_t, 256> {
         std::array<int, 256> hist = {};
-        for (uint16_t v : vals) ++hist[v >> 8];
+        int valid_pixels = 0;
+        for (uint16_t v : vals) {
+            if (v == 0) continue; // preserve no-data/water masks
+            ++hist[v >> 8];
+            ++valid_pixels;
+        }
 
-        const int tile_area  = static_cast<int>(vals.size());
+        const int tile_area  = valid_pixels;
+        if (tile_area == 0) {
+            std::array<uint16_t, 256> identity = {};
+            for (int b = 0; b < 256; ++b)
+                identity[b] = static_cast<uint16_t>(b * 257u);
+            return identity;
+        }
         const int clip_count = std::max(1, static_cast<int>(clip * tile_area / 256));
         int excess = 0;
         for (int b = 0; b < 256; ++b)
             if (hist[b] > clip_count) { excess += hist[b] - clip_count; hist[b] = clip_count; }
         const int add_each = excess / 256;
         for (int b = 0; b < 256; ++b) hist[b] += add_each;
+        const int remainder = excess % 256;
+        // Spread the remainder across the histogram instead of dropping it;
+        // deterministic spacing avoids biasing only the darkest bins.
+        for (int i = 0; i < remainder; ++i)
+            ++hist[(i * 256) / remainder];
 
         int total = 0;
         for (int b = 0; b < 256; ++b) total += hist[b];
 
         std::array<uint16_t, 256> cdf = {};
         int cumsum = 0;
+        int cdf_min = 0;
+        for (int b = 0; b < 256; ++b) {
+            cdf_min += hist[b];
+            if (hist[b] > 0) break;
+        }
+        if (total <= cdf_min) {
+            for (int b = 0; b < 256; ++b)
+                cdf[b] = static_cast<uint16_t>(b * 257u);
+            return cdf;
+        }
+        const int denominator = std::max(1, total - cdf_min);
         for (int b = 0; b < 256; ++b) {
             cumsum += hist[b];
-            cdf[b] = static_cast<uint16_t>(std::clamp(cumsum * 65535 / std::max(1, total), 0, 65535));
+            cdf[b] = static_cast<uint16_t>(std::clamp(
+                (cumsum - cdf_min) * 65535 / denominator, 0, 65535));
         }
         return cdf;
     };
@@ -275,6 +365,7 @@ void mlEnhanceChannel(std::vector<std::vector<uint16_t>*>& rows, const MlEnhance
         const float wr0  = 1.f - wr1;
 
         for (int ci = 0; ci < ns_row; ++ci) {
+            if (side[ci] == 0) continue;
             const int v = static_cast<int>(side[ci] >> 8);
 
             const float tc_f = std::clamp((static_cast<float>(ci) / tw) - 0.5f,
@@ -293,6 +384,32 @@ void mlEnhanceChannel(std::vector<std::vector<uint16_t>*>& rows, const MlEnhance
     }
 }
 
+// UI-facing adapters. The Qt views and node graph intentionally share the
+// lower-layer implementation in pipeline/SidescanEnhancementAlgorithms.
+bool beamPatternChannel(std::vector<std::vector<uint16_t>*>& rows,
+                        const BeamPatternParams& settings)
+{
+    return pipeline::enhancement::applyBeamPattern(rows, settings);
+}
+
+bool arnChannel(std::vector<std::vector<uint16_t>*>& rows,
+                const ArnParams& settings)
+{
+    return pipeline::enhancement::applyArn(rows, settings);
+}
+
+bool destripeChannel(std::vector<std::vector<uint16_t>*>& rows,
+                     const DestripeParams& settings)
+{
+    return pipeline::enhancement::applyDestripe(rows, settings);
+}
+
+bool mlEnhanceChannel(std::vector<std::vector<uint16_t>*>& rows,
+                      const MlEnhanceParams& settings)
+{
+    return pipeline::enhancement::applyAdaptiveContrast(rows, settings);
+}
+
 // -- Whole-pings convenience ---------------------------------------------------
 
 namespace {
@@ -305,7 +422,11 @@ void runChannel(std::vector<core::SidescanPing*>& chan, const WaterfallParams& p
     // Along-track order matters for destripe / ML.
     std::sort(chan.begin(), chan.end(),
               [](const core::SidescanPing* a, const core::SidescanPing* b) {
-                  return a->timestamp_us < b->timestamp_us;
+                  if (a->timestamp_us != b->timestamp_us)
+                      return a->timestamp_us < b->timestamp_us;
+                  if (a->ping_number != b->ping_number)
+                      return a->ping_number < b->ping_number;
+                  return a->id < b->id;
               });
 
     // Work directly on raw amplitudes — do NOT mask water-column samples to 0.
@@ -321,37 +442,35 @@ void runChannel(std::vector<core::SidescanPing*>& chan, const WaterfallParams& p
         rows[i] = &amp[i];
     }
 
-    // Beam/destripe can be present in durable stores. Let baked rows contribute
-    // to the line statistics, but restore their samples after that operator so a
-    // mixed/legacy store cannot process them twice. Operators without a durable
-    // correction flag continue to apply uniformly.
+    // A mixed legacy store may contain both baked and raw rows. Estimate each
+    // operator exclusively from raw rows: already-corrected amplitudes are in a
+    // different statistical domain and would bias the new correction curve.
     const auto applyUnlessBaked = [&](core::CorrectionFlag flag,
                                       const auto& operation) {
-        std::vector<size_t> baked_indices;
-        baked_indices.reserve(chan.size());
+        std::vector<std::vector<uint16_t>*> unbaked_rows;
+        unbaked_rows.reserve(chan.size());
         for (size_t i = 0; i < chan.size(); ++i)
-            if (core::hasCorrectionFlag(chan[i]->correction_flags, flag))
-                baked_indices.push_back(i);
-        if (baked_indices.size() == chan.size()) return;
-
-        std::vector<std::vector<uint16_t>> baked_samples;
-        baked_samples.reserve(baked_indices.size());
-        for (size_t i : baked_indices) baked_samples.push_back(amp[i]);
-        operation();
-        for (size_t i = 0; i < baked_indices.size(); ++i)
-            amp[baked_indices[i]] = std::move(baked_samples[i]);
+            if (!core::hasCorrectionFlag(chan[i]->correction_flags, flag))
+                unbaked_rows.push_back(rows[i]);
+        if (unbaked_rows.empty()) return;
+        if (!operation(unbaked_rows)) return;
+        for (size_t i = 0; i < chan.size(); ++i)
+            if (!core::hasCorrectionFlag(chan[i]->correction_flags, flag))
+                chan[i]->correction_flags |= flag;
     };
 
     if (params.beam_pattern.enabled)
         applyUnlessBaked(core::CorrectionFlag::BeamPattern,
-                         [&] { beamPatternChannel(rows, params.beam_pattern); });
+                         [&](auto& active) { return beamPatternChannel(active, params.beam_pattern); });
     if (params.arn.enabled)
-        arnChannel(rows, params.arn);
+        applyUnlessBaked(core::CorrectionFlag::Arn,
+                         [&](auto& active) { return arnChannel(active, params.arn); });
     if (params.destripe.enabled)
         applyUnlessBaked(core::CorrectionFlag::Destriping,
-                         [&] { destripeChannel(rows, params.destripe); });
+                         [&](auto& active) { return destripeChannel(active, params.destripe); });
     if (params.ml_enhance.enabled)
-        mlEnhanceChannel(rows, params.ml_enhance);
+        applyUnlessBaked(core::CorrectionFlag::AdaptiveContrast,
+                         [&](auto& active) { return mlEnhanceChannel(active, params.ml_enhance); });
 
     for (size_t i = 0; i < chan.size(); ++i) {
         auto& s = chan[i]->samples;
@@ -399,11 +518,6 @@ void applyPerPingCalibration(core::SidescanPing& ping,
                                         core::CorrectionFlag::Arc)) {
         app::corrections::applyArc(one, params.arc);
     }
-    if (params.agc.enabled && params.agc.mode == app::AgcMode::Global
-            && !core::hasCorrectionFlag(item.correction_flags,
-                                        core::CorrectionFlag::GainNormalized)) {
-        app::corrections::normalizeAmplitudes(one, params.agc);
-    }
     ping = std::move(one.front());
 }
 
@@ -412,14 +526,14 @@ void applyCalibration(std::vector<core::SidescanPing>& pings,
 {
     for (auto& ping : pings)
         applyPerPingCalibration(ping, params);
-    applyVariableAgc(pings, params);
+    applyAgc(pings, params);
 }
 
 void applyContextCalibrationAndImaging(
     std::vector<core::SidescanPing>& pings,
     const WaterfallParams& params)
 {
-    applyVariableAgc(pings, params);
+    applyAgc(pings, params);
     applyImagingChain(pings, params);
 }
 

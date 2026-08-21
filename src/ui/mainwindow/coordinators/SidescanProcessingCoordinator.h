@@ -22,6 +22,13 @@ class SidescanProcessingCoordinator final : public QObject {
 public:
     struct Result {
         std::vector<std::string> layer_ids;
+        // Waterfall-derived artifacts that must be switched back to their
+        // preserved imported baseline for this explicit empty processing state.
+        std::vector<std::string> revert_layer_ids;
+        std::vector<std::string> pipeline_changed_layer_ids;
+        std::vector<std::string> display_changed_layer_ids;
+        std::vector<std::string> geometry_changed_layer_ids;
+        std::vector<std::string> nav_changed_layer_ids;
         bool pipeline_changed = false;
         bool geometry_changed = false;
         bool nav_changed = false;

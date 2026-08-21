@@ -1,55 +1,35 @@
 #include "pipeline/nodes/correction/TvgNode.h"
-#include "core/SidescanPing.h"
-#include <cmath>
-#include <algorithm>
+
+#include "pipeline/SidescanRadiometryAlgorithms.h"
 
 namespace dolphin::pipeline {
 
 NodeSchema TvgNode::schema() const
 {
-    return NodeSchema{
-        "tvg", "TVG", "Correction",
-        {
-            {"spreading",   {"Spreading (dB/decade)", 20.0f, 0.0f, 40.0f}},
-            {"absorption",  {"Absorption (dB/m)",      0.0f, 0.0f,  2.0f}},
-            {"blanking_m",  {"Blanking (m)",            1.0f, 0.0f, 50.0f}},
-        }
-    };
+    return NodeSchema{"tvg", "TVG", "Correction", {
+        {"spreading", {"Spreading (dB/decade)", 20.f, 0.f, 40.f}},
+        {"absorption", {"Absorption (dB/m)", 0.f, 0.f, 2.f}},
+        {"blanking_m", {"Fallback blanking (m)", 1.f, 0.f, 50.f}},
+    }};
 }
 
 ArtifactBuffer TvgNode::process(const ArtifactBuffer& input,
-                                  const NodeParams& params) const
+                                const NodeParams& params) const
 {
-    float spreading  = 20.0f;
-    float absorption =  0.0f;
-    float blanking_m =  1.0f;  // reference range; TVG = 0 dB at this distance
-
-    if (params.count("spreading"))  spreading  = std::get<float>(params.at("spreading"));
-    if (params.count("absorption")) absorption = std::get<float>(params.at("absorption"));
-    if (params.count("blanking_m")) blanking_m = std::get<float>(params.at("blanking_m"));
-
-    const float kRef = std::max(blanking_m, 1.0f);
-
     ArtifactBuffer output = input;
-
-    for (auto& artifact : output) {
-        auto* ping = std::get_if<core::SidescanPing>(&artifact);
-        if (!ping) continue;
-
-        for (auto& sample : ping->samples) {
-            const float r = sample.range_m > 0.f ? sample.range_m : 0.f;
-            if (r < kRef) continue;
-
-            const float gain_db = spreading  * std::log10(r / kRef)
-                                + absorption * (r - kRef);
-            const float factor  = std::pow(10.f, gain_db / 20.f);
-            const float amp     = sample.amplitude * factor;
-            sample.amplitude    = static_cast<uint16_t>(
-                std::clamp(amp, 0.f, static_cast<float>(UINT16_MAX)));
+    std::vector<size_t> indices;
+    std::vector<core::SidescanPing> pings;
+    for (size_t i = 0; i < output.size(); ++i)
+        if (auto* ping = std::get_if<core::SidescanPing>(&output[i])) {
+            indices.push_back(i); pings.push_back(std::move(*ping));
         }
-        ping->correction_flags |= core::CorrectionFlag::Tvg;
-    }
-
+    const auto value = [&](const char* key, float fallback) {
+        const auto found = params.find(key);
+        return found == params.end() ? fallback : std::get<float>(found->second);
+    };
+    radiometry::applyTvg(pings, {true, value("spreading", 20.f),
+        value("absorption", 0.f), value("blanking_m", 1.f)});
+    for (size_t i = 0; i < indices.size(); ++i) output[indices[i]] = std::move(pings[i]);
     return output;
 }
 

@@ -523,6 +523,14 @@ void ProjectSessionController::loadProjectPath(const std::string& path)
     emit projectChanged(m_project);
     emit jobMessage(QString("Opened: %1")
         .arg(QString::fromStdString(m_project->name())));
+    for (const auto& warning : m_project->loadWarnings()) {
+        const QString message = QString::fromStdString(warning);
+        emit jobMessage(message);
+        if (m_diag_hub)
+            m_diag_hub->postProblem(message,
+                                    DiagnosticsHub::Severity::Warning,
+                                    "project-settings");
+    }
 
     // Defer layer pre-population to the next event-loop tick.
     // Calling activateLayer() synchronously triggers Win32 message processing

@@ -79,6 +79,9 @@ struct SssPoint {
     // Authoritative across-track ground range used to align adjacent strips.
     // This avoids warping unequal/non-uniform sample grids by point index.
     float    ground_range_m = 0.0f;
+    // Geometry-only anchors preserve a valid swath footprint without burning
+    // a synthetic bottom-return pixel into the mosaic/drape.
+    bool     renderable = true;
 };
 
 struct SssStrip {

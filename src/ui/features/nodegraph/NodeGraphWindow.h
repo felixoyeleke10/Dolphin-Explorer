@@ -50,6 +50,7 @@ public:
 signals:
     void graphModified();   // forwarded to MainWindow → marks project dirty
     void runRequested();    // MainWindow should call onRunSelectedLayer
+    void revertRequested(const std::string& layer_id);
     void importRequested();
     void layerSelectionRequested(const std::string& layer_id);
 
@@ -90,6 +91,7 @@ private:
     QTabBar*     m_worker_tabs  = nullptr;
     QComboBox*   m_layer_combo  = nullptr;
     QToolButton* m_run_btn      = nullptr;
+    QToolButton* m_revert_btn   = nullptr;
     QString      m_palette_drag_type_id;
     bool         m_palette_drag_live  = false;
     bool         m_palette_drop_valid = false;

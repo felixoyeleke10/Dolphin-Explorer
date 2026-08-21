@@ -9,6 +9,8 @@
 #include "render/sonar/SSSPalette.h"
 #include "render/sonar/SonarDisplayParams.h"
 #include "app/tasks/OperationManager.h"
+#include "app/project/Project.h"
+#include "app/layers/DataLayer.h"
 
 #include <QFutureWatcher>
 #include <QLabel>
@@ -52,6 +54,7 @@ void SidescanViewController::reloadCurrentLayer()
             to_reload.push_back(saved_active);
     }
     m_loaded_layers.clear();
+    m_resident_quality.clear();
     m_layer_intensity_cache.clear();  // stale at old CRS / georef
     m_quality_tier_cache.clear();     // stale at old CRS / georef
     for (const auto& id : to_reload)
@@ -70,9 +73,30 @@ void SidescanViewController::reloadLayer(const std::string& layer_id)
         m_op_mgr->cancelByPrefix("sss:prebuild:" + layer_id + ":");
     }
     m_loaded_layers.erase(layer_id);
+    m_resident_quality.erase(layer_id);
     m_layer_intensity_cache.erase(layer_id);
     m_quality_tier_cache.erase(layer_id);
     activateLayer(layer_id, m_project);
+}
+
+void SidescanViewController::applyInvalidations(
+    const std::vector<SidescanInvalidationRequest>& requests)
+{
+    const auto plan = coalesceSidescanInvalidations(requests);
+    std::vector<std::string> recolour;
+    std::vector<std::string> reraster;
+    for (const auto& [id, action] : plan) {
+        // Non-resident lines consume current model state when selected; doing
+        // background work for them violates the visible-first loading contract.
+        if (!m_loaded_layers.count(id)) continue;
+        switch (action) {
+        case SidescanRefreshAction::Recolour: recolour.push_back(id); break;
+        case SidescanRefreshAction::Reraster: reraster.push_back(id); break;
+        case SidescanRefreshAction::Reload:   reloadLayer(id); break;
+        }
+    }
+    applyDisplayParams(recolour);
+    applyLiveCorrections(reraster);
 }
 
 void SidescanViewController::applyLiveCorrections(const std::vector<std::string>& layer_ids)
@@ -100,6 +124,23 @@ void SidescanViewController::applyLiveCorrections(const std::vector<std::string>
     if (m_op_mgr) m_op_mgr->setLaneCap("sss:apply", 1);
     for (const auto& layer_id : targets)
         prebuildTier(layer_id, m_quality, m_project, "sss:apply");
+}
+
+void SidescanViewController::applyDisplayParams(
+    const std::vector<std::string>& layer_ids)
+{
+    if (!m_project || !m_map_view) return;
+    for (const auto& layer_id : layer_ids) {
+        const auto cache = m_layer_intensity_cache.find(layer_id);
+        const auto* layer = m_project->findLayer(layer_id);
+        if (cache == m_layer_intensity_cache.end() || !cache->second.valid() || !layer)
+            continue;
+        const SonarDisplayParams display =
+            static_cast<const SonarDisplayParams&>(layer->sss_display_state.params);
+        QImage image = colorizeIntensityCache(
+            cache->second, display, m_palette_idx, m_auto_stretch_enabled);
+        if (!image.isNull()) m_map_view->updatePreviewImage(layer_id, std::move(image));
+    }
 }
 
 // -- colorizeIntensityCache ----------------------------------------------------
@@ -234,6 +275,7 @@ void SidescanViewController::repaletteAllLayers()
 
     for (const auto& layer_id : reload_from_raster) {
         m_loaded_layers.erase(layer_id);
+        m_resident_quality.erase(layer_id);
         activateLayer(layer_id, m_project, layer_id == m_active_layer_id);
     }
 }
@@ -249,6 +291,7 @@ void SidescanViewController::unloadLayer(const std::string& layer_id)
     if (m_map_view)
         m_map_view->removeLayerData(layer_id);
     m_loaded_layers.erase(layer_id);
+    m_resident_quality.erase(layer_id);
     m_layer_intensity_cache.erase(layer_id);
     m_quality_tier_cache.erase(layer_id);
     // Cancel any in-flight build/recolour for this layer; its on_done is then
@@ -267,6 +310,7 @@ void SidescanViewController::deactivate(bool clear_map)
     }
     m_layer_intensity_cache.clear();
     m_quality_tier_cache.clear();
+    m_resident_quality.clear();
 
     m_active_builds = 0;
     m_data_state    = ViewerDataState::Idle;

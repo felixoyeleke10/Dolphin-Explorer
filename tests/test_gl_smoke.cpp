@@ -12,8 +12,11 @@
 
 #include "ui/features/waterfall/WaterfallView.h"
 #include "ui/features/map/MapView3D.h"
+#include "ui/features/map/MapViewportHost.h"
+#include "ui/features/map/MapView.h"
 
 #include <QApplication>
+#include <QMouseEvent>
 #include <cstdio>
 
 static int g_pass = 0;
@@ -63,6 +66,45 @@ int main(int argc, char* argv[])
         view.update();  // MapView3D is a QOpenGLWindow — schedule a frame
         QApplication::processEvents();
         CHECK(gl_errors == 0);
+
+        int hover_events = 0;
+        QObject::connect(&view, &dolphin::ui::MapView3D::hoverLayerChanged,
+                         [&hover_events](const std::string&, QPoint) { ++hover_events; });
+        view.setHoverTooltipsEnabled(true);
+        view.setHoverHighlightEnabled(true);
+        QMouseEvent move(QEvent::MouseMove, QPointF(100, 100), QPointF(100, 100),
+                         Qt::NoButton, Qt::NoButton, Qt::NoModifier);
+        QApplication::sendEvent(&view, &move);
+        CHECK(hover_events >= 1);
+    }
+
+    // One shared 2D model is authoritative for both modes. Two inserted survey
+    // lines must therefore produce two nav layers and two mosaics in 3D as well.
+    {
+        dolphin::ui::MapViewportHost host;
+        host.resize(800, 600);
+        host.show();
+
+        auto addLine = [&](const std::string& id, double offset) {
+            dolphin::ui::LayerMapData data;
+            data.kind = dolphin::ui::LayerMapKind::Swath;
+            data.is_projected = true;
+            data.nav_track = {QPointF(offset, 0.0), QPointF(offset + 10.0, 20.0)};
+            data.lon_min = offset;
+            data.lon_max = offset + 10.0;
+            data.lat_min = 0.0;
+            data.lat_max = 20.0;
+            data.preview_image = QImage(4, 4, QImage::Format_RGBA8888);
+            data.preview_image.fill(Qt::white);
+            host.view2D()->setLayerMapData(id, std::move(data));
+        };
+        addLine("line-a", 0.0);
+        addLine("line-b", 30.0);
+        QApplication::processEvents();
+
+        CHECK(host.view2D()->layerDataIds().size() == 2);
+        CHECK(host.view3D()->navLayerCount() == 2);
+        CHECK(host.view3D()->drapeLayerCount() == 2);
     }
 
     std::fprintf(stdout, "\n%d/%d tests passed\n", g_pass, g_pass + g_fail);

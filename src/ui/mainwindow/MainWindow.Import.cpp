@@ -4,6 +4,8 @@
 #include "ui/shell/Features.h"
 #include "ui/features/import/ImportReviewWizard.h"
 #include "ui/features/import/ImportSetupDialog.h"
+#include "ui/features/import/ImportProgressDialog.h"
+#include "ui/features/map/MapViewportHost.h"
 #include "ui/shared/panels/LineListPanel.h"
 #include "app/import/ImportClassifier.h"
 #include "app/layers/LayerUtils.h"     // kModuleArtifactTypes (menu presets)
@@ -176,6 +178,8 @@ void MainWindow::importFilesWithPreset(const std::vector<core::ArtifactType>& pr
         // existing project the wizard's ImportNew entries become Reuse/Rebuild.
         reclassify(res.files, currentProject());
         if constexpr (Features::kImport)
+            if (m_import_overlay && m_viewport_host)
+                m_import_overlay->attachTo(m_viewport_host);
             if (m_import_ctrl) m_import_ctrl->importBatch(res.files);
     });
 
@@ -265,6 +269,8 @@ void MainWindow::showImportDialog(const QStringList& paths,
         if (!ensureProjectForImport(res)) return;
         reclassify(res.files, currentProject());
         if constexpr (Features::kImport)
+            if (m_import_overlay && m_viewport_host)
+                m_import_overlay->attachTo(m_viewport_host);
             if (m_import_ctrl) m_import_ctrl->importBatch(res.files);
     });
 

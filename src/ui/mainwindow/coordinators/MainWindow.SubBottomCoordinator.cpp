@@ -13,6 +13,7 @@
 #include "ui/mainwindow/panels/NavInfoPanel.h"
 #include "ui/mainwindow/panels/HeadingInfoPanel.h"
 #include "ui/features/subbottom/SubBottomWindow.h"
+#include "ui/features/import/ImportProgressDialog.h"
 #include "ui/features/subbottom/SubBottomSettingsDialog.h"
 #include "ui/features/subbottom/SubBottomViewStyle.h"
 #include "ui/features/map/MapView.h"
@@ -63,6 +64,8 @@ void MainWindow::onSubBottomOpen()
         connect(m_sbp_win, &SubBottomWindow::displayParamsEdited,
                 this, [this](SubBottomDisplayParams p) {
                     if (!m_display_state || !currentProject() || !m_sbp_win) return;
+                    if (m_import_overlay)
+                        m_import_overlay->attachTo(m_sbp_win);
                     const std::string lid = m_sbp_win->currentLayerId();
                     if (lid.empty() || !currentProject()->findLayer(lid)) return;
                     m_display_state->setLayerSbpDisplay(lid, p);

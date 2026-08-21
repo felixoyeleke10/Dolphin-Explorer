@@ -12,10 +12,12 @@
 #include "core/SpatialRef.h"
 #include "geo/GeoUtils.h"
 #include "ui/features/map/sidescan/SidescanMapLoadParams.h"
+#include "ui/features/map/sidescan/SidescanInvalidation.h"
 #include "ui/features/map/sidescan/SssContinuity.h"
 #include "ui/features/map/sidescan/SssGeorefParams.h"
 #include "ui/features/map/sidescan/SidescanSwathGeoreferencer.h"
 #include "ui/features/map/sidescan/SssMapBuild.h"
+#include "ui/features/map/sidescan/SssGeometryPolicy.h"
 #include "ui/features/map/sidescan/SwathRasterizer.h"
 #include "ui/features/map/MapLongitude.h"
 
@@ -44,6 +46,48 @@ static int g_fail = 0;
 namespace {
 
 using namespace dolphin;
+
+void testQualityLoadPlanning()
+{
+    using ui::MapSonarQuality;
+    using ui::detail::qualityLoadPlan;
+
+    auto plan = qualityLoadPlan(MapSonarQuality::High, false, false, true);
+    CHECK(plan.build_quality == MapSonarQuality::Low);
+    CHECK(plan.stage_upgrade);
+
+    plan = qualityLoadPlan(MapSonarQuality::High, false, true, true);
+    CHECK(plan.build_quality == MapSonarQuality::Low);
+    CHECK(plan.stage_upgrade);
+
+    plan = qualityLoadPlan(MapSonarQuality::High, true, true, true);
+    CHECK(plan.build_quality == MapSonarQuality::High);
+    CHECK(!plan.stage_upgrade);
+
+    plan = qualityLoadPlan(MapSonarQuality::Medium, false, false, false);
+    CHECK(plan.build_quality == MapSonarQuality::Low);
+    CHECK(!plan.stage_upgrade);
+
+    plan = qualityLoadPlan(MapSonarQuality::Low, false, false, true);
+    CHECK(plan.build_quality == MapSonarQuality::Low);
+    CHECK(!plan.stage_upgrade);
+}
+
+void testSidescanInvalidationContract()
+{
+    using namespace dolphin::ui;
+    const auto plan = coalesceSidescanInvalidations({
+        {"line-a", SidescanInvalidation::Appearance},
+        {"line-a", SidescanInvalidation::Amplitude},
+        {"line-a", SidescanInvalidation::Geometry},
+        {"line-a", SidescanInvalidation::SourceData},
+        {"line-b", SidescanInvalidation::Appearance},
+        {"",       SidescanInvalidation::SourceData}
+    });
+    CHECK(plan.size() == 2);
+    CHECK(plan.at("line-a") == SidescanRefreshAction::Reload);
+    CHECK(plan.at("line-b") == SidescanRefreshAction::Recolour);
+}
 
 core::SidescanPing makePing(double lat_m,
                             double lon_m,
@@ -663,8 +707,32 @@ void testCoverageAndRasterShareNadirPolicy()
     baked_params.slant_range_corrected = true;
     const auto zero_result = ui::georeferenceSidescanPings({baked_zero}, baked_params);
     CHECK(zero_result.strips.size() == 1);
-    if (zero_result.strips.size() == 1)
+    if (zero_result.strips.size() == 1) {
         CHECK(zero_result.strips[0].points.size() == 2);
+        CHECK(!zero_result.strips[0].points.front().renderable);
+    }
+
+    // Durable caches can carry authoritative per-ping correction flags even
+    // when old/migrated layer metadata is absent. That mismatch must neither
+    // reopen the nadir nor restore the bottom-return centerline.
+    baked_params.slant_range_corrected = false;
+    baked_params.show_nadir = false;
+    const auto flagged_result = ui::georeferenceSidescanPings({baked_zero}, baked_params);
+    CHECK(flagged_result.strips.size() == 1);
+    if (flagged_result.strips.size() == 1) {
+        CHECK(flagged_result.strips[0].points.size() == 2);
+        CHECK(flagged_result.strips[0].points.front().ground_range_m == 0.0f);
+        CHECK(!flagged_result.strips[0].points.front().renderable);
+    }
+
+    // A UI/layer request is not the same as an applied correction. With no
+    // bottom pick or nav altitude the raw ping must retain normal presentation.
+    auto no_altitude = pings.front();
+    no_altitude.bottom_pick = {};
+    no_altitude.nav.altitude_m = 0.0f;
+    no_altitude.correction_flags = 0;
+    baked_params.slant_range_corrected = true;
+    CHECK(!ui::sssCorrectionPresented(no_altitude, baked_params));
 }
 
 void testContinuityLearnsLineCadenceNotSurveyBreaks()
@@ -899,6 +967,7 @@ void testUnequalStripSampleCountsUseFullSwath()
     auto first = makePing(200.0, 100.0, 90.0f, 1'000'000);
     auto second = makePing(200.0, 110.0, 90.0f, 2'000'000);
     first.nav.sensor_heading_deg = second.nav.sensor_heading_deg = 90.0f;
+    first.nav.altitude_m = second.nav.altitude_m = 1.0f;
     first.samples = {{1'000, 1.0f}, {2'000, 20.0f}};
     second.samples = {{1'000, 1.0f}, {1'250, 5.0f}, {1'500, 10.0f},
                       {1'750, 15.0f}, {2'000, 20.0f}};
@@ -912,10 +981,27 @@ void testUnequalStripSampleCountsUseFullSwath()
     const std::atomic_bool cancelled{false};
     CHECK(ui::buildSwathPreviewImage(
         pings, data, 128, 0, cancelled, params, 0.0, 0));
-    // Synthetic nadir + five real samples on the denser strip = five cells.
-    // The old min-size zip emitted only two and discarded the far-range wedge.
-    CHECK(data.nav_stats.cells_attempted == 5);
-    CHECK(data.nav_stats.cells_rasterized == 5);
+    // The geometry-only nadir anchor is not rasterized; the remaining three
+    // real seabed cells still retain the full unequal-sample outer swath. The
+    // old min-size zip emitted only two and discarded the far-range wedge.
+    CHECK(data.nav_stats.cells_attempted == 3);
+    CHECK(data.nav_stats.cells_rasterized == 3);
+
+    // Verify the presentation result, not merely the geometry marker: the
+    // midpoint of the navigation centerline must remain transparent rather
+    // than becoming either a bright or palette-black seabed stripe.
+    CHECK(!data.preview_image.isNull());
+    if (!data.preview_image.isNull()) {
+        const double mid_lon = 0.5 * (first.nav.lon + second.nav.lon);
+        const double mid_lat = 0.5 * (first.nav.lat + second.nav.lat);
+        const int x = std::clamp(static_cast<int>(
+            (mid_lon - data.lon_min) / (data.lon_max - data.lon_min)
+                * data.preview_image.width()), 0, data.preview_image.width() - 1);
+        const int y = std::clamp(static_cast<int>(
+            (data.lat_max - mid_lat) / (data.lat_max - data.lat_min)
+                * data.preview_image.height()), 0, data.preview_image.height() - 1);
+        CHECK(qAlpha(data.preview_image.pixel(x, y)) == 0);
+    }
 }
 
 void testXtfProjectedHintWithDegreeCoordsNormalizesToWgs84()
@@ -1076,6 +1162,8 @@ void testBeamRaysRetainPhysicalPerPingGeometry()
 
 int main()
 {
+    testQualityLoadPlanning();
+    testSidescanInvalidationContract();
     testHeldFixesInterpolateByCycleTimestamp();
     testValidHeldFixesAtPointOneHertzGpsAreInterpolated();
     testRepairHardBoundsRejectTenKilometreLineBreak();

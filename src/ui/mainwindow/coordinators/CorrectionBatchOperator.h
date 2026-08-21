@@ -74,7 +74,8 @@ signals:
     // Corrected artifact written — update DataLayer path/index and reload viewer.
     void correctionPersisted(std::string layer_id,
                              std::string new_path,
-                             core::ArtifactIndex new_index);
+                             core::ArtifactIndex new_index,
+                             uint32_t baked_correction_flags);
     // All corrections already baked — nothing written, no reload needed.
     void correctionSkipped(std::string layer_id);
     // Bake failed for this layer.
@@ -84,11 +85,11 @@ signals:
 
 private:
     void onSssPersisted(const std::string& lid, const std::string& path,
-                        const core::ArtifactIndex& idx);
+                        const core::ArtifactIndex& idx, uint32_t flags);
     void onSssSkipped  (const std::string& lid);
     void onSssFailed   (const std::string& lid, const std::string& error);
     void onSbpPersisted(const std::string& lid, const std::string& path,
-                        const core::ArtifactIndex& idx);
+                        const core::ArtifactIndex& idx, uint32_t flags);
     void onSbpSkipped  (const std::string& lid);
     void onSbpFailed   (const std::string& lid, const std::string& error);
 
@@ -98,7 +99,7 @@ private:
     bool acceptCurrentGeneration(const std::string& lid);
 
     void jobPersisted(const std::string& lid, const std::string& path,
-                      const core::ArtifactIndex& idx);
+                      const core::ArtifactIndex& idx, uint32_t flags);
     void jobSkipped  (const std::string& lid);
     void jobFailed   (const std::string& lid, const QString& error);
 

@@ -1,6 +1,7 @@
 #include "pipeline/NodeRegistry.h"
 #include "pipeline/nodes/input/SidescanInputNode.h"
 #include "pipeline/nodes/correction/TvgNode.h"
+#include "pipeline/nodes/correction/ArcNode.h"
 #include "pipeline/nodes/correction/BandPassNode.h"
 #include "pipeline/nodes/correction/BottomDetectNode.h"
 #include "pipeline/nodes/correction/SlantRangeNode.h"
@@ -12,6 +13,7 @@
 #include "pipeline/nodes/enhancement/GainNormalizeNode.h"
 #include "pipeline/nodes/enhancement/ContrastEnhanceNode.h"
 #include "pipeline/nodes/enhancement/HistogramEqNode.h"
+#include "pipeline/nodes/enhancement/SidescanEnhancementNode.h"
 #include "pipeline/nodes/analysis/ShadowDetectNode.h"
 #include "pipeline/nodes/output/ExportGeoTiffNode.h"
 #include "pipeline/nodes/output/ExportCsvNode.h"
@@ -62,6 +64,7 @@ void registerBuiltinNodes()
 
     // Correction
     reg.registerType("tvg",              []{ return std::make_shared<TvgNode>(); });
+    reg.registerType("arc",              []{ return std::make_shared<ArcNode>(); });
     reg.registerType("slant_range",      []{ return std::make_shared<SlantRangeNode>(); });
     reg.registerType("geocorrect",       []{ return std::make_shared<GeoCorrectNode>(); });
     reg.registerType("nav_smooth",       []{ return std::make_shared<NavSmoothNode>(); });
@@ -76,6 +79,10 @@ void registerBuiltinNodes()
     reg.registerType("gain_normalize",  []{ return std::make_shared<GainNormalizeNode>(); });
     reg.registerType("contrast_enhance",[]{ return std::make_shared<ContrastEnhanceNode>(); });
     reg.registerType("histogram_eq",    []{ return std::make_shared<HistogramEqNode>(); });
+    reg.registerType("arn",             []{ return std::make_shared<SidescanEnhancementNode>(SidescanEnhancementKind::Arn); });
+    reg.registerType("destripe",        []{ return std::make_shared<SidescanEnhancementNode>(SidescanEnhancementKind::Destripe); });
+    reg.registerType("beam_pattern",    []{ return std::make_shared<SidescanEnhancementNode>(SidescanEnhancementKind::BeamPattern); });
+    reg.registerType("adaptive_contrast",[]{ return std::make_shared<SidescanEnhancementNode>(SidescanEnhancementKind::AdaptiveContrast); });
 
     // Analysis
     reg.registerType("bottom_detect",   []{ return std::make_shared<BottomDetectNode>(); });

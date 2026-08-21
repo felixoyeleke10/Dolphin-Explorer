@@ -104,6 +104,7 @@ private:
     QWidget*     m_arn_body         = nullptr;
     WfValueRow*  m_arn_strength     = nullptr;
     WfValueRow*  m_arn_gain_cap     = nullptr;
+    WfValueRow*  m_arn_smooth       = nullptr;
 
     // -- AGC ---------------------------------------------------------------
     WfToggleRow* m_agc_enable_toggle    = nullptr;
@@ -116,6 +117,7 @@ private:
     WfValueRow*  m_agc_smooth_win       = nullptr;
     WfValueRow*  m_agc_edge_skip        = nullptr;
     WfValueRow*  m_agc_noise_floor      = nullptr;
+    WfValueRow*  m_agc_gain_cap         = nullptr;
 
     // -- Destripe ----------------------------------------------------------
     WfToggleRow* m_destripe_toggle  = nullptr;
@@ -123,6 +125,7 @@ private:
     WfValueRow*  m_destripe_window  = nullptr;
     WfValueRow*  m_destripe_subdiv  = nullptr;
     WfValueRow*  m_destripe_cap     = nullptr;
+    WfValueRow*  m_destripe_threshold = nullptr;
 
     // -- Slant Range Correction --------------------------------------------
     WfToggleRow* m_src_toggle       = nullptr;
@@ -150,6 +153,7 @@ private:
     WfToggleRow* m_bpn_toggle        = nullptr;
     WfValueRow*  m_bpn_strength      = nullptr;
     WfValueRow*  m_bpn_smooth        = nullptr;
+    WfValueRow*  m_bpn_gain_cap      = nullptr;
     QWidget*     m_bpn_body          = nullptr;
 
     WfToggleRow* m_arc_toggle        = nullptr;

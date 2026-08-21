@@ -1,5 +1,6 @@
 add_library(dolphin-app STATIC
     artifacts/ArtifactSidecar.cpp
+    artifacts/BaselineArtifactResolver.cpp
     # Project — lifecycle + per-domain CRUD + serialization
     project/Project.cpp
     project/Project.Sources.cpp
@@ -12,6 +13,7 @@ add_library(dolphin-app STATIC
     project/Project.Serialization.Read.cpp
     project/Project.Serialization.Layers.Read.cpp
     project/Project.Serialization.Entities.cpp
+    project/ProjectRecovery.cpp
 
     # Layers
     layers/DataLayer.cpp
@@ -34,6 +36,7 @@ add_library(dolphin-app STATIC
 
     # Contracts
     contracts/ContractStore.cpp
+    contracts/ProcessingSettingsContract.cpp
 
     # Import orchestration
     import/ImportLog.cpp

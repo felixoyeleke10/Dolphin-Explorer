@@ -199,6 +199,18 @@ SwathGeorefResult georeferenceSidescanPings(
             }
             strip.points = std::move(coalesced);
 
+            // The bottom return maps to ground range zero after SRC. Retain the
+            // geometry anchor but make it transparent: otherwise its strong
+            // amplitude becomes a synthetic seabed line along the navigation
+            // track in both the 2D mosaic and the 3D drape.
+            const bool correction_presented =
+                sssCorrectionPresented(ping, params);
+            if (correction_presented
+                    && !strip.points.empty()
+                    && strip.points.front().ground_range_m <= kRangeEpsilonM) {
+                strip.points.front().renderable = false;
+            }
+
             // Add the canonical inner sample-bin edge. For corrected geometry it
             // is the track centre; for raw-slant display it is the same open
             // water-column edge used by coverage ribbons.
@@ -221,7 +233,8 @@ SwathGeorefResult georeferenceSidescanPings(
                 const uint16_t inner_amp = strip.points.front().amplitude;
                 strip.points.insert(strip.points.begin(),
                     {inner_lon, inner_lat, inner_amp,
-                     static_cast<float>(inner_gap_m)});
+                     static_cast<float>(inner_gap_m),
+                     !correction_presented});
             }
             result.strips.push_back(std::move(strip));
         } else {

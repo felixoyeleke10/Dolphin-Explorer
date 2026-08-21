@@ -43,10 +43,12 @@ private:
     void onProcessingPersisted(const std::string& layer_id,
                                const std::string& proc_path,
                                const core::ArtifactIndex& proc_index,
-                               bool slant_range_corrected);
+                               bool slant_range_corrected,
+                               uint32_t baked_correction_flags);
     void onCorrectionPersisted(const std::string& layer_id,
                                const std::string& new_path,
-                               const core::ArtifactIndex& new_index);
+                               const core::ArtifactIndex& new_index,
+                               uint32_t baked_correction_flags);
 
     ProjectEventBus*              m_event_bus = nullptr;
     std::shared_ptr<app::Project> m_project;

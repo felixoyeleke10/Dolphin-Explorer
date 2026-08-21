@@ -1,5 +1,6 @@
 // DisplayStateManager.cpp — coordinator/authority for display state.
 #include "ui/systems/DisplayStateManager.h"
+#include "app/contracts/ProcessingSettingsContract.h"
 #include "ui/systems/AppState.h"
 #include "app/project/Project.h"
 #include "app/layers/DataLayer.h"
@@ -157,6 +158,8 @@ bool DisplayStateManager::setLayerSbpGain(const std::string& layer_id,
 {
     auto* l = layerById(layer_id);
     if (!l) return false;
+    if (!app::contracts::validate(gain, l->sbp_display_state.signal).empty())
+        return false;
     l->sbp_display_state.gain            = gain;
     l->sbp_display_state.gain_customized = true;
     emit displayStateChanged(QString::fromStdString(layer_id), DisplayAspect::Gain);
@@ -168,17 +171,32 @@ bool DisplayStateManager::setLayerSbpSignal(const std::string& layer_id,
 {
     auto* l = layerById(layer_id);
     if (!l) return false;
+    if (!app::contracts::validate(l->sbp_display_state.gain, sig).empty())
+        return false;
     l->sbp_display_state.signal            = sig;
     l->sbp_display_state.signal_customized = true;
     emit displayStateChanged(QString::fromStdString(layer_id), DisplayAspect::Gain);
     return true;
 }
 
-bool DisplayStateManager::setLayerSbpDisplay(const std::string& layer_id,
-                                             const SubBottomDisplayParams& disp)
+bool DisplayStateManager::clearLayerSbpProcessing(const std::string& layer_id)
 {
     auto* l = layerById(layer_id);
     if (!l) return false;
+    l->sbp_display_state.gain = app::SbpGainParams{};
+    l->sbp_display_state.signal = app::SbpSignalParams{};
+    l->sbp_display_state.gain_customized = false;
+    l->sbp_display_state.signal_customized = false;
+    emit displayStateChanged(QString::fromStdString(layer_id), DisplayAspect::Gain);
+    return true;
+}
+
+bool DisplayStateManager::setLayerSbpDisplay(const std::string& layer_id,
+                                              const SubBottomDisplayParams& disp)
+{
+    auto* l = layerById(layer_id);
+    if (!l) return false;
+    if (!app::contracts::validate(disp).empty()) return false;
     l->sbp_display_state.display            = disp;
     l->sbp_display_state.display_customized = true;
     l->sbp_palette                         = disp.palette_index;
@@ -207,6 +225,7 @@ bool DisplayStateManager::setLayerSssDisplay(const std::string& layer_id,
 {
     auto* l = layerById(layer_id);
     if (!l) return false;
+    if (!app::contracts::validate(params).empty()) return false;
     l->sss_display_state.params     = params;
     l->sss_display_state.customized = true;
     l->slant_range_corrected        = params.slant_range_correction;
@@ -219,6 +238,7 @@ bool DisplayStateManager::setLayerNav(const std::string& layer_id,
 {
     auto* l = layerById(layer_id);
     if (!l) return false;
+    if (!app::contracts::validate(nav).empty()) return false;
     l->nav_state      = nav;
     l->nav_customized = true;
     emit displayStateChanged(QString::fromStdString(layer_id), DisplayAspect::NavOverlay);

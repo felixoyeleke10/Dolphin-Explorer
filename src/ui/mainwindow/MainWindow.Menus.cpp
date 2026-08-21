@@ -1,6 +1,7 @@
 // MainWindow.Menus.cpp — menu bar construction.
 // Geodetic settings dialog lives in MainWindow.Geodesy.cpp.
 #include "ui/mainwindow/MainWindow.h"
+#include "ui/features/import/ImportProgressDialog.h"
 #include "ui/features/map/sidescan/SidescanViewController.h"
 #include "ui/shared/AppCommands.h"
 #include "ui/shell/Features.h"
@@ -295,6 +296,17 @@ void MainWindow::buildViewMenu()
         for (int i = 0; i < static_cast<int>(m_act_map_quality.size()); ++i)
             if (m_act_map_quality[i])
                 m_act_map_quality[i]->setChecked(i == cur);
+    });
+
+    view->addSeparator();
+
+    auto* act_tasks = view->addAction(tr("Background Tasks"));
+    connect(act_tasks, &QAction::triggered, this, [this]() {
+        if (m_import_overlay) m_import_overlay->reopen();
+    });
+    connect(view, &QMenu::aboutToShow, this, [this, act_tasks]() {
+        act_tasks->setEnabled(m_import_overlay
+                              && m_import_overlay->hasDisplayableState());
     });
 
     view->addSeparator();

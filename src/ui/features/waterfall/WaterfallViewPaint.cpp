@@ -11,6 +11,7 @@
 
 #include "ui/features/waterfall/WaterfallView.h"
 #include "ui/features/waterfall/painters/WaterfallOverlayPainter.h"
+#include "ui/shared/BottomTrackDisplayPolicy.h"
 
 #include <QDebug>
 #include <QOpenGLContext>
@@ -146,7 +147,9 @@ void WaterfallView::paintGL()
 
 void WaterfallView::paintOverlays(QPainter& p, const WfLayout& lay)
 {
-    if (m_seabed_tool > 0 || m_show_seabed_line) {
+    if (shouldPaintBottomTrack(m_show_seabed_line,
+                               m_params.slant_range_correction,
+                               m_seabed_tool > 0)) {
         WaterfallOverlayPainter::paintSeabedOverlay(p, m_rows, lay, m_scroll);
     }
 

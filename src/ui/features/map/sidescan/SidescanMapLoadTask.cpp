@@ -47,19 +47,34 @@ bool SidescanViewController::activateLayer(const std::string& layer_id,
     if (m_quality == MapSonarQuality::Off) {
         if (as_active && m_map_view) m_map_view->setActiveLayer(layer_id);
         if (as_active && m_status_ping) m_status_ping->setText(tr("Map sonar off"));
-        emit loadingFinished();
+        emit loadingFinished(0);
         return true;
     }
 
     if (m_loaded_layers.count(layer_id)) {
-        emit loadingFinished();
+        if (as_active) {
+            if (m_map_view) m_map_view->setActiveLayer(layer_id);
+            // A survey-overview line is intentionally resident at Low. Selection
+            // must be instant, then promote only that chosen line to the requested
+            // tier without removing the existing raster.
+            const auto resident = m_resident_quality.find(layer_id);
+            const bool already_at_requested = resident != m_resident_quality.end()
+                && resident->second == m_quality;
+            if (!already_at_requested
+                    && (m_quality == MapSonarQuality::Medium
+                        || m_quality == MapSonarQuality::High)) {
+                if (!applyCachedTier(layer_id, m_quality) && project)
+                    prebuildTier(layer_id, m_quality, project);
+            }
+        }
+        emit loadingFinished(0);
         return true;
     }
 
     auto* layer = project ? project->findLayer(layer_id) : nullptr;
     if (!layer) {
         deactivate(false);
-        emit loadingFinished();
+        emit loadingFinished(0);
         return true;
     }
 
@@ -68,20 +83,20 @@ bool SidescanViewController::activateLayer(const std::string& layer_id,
     // MainWindow.LayerCoordinator which extracts their nav track directly.
     if (layer->modality != app::Modality::Sidescan &&
         layer->modality != app::Modality::Unknown) {
-        emit loadingFinished();
+        emit loadingFinished(0);
         return true;
     }
 
     if (!layer->index_built) {
         if (as_active && m_status_ping) m_status_ping->setText(tr("Layer not yet indexed"));
-        emit loadingFinished();
+        emit loadingFinished(0);
         return true;
     }
     if (layer->sidescanCount() == 0) {
         if (as_active && m_status_ping)
             m_status_ping->setText(
                 tr("No sidescan data  (%1 artifacts total)").arg(layer->artifactCount()));
-        emit loadingFinished();
+        emit loadingFinished(0);
         return true;
     }
 
@@ -122,26 +137,34 @@ bool SidescanViewController::activateLayer(const std::string& layer_id,
     // cached fresh on disk (reopening a project, or re-applying the same settings),
     // load it DIRECTLY — no Low preview, no ping decode/re-rasterize. CoverageOnly/
     // Low build directly too, so only an uncached slow tier stages.
-    MapSonarQuality build_quality = m_quality;
-    bool            stage_upgrade = false;
+    bool            requested_tier_fresh = false;
+    bool            low_tier_fresh = false;
     if (m_quality == MapSonarQuality::Medium || m_quality == MapSonarQuality::High) {
         const rastercache::Meta full_meta = rastercache::makeMeta(
             store_path, nav_params, georef_params, m_quality,
             display_ref.id, sss_params);
         const std::string full_path =
             rastercache::cachePath(store_path, layer_id, m_quality);
-        if (!rastercache::isFresh(full_path, full_meta)) {
-            build_quality = MapSonarQuality::Low;
-            stage_upgrade = true;
+        requested_tier_fresh = rastercache::isFresh(full_path, full_meta);
+        if (!requested_tier_fresh) {
+            const rastercache::Meta low_meta = rastercache::makeMeta(
+                store_path, nav_params, georef_params, MapSonarQuality::Low,
+                display_ref.id, sss_params);
+            const std::string low_path = rastercache::cachePath(
+                store_path, layer_id, MapSonarQuality::Low);
+            low_tier_fresh = rastercache::isFresh(low_path, low_meta);
         }
     }
 
-    // Survey overview loads are intentionally bounded to the fast Low tier when
-    // the requested Medium/High tier is not already cached. This makes every
-    // indexed line appear without requiring selection while preserving active-
-    // line priority and avoiding an automatic full-resolution fan-out.
-    if (!as_active)
-        stage_upgrade = false;
+    const auto load_plan = detail::qualityLoadPlan(
+        m_quality, requested_tier_fresh, low_tier_fresh, as_active);
+    MapSonarQuality build_quality = load_plan.build_quality;
+    bool stage_upgrade = load_plan.stage_upgrade;
+
+    // Survey overview lines need a prompt, useful raster—not an automatic
+    // full-resolution fan-out. Keep them at Low until the operator selects one;
+    // the loaded-layer path above then promotes only that chosen line.
+    if (!as_active) stage_upgrade = false;
 
     // Open-time policy (cache_only): display persisted work, never start new
     // processing. Pick the best already-fresh raster tier at or below the
@@ -168,7 +191,7 @@ bool SidescanViewController::activateLayer(const std::string& layer_id,
         if (found == MapSonarQuality::Off) {
             // Nothing persisted — nav track (already drawn by the caller) is
             // the honest display. Balance the caller's pending-load counter.
-            emit loadingFinished();
+            emit loadingFinished(0);
             return false;   // deferred to the operator
         }
         build_quality = found;
@@ -197,10 +220,10 @@ bool SidescanViewController::activateLayer(const std::string& layer_id,
     if (store_path.empty()) {
         if (as_active && m_status_ping)
             m_status_ping->setText(tr("Layer has no artifact store — reimport required"));
-        emit loadingFinished();
+        emit loadingFinished(0);
         return true;
     }
-    if (!m_op_mgr) { emit loadingFinished(); return true; }
+    if (!m_op_mgr) { emit loadingFinished(0); return true; }
 
     const MapSonarQuality current_quality = build_quality;
 
@@ -218,9 +241,15 @@ bool SidescanViewController::activateLayer(const std::string& layer_id,
     // Apply the result on the main thread (success path). Stale/superseded results
     // are dropped by OperationManager (per-layer key), so no generation guard is
     // needed; busy-state and loadingFinished are balanced in on_finally below.
+    const MapSonarQuality requested_quality = m_quality;
     auto on_done = [this, layer_id, palette_idx, auto_stretch_enabled,
-                    as_active](SidescanLoadResult res) {
+                    as_active, stage_upgrade, requested_quality,
+                    current_quality](SidescanLoadResult res) {
             if (res.load_failed || res.raw_count == 0) {
+                const QString message = res.load_failed
+                    ? tr("Could not build side-scan map imagery")
+                    : tr("No side-scan pings were decoded for map imagery");
+                emit mapLoadFailed(QString::fromStdString(layer_id), message);
                 if (as_active && m_status_ping)
                     m_status_ping->setText(
                         tr("Sidescan index OK but no pings loaded — cache may be unreadable"));
@@ -282,6 +311,21 @@ bool SidescanViewController::activateLayer(const std::string& layer_id,
                 if (!as_active && has_raster)
                     m_map_view->setNavTrackVisible(layer_id, false);
                 m_loaded_layers.insert(layer_id);
+                m_resident_quality[layer_id] = current_quality;
+
+                // Progressive scheduling is deliberately sequential per line:
+                // paint the bounded first raster before queueing its expensive
+                // requested-tier upgrade. Starting both together let one line
+                // occupy both map-lane slots and starved every other imported
+                // line at nav-track-only state. With deferred upgrades, all
+                // queued Low previews get a chance to paint first.
+                if (stage_upgrade
+                        && has_raster
+                        && m_project
+                        && m_quality == requested_quality
+                        && requested_quality != current_quality) {
+                    prebuildTier(layer_id, requested_quality, m_project);
+                }
 
                 if (as_active) emit loadingProgress(100);   // data placed → complete
 
@@ -346,7 +390,8 @@ bool SidescanViewController::activateLayer(const std::string& layer_id,
 
     ++m_active_builds;
     m_data_state = ViewerDataState::Loading;
-    emit loadingStarted();
+    const uint64_t load_task_id = m_next_load_task_id++;
+    emit loadingStarted(load_task_id, QString::fromStdString(layer->label));
 
     // Keyed per-layer so a newer load for the SAME layer supersedes this one,
     // while other layers load concurrently (distinct keys). NOT heavy: this is
@@ -398,7 +443,7 @@ bool SidescanViewController::activateLayer(const std::string& layer_id,
         "sss:load:" + layer_id,
         /*heavy=*/false,   // display build, not import/decode — capped via the "map"
                            // lane below, not the D-14 import cap
-        [this]() {
+        [this, load_task_id]() {
             // Every outcome (success / supersede / fail): balance the busy counter
             // and signal so the indicator + import "Loading into map…" stay correct.
             if (m_active_builds > 0) --m_active_builds;
@@ -407,15 +452,14 @@ bool SidescanViewController::activateLayer(const std::string& layer_id,
             // finalizer was still pending.
             if (m_active_builds == 0 && m_data_state == ViewerDataState::Loading)
                 m_data_state = ViewerDataState::Ready;
-            emit loadingFinished();
+            emit loadingFinished(load_task_id);
         },
         // Dedicated map-build lane (cap 2) so loading many lines doesn't fan out all
         // at once and stays separate from the import/decode ("heavy") lane.
         /*lane=*/"map");
 
-    // Stage 2: upgrade to the full requested tier in the background. When it lands,
-    // prebuildTierComplete swaps it in (guarded on still-current quality + layer).
-    if (stage_upgrade) prebuildTier(layer_id, m_quality, project);
+    // Stage 2 is queued by the successful first-paint handler above. Do not launch
+    // it here: first previews for other lines have priority over quality upgrades.
     return true;
 }
 

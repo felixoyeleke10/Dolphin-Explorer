@@ -102,6 +102,20 @@ SbpGainModule::SbpGainModule(QWidget* parent) : QWidget(parent)
            "Larger: stable — reacts slowly to gradual amplitude changes."));
     ag->addWidget(agc_lbl,      0, 0);
     ag->addWidget(m_agc_window, 0, 1);
+    auto* cap_lbl = new QLabel(tr("Gain cap"), agc_grid);
+    cap_lbl->setObjectName("ctrlParamLabel");
+    m_agc_gain_cap = new QDoubleSpinBox(agc_grid);
+    m_agc_gain_cap->setObjectName("ctrlSpinBox");
+    m_agc_gain_cap->setRange(0.0, 80.0);
+    m_agc_gain_cap->setDecimals(0);
+    m_agc_gain_cap->setSuffix(tr(" dB"));
+    m_agc_gain_cap->setValue(40.0);
+    m_agc_gain_cap->setFixedHeight(Theme::kInputH);
+    m_agc_gain_cap->setToolTip(
+        tr("Maximum positive AGC amplification.\n"
+           "Lower this when weak traces contain substantial noise."));
+    ag->addWidget(cap_lbl, 1, 0);
+    ag->addWidget(m_agc_gain_cap, 1, 1);
     vl->addWidget(agc_grid);
 
     // -- Normalize --------------------------------------------------------------
@@ -135,6 +149,7 @@ SbpGainParams SbpGainModule::currentParams() const
     p.static_gain_db = static_cast<float>(m_static_db->value());
     p.agc_en         = m_agc_en->isChecked();
     p.agc_window     = m_agc_window->value();
+    p.agc_gain_cap_db = static_cast<float>(m_agc_gain_cap->value());
     p.normalize_en   = m_normalize_en->isChecked();
     return p;
 }
@@ -142,13 +157,14 @@ SbpGainParams SbpGainModule::currentParams() const
 void SbpGainModule::setParams(const SbpGainParams& p)
 {
     QSignalBlocker b1(m_static_en),    b2(m_static_db);
-    QSignalBlocker b3(m_agc_en),       b4(m_agc_window);
+    QSignalBlocker b3(m_agc_en),       b4(m_agc_window), b4b(m_agc_gain_cap);
     QSignalBlocker b5(m_normalize_en);
 
     m_static_en->setChecked(p.static_gain_en);
     m_static_db->setValue(p.static_gain_db);
     m_agc_en->setChecked(p.agc_en);
     m_agc_window->setValue(p.agc_window);
+    m_agc_gain_cap->setValue(p.agc_gain_cap_db);
     m_normalize_en->setChecked(p.normalize_en);
 
     updateControlStates();
@@ -158,6 +174,7 @@ void SbpGainModule::updateControlStates()
 {
     m_static_db->setEnabled(m_static_en->isChecked());
     m_agc_window->setEnabled(m_agc_en->isChecked());
+    m_agc_gain_cap->setEnabled(m_agc_en->isChecked());
 }
 
 } // namespace dolphin::ui

@@ -55,6 +55,7 @@ void WaterfallAnalysisPanel::refreshProcessingDirty()
         (m_bpn_toggle     && !m_bpn_toggle->isAtDefault())     ||
         (m_bpn_strength   && !m_bpn_strength->isAtDefault())   ||
         (m_bpn_smooth     && !m_bpn_smooth->isAtDefault())     ||
+        (m_bpn_gain_cap   && !m_bpn_gain_cap->isAtDefault())   ||
         (m_arc_toggle     && !m_arc_toggle->isAtDefault())     ||
         (m_arc_exponent   && !m_arc_exponent->isAtDefault())   ||
         (m_arc_gain_cap   && !m_arc_gain_cap->isAtDefault())   ||
@@ -90,8 +91,8 @@ void WaterfallAnalysisPanel::buildProcessingSection(QVBoxLayout* vl, QWidget* co
     m_bpn_toggle = new WfToggleRow(tr("Beam Pattern Norm."), false, container);
     m_bpn_toggle->setToolTip(
         tr("Corrects transducer array sensitivity variation across the swath.\n"
-           "Applied after SRC (slant range correction) on assembled uint16 rows.\n"
-           "Enable Slant Range Correction first for geometrically correct results.\n"
+           "Estimated in native sample space before ground-range display resampling.\n"
+           "It is paired with Slant Range Correction so corrected imagery uses ground-range geometry.\n"
            "Runs before ARN and destripe in the processing chain. Requires Apply."));
     bl->addWidget(m_bpn_toggle);
 
@@ -107,6 +108,10 @@ void WaterfallAnalysisPanel::buildProcessingSection(QVBoxLayout* vl, QWidget* co
         m_bpn_smooth->setToolTip(
             tr("Smooths the estimated beam pattern across range samples.\n"
                "Start at 10 samples. Increase for cleaner correction; decrease to preserve narrow changes."));
+        addValueRow(bpn_bl, tr("Gain Cap"), m_bpn_gain_cap, 0, 40, 12, 1, 0, tr(" dB"));
+        m_bpn_gain_cap->setToolTip(
+            tr("Symmetric limit on beam-pattern amplification or attenuation.\n"
+               "Start at 12 dB to prevent weak columns from lifting noise."));
     }
     bl->addWidget(m_bpn_body);
 
@@ -117,7 +122,7 @@ void WaterfallAnalysisPanel::buildProcessingSection(QVBoxLayout* vl, QWidget* co
            "Uses slant range geometry (altitude / slant range = sin θ).\n"
            "Applied to raw 16-bit pings BEFORE assembly and SRC — always\n"
            "operates in slant range regardless of SlantRangeNode pipeline state.\n"
-           "Requires a valid seabed bottom pick or non-zero tow depth. Requires Apply."));
+           "Requires a valid seabed bottom pick or navigation altitude above seabed. Requires Apply."));
     bl->addWidget(m_arc_toggle);
 
     m_arc_body = new QWidget(container);
@@ -182,12 +187,13 @@ void WaterfallAnalysisPanel::buildProcessingSection(QVBoxLayout* vl, QWidget* co
                 msg->setInformativeText(
                     tr("Beam Pattern Normalisation corrects the transducer's "
                        "across-track sensitivity variation column by column. For "
-                       "this to produce a geometrically correct result, samples must "
-                       "first be remapped from <i>slant range</i> (the diagonal path "
+                       "this to produce a geometrically correct displayed result, the "
+                       "corrected amplitudes must be rendered in <i>ground range</i>, "
+                       "rather than only <i>slant range</i> (the diagonal path "
                        "the sonar pulse travels through water) to <i>ground range</i> "
                        "(the true horizontal distance on the seabed)."
                        "<br><br>"
-                       "Without Slant Range Correction, near-nadir columns span a "
+                       "Without the paired geometry correction, near-nadir columns span a "
                        "different angular extent than far-range columns. The "
                        "normalisation will overcorrect near-nadir and undercorrect "
                        "far-range, making the image geometrically worse than leaving "
@@ -218,6 +224,7 @@ void WaterfallAnalysisPanel::buildProcessingSection(QVBoxLayout* vl, QWidget* co
         connect(m_mle_toggle,     &WfToggleRow::toggled,     this, refreshB);
         connect(m_bpn_strength,   &WfValueRow::valueChanged, this, refresh);
         connect(m_bpn_smooth,     &WfValueRow::valueChanged, this, refresh);
+        connect(m_bpn_gain_cap,   &WfValueRow::valueChanged, this, refresh);
         connect(m_arc_exponent,   &WfValueRow::valueChanged, this, refresh);
         connect(m_arc_gain_cap,   &WfValueRow::valueChanged, this, refresh);
         connect(m_mle_tile_pings, &WfValueRow::valueChanged, this, refresh);

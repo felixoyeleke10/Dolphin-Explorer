@@ -424,6 +424,7 @@ add_library(dolphin-ui-mainwindow STATIC
     mainwindow/coordinators/ProjectOperationCoordinator.cpp
     mainwindow/coordinators/ToolController.cpp
     mainwindow/coordinators/ViewportCoordinator.cpp
+    mainwindow/coordinators/SurveyDisplayCoordinator.cpp
     mainwindow/MainWindow.MapContextMenu.cpp
     mainwindow/MainStatusBar.cpp
     mainwindow/MainWindow.AppSettings.cpp

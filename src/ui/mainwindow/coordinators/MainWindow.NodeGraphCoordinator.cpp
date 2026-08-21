@@ -5,6 +5,8 @@
 #include "ui/shell/Features.h"
 #include "app/project/Project.h"
 #include "app/layers/DataLayer.h"
+#include "app/workers/Worker.h"
+#include "app/artifacts/BaselineArtifactResolver.h"
 
 #include <QDateTime>
 #include <QDir>
@@ -45,6 +47,9 @@ void MainWindow::onNodeGraph()
         connect(m_node_graph_win, &NodeGraphWindow::runRequested,
                 this, &MainWindow::onRunSelectedLayer);
 
+        connect(m_node_graph_win, &NodeGraphWindow::revertRequested,
+                this, &MainWindow::onRevertProcessedLayer);
+
         connect(m_node_graph_win, &NodeGraphWindow::importRequested,
                 this, &MainWindow::onImportFile);
 
@@ -63,6 +68,48 @@ void MainWindow::onNodeGraph()
     m_node_graph_win->show();
     m_node_graph_win->raise();
     m_node_graph_win->activateWindow();
+}
+
+void MainWindow::onRevertProcessedLayer(const std::string& layer_id)
+{
+    if (!currentProject()) return;
+    auto* layer = currentProject()->findLayer(layer_id);
+    if (!layer || layer->source_artifact_store_path.empty()
+        || layer->source_artifact_store_path == layer->artifact_store_path)
+        return;
+
+    const auto baseline = app::resolveBaselineArtifact(*layer);
+    if (!baseline) {
+        appendJobMessage(tr("Cannot revert %1: the imported artifact is unavailable.")
+            .arg(QString::fromStdString(layer->label)));
+        return;
+    }
+    layer->artifact_store_path = baseline.path;
+    layer->artifact_store_format = baseline.format;
+    layer->artifact_index = baseline.index;
+    layer->pipeline_applied = false;
+    layer->processing_origin = app::ProcessingOrigin::None;
+    layer->applied_graph_json.clear();
+    layer->baked_correction_flags = 0;
+    layer->slant_range_corrected = false;
+    if (m_display_state) {
+        if (layer->modality == app::Modality::Sidescan) {
+            const auto appearance_only = withoutSidescanProcessing(
+                layer->sss_display_state.params);
+            m_display_state->setLayerSssDisplay(layer_id, appearance_only);
+        } else if (layer->modality == app::Modality::SubBottom) {
+            m_display_state->clearLayerSbpProcessing(layer_id);
+        }
+    }
+    if (auto* worker = currentProject()->findWorker(layer_id)) worker->markDirty();
+
+    markProjectDirty();
+    m_session_ctrl->autoSave();
+    if (m_event_bus) m_event_bus->postLayerDataChanged(layer_id);
+    if (m_node_graph_win) m_node_graph_win->setLayer(layer, currentProject());
+    rebuildHistoryList();
+    appendJobMessage(tr("Reverted %1 to its preserved imported data.")
+        .arg(QString::fromStdString(layer->label)));
 }
 
 } // namespace dolphin::ui

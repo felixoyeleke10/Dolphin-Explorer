@@ -1,5 +1,6 @@
 #include "app/corrections/SidescanCorrectionService.h"
 #include "app/corrections/CorrectionAlgorithms.h"
+#include "app/contracts/ProcessingSettingsContract.h"
 #include "app/artifacts/ArtifactSidecar.h"
 #include "app/services/ImportService.h"
 #include "io/cache/ParsedCache.h"
@@ -11,6 +12,7 @@
 
 #include <QFutureWatcher>
 #include <QtConcurrent/QtConcurrent>
+#include <algorithm>
 #include <cctype>
 #include <unordered_map>
 
@@ -54,36 +56,17 @@ struct CorrectionResult {
     std::string         error;
     bool                ok      = false;
     bool                skipped = false;
+    uint32_t            baked_correction_flags = 0;
 };
-
-template<typename Eligible, typename Apply>
-bool applyToUnbaked(std::vector<core::SidescanPing>& pings,
-                    core::CorrectionFlag flag,
-                    Eligible&& eligible,
-                    Apply&& apply)
-{
-    std::vector<size_t> indices;
-    std::vector<core::SidescanPing> work;
-    for (size_t i = 0; i < pings.size(); ++i) {
-        if (core::hasCorrectionFlag(pings[i].correction_flags, flag)
-            || !eligible(pings[i]))
-            continue;
-        indices.push_back(i);
-        work.push_back(pings[i]);
-    }
-    if (work.empty()) return false;
-    apply(work);
-    for (size_t i = 0; i < work.size(); ++i) {
-        pings[indices[i]].samples = std::move(work[i].samples);
-        pings[indices[i]].correction_flags |= flag;
-    }
-    return true;
-}
 
 CorrectionResult execute(const CorrectionRequest& req)
 {
     CorrectionResult result;
     result.layer_id = req.layer_id;
+    if (const std::string error = contracts::validate(req.params); !error.empty()) {
+        result.error = "Invalid sidescan correction settings: " + error;
+        return result;
+    }
 
     const std::string fmt = normaliseFormat(req.store_format);
     if (fmt != "dlpd" && fmt != "dpcache") {
@@ -124,48 +107,55 @@ CorrectionResult execute(const CorrectionRequest& req)
 
     bool modified = false;
 
-    if (req.params.tvg.enabled)
-        modified |= applyToUnbaked(pings, core::CorrectionFlag::Tvg,
-            [](const auto& ping) {
-                return ping.samples.size() >= 2 && ping.slant_range_m > ping.blanking_m;
-            },
-            [&](auto& work) { corrections::applyTvg(work, req.params.tvg); });
-
-    if (req.params.arc.enabled)
-        modified |= applyToUnbaked(pings, core::CorrectionFlag::Arc,
-            [](const auto& ping) {
-                return ping.samples.size() >= 2 && ping.slant_range_m > 0.0f
-                    && core::sidescanAltitudeMetres(ping).has_value();
-            },
-            [&](auto& work) { corrections::applyArc(work, req.params.arc); });
-
-    if (req.params.agc.enabled)
-        modified |= applyToUnbaked(pings, core::CorrectionFlag::GainNormalized,
-            [](const auto& ping) { return !ping.samples.empty(); },
-            [&](auto& work) { corrections::normalizeAmplitudes(work, req.params.agc); });
-
-    // Merge bottom picks from the viewer into the DLPD pings (same write pass).
-    // Picks are matched by timestamp_us; only source>0 (detected/user-edited) picks
-    // are applied so untracked pings keep their existing (or absent) picks.
+    // Viewer bottom picks are authoritative geometry for ARC. Merge them before
+    // correction preflight/execution; doing this afterward made ARC silently skip
+    // valid freshly tracked lines and then persist only the picks.
     if (!req.viewer_pings.empty()) {
         std::unordered_map<uint64_t, const core::SidescanPing*> ts_map;
         for (const auto& vp : req.viewer_pings)
             if (vp.bottom_pick.source > 0 && vp.bottom_pick.range_m > 0.f)
                 ts_map[vp.timestamp_us] = &vp;
 
-        if (!ts_map.empty()) {
-            for (auto& ping : pings) {
-                const auto it = ts_map.find(ping.timestamp_us);
-                if (it == ts_map.end()) continue;
-                const auto& vbp = it->second->bottom_pick;
-                if (ping.bottom_pick.source  != vbp.source  ||
-                    ping.bottom_pick.range_m != vbp.range_m) {
-                    ping.bottom_pick = vbp;
-                    modified = true;
-                }
+        for (auto& ping : pings) {
+            const auto it = ts_map.find(ping.timestamp_us);
+            if (it == ts_map.end()) continue;
+            const auto& vbp = it->second->bottom_pick;
+            if (ping.bottom_pick.source != vbp.source
+                    || ping.bottom_pick.range_m != vbp.range_m) {
+                ping.bottom_pick = vbp;
+                modified = true;
             }
         }
     }
+
+    const auto arcApplicable = [](const core::SidescanPing& ping) {
+        return corrections::canApplyArc(ping);
+    };
+    if (req.params.arc.enabled) {
+        const bool all_applied = std::all_of(pings.cbegin(), pings.cend(),
+            [](const auto& ping) { return core::hasCorrectionFlag(
+                ping.correction_flags, core::CorrectionFlag::Arc); });
+        const bool has_unbaked_geometry = std::any_of(
+            pings.cbegin(), pings.cend(), [&](const auto& ping) {
+                return !core::hasCorrectionFlag(
+                    ping.correction_flags, core::CorrectionFlag::Arc)
+                    && arcApplicable(ping);
+            });
+        if (!all_applied && !has_unbaked_geometry) {
+            result.error = "ARC requires a valid seabed bottom pick or navigation altitude "
+                           "and at least one sample beyond the seabed";
+            return result;
+        }
+    }
+
+    if (req.params.tvg.enabled)
+        modified |= corrections::applyTvg(pings, req.params.tvg);
+
+    if (req.params.arc.enabled)
+        modified |= corrections::applyArc(pings, req.params.arc);
+
+    if (req.params.agc.enabled)
+        modified |= corrections::normalizeAmplitudes(pings, req.params.agc);
 
     if (!modified) {
         result.ok        = true;
@@ -177,8 +167,10 @@ CorrectionResult execute(const CorrectionRequest& req)
 
     std::vector<core::Artifact> buffer;
     buffer.reserve(pings.size());
-    for (auto& ping : pings)
+    for (auto& ping : pings) {
+        result.baked_correction_flags |= ping.correction_flags;
         buffer.emplace_back(std::move(ping));
+    }
 
     core::ArtifactIndex out_index;
     if (!io::writeArtifactBufferToCache(write_path, buffer, meta, out_index)) {
@@ -231,7 +223,8 @@ void SidescanCorrectionService::applyToLine(
                 } else if (res.skipped) {
                     emit applySkipped(res.layer_id);
                 } else {
-                    emit correctionsPersisted(res.layer_id, res.new_path, res.new_index);
+                    emit correctionsPersisted(res.layer_id, res.new_path, res.new_index,
+                                              res.baked_correction_flags);
                 }
             });
     watcher->setFuture(QtConcurrent::run([req]() {

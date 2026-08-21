@@ -529,6 +529,73 @@ int main()
         WaterfallParams pal = p; pal.beam_pattern.enabled = true;
         CHECK(hashOf(pal, georef) != base, "makeMeta ignored a beam-pattern toggle");
 
+        auto expectImagingChange = [&](auto mutate, const char* message) {
+            WaterfallParams changed_imaging = p;
+            mutate(changed_imaging);
+            CHECK(hashOf(changed_imaging, georef) != base, message);
+        };
+        expectImagingChange([](auto& w) { w.arn.gain_cap_db = 18.f; },
+                           "makeMeta ignored ARN gain cap");
+        expectImagingChange([](auto& w) { w.arn.column_smooth = 19; },
+                           "makeMeta ignored ARN smoothing");
+        expectImagingChange([](auto& w) { w.destripe.window = 71; },
+                           "makeMeta ignored destripe window");
+        expectImagingChange([](auto& w) { w.destripe.subdivision = 9; },
+                           "makeMeta ignored destripe subdivision");
+        expectImagingChange([](auto& w) { w.destripe.capping = 3.f; },
+                           "makeMeta ignored destripe cap");
+        expectImagingChange([](auto& w) { w.destripe.threshold_db = 2.f; },
+                           "makeMeta ignored destripe threshold");
+        expectImagingChange([](auto& w) { w.beam_pattern.strength = 0.6f; },
+                           "makeMeta ignored beam-pattern strength");
+        expectImagingChange([](auto& w) { w.beam_pattern.smooth_radius = 23; },
+                           "makeMeta ignored beam-pattern smoothing");
+        expectImagingChange([](auto& w) { w.beam_pattern.gain_cap_db = 18.f; },
+                           "makeMeta ignored beam-pattern gain cap");
+        expectImagingChange([](auto& w) { w.ml_enhance.enabled = true; },
+                           "makeMeta ignored adaptive-contrast enable");
+        expectImagingChange([](auto& w) { w.ml_enhance.tile_pings = 96; },
+                           "makeMeta ignored adaptive-contrast ping tile");
+        expectImagingChange([](auto& w) { w.ml_enhance.tile_samps = 192; },
+                           "makeMeta ignored adaptive-contrast sample tile");
+        expectImagingChange([](auto& w) { w.ml_enhance.clip_limit = 3.f; },
+                           "makeMeta ignored adaptive-contrast clip limit");
+
+        // Every AGC control changes the rendered amplitudes and therefore must
+        // invalidate both 2D and 3D map mosaics.
+        auto expectAgcChange = [&](auto mutate, const char* message) {
+            WaterfallParams changed_agc = p;
+            mutate(changed_agc.agc);
+            CHECK(hashOf(changed_agc, georef) != base, message);
+        };
+        expectAgcChange([](auto& a) { a.enabled = true; },
+                        "makeMeta ignored AGC enable");
+        expectAgcChange([](auto& a) { a.mode = dolphin::app::AgcMode::Variable; },
+                        "makeMeta ignored AGC mode");
+        expectAgcChange([](auto& a) { a.strength = 0.7f; },
+                        "makeMeta ignored AGC strength");
+        expectAgcChange([](auto& a) { a.along_track_win = 73; },
+                        "makeMeta ignored AGC along-track window");
+        expectAgcChange([](auto& a) { a.smoothing_type = dolphin::app::AgcSmoothingType::Median; },
+                        "makeMeta ignored AGC smoothing type");
+        expectAgcChange([](auto& a) { a.smoothing_win = 11; },
+                        "makeMeta ignored AGC smoothing window");
+        expectAgcChange([](auto& a) { a.edge_skip_samples = 91; },
+                        "makeMeta ignored AGC edge skip");
+        expectAgcChange([](auto& a) { a.noise_floor_pct = 4.f; },
+                        "makeMeta ignored AGC noise floor");
+        expectAgcChange([](auto& a) { a.gain_cap_db = 18.f; },
+                        "makeMeta ignored AGC gain cap");
+
+        WaterfallParams arc_exponent = p;
+        arc_exponent.arc.exponent = 2.3f;
+        CHECK(hashOf(arc_exponent, georef) != base,
+              "makeMeta ignored ARC exponent");
+        WaterfallParams arc_cap = p;
+        arc_cap.arc.gain_cap_db = 18.f;
+        CHECK(hashOf(arc_cap, georef) != base,
+              "makeMeta ignored ARC gain cap");
+
         auto expectGeorefChange = [&](auto mutate, const char* message) {
             SssGeorefParams changed_georef = georef;
             mutate(changed_georef);

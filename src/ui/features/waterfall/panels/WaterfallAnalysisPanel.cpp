@@ -115,6 +115,7 @@ WaterfallParams WaterfallAnalysisPanel::currentParams(int palette_index) const
     p.arn.enabled     = m_arn_toggle->isChecked();
     p.arn.strength    = static_cast<float>(m_arn_strength->value()) / 100.f;
     p.arn.gain_cap_db = static_cast<float>(m_arn_gain_cap->value());
+    p.arn.column_smooth = m_arn_smooth->intValue();
 
     // AGC
     p.agc.enabled           = m_agc_enable_toggle->isChecked();
@@ -127,12 +128,14 @@ WaterfallParams WaterfallAnalysisPanel::currentParams(int palette_index) const
     p.agc.smoothing_win     = m_agc_smooth_win->intValue();
     p.agc.edge_skip_samples = m_agc_edge_skip->intValue();
     p.agc.noise_floor_pct   = static_cast<float>(m_agc_noise_floor->value());
+    p.agc.gain_cap_db       = static_cast<float>(m_agc_gain_cap->value());
 
     // Destripe
     p.destripe.enabled     = m_destripe_toggle->isChecked();
     p.destripe.window      = m_destripe_window->intValue();
     p.destripe.subdivision = m_destripe_subdiv->intValue();
     p.destripe.capping     = static_cast<float>(m_destripe_cap->value());
+    p.destripe.threshold_db = static_cast<float>(m_destripe_threshold->value());
 
     p.slant_range_correction = m_src_toggle->isChecked();
 
@@ -140,6 +143,7 @@ WaterfallParams WaterfallAnalysisPanel::currentParams(int palette_index) const
     p.beam_pattern.enabled       = m_bpn_toggle && m_bpn_toggle->isChecked();
     p.beam_pattern.strength      = m_bpn_strength ? static_cast<float>(m_bpn_strength->value()) : 1.f;
     p.beam_pattern.smooth_radius = m_bpn_smooth   ? m_bpn_smooth->intValue() : 10;
+    p.beam_pattern.gain_cap_db   = m_bpn_gain_cap ? static_cast<float>(m_bpn_gain_cap->value()) : 12.f;
 
     // Angle Range Correction
     p.arc.enabled     = m_arc_toggle && m_arc_toggle->isChecked();
@@ -171,6 +175,7 @@ void WaterfallAnalysisPanel::setParams(const WaterfallParams& p)
       m_arn_toggle->setChecked(p.arn.enabled); }
     m_arn_strength ->setValue(p.arn.strength    * 100.0);
     m_arn_gain_cap ->setValue(p.arn.gain_cap_db);
+    m_arn_smooth   ->setValue(p.arn.column_smooth);
 
     // AGC
     { QSignalBlocker bm(m_agc_mode_combo), bst(m_agc_smooth_type_combo);
@@ -184,6 +189,7 @@ void WaterfallAnalysisPanel::setParams(const WaterfallParams& p)
     m_agc_smooth_win ->setValue(p.agc.smoothing_win);
     m_agc_edge_skip  ->setValue(p.agc.edge_skip_samples);
     m_agc_noise_floor->setValue(p.agc.noise_floor_pct);
+    m_agc_gain_cap   ->setValue(p.agc.gain_cap_db);
 
     // Destripe
     { QSignalBlocker blocker(m_destripe_toggle);
@@ -191,6 +197,7 @@ void WaterfallAnalysisPanel::setParams(const WaterfallParams& p)
     m_destripe_window->setValue(p.destripe.window);
     m_destripe_subdiv->setValue(p.destripe.subdivision);
     m_destripe_cap   ->setValue(p.destripe.capping);
+    m_destripe_threshold->setValue(p.destripe.threshold_db);
 
     // SRC — block signal to prevent the BPN guard dialog firing during
     // programmatic restore; the user already set these params deliberately.
@@ -204,6 +211,7 @@ void WaterfallAnalysisPanel::setParams(const WaterfallParams& p)
     }
     if (m_bpn_strength)  m_bpn_strength->setValue(p.beam_pattern.strength);
     if (m_bpn_smooth)    m_bpn_smooth->setValue(p.beam_pattern.smooth_radius);
+    if (m_bpn_gain_cap)  m_bpn_gain_cap->setValue(p.beam_pattern.gain_cap_db);
 
     // Angle Range Correction
     if (m_arc_toggle) {
@@ -343,6 +351,7 @@ void WaterfallAnalysisPanel::refreshImageDirty()
         (m_tvg_absorption    && !m_tvg_absorption->isAtDefault())    ||
         (m_arn_strength      && !m_arn_strength->isAtDefault())      ||
         (m_arn_gain_cap      && !m_arn_gain_cap->isAtDefault())      ||
+        (m_arn_smooth        && !m_arn_smooth->isAtDefault())        ||
         (m_agc_strength      && !m_agc_strength->isAtDefault())      ||
         (m_agc_along_track   && !m_agc_along_track->isAtDefault())   ||
         (m_agc_smooth_win    && !m_agc_smooth_win->isAtDefault())    ||
@@ -350,7 +359,8 @@ void WaterfallAnalysisPanel::refreshImageDirty()
         (m_agc_noise_floor   && !m_agc_noise_floor->isAtDefault())   ||
         (m_destripe_window   && !m_destripe_window->isAtDefault())   ||
         (m_destripe_subdiv   && !m_destripe_subdiv->isAtDefault())   ||
-        (m_destripe_cap      && !m_destripe_cap->isAtDefault());
+        (m_destripe_cap      && !m_destripe_cap->isAtDefault())      ||
+        (m_destripe_threshold && !m_destripe_threshold->isAtDefault());
     markSectionDirty(m_image_hdr, dirty);
 }
 

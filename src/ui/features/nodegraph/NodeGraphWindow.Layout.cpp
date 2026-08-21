@@ -156,6 +156,15 @@ QWidget* NodeGraphWindow::buildTopBar(QWidget* parent)
     sep->setFixedWidth(Theme::kSepSz);
     layout->addWidget(sep);
 
+    m_revert_btn = new QToolButton(bar);
+    m_revert_btn->setText(tr("Revert Result"));
+    m_revert_btn->setEnabled(false);
+    m_revert_btn->setToolTip(tr("Show the preserved imported data and deactivate the baked result"));
+    connect(m_revert_btn, &QToolButton::clicked, this, [this]() {
+        if (m_layer) emit revertRequested(m_layer->id);
+    });
+    layout->addWidget(m_revert_btn);
+
     m_run_btn = new QToolButton(bar);
     m_run_btn->setText(tr("Run"));
     m_run_btn->setObjectName("runBtn");

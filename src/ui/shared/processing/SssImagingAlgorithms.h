@@ -28,10 +28,10 @@ struct SssAutoStretch {
 };
 
 // -- Per-channel cores (operate in place on the pointed-to rows) ---------------
-void beamPatternChannel(std::vector<std::vector<uint16_t>*>& rows, const BeamPatternParams& bp);
-void arnChannel        (std::vector<std::vector<uint16_t>*>& rows, const ArnParams& arn);
-void destripeChannel   (std::vector<std::vector<uint16_t>*>& rows, const DestripeParams& d);
-void mlEnhanceChannel  (std::vector<std::vector<uint16_t>*>& rows, const MlEnhanceParams& me);
+bool beamPatternChannel(std::vector<std::vector<uint16_t>*>& rows, const BeamPatternParams& bp);
+bool arnChannel        (std::vector<std::vector<uint16_t>*>& rows, const ArnParams& arn);
+bool destripeChannel   (std::vector<std::vector<uint16_t>*>& rows, const DestripeParams& d);
+bool mlEnhanceChannel  (std::vector<std::vector<uint16_t>*>& rows, const MlEnhanceParams& me);
 
 // -- Whole-pings convenience ---------------------------------------------------
 // Apply the enabled post-assembly imaging chain (beam → ARN → destripe → ML) to

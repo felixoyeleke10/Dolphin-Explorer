@@ -93,8 +93,8 @@ void applyTracePass(std::vector<core::SubBottomTrace>& traces,
     if (!enabled) return;
     for (auto& trace : traces) {
         if (core::hasSbpCorrectionFlag(trace.correction_flags, flag)) continue;
-        if (!trace.samples.empty()) transform(trace.samples);
-        trace.correction_flags |= flag;
+        if (!trace.samples.empty() && transform(trace.samples))
+            trace.correction_flags |= flag;
     }
 }
 
@@ -106,11 +106,13 @@ bool applySubBottomCorrections(std::vector<core::SubBottomTrace>& traces,
                                const std::function<bool()>& cancelled)
 {
     applyTracePass(traces, core::SbpCorrectionFlag::DcRemoval, signal.dc_removal_en,
-        [](std::vector<float>& samples) {
+        [](std::vector<float>& samples) -> bool {
             double sum = 0.0;
             for (const float value : samples) sum += value;
             const double mean = sum / static_cast<double>(samples.size());
+            if (!std::isfinite(mean) || mean == 0.0) return false;
             for (float& value : samples) value = static_cast<float>(value - mean);
+            return true;
         });
     if (isCancelled(cancelled)) return false;
 
@@ -128,11 +130,13 @@ bool applySubBottomCorrections(std::vector<core::SubBottomTrace>& traces,
             // Forward-backward application removes IIR phase delay so reflector
             // positions remain aligned with picks. Each pass uses bilinear-
             // transform second-order Butterworth high/low sections.
+            const auto before = trace.samples;
             filterZeroPhase(trace.samples,
                             butterworth(signal.bp_lo_hz, sample_rate, true));
             filterZeroPhase(trace.samples,
                             butterworth(signal.bp_hi_hz, sample_rate, false));
-            trace.correction_flags |= core::SbpCorrectionFlag::BandPass;
+            if (trace.samples != before)
+                trace.correction_flags |= core::SbpCorrectionFlag::BandPass;
         }
     }
     if (isCancelled(cancelled)) return false;
@@ -140,17 +144,23 @@ bool applySubBottomCorrections(std::vector<core::SubBottomTrace>& traces,
     // This is full-wave rectification. A true analytic-signal envelope needs a
     // Hilbert transform and is deliberately not claimed by this operation.
     applyTracePass(traces, core::SbpCorrectionFlag::Envelope, signal.envelope_en,
-        [](std::vector<float>& samples) {
+        [](std::vector<float>& samples) -> bool {
+            bool modified = false;
+            for (const float value : samples) modified |= value < 0.f;
+            if (!modified) return false;
             for (float& value : samples) value = std::abs(value);
+            return true;
         });
     if (isCancelled(cancelled)) return false;
 
     applyTracePass(traces, core::SbpCorrectionFlag::Normalize, gain.normalize_en,
-        [](std::vector<float>& samples) {
+        [](std::vector<float>& samples) -> bool {
             float peak = 0.0f;
             for (const float value : samples) peak = std::max(peak, std::abs(value));
-            if (peak > 0.0f && std::isfinite(peak))
-                for (float& value : samples) value /= peak;
+            if (!(peak > 0.0f) || !std::isfinite(peak) || peak == 1.0f)
+                return false;
+            for (float& value : samples) value /= peak;
+            return true;
         });
     if (isCancelled(cancelled)) return false;
 
@@ -159,9 +169,10 @@ bool applySubBottomCorrections(std::vector<core::SubBottomTrace>& traces,
     const double gain_factor = static_gain_enabled
         ? std::pow(10.0, static_cast<double>(gain.static_gain_db) / 20.0) : 1.0;
     applyTracePass(traces, core::SbpCorrectionFlag::StaticGain, static_gain_enabled,
-        [gain_factor](std::vector<float>& samples) {
+        [gain_factor](std::vector<float>& samples) -> bool {
             for (float& value : samples)
                 value = static_cast<float>(static_cast<double>(value) * gain_factor);
+            return true;
         });
     if (isCancelled(cancelled)) return false;
 
@@ -171,17 +182,24 @@ bool applySubBottomCorrections(std::vector<core::SubBottomTrace>& traces,
         std::vector<double> energy(static_cast<size_t>(trace_count), 0.0);
         std::vector<size_t> sample_count(static_cast<size_t>(trace_count), 0);
         for (int i = 0; i < trace_count; ++i) {
+            if (core::hasSbpCorrectionFlag(
+                    traces[static_cast<size_t>(i)].correction_flags,
+                    core::SbpCorrectionFlag::Agc))
+                continue;
             for (const float value : traces[static_cast<size_t>(i)].samples) {
+                if (!std::isfinite(value)) continue;
                 const double sample = value;
                 energy[static_cast<size_t>(i)] += sample * sample;
+                ++sample_count[static_cast<size_t>(i)];
             }
-            sample_count[static_cast<size_t>(i)] = traces[static_cast<size_t>(i)].samples.size();
         }
 
         double window_energy = 0.0;
         size_t window_samples = 0;
         int left = 0;
         int right = -1;
+        const double max_gain = std::pow(10.0,
+            static_cast<double>(std::clamp(gain.agc_gain_cap_db, 0.f, 80.f)) / 20.0);
         for (int i = 0; i < trace_count; ++i) {
             if (isCancelled(cancelled)) return false;
             const int desired_right = std::min(trace_count - 1, i + half_window);
@@ -203,11 +221,18 @@ bool applySubBottomCorrections(std::vector<core::SubBottomTrace>& traces,
                 continue;
             if (window_samples > 0 && window_energy > 0.0) {
                 const double rms = std::sqrt(window_energy / static_cast<double>(window_samples));
-                if (std::isfinite(rms) && rms > 0.0)
+                const double factor = std::min(1.0 / rms, max_gain);
+                bool modified = false;
+                if (std::isfinite(factor) && factor > 0.0 && factor != 1.0) {
                     for (float& value : trace.samples)
-                        value = static_cast<float>(static_cast<double>(value) / rms);
+                        if (std::isfinite(value)) {
+                            value = static_cast<float>(static_cast<double>(value) * factor);
+                            modified = true;
+                        }
+                }
+                if (modified)
+                    trace.correction_flags |= core::SbpCorrectionFlag::Agc;
             }
-            trace.correction_flags |= core::SbpCorrectionFlag::Agc;
         }
     }
     return true;

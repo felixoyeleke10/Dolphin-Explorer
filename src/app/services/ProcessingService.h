@@ -37,7 +37,8 @@ signals:
     void runPersisted(const std::string& layer_id,
                       const std::string& proc_path,
                       const core::ArtifactIndex& proc_index,
-                      bool slant_range_corrected);
+                      bool slant_range_corrected,
+                      uint32_t baked_correction_flags);
     void batchProgress(int done, int total);
     void batchComplete(int succeeded, int total);
 

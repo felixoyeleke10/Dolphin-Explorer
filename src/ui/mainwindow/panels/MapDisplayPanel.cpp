@@ -4,7 +4,6 @@
 
 #include <QCheckBox>
 #include <QDoubleSpinBox>
-#include <QFormLayout>
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -19,6 +18,7 @@ namespace {
 
 constexpr auto kKeyTooltips   = "map/showTooltips";
 constexpr auto kKeyHighlight  = "map/hoverHighlight";
+constexpr int  kCameraFieldWidth = 116;
 
 QLabel* fieldLabel(const QString& text)
 {
@@ -64,11 +64,19 @@ MapDisplayPanel::MapDisplayPanel(QWidget* parent)
     // -- CAMERA PROPERTIES ------------------------------------------------------
     addSection(tr("CAMERA PROPERTIES"));
 
-    auto* fl = new QFormLayout;
-    fl->setContentsMargins(0, 0, 0, 0);
-    fl->setSpacing(Theme::kSpacing2);
-    fl->setLabelAlignment(Qt::AlignLeft | Qt::AlignVCenter);
-    fl->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+    auto* camera_rows = new QVBoxLayout;
+    camera_rows->setContentsMargins(0, 0, 0, 0);
+    camera_rows->setSpacing(Theme::kSpacing2);
+
+    auto addCameraRow = [this, camera_rows](QLabel* label, QWidget* field) {
+        auto* row = new QHBoxLayout;
+        row->setContentsMargins(0, 0, 0, 0);
+        row->setSpacing(Theme::kSpacing3);
+        row->addWidget(label);
+        row->addStretch(1);
+        row->addWidget(field);
+        camera_rows->addLayout(row);
+    };
 
     m_azimuth_spin = new QDoubleSpinBox(this);
     m_azimuth_spin->setObjectName(QStringLiteral("ceSpin"));
@@ -78,9 +86,10 @@ MapDisplayPanel::MapDisplayPanel(QWidget* parent)
     m_azimuth_spin->setWrapping(true);
     m_azimuth_spin->setSuffix(QStringLiteral("°"));
     m_azimuth_spin->setAlignment(Qt::AlignRight);
+    m_azimuth_spin->setFixedWidth(kCameraFieldWidth);
     m_azimuth_spin->setToolTip(
         tr("View azimuth: 0° = north-up. Rotates the 2D chart or orbits the 3D camera."));
-    fl->addRow(fieldLabel(tr("Azimuth:")), m_azimuth_spin);
+    addCameraRow(fieldLabel(tr("Azimuth:")), m_azimuth_spin);
 
     m_height_spin = new QDoubleSpinBox(this);
     m_height_spin->setObjectName(QStringLiteral("ceSpin"));
@@ -89,12 +98,13 @@ MapDisplayPanel::MapDisplayPanel(QWidget* parent)
     m_height_spin->setSingleStep(25.0);
     m_height_spin->setSuffix(QStringLiteral(" m"));
     m_height_spin->setAlignment(Qt::AlignRight);
+    m_height_spin->setFixedWidth(kCameraFieldWidth);
     m_height_spin->setToolTip(
         tr("Camera height over the scene — lower to zoom in, raise for overview.\n"
            "Drives the 3D camera distance and the equivalent 2D scale."));
-    fl->addRow(fieldLabel(tr("Height/Depth:")), m_height_spin);
+    addCameraRow(fieldLabel(tr("Height/Depth:")), m_height_spin);
 
-    vl->addLayout(fl);
+    vl->addLayout(camera_rows);
 
     vl->addStretch(1);
 

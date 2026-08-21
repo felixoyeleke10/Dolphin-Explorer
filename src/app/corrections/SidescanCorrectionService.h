@@ -37,7 +37,8 @@ signals:
     // Emitted when corrections were actually written to the artifact store.
     void correctionsPersisted(const std::string& layer_id,
                               const std::string& new_store_path,
-                              const core::ArtifactIndex& new_index);
+                              const core::ArtifactIndex& new_index,
+                              uint32_t baked_correction_flags);
     // Emitted when all requested corrections were already baked — nothing written.
     void applySkipped(const std::string& layer_id);
     void applyFailed(const std::string& layer_id, const std::string& error);

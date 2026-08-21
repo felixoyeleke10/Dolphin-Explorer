@@ -208,7 +208,7 @@ void MainWindow::buildContextPanel(QWidget* parent)
         p.display_high = static_cast<float>(high);
         if (m_sss_processing)
             m_sss_processing->commit(currentProject(), {l->id}, p);
-        if (m_sss_ctrl) m_sss_ctrl->applyLiveCorrections({l->id});
+        if (m_sss_ctrl) m_sss_ctrl->applyDisplayParams({l->id});
     });
     connect(m_views_panel, &ViewsPanel::sbpOpacityEdited, this, [this](int pct) {
         if (!m_display_state || !currentProject()) return;

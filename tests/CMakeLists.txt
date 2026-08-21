@@ -15,6 +15,18 @@ target_link_libraries(test_task_registry PRIVATE dolphin-app)
 set_target_properties(test_task_registry PROPERTIES CXX_STANDARD 20 AUTOMOC OFF)
 add_test(NAME TaskRegistry COMMAND test_task_registry)
 
+add_executable(test_execution_progress_dialog
+    test_execution_progress_dialog.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/features/import/ImportProgressDialog.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/features/import/ImportProgressDialog.Jobs.cpp
+)
+target_include_directories(test_execution_progress_dialog PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_execution_progress_dialog PRIVATE dolphin-ui-shared Qt6::Widgets)
+set_target_properties(test_execution_progress_dialog PROPERTIES CXX_STANDARD 20 AUTOMOC ON)
+add_test(NAME ExecutionProgressDialog COMMAND test_execution_progress_dialog)
+set_tests_properties(ExecutionProgressDialog PROPERTIES ENVIRONMENT
+    "QT_QPA_PLATFORM=offscreen;QT_QPA_PLATFORM_PLUGIN_PATH=$<TARGET_FILE_DIR:Qt6::Core>/../plugins/platforms")
+
 # -- ProcessingService: batch/single-run exclusion and reservation release ----
 add_executable(test_processing_service
     test_processing_service.cpp
@@ -98,6 +110,12 @@ target_link_libraries(test_sidescan_processing_coordinator PRIVATE
 )
 set_target_properties(test_sidescan_processing_coordinator PROPERTIES CXX_STANDARD 20)
 add_test(NAME SidescanProcessingCoordinator COMMAND test_sidescan_processing_coordinator)
+
+add_executable(test_survey_display_coordinator test_survey_display_coordinator.cpp)
+target_include_directories(test_survey_display_coordinator PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_survey_display_coordinator PRIVATE dolphin-ui-mainwindow Qt6::Core)
+set_target_properties(test_survey_display_coordinator PROPERTIES CXX_STANDARD 20 AUTOMOC OFF)
+add_test(NAME SurveyDisplayCoordinator COMMAND test_survey_display_coordinator)
 
 # -- Project creation must never overwrite a manifest or hide path failures ---
 add_executable(test_project_creation

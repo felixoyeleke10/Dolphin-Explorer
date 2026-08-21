@@ -369,6 +369,10 @@ static void testBatchDedup()
     mgr.importBatch({a, a});  // same path twice
 
     CHECK(completed == 1);  // dedup fired; second action suppressed
+    CHECK(app::ImportJobManager::effectiveQueuedJobCount({a, a}) == 0);
+
+    a.kind = app::FileImportAction::Kind::ImportNew;
+    CHECK(app::ImportJobManager::effectiveQueuedJobCount({a, a}) == 1);
 }
 
 // ---------------------------------------------------------------------------

@@ -94,6 +94,8 @@ bool validateArrayWhenPresent(const util::JsonValue& root,
 
 bool Project::fromJson(const std::string& json)
 {
+    m_load_error.clear();
+    m_load_warnings.clear();
     util::JsonValue root = util::parseJson(json);
     if (!root.isObject()) {
         m_load_error = "Invalid project JSON.";

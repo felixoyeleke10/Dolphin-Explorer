@@ -110,6 +110,7 @@ public:
     void setHoverTooltipsEnabled(bool on);
     // Hover highlight: soft outline around the layer under the cursor.
     void setHoverHighlightEnabled(bool on);
+    QString layerDisplayName(const std::string& id) const;
 
     // Read back stored layer map data (used by MapViewportHost to forward to 3D view).
     const LayerMapData* layerData(const std::string& id) const;

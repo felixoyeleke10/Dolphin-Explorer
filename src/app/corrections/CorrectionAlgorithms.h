@@ -10,8 +10,9 @@
 
 namespace dolphin::app::corrections {
 
-void applyTvg             (std::vector<core::SidescanPing>& pings, const TvgParams& tvg);
-void applyArc             (std::vector<core::SidescanPing>& pings, const ArcParams& arc);
-void normalizeAmplitudes  (std::vector<core::SidescanPing>& pings, const AgcParams& agc);
+bool applyTvg             (std::vector<core::SidescanPing>& pings, const TvgParams& tvg);
+bool canApplyArc          (const core::SidescanPing& ping);
+bool applyArc             (std::vector<core::SidescanPing>& pings, const ArcParams& arc);
+bool normalizeAmplitudes  (std::vector<core::SidescanPing>& pings, const AgcParams& agc);
 
 } // namespace dolphin::app::corrections

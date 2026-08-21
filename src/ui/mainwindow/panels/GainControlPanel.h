@@ -52,6 +52,7 @@ private:
     WfValueRow* m_agc_smooth_win   = nullptr;  // samples
     WfValueRow* m_agc_edge_skip    = nullptr;  // samples
     WfValueRow* m_agc_noise_floor  = nullptr;  // %
+    WfValueRow* m_agc_gain_cap     = nullptr;  // dB
 
     // ARC
     QCheckBox*  m_arc_en       = nullptr;

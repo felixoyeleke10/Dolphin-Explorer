@@ -111,6 +111,7 @@ public:
     // these own the single mutate point + notification (which marks the project dirty).
     bool setLayerSbpGain   (const std::string& layer_id, const app::SbpGainParams&   gain);
     bool setLayerSbpSignal (const std::string& layer_id, const app::SbpSignalParams& sig);
+    bool clearLayerSbpProcessing(const std::string& layer_id);
     bool setLayerSbpDisplay(const std::string& layer_id, const SubBottomDisplayParams& disp);
     // Apply-to-all: write the params onto every SBP layer in the project (emits per
     // layer so each is marked dirty). Caller refreshes the open window once.

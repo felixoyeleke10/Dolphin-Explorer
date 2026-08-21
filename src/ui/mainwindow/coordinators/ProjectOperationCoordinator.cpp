@@ -7,6 +7,8 @@
 #include "app/workers/Worker.h"
 #include "app/contracts/ContractEnvelope.h"
 #include "app/contracts/ContractTypes.h"
+#include "core/SidescanPing.h"
+#include "core/SubBottomTrace.h"
 
 #include <functional>
 #include <string>
@@ -31,8 +33,11 @@ void ProjectOperationCoordinator::connectToProcessing(ProcessingController* ctrl
             this, [this](const std::string& id,
                          const std::string& proc_path,
                          const core::ArtifactIndex& proc_index,
-                         bool slant_range_corrected) {
-                onProcessingPersisted(id, proc_path, proc_index, slant_range_corrected);
+                         bool slant_range_corrected,
+                         uint32_t baked_correction_flags) {
+                onProcessingPersisted(id, proc_path, proc_index,
+                                      slant_range_corrected,
+                                      baked_correction_flags);
             });
 }
 
@@ -42,8 +47,10 @@ void ProjectOperationCoordinator::connectToCorrections(CorrectionBatchOperator* 
     connect(corr_op, &CorrectionBatchOperator::correctionPersisted,
             this, [this](const std::string& layer_id,
                          const std::string& new_path,
-                         const core::ArtifactIndex& new_index) {
-                onCorrectionPersisted(layer_id, new_path, new_index);
+                         const core::ArtifactIndex& new_index,
+                         uint32_t baked_correction_flags) {
+                onCorrectionPersisted(layer_id, new_path, new_index,
+                                      baked_correction_flags);
             });
 }
 
@@ -53,7 +60,8 @@ void ProjectOperationCoordinator::onProcessingPersisted(
     const std::string& layer_id,
     const std::string& proc_path,
     const core::ArtifactIndex& proc_index,
-    bool slant_range_corrected)
+    bool slant_range_corrected,
+    uint32_t baked_correction_flags)
 {
     if (!m_project) return;
 
@@ -61,16 +69,21 @@ void ProjectOperationCoordinator::onProcessingPersisted(
     if (!layer) return;
 
     // ── 1. Commit result into DataLayer ──────────────────────────────────────
+    if (layer->source_artifact_store_path.empty())
+        layer->source_artifact_store_path = layer->artifact_store_path;
     layer->artifact_store_path    = proc_path;  // may be a per-layer sidecar
     layer->artifact_store_format  = "dlpd";
     layer->artifact_index         = proc_index;
     layer->pipeline_applied       = true;
+    layer->processing_origin      = app::ProcessingOrigin::NodeGraph;
     layer->slant_range_corrected  = slant_range_corrected;
+    layer->baked_correction_flags = baked_correction_flags;
 
     // ── 2. Compute graph hash for cache invalidation ──────────────────────────
     const std::string graph_json = layer->uses_project_graph
         ? m_project->processing_graph.toJson()
         : layer->node_graph.toJson();
+    layer->applied_graph_json = graph_json;
     const std::string graph_hash =
         std::to_string(std::hash<std::string>{}(graph_json));
 
@@ -78,6 +91,8 @@ void ProjectOperationCoordinator::onProcessingPersisted(
     auto* worker = m_project->findWorker(layer_id);
     if (!worker) {
         app::workers::Worker w(layer_id);
+        w.graph = layer->uses_project_graph
+            ? m_project->processing_graph : layer->node_graph;
         worker = m_project->addWorker(std::move(w));
     }
     if (worker) {
@@ -116,7 +131,8 @@ void ProjectOperationCoordinator::onProcessingPersisted(
 void ProjectOperationCoordinator::onCorrectionPersisted(
     const std::string& layer_id,
     const std::string& new_path,
-    const core::ArtifactIndex& new_index)
+    const core::ArtifactIndex& new_index,
+    uint32_t baked_correction_flags)
 {
     if (!m_project) return;
 
@@ -124,10 +140,15 @@ void ProjectOperationCoordinator::onCorrectionPersisted(
     if (!layer) return;
 
     // ── 1. Commit result into DataLayer ──────────────────────────────────────
+    if (layer->source_artifact_store_path.empty())
+        layer->source_artifact_store_path = layer->artifact_store_path;
     layer->artifact_store_path   = new_path;
     layer->artifact_store_format = "dlpd";
     layer->artifact_index        = new_index;
     layer->pipeline_applied      = true;
+    layer->processing_origin     = app::ProcessingOrigin::Waterfall;
+    layer->applied_graph_json.clear();
+    layer->baked_correction_flags = baked_correction_flags;
 
     // ── 2. Mark worker dirty so the next graph run re-executes with new input ─
     if (auto* worker = m_project->findWorker(layer_id))

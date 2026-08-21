@@ -30,6 +30,13 @@ enum class BottomTrackKind : uint8_t {
     Mixed   = 4,  // both algorithm and user-edited picks present
 };
 
+enum class ProcessingOrigin : uint8_t {
+    None = 0,
+    Waterfall = 1,
+    NodeGraph = 2,
+    LegacyUnknown = 3,
+};
+
 // Raster layer metadata (modality == Raster). A raster has no ping ArtifactIndex —
 // the source file (GeoTIFF / image) IS the durable store, read via GDAL on demand.
 // This describes it for the tree, framing, display, and serialization.
@@ -57,6 +64,9 @@ public:
     std::string         source_id;             // -> ProjectSource::id
     std::string         artifact_store_path;
     std::string         artifact_store_format; // "xtf", "jsf", "dlpd" …
+    // Immutable imported/decoded baseline. Processing always reads this store;
+    // artifact_store_path may point at a derived sidecar currently on display.
+    std::string         source_artifact_store_path;
     Modality            modality = Modality::Unknown;
     core::SpatialRef    source_spatial_ref;
     core::ArtifactIndex artifact_index;
@@ -66,6 +76,11 @@ public:
     bool                visible               = true;
     bool                slant_range_corrected = false;  // SRC; persisted in project JSON
     bool                pipeline_applied      = false;  // true after processing pipeline has been persisted
+    uint32_t            baked_correction_flags = 0;    // aggregate persisted artifact provenance
+    ProcessingOrigin    processing_origin = ProcessingOrigin::None;
+    // Immutable graph snapshot that produced the active node-graph sidecar.
+    // The editable node_graph may change afterward and must not rewrite History.
+    std::string         applied_graph_json;
     BottomTrackKind     bottom_track_kind     = BottomTrackKind::Unknown;
     float               qc_viewed_fraction    = 0.f;   // fraction of pings the user has scrolled past [0,1]
     int                 sss_palette           = -1;    // per-layer palette override; -1 = use app default

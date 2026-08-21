@@ -33,6 +33,9 @@ public:
     // Floor of 2 on single/low-core hosts. Parsing is CPU-bound, so going past the
     // core count just adds scheduler/disk thrash — the queue holds the remainder.
     static int maxConcurrentJobs();
+    // Number of rows this action set can actually dispatch after applying the
+    // manager's skip/reuse and same-path deduplication rules.
+    static int effectiveQueuedJobCount(const QList<FileImportAction>& actions);
 
     explicit ImportJobManager(ImportService* service, QObject* parent = nullptr);
     ~ImportJobManager() override;

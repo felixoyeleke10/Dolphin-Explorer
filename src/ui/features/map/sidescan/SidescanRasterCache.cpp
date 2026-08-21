@@ -1,5 +1,7 @@
 // SidescanRasterCache.cpp — binary (de)serialization of a built map raster.
 #include "ui/features/map/sidescan/SidescanRasterCache.h"
+#include "pipeline/SidescanEnhancementAlgorithms.h"
+#include "pipeline/SidescanRadiometryAlgorithms.h"
 
 #include <QDataStream>
 #include <QFile>
@@ -455,15 +457,25 @@ Meta makeMeta(const std::string&         store_path,
 
     // Gain/imaging corrections — changing any re-rasterizes the mosaic. Floats are
     // quantized (fnvMixF) so a save/reload round-trip keeps the same fingerprint.
+    h = fnvMix(h, pipeline::enhancement::kAlgorithmRevision);
+    h = fnvMix(h, pipeline::radiometry::kAlgorithmRevision);
     h = fnvMix (h, sss.tvg.enabled);    h = fnvMixF(h, sss.tvg.spreading);   h = fnvMixF(h, sss.tvg.absorption);
+    h = fnvMixF(h, sss.tvg.fallback_blanking_m);
     h = fnvMix (h, sss.arc.enabled);    h = fnvMixF(h, sss.arc.exponent);    h = fnvMixF(h, sss.arc.gain_cap_db);
-    h = fnvMix (h, sss.agc.enabled);    h = fnvMixF(h, sss.agc.strength);
+    h = fnvMix (h, sss.agc.enabled);    h = fnvMix(h, static_cast<int>(sss.agc.mode));
+    h = fnvMixF(h, sss.agc.strength);   h = fnvMix(h, sss.agc.along_track_win);
+    h = fnvMix(h, static_cast<int>(sss.agc.smoothing_type));
+    h = fnvMix(h, sss.agc.smoothing_win); h = fnvMix(h, sss.agc.edge_skip_samples);
+    h = fnvMixF(h, sss.agc.noise_floor_pct); h = fnvMixF(h, sss.agc.gain_cap_db);
+    h = fnvMixF(h, sss.agc.target_mean);
     h = fnvMix (h, sss.arn.enabled);    h = fnvMixF(h, sss.arn.strength);    h = fnvMixF(h, sss.arn.gain_cap_db);
     h = fnvMix (h, sss.arn.column_smooth);
     h = fnvMix (h, sss.destripe.enabled);     h = fnvMix (h, sss.destripe.window);
     h = fnvMix (h, sss.destripe.subdivision); h = fnvMixF(h, sss.destripe.capping);
+    h = fnvMixF(h, sss.destripe.threshold_db);
     h = fnvMix (h, sss.beam_pattern.enabled); h = fnvMixF(h, sss.beam_pattern.strength);
     h = fnvMix (h, sss.beam_pattern.smooth_radius);
+    h = fnvMixF(h, sss.beam_pattern.gain_cap_db);
     h = fnvMix (h, sss.ml_enhance.enabled);   h = fnvMix (h, sss.ml_enhance.tile_pings);
     h = fnvMix (h, sss.ml_enhance.tile_samps); h = fnvMixF(h, sss.ml_enhance.clip_limit);
     m.nav_hash = h;

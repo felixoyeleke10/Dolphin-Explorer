@@ -72,6 +72,10 @@ void NodeGraphWindow::setLayer(dolphin::app::DataLayer* layer,
 
     // -- Ready ----------------------------------------------------------------
     m_run_btn->setEnabled(layer != nullptr);
+    if (m_revert_btn)
+        m_revert_btn->setEnabled(layer && layer->pipeline_applied
+            && !layer->source_artifact_store_path.empty()
+            && layer->source_artifact_store_path != layer->artifact_store_path);
     if (m_palette) {
         m_palette->setPlacementEnabled(true);
         m_palette->setToolTip(tr("Drag into the graph or double-click to add"));
@@ -114,6 +118,10 @@ void NodeGraphWindow::onLayerComboChanged(int index)
     const QString layer_id = m_layer_combo->itemData(index).toString();
     m_layer = layer_id.isEmpty() ? nullptr : m_project->findLayer(layer_id.toStdString());
     m_run_btn->setEnabled(m_layer != nullptr);
+    if (m_revert_btn)
+        m_revert_btn->setEnabled(m_layer && m_layer->pipeline_applied
+            && !m_layer->source_artifact_store_path.empty()
+            && m_layer->source_artifact_store_path != m_layer->artifact_store_path);
 
     if (m_layer)
         emit layerSelectionRequested(m_layer->id);

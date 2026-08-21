@@ -12,6 +12,7 @@
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QMouseEvent>
 #include <QProgressBar>
 #include <QPushButton>
 #include <QScrollArea>
@@ -22,9 +23,9 @@
 
 namespace dolphin::ui {
 
-static constexpr int kDialogW  = 520;  // fixed dialog width
-static constexpr int kListMinH = 140;  // task list min height (comfortable with few tasks)
-static constexpr int kListMaxH = 440;  // task list max height before it scrolls (~9 rows)
+static constexpr int kDialogW  = 620;
+static constexpr int kListMinH = 180;
+static constexpr int kListMaxH = 520;
 // Format-badge size is a design token (Theme::kFormatBadgeSize / @badgeSize in QSS)
 // so the C++ setFixedSize and the stylesheet min/max stay in sync from one source.
 
@@ -49,6 +50,10 @@ ExecutionProgressDialog::ExecutionProgressDialog(QWidget* parent)
     // -- Header ----------------------------------------------------------------
     auto* header = new QWidget(this);
     header->setObjectName("epdHeader");
+    m_header = header;
+    header->setCursor(Qt::SizeAllCursor);
+    header->setToolTip(tr("Drag to move the Background Tasks window."));
+    header->installEventFilter(this);
     auto* hdr_lay = new QVBoxLayout(header);
     hdr_lay->setContentsMargins(Theme::kSpacing5, 12, Theme::kSpacing5, Theme::kSpacing3);
     hdr_lay->setSpacing(Theme::kSpacing1);
@@ -140,8 +145,12 @@ QFrame* ExecutionProgressDialog::buildCard(FileRow& row, QWidget* parent)
 
     // One compact line: [status icon] [name (elided, stretch)] [status/result (right)].
     // No nested vertical layout and no per-row bar, so a row is always a single line.
-    auto* h = new QHBoxLayout(card);
-    h->setContentsMargins(Theme::kSpacing3, Theme::kSpacing2, Theme::kSpacing3, Theme::kSpacing2);
+    auto* card_layout = new QVBoxLayout(card);
+    card_layout->setContentsMargins(Theme::kSpacing3, Theme::kSpacing3,
+                                    Theme::kSpacing3, Theme::kSpacing3);
+    card_layout->setSpacing(4);
+    auto* h = new QHBoxLayout();
+    h->setContentsMargins(0, 0, 0, 0);
     h->setSpacing(Theme::kSpacing2);
 
     // Status icon (replaces the old DLP badge): ● reading / ✓ done / ✕ failed.
@@ -155,6 +164,7 @@ QFrame* ExecutionProgressDialog::buildCard(FileRow& row, QWidget* parent)
 
     row.name_lbl = new QLabel(row.display_name, card);
     row.name_lbl->setObjectName("fileName");
+    row.name_lbl->setToolTip(row.full_name);
     h->addWidget(row.name_lbl, 1);
 
     // Live status while active ("Reading X%"), then the result / error. Right-aligned
@@ -164,9 +174,32 @@ QFrame* ExecutionProgressDialog::buildCard(FileRow& row, QWidget* parent)
     row.result_lbl->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     h->addWidget(row.result_lbl);
 
-    row.bar        = nullptr;   // overall bar + per-row "Reading X%" instead
-    row.meta_lbl   = nullptr;
-    row.status_lbl = nullptr;
+    card_layout->addLayout(h);
+
+    QStringList metadata;
+    if (!row.format.isEmpty() && row.format != QStringLiteral("?"))
+        metadata << row.format;
+    if (row.size_mb > 0.f)
+        metadata << (row.size_mb >= 1000.f
+            ? QString("%1 GB").arg(row.size_mb / 1024.f, 0, 'f', 2)
+            : QString("%1 MB").arg(row.size_mb, 0, 'f', 1));
+    metadata << tr("Task %1").arg(QString::fromStdString(row.layer_id));
+    row.meta_lbl = new QLabel(metadata.join(QStringLiteral("  ·  ")), card);
+    row.meta_lbl->setObjectName("fileMeta");
+    row.meta_lbl->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    card_layout->addWidget(row.meta_lbl);
+
+    row.status_lbl = new QLabel(tr("Queued"), card);
+    row.status_lbl->setObjectName("fileStatus");
+    card_layout->addWidget(row.status_lbl);
+
+    row.bar = new QProgressBar(card);
+    row.bar->setObjectName("fileBar");
+    row.bar->setRange(0, 100);
+    row.bar->setValue(0);
+    row.bar->setTextVisible(false);
+    card_layout->addWidget(row.bar);
+
     return card;
 }
 
@@ -226,33 +259,88 @@ void ExecutionProgressDialog::runInBackground()
     hide();
 }
 
+void ExecutionProgressDialog::reopen()
+{
+    if (!hasDisplayableState())
+        return;
+    m_backgrounded = false;
+    showForActiveBatch();
+}
+
+bool ExecutionProgressDialog::hasDisplayableState() const
+{
+    return !m_rows.empty() || m_pending_map_loads > 0;
+}
+
 void ExecutionProgressDialog::embedIn(QWidget* host)
 {
+    attachTo(host);
+}
+
+void ExecutionProgressDialog::attachTo(QWidget* host)
+{
     if (!host) return;
-    m_embedded = true;
-    m_host     = host;
-    setParent(host);
-    // Render as an in-window child overlay, not a top-level window. A popup over the
-    // frameless main window blinks it when shown during open; a child cannot.
-    setWindowFlags(Qt::Widget);
-    host->installEventFilter(this);
+    QWidget* owner = host->window();
+    if (!owner) owner = host;
+    if (m_host == owner && m_embedded) return;
+
+    const bool was_visible = isVisible();
+    if (m_host)
+        m_host->removeEventFilter(this);
     hide();
+    m_embedded = true;
+    m_host     = owner;
+    setParent(owner, Qt::Tool | Qt::CustomizeWindowHint
+                    | Qt::WindowTitleHint | Qt::WindowCloseButtonHint);
+    owner->installEventFilter(this);
+    m_dragging        = false;
+    m_user_positioned = false;
+    positionInParent();
+    if (was_visible) {
+        show();
+        raise();
+    }
 }
 
 void ExecutionProgressDialog::positionInParent()
 {
     if (!m_host) return;
     adjustSize();   // size to current content (cards/stage list)
-    const int margin = 18;
-    const int x = (m_host->width()  - width())  / 2;
-    const int y =  m_host->height() - height() - margin;
-    move(std::max(margin, x), std::max(margin, y));
+    if (m_user_positioned) return;
+    const QRect owner_rect(m_host->mapToGlobal(QPoint(0, 0)), m_host->size());
+    move(owner_rect.center().x() - width() / 2,
+         owner_rect.center().y() - height() / 2);
 }
 
 bool ExecutionProgressDialog::eventFilter(QObject* obj, QEvent* ev)
 {
     if (m_embedded && obj == m_host && ev->type() == QEvent::Resize && isVisible())
         positionInParent();
+    if (m_embedded && obj == m_host && ev->type() == QEvent::Hide
+            && hasDisplayableState())
+        emit hostHidden(m_host);
+
+    if (obj == m_header && m_embedded && m_host) {
+        auto* mouse = dynamic_cast<QMouseEvent*>(ev);
+        if (mouse && ev->type() == QEvent::MouseButtonPress
+                && mouse->button() == Qt::LeftButton) {
+            m_dragging = true;
+            m_drag_offset = mouse->globalPosition().toPoint()
+                          - frameGeometry().topLeft();
+            return true;
+        }
+        if (mouse && ev->type() == QEvent::MouseMove && m_dragging
+                && (mouse->buttons() & Qt::LeftButton)) {
+            move(mouse->globalPosition().toPoint() - m_drag_offset);
+            m_user_positioned = true;
+            return true;
+        }
+        if (mouse && ev->type() == QEvent::MouseButtonRelease
+                && mouse->button() == Qt::LeftButton) {
+            m_dragging = false;
+            return true;
+        }
+    }
     return QDialog::eventFilter(obj, ev);
 }
 

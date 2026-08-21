@@ -169,6 +169,9 @@ public:
 
     const std::vector<std::unique_ptr<DataLayer>>& layers()  const { return m_layers; }
     const std::vector<ProjectSource>&              sources() const { return m_sources; }
+    // Non-fatal compatibility repairs made while opening an older/hand-edited
+    // manifest. The project remains usable; UI diagnostics should surface these.
+    const std::vector<std::string>& loadWarnings() const { return m_load_warnings; }
 
 signals:
     void layerPending(DataLayer* layer);  // Placeholder created; import starting
@@ -211,6 +214,7 @@ private:
     bool        restoreEntitiesFromJson(const util::JsonValue& root);
     // Actionable validation/schema error from the most recent failed load.
     std::string m_load_error;
+    std::vector<std::string> m_load_warnings;
     std::string generateId(const std::string& prefix) const;
     void        purgeOrphanedCaches();
 };

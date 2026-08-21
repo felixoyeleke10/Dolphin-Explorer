@@ -2,6 +2,7 @@
 #include "ui/mainwindow/MainWindow.h"
 
 #include "app/display/NavCorrection.h"
+#include "app/corrections/SubBottomCorrectionAlgorithms.h"
 #include "app/layers/DataLayer.h"
 #include "app/project/Project.h"
 #include "app/services/ImportService.h"
@@ -44,6 +45,11 @@ void MainWindow::buildSbpProfileMap(app::DataLayer* layer, const std::string& la
 
     // Display-time nav corrections — single source of truth on the layer.
     const NavProcessingParams nav = layer->nav_state;
+    // The 2D profile scalar and 3D curtain are derived from trace amplitudes,
+    // so they must consume the same persisted corrections as the SBP waterfall.
+    // Per-trace correction flags make this safe for already-baked artifacts.
+    const auto gain = layer->sbp_display_state.gain;
+    const auto signal = layer->sbp_display_state.signal;
 
     // Run through OperationManager: keyed so a newer build for this layer
     // supersedes any in-flight one (replacing the old m_pending_sbp_builds guard),
@@ -74,12 +80,17 @@ void MainWindow::buildSbpProfileMap(app::DataLayer* layer, const std::string& la
     m_op_mgr->run<LayerMapData>(
         tr("Building sub-bottom profile map…"),
         [store_path, store_format, index_copy,
-         source_path, source_crs, display_crs, nav, report](app::CancellationToken) {
+         source_path, source_crs, display_crs, nav, gain, signal,
+         report](app::CancellationToken cancel) {
             report(15, tr("Reading traces…"));
             auto traces = app::ImportService::loadAllSubBottomTraces(
                 store_path, store_format, index_copy, source_path);
             report(70, tr("Applying corrections…"));
             applySbpNavCorrections(traces, nav);   // display-time nav corrections
+            if (!app::corrections::applySubBottomCorrections(
+                    traces, gain, signal,
+                    [&cancel] { return cancel.isCancelled(); }))
+                return LayerMapData{};
             report(90, tr("Building profile…"));
             return buildSbpProfileMapData(traces, source_crs, display_crs);
         },

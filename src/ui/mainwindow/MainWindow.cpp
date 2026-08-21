@@ -19,6 +19,7 @@
 #include "ui/features/map/MapView.h"
 #include "ui/features/map/MapViewportHost.h"
 #include "app/services/ImportService.h"
+#include "app/project/ProjectRecovery.h"
 #include "ui/shared/panels/LineListPanel.h"
 #include "ui/shell/AppInfo.h"
 #include <QPushButton>
@@ -111,37 +112,38 @@ MainWindow::MainWindow(QWidget* parent)
         // as a pending map load so the background panel surfaces "Building map" while
         // the survey loads (each load is balanced by loadingFinished → onMapLoadDone).
         if (!first_layer_id.empty()) {
-            const auto* fl = proj->findLayer(first_layer_id);
-            if (m_import_ctrl && fl && fl->modality == app::Modality::Sidescan)
-                m_import_ctrl->onMapLoadPending();
             onLayerSelected(first_layer_id);
         }
 
-        // Show the whole survey, not only the selected line. Index tracks appear
-        // immediately, then non-active SSS lines load through the bounded map lane.
-        // A fresh cache is still the fast path; an uncached Medium/High overview
-        // builds only the Low tier, never an automatic full-resolution upgrade.
-        int queued_lines = 0;
+        // …and show the whole survey, not just the active line — from PERSISTED
+        // work only (D-06 + operator control: opening a project displays what
+        // exists; it never starts processing). Every other indexed line draws
+        // its nav track instantly from the index (zero I/O); SSS lines whose
+        // raster is already cached fresh load it (cheap disk read, no decode).
+        // Anything without persisted display state stays a nav track until the
+        // OPERATOR builds it: selecting the line, Apply, or a quality change.
+        int deferred_lines = 0;
         for (const auto& layer : proj->layers()) {
             if (!layer || layer->id == first_layer_id) continue;
             if (!layer->index_built || layer->artifact_index.empty()) continue;
             if (layer->modality == app::Modality::Sidescan && m_sss_ctrl) {
                 m_sss_ctrl->showNavTrackFromIndex(layer->id, proj.get());
-                if (m_import_ctrl) m_import_ctrl->onMapLoadPending();
-                m_sss_ctrl->activateLayer(layer->id, proj.get(),
-                                          /*as_active=*/false,
-                                          /*cache_only=*/false);
-                ++queued_lines;
+                if (!m_sss_ctrl->activateLayer(layer->id, proj.get(),
+                                               /*as_active=*/false,
+                                               /*cache_only=*/true))
+                    ++deferred_lines;
             } else if (layer->modality == app::Modality::SubBottom) {
                 // Track only at open; the profile ribbon (a disk-heavy trace
                 // read) builds when the operator selects the line.
                 if (m_sss_ctrl)
                     m_sss_ctrl->showNavTrackFromIndex(layer->id, proj.get());
+                ++deferred_lines;
             }
         }
-        if (queued_lines > 0)
-            appendJobMessage(tr("Loading %1 additional side-scan line(s) in the background.")
-                                 .arg(queued_lines));
+        if (deferred_lines > 0)
+            appendJobMessage(tr("%1 line(s) shown as nav track from saved data — "
+                                "select a line to build its map imagery.")
+                                 .arg(deferred_lines));
 
         // Self-heal dead placeholders: a layer persisted WITHOUT its parsed
         // data (app closed or crashed mid-import) used to sit dead in the
@@ -151,28 +153,14 @@ MainWindow::MainWindow(QWidget* parent)
         // map hookup all come for free). A permanently bad file fails loudly
         // into the Problems panel instead of pretending to be a layer.
         if (m_import_ctrl) {
-            // A placeholder never had its CRS confirmed (that happened only in
-            // the original wizard run). Recover with the source's exact CRS if
-            // stored, else the survey grid — the first exact CRS among the
-            // project's sources — mirroring how the wizard applies one CRS to
-            // a whole batch. Without this the reindex lands on the parser's
-            // "projected, unknown grid" placeholder and every trace fails nav
-            // normalisation ("No valid GPS position in any trace").
-            core::SpatialRef survey_crs;
-            for (const auto& s : proj->sources())
-                if (s.source_spatial_ref.exact) { survey_crs = s.source_spatial_ref; break; }
-
-            for (const auto& layer : proj->layers()) {
-                if (!layer) continue;
-                if (layer->index_built && !layer->artifact_index.empty()) continue;
-                const auto* src = proj->findSource(layer->source_id);
-                if (!src || src->path.empty()) continue;
-                const core::SpatialRef crs =
-                    src->source_spatial_ref.exact ? src->source_spatial_ref
-                                                  : survey_crs;
+            for (const auto& recovery : app::planMissingArtifactRecovery(*proj)) {
                 appendJobMessage(tr("Recovering %1 — parsed data was missing…")
-                                     .arg(QString::fromStdString(layer->label)));
-                m_import_ctrl->reindexLayer(src->path, layer->id, crs);
+                                     .arg(QString::fromStdString(recovery.layer_label)));
+                if (m_import_overlay && m_viewport_host)
+                    m_import_overlay->attachTo(m_viewport_host);
+                m_import_ctrl->reindexLayer(recovery.source_path,
+                                            recovery.layer_id,
+                                            recovery.source_crs);
             }
         }
     });
@@ -327,6 +315,11 @@ MainWindow::MainWindow(QWidget* parent)
     connect(m_event_bus, &ProjectEventBus::layerDataChanged,
             this, [this](const std::string& id) {
                 m_window_registry->broadcast(ViewerRefreshReason::LayerDataChanged, id);
+                // Processing completion may create the layer's worker. Rebind an
+                // open graph window so the canvas and runner immediately share
+                // that worker graph instead of retaining the pre-run project graph.
+                if (m_node_graph_win && currentProject() && id == activeLayerId())
+                    m_node_graph_win->setLayer(currentProject()->findLayer(id), currentProject());
             });
     // ---------------------------------------------------------------------
 

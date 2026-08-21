@@ -29,6 +29,10 @@ enum class CorrectionFlag : uint32_t {
     SpeckleFilter = 1u << 7,  // speckle / texture filter applied
     GeoCorrect    = 1u << 8,  // layback / towfish position correction applied
     Arc           = 1u << 9,  // angle range correction applied
+    Arn           = 1u << 10, // adaptive range normalisation applied
+    AdaptiveContrast = 1u << 11, // local contrast enhancement (CLAHE) applied
+    ContrastStretch = 1u << 12, // robust line-level percentile stretch applied
+    HistogramEqualized = 1u << 13, // line-level histogram equalisation applied
 };
 inline uint32_t& operator|=(uint32_t& flags, CorrectionFlag f)
     { return flags |= static_cast<uint32_t>(f); }

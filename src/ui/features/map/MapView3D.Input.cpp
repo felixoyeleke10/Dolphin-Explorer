@@ -45,6 +45,22 @@ void MapView3D::setToolMode(int mode)
         setCursor(cursorForMode(mode));
 }
 
+void MapView3D::setHoverTooltipsEnabled(bool on)
+{
+    m_hover_tooltips = on;
+    m_hover_test_px = QPoint(-9999, -9999);
+    if (!on) emit hoverLayerChanged({}, {});
+}
+
+void MapView3D::setHoverHighlightEnabled(bool on)
+{
+    m_hover_highlight = on;
+    if (!on && !m_hover_layer_id.empty()) {
+        m_hover_layer_id.clear();
+        update();
+    }
+}
+
 // -- Picking and ground-ray helpers ------------------------------------------
 
 std::string MapView3D::hitTestLayer(QPoint px) const
@@ -248,6 +264,32 @@ void MapView3D::mouseMoveEvent(QMouseEvent* ev)
     }
     else
         emit cursorMoved(qQNaN(), qQNaN());
+
+    if (!m_panning && !m_orbiting && (m_hover_tooltips || m_hover_highlight)
+            && (ev->pos() - m_hover_test_px).manhattanLength() >= 6) {
+        m_hover_test_px = ev->pos();
+        const std::string hit = hitTestLayer(ev->pos());
+        if (hit != m_hover_layer_id) {
+            m_hover_layer_id = hit;
+            if (m_hover_highlight) update();
+        }
+        if (m_hover_tooltips)
+            emit hoverLayerChanged(hit, ev->globalPosition().toPoint());
+    }
+}
+
+bool MapView3D::event(QEvent* ev)
+{
+    if (ev->type() == QEvent::Leave) {
+        m_hover_test_px = QPoint(-9999, -9999);
+        if (!m_hover_layer_id.empty()) {
+            m_hover_layer_id.clear();
+            if (m_hover_highlight) update();
+        }
+        emit hoverLayerChanged({}, {});
+        emit cursorMoved(qQNaN(), qQNaN());
+    }
+    return QOpenGLWindow::event(ev);
 }
 
 void MapView3D::mouseReleaseEvent(QMouseEvent* ev)

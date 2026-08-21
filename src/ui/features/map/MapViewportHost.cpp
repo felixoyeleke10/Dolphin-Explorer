@@ -20,6 +20,7 @@
 #include <QStackedWidget>
 #include <QString>
 #include <QTimer>
+#include <QToolTip>
 #include <QVBoxLayout>
 
 #include <algorithm>
@@ -193,6 +194,8 @@ MapView3D* MapViewportHost::ensureView3D()
     m_view3d->setGratLabelRotated(m_grat_label_rotated);
     m_view3d->setGratCoordFormat(m_grat_coord_fmt);
     m_view3d->setToolMode(static_cast<int>(m_tool_mode));
+    m_view3d->setHoverTooltipsEnabled(m_hover_tooltips);
+    m_view3d->setHoverHighlightEnabled(m_hover_highlight);
 
     connect(m_view3d, &MapView3D::terrainLoadFinished, this,
             [this](const std::string& id, bool ok, const QString& err) {
@@ -227,6 +230,13 @@ MapView3D* MapViewportHost::ensureView3D()
             this, &MapViewportHost::glInitError);
     connect(m_view3d, &MapView3D::contactPickedAt,
             this, &MapViewportHost::contactPickedAt);
+    connect(m_view3d, &MapView3D::hoverLayerChanged, this,
+            [this](const std::string& id, QPoint global_pos) {
+                if (!m_hover_tooltips) return;
+                const QString label = m_view2d ? m_view2d->layerDisplayName(id) : QString{};
+                if (label.isEmpty()) QToolTip::hideText();
+                else QToolTip::showText(global_pos, label, m_view3d_container);
+            });
 
     connect(m_view3d, &MapView3D::viewportChanged,
             this, [this](double mpp, double rot) {
@@ -349,6 +359,21 @@ void MapViewportHost::setSelectedLayers(const std::vector<std::string>& ids)
 {
     m_view2d->setSelectedLayers(ids);
     if (m_view3d) m_view3d->setSelectedLayers(ids);
+}
+
+void MapViewportHost::setHoverTooltipsEnabled(bool on)
+{
+    m_hover_tooltips = on;
+    if (m_view2d) m_view2d->setHoverTooltipsEnabled(on);
+    if (m_view3d) m_view3d->setHoverTooltipsEnabled(on);
+    if (!on) QToolTip::hideText();
+}
+
+void MapViewportHost::setHoverHighlightEnabled(bool on)
+{
+    m_hover_highlight = on;
+    if (m_view2d) m_view2d->setHoverHighlightEnabled(on);
+    if (m_view3d) m_view3d->setHoverHighlightEnabled(on);
 }
 
 void MapViewportHost::setMode3D(bool on)

@@ -77,6 +77,7 @@ void applyImportResultToLayer(DataLayer& layer, const ImportTaskResult& result)
     layer.artifact_index.source_id = layer.source_id;
     layer.artifact_store_path     = result.artifact_store_path;
     layer.artifact_store_format   = result.artifact_store_format;
+    layer.source_artifact_store_path = result.artifact_store_path;
     layer.modality                = inferModality(layer.artifact_index);
     layer.source_spatial_ref      = result.source_spatial_ref;
     layer.sonar_name              = result.sonar_name;
@@ -516,7 +517,8 @@ bool ImportService::startRebuild(const std::string& layer_id,
 
         // Back-fill pipeline_applied for old projects that predate the field.
         // metadata() after buildIndex() has correction_flags_seen from the footer.
-        if (!layer->pipeline_applied && r.meta.correction_flags_seen != 0)
+        layer->baked_correction_flags |= r.meta.correction_flags_seen;
+        if (!layer->pipeline_applied && layer->baked_correction_flags != 0)
             layer->pipeline_applied = true;
 
         project->commitLayer(layer_id);

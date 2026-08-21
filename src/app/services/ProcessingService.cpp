@@ -1,6 +1,9 @@
 #include "app/services/ProcessingService.h"
 #include "app/artifacts/ArtifactSidecar.h"
+#include "app/artifacts/BaselineArtifactResolver.h"
+#include "app/contracts/ProcessingProvenance.h"
 #include "app/layers/DataLayer.h"
+#include "app/workers/Worker.h"
 #include "core/Artifact.h"
 #include "io/jsf/JsfReader.h"
 #include "io/cache/ParsedCache.h"
@@ -34,6 +37,7 @@ struct RunResult {
     std::string         error;
     bool                failed                = false;
     bool                slant_range_corrected = false;
+    uint32_t            baked_correction_flags = 0;
     std::string         processed_path;   // non-empty when cache was written successfully
     core::ArtifactIndex processed_index;
 };
@@ -124,14 +128,9 @@ RunResult executeRequest(const RunRequest& request)
 
     // Detect whether SlantRangeNode ran — check if any SSS ping in the
     // processed buffer has the SlantRange correction flag set.
-    for (const auto& artifact : processed) {
-        if (const auto* ping = std::get_if<core::SidescanPing>(&artifact)) {
-            if (hasCorrectionFlag(ping->correction_flags, core::CorrectionFlag::SlantRange)) {
-                result.slant_range_corrected = true;
-                break;
-            }
-        }
-    }
+    const auto provenance = app::contracts::deriveProcessingProvenance(processed);
+    result.baked_correction_flags = provenance.baked_correction_flags;
+    result.slant_range_corrected  = provenance.slant_range_corrected;
 
     // Overwrite the existing .dlpd cache in-place (atomic temp+rename).
     // The original raw source (XTF/JSF) is untouched — re-indexing always
@@ -181,14 +180,24 @@ void ProcessingService::runLayer(Project& project, DataLayer* layer, const std::
                        "Layer has no indexed artifact — re-import the file before running processing");
         return;
     }
-    request.artifact_path   = layer->artifact_store_path;
-    request.artifact_format = layer->artifact_store_format.empty()
-        ? formatFromPath(request.artifact_path)
-        : normaliseFormat(layer->artifact_store_format);
-    request.graph_json     = layer->uses_project_graph
-        ? project.processing_graph.toJson()
-        : layer->node_graph.toJson();
-    request.artifact_index = layer->artifact_index;
+    // A graph run is deterministic with respect to the imported baseline. Never
+    // feed a previous sidecar back into the graph (that compounds gain/filtering
+    // and makes removing a node appear ineffective).
+    const auto baseline = resolveBaselineArtifact(*layer);
+    if (!baseline) {
+        emit runFailed(layer->id, baseline.error + " — re-import the source");
+        return;
+    }
+    request.artifact_path = baseline.path;
+    request.artifact_format = baseline.format.empty()
+        ? formatFromPath(request.artifact_path) : normaliseFormat(baseline.format);
+    request.artifact_index = baseline.index;
+    if (const auto* worker = project.findWorker(layer->id))
+        request.graph_json = worker->graph.toJson();
+    else
+        request.graph_json = layer->uses_project_graph
+            ? project.processing_graph.toJson()
+            : layer->node_graph.toJson();
 
     if (!m_active_paths.insert(request.artifact_path).second) {
         emit runFailed(request.layer_id,
@@ -228,7 +237,8 @@ void ProcessingService::runLayer(Project& project, DataLayer* layer, const std::
                 emit runPersisted(result.layer_id,
                                   result.processed_path,
                                   result.processed_index,
-                                  result.slant_range_corrected);
+                                  result.slant_range_corrected,
+                                  result.baked_correction_flags);
         }
     });
     watcher->setFuture(QtConcurrent::run([request]() {
@@ -253,7 +263,9 @@ void ProcessingService::runAll(Project& project)
         // Skip if an in-flight runLayer call is already writing to this store.
         // (Layers sharing a store each write to their own per-layer sidecar, so
         // there is no deduplication by store path needed — every layer runs.)
-        const std::string store_path = layer->artifact_store_path;
+        const auto baseline = resolveBaselineArtifact(*layer);
+        if (!baseline) continue;
+        const std::string store_path = baseline.path;
         if (m_active_paths.count(store_path))
             continue;
 
@@ -261,13 +273,16 @@ void ProcessingService::runAll(Project& project)
         request.layer_id        = layer->id;
         request.source_path     = src->path;
         request.artifact_path   = store_path;
-        request.artifact_format = layer->artifact_store_format.empty()
+        request.artifact_format = baseline.format.empty()
             ? formatFromPath(request.artifact_path)
-            : normaliseFormat(layer->artifact_store_format);
-        request.graph_json      = layer->uses_project_graph
-            ? project.processing_graph.toJson()
-            : layer->node_graph.toJson();
-        request.artifact_index  = layer->artifact_index;
+            : normaliseFormat(baseline.format);
+        request.artifact_index = baseline.index;
+        if (const auto* worker = project.findWorker(layer->id))
+            request.graph_json = worker->graph.toJson();
+        else
+            request.graph_json = layer->uses_project_graph
+                ? project.processing_graph.toJson()
+                : layer->node_graph.toJson();
         requests.push_back(std::move(request));
     }
 
@@ -329,7 +344,8 @@ void ProcessingService::runAll(Project& project)
                     emit runPersisted(run.layer_id,
                                       run.processed_path,
                                       run.processed_index,
-                                      run.slant_range_corrected);
+                                      run.slant_range_corrected,
+                                      run.baked_correction_flags);
             }
         }
 

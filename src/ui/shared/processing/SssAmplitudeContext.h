@@ -3,7 +3,7 @@
 // Canonical, bounded line context for sidescan display amplitudes.
 //
 // Context-dependent operators (Variable AGC, beam normalization, ARN,
-// destriping, and ML enhancement) cannot be run independently on a map-thinned
+// destriping, and adaptive contrast) cannot be run independently on a map-thinned
 // survey and a waterfall window without producing different answers. This
 // product learns one deterministic gain field from a bounded representative
 // sample of the line, then both viewers apply that same field by ping identity /
@@ -67,11 +67,14 @@ buildSssAmplitudeContextFromCalibrated(
     const WaterfallParams& params);
 
 // Get or build the deterministic line context. The repository is process-wide,
-// thread-safe, and bounded; a miss decodes at most 2,048 channel records with at
+// thread-safe, and bounded. When `calibrated_seed` is supplied on a miss, those
+// already-decoded representative pings are used instead of reading the store a
+// second time. Otherwise a miss decodes at most 2,048 channel records with at
 // most 256 retained samples each.
 std::shared_ptr<const SssAmplitudeContext>
 getOrBuildSssAmplitudeContext(const SssAmplitudeContextRequest& request,
-                              const app::CancellationToken& cancel = {});
+                              const app::CancellationToken& cancel = {},
+                              const std::vector<core::SidescanPing>* calibrated_seed = nullptr);
 
 // Apply the canonical gain field in-place. Per-ping TVG/ARC/Global-AGC must have
 // run first on native samples. This function is independent of viewer window or

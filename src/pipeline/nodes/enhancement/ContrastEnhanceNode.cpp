@@ -25,13 +25,17 @@ ArtifactBuffer ContrastEnhanceNode::process(const ArtifactBuffer& input,
     if (params.count("high_pct")) high_pct = std::get<float>(params.at("high_pct"));
 
     ArtifactBuffer output = input;
-    for (auto& artifact : output) {
-        auto* ping = std::get_if<core::SidescanPing>(&artifact);
-        if (!ping || ping->samples.empty()) continue;
-
+    for (const auto channel : {core::SidescanChannel::Port,
+                               core::SidescanChannel::Starboard}) {
         std::vector<uint16_t> sorted;
-        sorted.reserve(ping->samples.size());
-        for (const auto& s : ping->samples) sorted.push_back(s.amplitude);
+        for (const auto& artifact : output) {
+            const auto* ping = std::get_if<core::SidescanPing>(&artifact);
+            if (!ping || ping->channel != channel || core::hasCorrectionFlag(
+                    ping->correction_flags, core::CorrectionFlag::ContrastStretch)) continue;
+            for (const auto& sample : ping->samples)
+                if (sample.amplitude > 0) sorted.push_back(sample.amplitude);
+        }
+        if (sorted.empty()) continue;
         std::sort(sorted.begin(), sorted.end());
 
         const int   n     = static_cast<int>(sorted.size());
@@ -40,9 +44,17 @@ ArtifactBuffer ContrastEnhanceNode::process(const ArtifactBuffer& input,
         const float range = hi - lo;
         if (range <= 0.f) continue;
 
-        for (auto& s : ping->samples)
-            s.amplitude = static_cast<uint16_t>(
-                std::clamp((s.amplitude - lo) / range * 65535.f, 0.f, 65535.f));
+        for (auto& artifact : output) {
+            auto* ping = std::get_if<core::SidescanPing>(&artifact);
+            if (!ping || ping->channel != channel || core::hasCorrectionFlag(
+                    ping->correction_flags, core::CorrectionFlag::ContrastStretch)) continue;
+            for (auto& sample : ping->samples) {
+                if (sample.amplitude == 0) continue;
+                sample.amplitude = static_cast<uint16_t>(std::clamp(
+                    (sample.amplitude - lo) / range * 65535.f, 0.f, 65535.f));
+            }
+            ping->correction_flags |= core::CorrectionFlag::ContrastStretch;
+        }
     }
     return output;
 }

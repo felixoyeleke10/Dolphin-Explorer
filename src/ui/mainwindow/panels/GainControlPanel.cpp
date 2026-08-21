@@ -120,11 +120,14 @@ GainControlPanel::GainControlPanel(QWidget* parent) : QWidget(parent)
         m_agc_mode = new QComboBox(row);
         m_agc_mode->addItems({ tr("Global"), tr("Variable") });
         m_agc_mode->setObjectName("wfCombo");
-        m_agc_mode->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+        m_agc_mode->setFixedWidth(WfValueRow::controlWidth());
         m_agc_mode->setToolTip(
             tr("Global: one gain model for the loaded line; best first choice.\n"
                "Variable: adapts along-track using a moving window."));
-        rl->addWidget(lbl); rl->addWidget(m_agc_mode);
+        rl->addWidget(lbl);
+        rl->addStretch(1);
+        rl->addWidget(m_agc_mode);
+        rl->addSpacing(WfValueRow::controlRightMargin());
         agc_l->addWidget(row);
     }
 
@@ -161,18 +164,21 @@ GainControlPanel::GainControlPanel(QWidget* parent) : QWidget(parent)
         m_agc_smooth_type = new QComboBox(row);
         m_agc_smooth_type->addItems({ tr("Mean"), tr("Median") });
         m_agc_smooth_type->setObjectName("wfCombo");
-        m_agc_smooth_type->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+        m_agc_smooth_type->setFixedWidth(WfValueRow::controlWidth());
         m_agc_smooth_type->setToolTip(
             tr("Mean: smoother estimate for clean data.\n"
                "Median: more robust with bright targets, spikes, or dropouts."));
-        rl->addWidget(lbl); rl->addWidget(m_agc_smooth_type);
+        rl->addWidget(lbl);
+        rl->addStretch(1);
+        rl->addWidget(m_agc_smooth_type);
+        rl->addSpacing(WfValueRow::controlRightMargin());
         agc_l->addWidget(row);
     }
 
     m_agc_smooth_win = new WfValueRow(tr("Smoothing Window"), 1, 50, 5, 1, 0, "", agc_rows);
     m_agc_smooth_win->setToolTip(
-        tr("Smooths the AGC gain curve across range samples.\n"
-           "Start at 5. Increase if patchy; decrease if detail smears."));
+        tr("Smooths the AGC gain curve along-track across neighbouring pings.\n"
+           "Start at 5. Increase if gain changes look patchy."));
     agc_l->addWidget(m_agc_smooth_win);
 
     m_agc_edge_skip = new WfValueRow(tr("Edge Skip"), 0, 500, 50, 5, 0, " smpl", agc_rows);
@@ -187,6 +193,12 @@ GainControlPanel::GainControlPanel(QWidget* parent) : QWidget(parent)
            "Start at 2 %. Increase if low-level noise is amplified."));
     agc_l->addWidget(m_agc_noise_floor);
 
+    m_agc_gain_cap = new WfValueRow(tr("Gain Cap"), 0, 60, 24, 1, 0, " dB", agc_rows);
+    m_agc_gain_cap->setToolTip(
+        tr("Maximum positive gain AGC may apply.\n"
+           "Start at 24 dB. Lower values are safer for noisy or weak records."));
+    agc_l->addWidget(m_agc_gain_cap);
+
     vl->addWidget(agc_rows);
 
     // -- ARC -------------------------------------------------------------------
@@ -199,7 +211,7 @@ GainControlPanel::GainControlPanel(QWidget* parent) : QWidget(parent)
         tr("Angle Range Correction — compensates grazing-angle-dependent backscatter.\n"
            "Strong near-nadir returns and weak far-range returns are normalised\n"
            "based on the acoustic incidence angle.\n"
-           "Requires a valid seabed pick or non-zero tow depth. Requires Apply."));
+           "Requires a valid seabed pick or navigation altitude above seabed. Requires Apply."));
     vl->addWidget(m_arc_en);
 
     auto* arc_rows = new QWidget(container);
@@ -263,6 +275,7 @@ void GainControlPanel::writeInto(WaterfallParams& p) const
     p.agc.smoothing_win     = m_agc_smooth_win->intValue();
     p.agc.edge_skip_samples = m_agc_edge_skip->intValue();
     p.agc.noise_floor_pct   = static_cast<float>(m_agc_noise_floor->value());
+    p.agc.gain_cap_db       = static_cast<float>(m_agc_gain_cap->value());
 
     p.arc.enabled     = m_arc_en->isChecked();
     p.arc.exponent    = static_cast<float>(m_arc_exp->value());
@@ -277,6 +290,7 @@ void GainControlPanel::setParams(const WaterfallParams& p)
     const QSignalBlocker b4(m_agc_en),    b5(m_agc_strength), b5b(m_agc_mode);
     const QSignalBlocker b5c(m_agc_along_track), b5d(m_agc_smooth_type);
     const QSignalBlocker b5e(m_agc_smooth_win),  b5f(m_agc_edge_skip), b5g(m_agc_noise_floor);
+    const QSignalBlocker b5h(m_agc_gain_cap);
     const QSignalBlocker b6(m_arc_en),    b7(m_arc_exp), b8(m_arc_gain_cap);
 
     m_tvg_en->setChecked(p.tvg.enabled);
@@ -292,6 +306,7 @@ void GainControlPanel::setParams(const WaterfallParams& p)
     m_agc_smooth_win->setValue(p.agc.smoothing_win);
     m_agc_edge_skip->setValue(p.agc.edge_skip_samples);
     m_agc_noise_floor->setValue(p.agc.noise_floor_pct);
+    m_agc_gain_cap->setValue(p.agc.gain_cap_db);
 
     m_arc_en->setChecked(p.arc.enabled);
     m_arc_exp->setValue(p.arc.exponent);
@@ -315,6 +330,7 @@ void GainControlPanel::updateControlStates()
     m_agc_smooth_win->setEnabled(agc);
     m_agc_edge_skip->setEnabled(agc);
     m_agc_noise_floor->setEnabled(agc);
+    m_agc_gain_cap->setEnabled(agc);
     m_agc_along_track->setEnabled(agc);
     m_agc_along_track_row->setVisible(agc && m_agc_mode->currentIndex() == 1);
 

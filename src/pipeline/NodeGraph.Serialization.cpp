@@ -55,6 +55,17 @@ bool readIntegral(const util::JsonValue& json, int& value)
     return true;
 }
 
+bool isSupportedObsoleteParam(const std::string& typeId,
+                              const std::string& key,
+                              const util::JsonValue& value)
+{
+    // Slant-range graphs saved before bottom detection was introduced stored a
+    // sound-velocity control. The current correction operates on decoded range
+    // geometry and no longer consumes it, so accept and discard the old value.
+    return typeId == "slant_range" && key == "sound_velocity"
+        && value.isNumber() && std::isfinite(value.asDouble());
+}
+
 template <typename T>
 bool inSchemaRange(T value, const NodeParam& spec)
 {
@@ -239,7 +250,11 @@ bool NodeGraph::fromJson(const std::string& json)
             if (!paramsJson.isObject()) return false;
             for (const auto& [key, serializedValue] : paramsJson.items()) {
                 const auto specIt = schema.params.find(key);
-                if (specIt == schema.params.end()) return false;
+                if (specIt == schema.params.end()) {
+                    if (isSupportedObsoleteParam(typeId, key, serializedValue))
+                        continue;
+                    return false;
+                }
                 Value parsedValue;
                 if (!jsonToValue(serializedValue, specIt->second, parsedValue))
                     return false;

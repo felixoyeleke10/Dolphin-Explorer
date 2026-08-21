@@ -23,6 +23,7 @@
 #include "ui/systems/ProjectEventBus.h"
 #include "ui/features/map/MapView.h"
 #include "ui/features/waterfall/WaterfallWindow.h"
+#include "ui/features/import/ImportProgressDialog.h"
 #include "app/project/Project.h"
 #include "app/layers/DataLayer.h"
 #include "core/Contact.h"
@@ -34,6 +35,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <unordered_set>
 
 namespace dolphin::ui {
 
@@ -79,6 +81,18 @@ void MainWindow::onWaterfallOpen()
                 this, &MainWindow::onClearContacts);
         connect(m_waterfall_win, &WaterfallWindow::contactEditRequested,
                 this, &MainWindow::onContactEditRequested);
+        // Ownership/stacking follows the initiating viewer before any connected
+        // handler can enqueue map or correction work.
+        connect(m_waterfall_win, &WaterfallWindow::paramsApplied,
+                this, [this]() {
+                    if (m_import_overlay && m_waterfall_win)
+                        m_import_overlay->attachTo(m_waterfall_win);
+                });
+        connect(m_waterfall_win, &WaterfallWindow::applyToAllRequested,
+                this, [this]() {
+                    if (m_import_overlay && m_waterfall_win)
+                        m_import_overlay->attachTo(m_waterfall_win);
+                });
         connect(m_waterfall_win, &WaterfallWindow::paramsApplied,
                 this, &MainWindow::onWaterfallParamsApplied);
         connect(m_waterfall_win, &WaterfallWindow::applyToAllRequested,
@@ -132,8 +146,13 @@ void MainWindow::onWaterfallOpen()
                         // when paramsApplied fires from a programmatic restore (layer
                         // switch, waterfall open) rather than a user Apply click.
                         const WaterfallParams old_p = layer->sss_display_state.params;
+                        SidescanProcessingCoordinator::Result commit_result;
                         if (m_sss_processing)
-                            m_sss_processing->commit(currentProject(), {wf_id}, p);
+                            commit_result = m_sss_processing->commit(
+                                currentProject(), {wf_id}, p);
+                        std::vector<SidescanInvalidationRequest> invalidations;
+                        for (const auto& id : commit_result.display_changed_layer_ids)
+                            invalidations.push_back({id, SidescanInvalidation::Appearance});
                         // Rebuild the map raster so corrections (destripe, AGC, ARC, TVG,
                         // etc.) applied in the waterfall are immediately reflected in the
                         // map mosaic.  Only rebuild when pipeline params actually changed
@@ -150,7 +169,10 @@ void MainWindow::onWaterfallOpen()
                         if (m_sss_ctrl
                                 && !src_changed
                                 && pipeline_changed)
-                            m_sss_ctrl->applyLiveCorrections({wf_id});
+                            invalidations.push_back(
+                                {wf_id, SidescanInvalidation::Amplitude});
+                        if (m_sss_ctrl)
+                            m_sss_ctrl->applyInvalidations(invalidations);
                     }
                     if (layer && src_changed) {
                         if (m_sss_ctrl) m_sss_ctrl->reloadLayer(wf_id);
@@ -193,9 +215,26 @@ void MainWindow::onWaterfallOpen()
             if (m_imaging_panel) m_imaging_panel->setParams(p);
             const auto ids = SidescanProcessingCoordinator::allSidescanLayerIds(
                 currentProject());
+            SidescanProcessingCoordinator::Result result;
             if (m_sss_processing)
-                m_sss_processing->commit(currentProject(), ids, p);
-            if (m_sss_ctrl) m_sss_ctrl->reloadCurrentLayer();
+                result = m_sss_processing->commit(currentProject(), ids, p);
+            for (const auto& id : result.revert_layer_ids)
+                onRevertProcessedLayer(id);
+            if (m_sss_ctrl) {
+                std::unordered_set<std::string> reverted(
+                    result.revert_layer_ids.begin(), result.revert_layer_ids.end());
+                std::vector<SidescanInvalidationRequest> invalidations;
+                for (const auto& id : result.display_changed_layer_ids)
+                    if (!reverted.count(id)) invalidations.push_back(
+                        {id, SidescanInvalidation::Appearance});
+                for (const auto& id : result.pipeline_changed_layer_ids)
+                    if (!reverted.count(id)) invalidations.push_back(
+                        {id, SidescanInvalidation::Amplitude});
+                for (const auto& id : result.geometry_changed_layer_ids)
+                    if (!reverted.count(id)) invalidations.push_back(
+                        {id, SidescanInvalidation::Geometry});
+                m_sss_ctrl->applyInvalidations(invalidations);
+            }
             markProjectDirty();
             m_session_ctrl->autoSave();
             // Display-state only — no .dlpd bake here. The waterfall renders the

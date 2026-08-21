@@ -76,6 +76,8 @@ public slots:
     void setNavTrackVisible   (const std::string& layer_id, bool visible);
     void setActiveLayer       (const std::string& layer_id);
     void setSelectedLayers (const std::vector<std::string>& ids);
+    void setHoverTooltipsEnabled(bool on);
+    void setHoverHighlightEnabled(bool on);
     // Show or hide the "Import Files…" hint button overlaid on the empty map.
     void setShowImportHint (bool show);
 
@@ -155,6 +157,8 @@ private:
     bool   m_grat_label_rotated = false;
     int    m_grat_coord_fmt     = 0;
     ToolMode m_tool_mode        = ToolMode::Pan;
+    bool   m_hover_tooltips     = false;
+    bool   m_hover_highlight    = false;
     std::unordered_map<std::string, bool> m_layer_visibility;
     std::unordered_map<std::string, bool> m_nav_track_visibility;
 };

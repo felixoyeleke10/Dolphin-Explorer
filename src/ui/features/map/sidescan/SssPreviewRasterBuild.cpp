@@ -95,7 +95,12 @@ SssPoint interpolateStripPointAtRange(const std::vector<SssPoint>& points,
         a.lon + (b.lon - a.lon) * fraction,
         a.lat + (b.lat - a.lat) * fraction,
         static_cast<uint16_t>(std::clamp(std::llround(amplitude), 0LL, 65535LL)),
-        static_cast<float>(a.ground_range_m + span_m * fraction)
+        static_cast<float>(a.ground_range_m + span_m * fraction),
+        // A geometry-only inner anchor suppresses the exact nadir and the cell
+        // that starts there, not the entire interval to the first real sample.
+        // This matters for coarse/unequal strips where that interval can span
+        // much of the swath.
+        b.renderable && (a.renderable || fraction > 1e-9)
     };
 }
 } // namespace
@@ -256,6 +261,7 @@ bool buildSwathPreviewImage(const std::vector<core::SidescanPing>& pings,
         size_t dots_written = 0;
         for (const auto& st : gr.strips) {
             for (const auto& pt : st.points) {
+                if (!pt.renderable) continue;
                 const QPointF px = geoToImg(pt.lon, pt.lat);
                 const int ix = static_cast<int>(px.x());
                 const int iy = static_cast<int>(px.y());
@@ -437,6 +443,9 @@ bool buildSwathPreviewImage(const std::vector<core::SidescanPing>& pings,
                     curr.points, range0_m);
                 const SssPoint nb = interpolateStripPointAtRange(
                     curr.points, range1_m);
+                if (!pa.renderable || !na.renderable
+                        || !pb.renderable || !nb.renderable)
+                    continue;
                 ++ld.nav_stats.cells_attempted;
                 const size_t writes = rast.rasterizeCell(
                     pixels, img_w, img_h,

@@ -69,6 +69,23 @@ bool copyProjectOwnedCaches(const std::string& old_manifest,
         remapped.emplace(cur.toStdString(), relocated);
         layer->artifact_store_path = relocated;
     }
+    for (auto& layer : layers) {
+        if (!layer || layer->source_artifact_store_path.empty()) continue;
+        const QString cur = detail::normalisePath(layer->source_artifact_store_path);
+        if (!detail::pathHasPrefix(cur, old_root)) continue;
+        if (const auto found = remapped.find(cur.toStdString()); found != remapped.end()) {
+            layer->source_artifact_store_path = found->second;
+            continue;
+        }
+        const fs::path old_p(cur.toStdString());
+        if (!fs::exists(old_p)) continue;
+        const fs::path new_p = new_root_path / old_p.filename();
+        fs::copy_file(old_p, new_p, fs::copy_options::overwrite_existing, ec);
+        if (ec) return false;
+        const std::string relocated = detail::normalisePath(new_p.string()).toStdString();
+        remapped.emplace(cur.toStdString(), relocated);
+        layer->source_artifact_store_path = relocated;
+    }
     return true;
 }
 
@@ -207,13 +224,20 @@ bool Project::saveAs(const std::string& new_path)
 
     const std::string old_path = m_manifest_path;
     std::vector<std::string> old_stores;
+    std::vector<std::string> old_source_stores;
     old_stores.reserve(m_layers.size());
-    for (const auto& l : m_layers)
+    old_source_stores.reserve(m_layers.size());
+    for (const auto& l : m_layers) {
         old_stores.push_back(l ? l->artifact_store_path : std::string{});
+        old_source_stores.push_back(l ? l->source_artifact_store_path : std::string{});
+    }
 
     if (!copyProjectOwnedCaches(old_path, new_path, m_layers)) {
         for (size_t i = 0; i < m_layers.size() && i < old_stores.size(); ++i)
-            if (m_layers[i]) m_layers[i]->artifact_store_path = old_stores[i];
+            if (m_layers[i]) {
+                m_layers[i]->artifact_store_path = old_stores[i];
+                m_layers[i]->source_artifact_store_path = old_source_stores[i];
+            }
         return false;
     }
 
@@ -228,7 +252,10 @@ bool Project::saveAs(const std::string& new_path)
     m_manifest_path = old_path;
     m_name          = old_name;
     for (size_t i = 0; i < m_layers.size() && i < old_stores.size(); ++i)
-        if (m_layers[i]) m_layers[i]->artifact_store_path = old_stores[i];
+        if (m_layers[i]) {
+            m_layers[i]->artifact_store_path = old_stores[i];
+            m_layers[i]->source_artifact_store_path = old_source_stores[i];
+        }
     return false;
 }
 
@@ -277,6 +304,14 @@ bool Project::renameOnDisk(const std::string& new_path)
             QString relocated = cur;
             relocated.replace(0, old_root.size(), new_root);     // whole dir moved → prefix swap
             l->artifact_store_path = detail::normalisePath(relocated).toStdString();
+            if (!l->source_artifact_store_path.empty()) {
+                QString source_cur = detail::normalisePath(l->source_artifact_store_path);
+                if (detail::pathHasPrefix(source_cur, old_root)) {
+                    source_cur.replace(0, old_root.size(), new_root);
+                    l->source_artifact_store_path =
+                        detail::normalisePath(source_cur).toStdString();
+                }
+            }
         }
     }
 

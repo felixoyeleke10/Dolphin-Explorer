@@ -130,12 +130,6 @@ SidescanLoadResult buildSidescanLoadResult(const SssLoadInputs&            in,
     }
     report(66);   // pings read + nav-corrected; reprojecting next
 
-    auto map_pings = geo::normalizeSidescanPingsForMap(
-        std::move(raw), in.display_ref, &result.unresolved_crs);
-    if (cancel.isCancelled()) {
-        result.load_failed = true; return result;
-    }
-
     // Finish context-dependent calibration/imaging (Variable AGC plus
     // beam/ARN/destripe/ML). The native-sample per-ping stage already ran in the
     // streaming loader before resolution-only sample compaction. CoverageOnly
@@ -151,17 +145,32 @@ SidescanLoadResult buildSidescanLoadResult(const SssLoadInputs&            in,
         request.frequency_hz = in.layer_low_freq_hz == 0.f
             ? in.layer_freq_hz : 0.f;
         request.params = in.sss_params;
-        amplitude_context = imaging::getOrBuildSssAmplitudeContext(request, cancel);
+        // `raw` is already the bounded, representative map index and has had
+        // per-ping calibration applied during streaming decode. Seed the shared
+        // repository from it instead of rereading the same line before first paint.
+        amplitude_context = imaging::getOrBuildSssAmplitudeContext(
+            request, cancel, &raw);
         if (cancel.isCancelled()) {
             result.load_failed = true; return result;
         }
+    }
+    if (cancel.isCancelled()) {
+        result.load_failed = true; return result;
+    }
+
+    // Preserve the already-decoded calibrated pings until the shared line context
+    // has consumed them. Moving `raw` earlier left an empty seed and forced a
+    // redundant store read on every cold map build.
+    auto map_pings = geo::normalizeSidescanPingsForMap(
+        std::move(raw), in.display_ref, &result.unresolved_crs);
+    if (cancel.isCancelled()) {
+        result.load_failed = true; return result;
+    }
+    if (in.qp.max_image_dim > 0) {
         if (amplitude_context)
             imaging::applySssAmplitudeContext(map_pings, *amplitude_context);
         else
             imaging::applyContextCalibrationAndImaging(map_pings, in.sss_params);
-    }
-    if (cancel.isCancelled()) {
-        result.load_failed = true; return result;
     }
 
     // -- Coverage + nav track (always built for CoverageOnly+) ---------

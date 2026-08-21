@@ -12,6 +12,7 @@
 #include <QLabel>
 #include <QProgressBar>
 #include <QPushButton>
+#include <QRegularExpression>
 #include <QStringList>
 #include <QStyle>
 #include <QTimer>
@@ -37,7 +38,17 @@ QString sizeMbStr(float mb)
 
 void ExecutionProgressDialog::setQueueTotal(int n)
 {
-    m_queue_total = n;
+    m_queue_total = std::max(0, n);
+    m_queue_total_armed = true;
+    updateHeader();
+}
+
+void ExecutionProgressDialog::addToQueueTotal(int n)
+{
+    const int base = m_all_done
+        ? 0 : std::max(m_queue_total, static_cast<int>(m_rows.size()));
+    m_queue_total = base + std::max(0, n);
+    m_queue_total_armed = true;
     updateHeader();
 }
 
@@ -49,6 +60,8 @@ void ExecutionProgressDialog::addJob(const std::string& layer_id,
     // New batch starting: purge stale Done/Failed rows so prior results don't block
     if (m_all_done) {
         clearFinishedRows();
+        if (!m_queue_total_armed)
+            m_queue_total = 0;
         m_all_done = false;
         m_backgrounded = false;
         m_pending_map_loads = 0;
@@ -61,6 +74,7 @@ void ExecutionProgressDialog::addJob(const std::string& layer_id,
         m_start_ms = QDateTime::currentMSecsSinceEpoch();
         m_timer->start();
     }
+    m_queue_total_armed = false;
 
     // Determine the operation kind (and build the stage chips) from the first job:
     // correction/processing tags have no map phase; everything else is an import.
@@ -85,9 +99,12 @@ void ExecutionProgressDialog::addJob(const std::string& layer_id,
 
     FileRow row;
     row.layer_id     = layer_id;
+    row.full_name    = filename;
     row.display_name = elided;
     row.format       = format.toUpper();
     row.size_mb      = size_mb;
+    row.started_ms   = QDateTime::currentMSecsSinceEpoch();
+    row.last_status  = tr("Queued");
 
     m_rows.push_back(std::move(row));
 
@@ -110,9 +127,14 @@ void ExecutionProgressDialog::updateJob(const std::string& layer_id, int percent
 {
     auto* r = findRow(layer_id);
     if (!r) return;
+    percent = std::clamp(percent, 0, 100);
     r->percent = percent;
-    if (r->result_lbl && r->state == FileRow::State::Active)
-        r->result_lbl->setText(tr("Reading %1%").arg(percent));
+    if (r->state == FileRow::State::Active) {
+        r->last_status = tr("Reading data");
+        if (r->status_lbl) r->status_lbl->setText(r->last_status);
+        if (r->result_lbl) r->result_lbl->setText(tr("%1%").arg(percent));
+        if (r->bar) r->bar->setValue(percent);
+    }
     updateOverallProgress();
 }
 
@@ -121,9 +143,16 @@ void ExecutionProgressDialog::updateJob(const std::string& layer_id, int percent
 {
     auto* r = findRow(layer_id);
     if (!r) return;
+    percent = std::clamp(percent, 0, 100);
     r->percent = percent;
-    if (r->result_lbl && r->state == FileRow::State::Active)
-        r->result_lbl->setText(status);
+    if (r->state == FileRow::State::Active) {
+        QString phase = status.trimmed();
+        phase.remove(QRegularExpression(QStringLiteral("\\s+\\d+%$")));
+        r->last_status = phase.isEmpty() ? tr("Working") : phase;
+        if (r->status_lbl) r->status_lbl->setText(r->last_status);
+        if (r->result_lbl) r->result_lbl->setText(tr("%1%").arg(percent));
+        if (r->bar) r->bar->setValue(percent);
+    }
     updateOverallProgress();
 }
 
@@ -136,6 +165,9 @@ void ExecutionProgressDialog::finishJob(const std::string& layer_id,
     if (!r) return;
 
     applyCardState(*r, FileRow::State::Done);
+    r->percent = 100;
+    if (r->bar) r->bar->setValue(100);
+    if (r->status_lbl) r->status_lbl->setText(tr("Completed"));
 
     (void)freq_khz; (void)coord_sys;  // CRS/freq detail belongs in the layer inspector
 
@@ -166,6 +198,9 @@ void ExecutionProgressDialog::finishJob(const std::string& layer_id,
     if (!r) return;
 
     applyCardState(*r, FileRow::State::Done);
+    r->percent = 100;
+    if (r->bar) r->bar->setValue(100);
+    if (r->status_lbl) r->status_lbl->setText(tr("Completed"));
 
     if (r->result_lbl) {
         r->result_lbl->setText(result_text);
@@ -194,6 +229,12 @@ void ExecutionProgressDialog::failJob(const std::string& layer_id,
     }
 
     applyCardState(*r, FileRow::State::Failed);
+    if (r->status_lbl) {
+        r->status_lbl->setText(error.isEmpty() ? tr("Task failed") : error);
+        r->status_lbl->setToolTip(error);
+        r->status_lbl->setWordWrap(true);
+    }
+    if (r->bar) r->bar->setValue(r->percent);
 
     if (r->result_lbl) {
         const QString msg = error.length() > 38 ? error.left(35) + "…"
@@ -342,8 +383,8 @@ void ExecutionProgressDialog::updateStages()
 
 void ExecutionProgressDialog::updateOverallProgress()
 {
-    if (m_rows.empty()) return;
-    const int total = static_cast<int>(m_rows.size());
+    const int total = std::max(m_queue_total, static_cast<int>(m_rows.size()));
+    if (total <= 0) return;
     int sum = 0;
     for (const auto& r : m_rows)
         sum += (r.state != FileRow::State::Active) ? 100 : r.percent;
@@ -354,8 +395,13 @@ void ExecutionProgressDialog::updateOverallProgress()
 void ExecutionProgressDialog::checkAllDone()
 {
     if (m_all_done) return;
+    const int expected = std::max(m_queue_total, static_cast<int>(m_rows.size()));
+    int terminal = 0;
     for (const auto& r : m_rows)
         if (r.state == FileRow::State::Active) return;
+        else ++terminal;
+
+    if (terminal < expected) return;
 
     // All rows parsed — wait for the rasteriser before declaring "All Done".
     // updateStages() shows "Building map — X of Y" on the sub-line meanwhile.
@@ -391,21 +437,34 @@ void ExecutionProgressDialog::checkAllDone()
 // closes; slower (re)builds cross it and show progress.
 static constexpr int kMapPhaseShowDelayMs = 350;
 
-void ExecutionProgressDialog::onMapLoadPending()
+void ExecutionProgressDialog::onMapLoadPending(uint64_t task_id,
+                                                const QString& layer_name)
 {
+    if (task_id == 0 || !m_pending_map_task_ids.insert(task_id).second)
+        return;
     // Starting a fresh map batch after a previous one finished: reset the map-phase
     // counters (mirrors addJob's reset) so any later "Building map — X of Y" counts
     // this open, not the accumulation of every open this session.
     if (m_all_done) {
+        clearFinishedRows();
         m_all_done = false;
         m_backgrounded = false;
+        m_queue_total = 0;
         m_pending_map_loads = 0;
         m_map_total = 0;
+        m_has_map_phase = false;
+        m_op_is_processing = false;
+        m_stages_built = false;
+        m_queue_total_armed = false;
+        buildStageChips(0);
         m_close_btn->setEnabled(false);
         m_bg_btn->setEnabled(true);
     }
     ++m_pending_map_loads;
     ++m_map_total;
+    m_map_task_names[task_id] = layer_name;
+    if (!layer_name.isEmpty()) m_active_map_name = layer_name;
+    m_map_percent = 0;
     m_has_map_phase = true;
 
     // Map-only phase (project open / reload): give the panel a "Building map" stage so
@@ -416,7 +475,7 @@ void ExecutionProgressDialog::onMapLoadPending()
         m_start_ms = QDateTime::currentMSecsSinceEpoch();
         m_timer->start();
     }
-    updateStages();
+    updateHeader();
 
     // Surface the panel after a short delay. Safe now that the 3D view is a native
     // QOpenGLWindow: in 2D the main window is no longer GL-composited, so showing the
@@ -431,17 +490,40 @@ void ExecutionProgressDialog::onMapLoadPending()
     }
 }
 
-void ExecutionProgressDialog::onMapLoadDone()
+void ExecutionProgressDialog::onMapLoadProgress(int percent)
 {
-    // Absorb late "done" events from builds cancelled by a project change so they
-    // don't decrement the new project's pending count (which would hide the panel
-    // early or desync "X of Y").
-    if (m_stale_done_expected > 0) {
-        --m_stale_done_expected;
-        return;
+    if (!m_has_map_phase || m_pending_map_loads <= 0) return;
+    m_map_percent = std::clamp(percent, 0, 100);
+    if (m_map_total > 0) {
+        const int completed = std::max(0, m_map_total - m_pending_map_loads);
+        m_overall_bar->setValue(std::clamp(
+            (completed * 100 + m_map_percent) / m_map_total, 0, 99));
     }
+    updateStages();
+    if (m_sub_lbl) {
+        const QString phase = m_map_percent < 55 ? tr("Reading pings")
+            : m_map_percent < 70 ? tr("Applying corrections")
+            : m_map_percent < 85 ? tr("Georeferencing")
+            : m_map_percent < 100 ? tr("Building mosaic") : tr("Finishing");
+        const QString item = m_active_map_name.isEmpty()
+            ? QString() : tr("  ·  %1").arg(m_active_map_name);
+        const int completed = std::max(0, m_map_total - m_pending_map_loads);
+        m_sub_lbl->setText(tr("%1  %2%  ·  %3 of %4%5")
+            .arg(phase).arg(m_map_percent).arg(completed).arg(m_map_total).arg(item));
+    }
+}
+
+void ExecutionProgressDialog::onMapLoadDone(uint64_t task_id)
+{
+    // Only a task registered in the current batch may advance its counters.
+    if (task_id == 0 || m_pending_map_task_ids.erase(task_id) == 0) return;
+    m_map_task_names.erase(task_id);
     if (m_pending_map_loads <= 0) return;
     --m_pending_map_loads;
+    if (!m_map_task_names.empty())
+        m_active_map_name = m_map_task_names.begin()->second;
+    else
+        m_active_map_name.clear();
     checkAllDone();
 }
 
@@ -451,7 +533,10 @@ void ExecutionProgressDialog::resetState()
 
     // Any in-flight map builds were just cancelled by the caller; their done events
     // will still arrive — remember how many to absorb.
-    m_stale_done_expected += m_pending_map_loads;
+    m_pending_map_task_ids.clear();
+    m_map_task_names.clear();
+    m_active_map_name.clear();
+    m_map_percent = 0;
 
     // Remove every card (active + finished) and reset all batch/map-phase state.
     for (auto& r : m_rows)
@@ -466,6 +551,7 @@ void ExecutionProgressDialog::resetState()
     m_backgrounded      = false;
     m_op_is_processing  = false;
     m_stages_built      = false;
+    m_queue_total_armed = false;
     buildStageChips(0);          // clear the stage chips
     m_overall_bar->setValue(0);
 
