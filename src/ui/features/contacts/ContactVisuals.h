@@ -3,9 +3,12 @@
 // colour/label helpers, the sensor-chip delegate, and the thumbnail painter shared
 // by the Contact Manager's aspect files (.Layout / .View / .Commands). Kept in the
 // dolphin::ui::cmvis namespace; each aspect file pulls it in with `using namespace`.
+//
+// The map-marker symbol library lives in ui/shared/contacts/ContactSymbols.h, not
+// here: dolphin-ui-contacts (this file's target) depends on dolphin-ui-shared, and
+// LineListPanel (which also needs the symbol library) lives in dolphin-ui-shared —
+// keeping the library here would make that a circular target dependency.
 #include <QColor>
-#include <QIcon>
-#include <QPainterPath>
 #include <QPixmap>
 #include <QString>
 #include <QStyledItemDelegate>
@@ -58,28 +61,6 @@ QString contactSnapshotPath(app::Project* proj, uint64_t contact_id);
 // The contact's square thumbnail at `px`: the persisted snapshot (centre-cropped to a
 // square, scaled) when one exists, otherwise the synthetic makeContactThumb tile.
 QPixmap contactThumbnail(app::Project* proj, const core::Contact& c, int px);
-
-// -- Map marker symbol library --------------------------------------------------
-// Shared by the symbol picker (ContactEditorDialog), the right-click quick-set
-// menu (LineListPanel), and the map painter, so all three read one definition
-// and can never silently drift apart. id "" (Auto) means "let the system decide"
-// — currently the historical diamond, same as an unrecognized/legacy id.
-struct ContactSymbolOpt { const char* label; const char* id; };
-extern const ContactSymbolOpt kContactSymbols[];
-extern const int kContactSymbolCount;
-
-// Marker outline for `symbol_id` (one of kContactSymbols[i].id), centred at the
-// origin with circumradius `radius`, in local unrotated/unscaled coordinates —
-// translate the painter to the marker's pixel position before filling/stroking.
-// Not all shapes are centred on their own bounding box (the pin's tip, not its
-// centroid, sits at the origin — see contactSymbolPath's definition).
-QPainterPath contactSymbolPath(const QString& symbol_id, qreal radius);
-
-// A square `px`x`px` QIcon preview of `symbol_id`, fitted and centred within the
-// icon regardless of the shape's own bounding-box asymmetry (e.g. the pin).
-// Used by the symbol picker combo and the right-click quick-set menu.
-QIcon contactSymbolIcon(const QString& symbol_id, int px,
-                        const QColor& fill, const QColor& outline);
 
 // Paints the Sensor / Confidence table columns as rounded colour chips.
 class ChipDelegate : public QStyledItemDelegate {

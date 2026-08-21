@@ -39,7 +39,8 @@ public:
     void addJob(const std::string& layer_id,
                 const QString&     filename,
                 const QString&     format,
-                float              size_mb);
+                float              size_mb,
+                bool               reveal = true);
 
     void updateJob(const std::string& layer_id, int percent);
     // Like updateJob, but sets an explicit status line (e.g. "Applying corrections… 70%")
@@ -55,6 +56,7 @@ public:
     void finishJob(const std::string& layer_id, const QString& result_text);
 
     void failJob(const std::string& layer_id, const QString& error);
+    void cancelJob(const std::string& layer_id);
 
     // Called when a map-build task starts / finishes for an imported layer.
     // "All Done" is withheld until all pending map loads have completed.
@@ -114,7 +116,7 @@ private:
         QProgressBar* bar       = nullptr;
         QLabel*      result_lbl = nullptr;
 
-        enum class State { Active, Done, Failed } state = State::Active;
+        enum class State { Active, Done, Failed, Cancelled } state = State::Active;
     };
 
     FileRow* findRow(const std::string& id);

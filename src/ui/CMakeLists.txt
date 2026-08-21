@@ -58,6 +58,7 @@ target_link_libraries(dolphin-ui-bottom
 # -- 3. Shared widgets / panels / dialogs (used by 2+ features) ---------------
 add_library(dolphin-ui-shared STATIC
     shared/AppCommands.cpp
+    shared/contacts/ContactSymbols.cpp
     shared/panels/ContactInspectorPage.cpp
     shared/panels/ContactPickingPanel.cpp
     shared/panels/FeatureDrawingPanel.cpp

@@ -1,7 +1,7 @@
 // ContactEditorDialog.Form.cpp — attribute-form construction and tag controls.
 
 #include "ui/features/contacts/ContactEditorDialog.h"
-#include "ui/features/contacts/ContactVisuals.h"
+#include "ui/shared/contacts/ContactSymbols.h"
 #include "ui/shell/Theme.h"
 
 #include <QAbstractItemModel>
@@ -90,10 +90,10 @@ QWidget* ContactEditorDialog::buildForm()
         rl->setSpacing(Theme::kSpacing3);
         m_symbol = new QComboBox(row);
         m_symbol->setObjectName(QStringLiteral("ceCombo"));
-        for (int i = 0; i < cmvis::kContactSymbolCount; ++i) {
-            const auto& s = cmvis::kContactSymbols[i];
+        for (int i = 0; i < kContactSymbolCount; ++i) {
+            const auto& s = kContactSymbols[i];
             const QString id = QString::fromLatin1(s.id);
-            const QIcon icon = cmvis::contactSymbolIcon(
+            const QIcon icon = contactSymbolIcon(
                 id, 16, QColor(255, 200, 40, 220), QColor(0, 0, 0, 160));
             m_symbol->addItem(icon, tr(s.label), id);
         }

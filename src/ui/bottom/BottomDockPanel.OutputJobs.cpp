@@ -175,8 +175,9 @@ void BottomDockPanel::scheduleJobsRefresh()
     m_jobs_refresh_pending = true;
     QTimer::singleShot(40, this, [this]() {
         m_jobs_refresh_pending = false;
-        rebuildJobsTab();
         updateBadge(2, activeDisplayCount(m_hub), false);
+        if (m_active_tab == 2 && !m_collapsed)
+            rebuildJobsTab();
     });
 }
 

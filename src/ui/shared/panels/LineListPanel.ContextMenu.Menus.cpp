@@ -1,7 +1,7 @@
 // Shared tag, group, and symbol submenus used by LineListPanel context-menu aspects.
 #include "ui/shared/panels/LineListPanel.ContextMenu_p.h"
 #include "ui/shared/panels/LineListPanel_p.h"
-#include "ui/features/contacts/ContactVisuals.h"
+#include "ui/shared/contacts/ContactSymbols.h"
 
 #include <QIcon>
 #include <QInputDialog>
@@ -112,12 +112,12 @@ QMenu* buildSymbolMenu(
 {
     auto* menu = new QMenu(QObject::tr("Icon"), parent);
 
-    for (int i = 0; i < cmvis::kContactSymbolCount; ++i) {
-        const auto& entry = cmvis::kContactSymbols[i];
+    for (int i = 0; i < kContactSymbolCount; ++i) {
+        const auto& entry = kContactSymbols[i];
         const std::string symbol_id(entry.id);
         const QString qid = QString::fromLatin1(entry.id);
 
-        const QIcon icon = cmvis::contactSymbolIcon(
+        const QIcon icon = contactSymbolIcon(
             qid, 16, QColor(255, 200, 40, 220), QColor(0, 0, 0, 160));
         auto* action = menu->addAction(
             icon, QObject::tr(entry.label), parent,

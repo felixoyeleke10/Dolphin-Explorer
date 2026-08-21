@@ -166,6 +166,9 @@ void MainWindow::setupRuntimeServices()
                 // Submitted but parked behind a lane cap — show as Queued, not Running.
                 m_op_job_ids[op_id] = m_diag_hub->beginJob(
                     name, {}, 0, {}, 0.f, DiagnosticsHub::JobStatus::Queued);
+                if (m_import_overlay)
+                    m_import_overlay->addJob("op:" + std::to_string(op_id),
+                                             name, "RUN", 0.f, false);
             });
     connect(m_op_mgr, &app::OperationManager::operationStarted, this,
             [this](uint32_t op_id, const QString& name) {
@@ -173,6 +176,11 @@ void MainWindow::setupRuntimeServices()
                 const auto it = m_op_job_ids.find(op_id);
                 if (it != m_op_job_ids.end()) m_diag_hub->startJob(it->second);
                 else m_op_job_ids[op_id] = m_diag_hub->beginJob(name);
+                if (m_import_overlay) {
+                    const std::string row_id = "op:" + std::to_string(op_id);
+                    m_import_overlay->addJob(row_id, name, "RUN", 0.f, false);
+                    m_import_overlay->updateJob(row_id, 0, tr("Running"));
+                }
             });
     connect(m_op_mgr, &app::OperationManager::operationCompleted, this,
             [this](uint32_t op_id) {
@@ -181,6 +189,9 @@ void MainWindow::setupRuntimeServices()
                     m_diag_hub->endJob(it->second);
                     m_op_job_ids.erase(it);
                 }
+                if (m_import_overlay)
+                    m_import_overlay->finishJob("op:" + std::to_string(op_id),
+                                                tr("Completed"));
             });
     connect(m_op_mgr, &app::OperationManager::operationFailed, this,
             [this](uint32_t op_id, const QString& error) {
@@ -189,6 +200,8 @@ void MainWindow::setupRuntimeServices()
                     m_diag_hub->failJob(it->second, error);
                     m_op_job_ids.erase(it);
                 }
+                if (m_import_overlay)
+                    m_import_overlay->failJob("op:" + std::to_string(op_id), error);
             });
     connect(m_op_mgr, &app::OperationManager::operationCancelled, this,
             [this](uint32_t op_id) {
@@ -197,6 +210,8 @@ void MainWindow::setupRuntimeServices()
                     m_diag_hub->cancelJob(it->second);
                     m_op_job_ids.erase(it);
                 }
+                if (m_import_overlay)
+                    m_import_overlay->cancelJob("op:" + std::to_string(op_id));
             });
 
     // Route AppState notifications → output log and (for warnings/errors) DiagnosticsHub.

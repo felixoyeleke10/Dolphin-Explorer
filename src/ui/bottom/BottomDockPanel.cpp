@@ -56,6 +56,7 @@ void BottomDockPanel::switchTab(int idx)
         if (m_tab_btns[i]) m_tab_btns[i]->setChecked(i == idx);
 
     if (m_collapsed) setCollapsed(false);
+    if (idx == 2) rebuildJobsTab();
 }
 
 void BottomDockPanel::saveState() const

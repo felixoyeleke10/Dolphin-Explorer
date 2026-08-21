@@ -160,6 +160,12 @@ int main(int argc, char** argv)
     CHECK(dialog.findChild<QProgressBar*>("overallBar")->value() == 76);
     dialog.onMapLoadDone(30);
 
+    dialog.addJob("op:42", "Building SBP profile", "RUN", 0.f, false);
+    CHECK(dialog.hasDisplayableState());
+    dialog.cancelJob("op:42");
+    CHECK(label(dialog, "titleLabel")->text() == QStringLiteral("All Done"));
+    CHECK(button(dialog, "closeBtn")->isEnabled());
+
     std::printf("%d failure(s)\n", failures);
     return failures == 0 ? 0 : 1;
 }

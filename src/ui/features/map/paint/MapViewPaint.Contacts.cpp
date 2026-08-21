@@ -4,7 +4,7 @@
 #include "core/Contact.h"
 #include "core/SpatialRef.h"
 #include "geo/GeoUtils.h"
-#include "ui/features/contacts/ContactVisuals.h"
+#include "ui/shared/contacts/ContactSymbols.h"
 #include "ui/shell/Theme.h"
 
 #include <QPainter>
@@ -67,7 +67,7 @@ void MapView::paintContacts(QPainter& p) const
                               : c.color_rgb != 0 ? QColor::fromRgba(c.color_rgb)
                               : kContactFill;
 
-            const QPainterPath marker = cmvis::contactSymbolPath(
+            const QPainterPath marker = contactSymbolPath(
                 QString::fromStdString(c.symbol), r).translated(px);
 
             p.setPen(QPen(kContactOutline, selected ? 1.5 : 1.0));

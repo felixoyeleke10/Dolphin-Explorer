@@ -55,7 +55,8 @@ void ExecutionProgressDialog::addToQueueTotal(int n)
 void ExecutionProgressDialog::addJob(const std::string& layer_id,
                                   const QString&     filename,
                                   const QString&     format,
-                                  float              size_mb)
+                                  float              size_mb,
+                                  bool               reveal)
 {
     // New batch starting: purge stale Done/Failed rows so prior results don't block
     if (m_all_done) {
@@ -115,7 +116,7 @@ void ExecutionProgressDialog::addJob(const std::string& layer_id,
 
     updateHeader();
 
-    showForActiveBatch();
+    if (reveal) showForActiveBatch();
 
     // Bring it above siblings but do NOT activateWindow(): stealing the foreground
     // from the frameless main window makes it blink. WA_ShowWithoutActivating + this
@@ -247,6 +248,22 @@ void ExecutionProgressDialog::failJob(const std::string& layer_id,
         r->result_lbl->show();
     }
 
+    updateHeader();
+    updateOverallProgress();
+    checkAllDone();
+}
+
+void ExecutionProgressDialog::cancelJob(const std::string& layer_id)
+{
+    auto* r = findRow(layer_id);
+    if (!r) return;
+    applyCardState(*r, FileRow::State::Cancelled);
+    if (r->status_lbl) r->status_lbl->setText(tr("Cancelled"));
+    if (r->result_lbl) {
+        r->result_lbl->setText(tr("Cancelled"));
+        r->result_lbl->setProperty("state", "cancelled");
+        r->result_lbl->show();
+    }
     updateHeader();
     updateOverallProgress();
     checkAllDone();
