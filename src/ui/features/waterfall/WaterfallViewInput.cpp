@@ -548,7 +548,18 @@ void WaterfallView::contextMenuEvent(QContextMenuEvent* event)
         event->accept();
         return;
     }
-    emit contextMenuRequested(event->globalPos());
+    uint64_t contact_id = 0;
+    int best_dist = 12;
+    const WfLayout& lay = m_renderer.layout();
+    for (const WfContact& c : m_external_contacts) {
+        if (c.id == 0) continue;
+        QPoint px;
+        if (!WaterfallOverlayPainter::contactPixelPos(c, m_rows, lay, m_scroll, px))
+            continue;
+        const int d = (event->pos() - px).manhattanLength();
+        if (d < best_dist) { best_dist = d; contact_id = c.id; }
+    }
+    emit contextMenuRequested(event->globalPos(), contact_id);
 }
 
 } // namespace dolphin::ui

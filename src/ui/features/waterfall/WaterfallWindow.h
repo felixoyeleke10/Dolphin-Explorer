@@ -214,7 +214,7 @@ protected:
     void closeEvent(QCloseEvent* ev) override;
 
 private slots:
-    void onContextMenu(QPoint globalPos);
+    void onContextMenu(QPoint globalPos, uint64_t contact_id);
     void onPrevFix();
     void onNextFix();
     void onFrequencyBandChanged(int index);

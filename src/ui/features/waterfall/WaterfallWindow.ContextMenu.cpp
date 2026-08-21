@@ -7,9 +7,16 @@
 
 namespace dolphin::ui {
 
-void WaterfallWindow::onContextMenu(QPoint globalPos)
+void WaterfallWindow::onContextMenu(QPoint globalPos, uint64_t contact_id)
 {
     QMenu menu;
+    if (contact_id != 0) {
+        menu.addAction(tr("Edit Contact Details…"), this, [this, contact_id] {
+            const QString line = m_layer ? QString::fromStdString(m_layer->id) : QString{};
+            emit contactEditRequested(contact_id, line);
+        });
+        menu.addSeparator();
+    }
     menu.addAction(tr("Fit Width"), this, [this] {
         if (m_view) m_view->setHorizontalScale(0.f);
     });

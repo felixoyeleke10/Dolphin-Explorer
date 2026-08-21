@@ -274,7 +274,16 @@ void SubBottomView::contextMenuEvent(QContextMenuEvent* e)
         e->accept();
         return;
     }
-    emit contextMenuRequested(e->globalPos());
+    uint64_t contact_id = 0;
+    int best_dist = 12;
+    for (const ContactMark& mark : m_external_contacts) {
+        if (mark.id == 0) continue;
+        QPoint px;
+        if (!contactMarkPixelPos(mark, px)) continue;
+        const int d = (e->pos() - px).manhattanLength();
+        if (d < best_dist) { best_dist = d; contact_id = mark.id; }
+    }
+    emit contextMenuRequested(e->globalPos(), contact_id);
 }
 
 } // namespace dolphin::ui

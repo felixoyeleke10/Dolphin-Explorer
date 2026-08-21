@@ -167,7 +167,7 @@ private slots:
     void onViewScrollChanged(int first_trace, int total, int visible);
     void onCursorMoved(int trace_idx, float depth_s, double lat, double lon, bool nav_projected);
     void onCursorLeft();
-    void onContextMenu(const QPoint& global_pos);
+    void onContextMenu(const QPoint& global_pos, uint64_t contact_id);
     void onProcDebounce();  // fires after proc debounce settles; launches the actual background task
 
 private:

@@ -99,6 +99,7 @@ signals:
     void removeLayersRequested      (const std::vector<std::string>& layer_ids);
     void exportLayersRequested      (const std::vector<std::string>& layer_ids, const QString& format);
     // Context menu — source and contact actions
+    void editContactRequested       (uint64_t contact_id);
     void removeContactRequested     (uint64_t contact_id);
     void exportContactsRequested    ();
     void removeFeatureRequested     (uint64_t feature_id);

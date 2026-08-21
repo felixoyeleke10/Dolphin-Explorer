@@ -254,6 +254,8 @@ void WaterfallView::refreshExternalContacts(const std::vector<core::Contact>& co
     for (const auto& c : contacts) {
         WfContact wfc;
         wfc.id = c.id;   // lets marker double-click open this contact in the editor
+        wfc.symbol = c.symbol;
+        wfc.color_rgb = c.color_rgb;
 
         // A waterfall pick always has a slant range (the pick requires range_m > 0);
         // map/externally-placed contacts have range_m == 0. Discriminating on range_m

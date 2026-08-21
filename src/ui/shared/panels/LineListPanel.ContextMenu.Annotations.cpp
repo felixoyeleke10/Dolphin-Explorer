@@ -48,6 +48,11 @@ void LineListPanel::showContactContextMenu(QTreeWidgetItem* item,
     QMenu menu(this);
 
     if (contact) {
+        menu.addAction(tr("Edit Contact Details…"), this, [this, contact_id] {
+            emit editContactRequested(contact_id);
+        });
+        menu.addSeparator();
+
         menu.addMenu(buildSymbolMenu(
             this, contact->symbol,
             [this, target_contact_ids](std::string symbol) {

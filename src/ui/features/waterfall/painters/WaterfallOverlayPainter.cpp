@@ -6,6 +6,7 @@
 // Pure-geometry HUD elements → WaterfallOverlayPainterHUD.cpp
 
 #include "ui/features/waterfall/painters/WaterfallOverlayPainter.h"
+#include "ui/shared/contacts/ContactSymbols.h"
 #include "ui/shell/Theme.h"
 
 #include <QColor>
@@ -147,7 +148,7 @@ void WaterfallOverlayPainter::paintSeabedOverlay(
 }
 
 // -----------------------------------------------------------------------------
-//  Contact overlay — yellow diamond marker at each picked contact position
+//  Contact overlay — project-selected marker at each picked contact position
 // -----------------------------------------------------------------------------
 
 bool WaterfallOverlayPainter::contactPixelPos(
@@ -212,36 +213,24 @@ void WaterfallOverlayPainter::paintContactOverlay(
     p.save();
     p.setRenderHint(QPainter::Antialiasing);
 
-    // Diamond half-size in pixels
     static constexpr int kR = 6;
 
     for (const WfContact& c : contacts) {
         QPoint px;
         if (!contactPixelPos(c, rows, lay, scroll, px)) continue;
-        const int x = px.x();
-        const int y = px.y();
-
-        // Draw: dark halo diamond, then bright yellow fill diamond
-        const QPointF pts[4] = {
-            {double(x),     double(y - kR)},
-            {double(x + kR), double(y)    },
-            {double(x),     double(y + kR)},
-            {double(x - kR), double(y)    },
-        };
+        const QColor marker_fill = c.color_rgb != 0
+            ? QColor::fromRgba(c.color_rgb) : fill;
+        const QString symbol = QString::fromStdString(c.symbol);
+        const QPainterPath halo = contactSymbolPath(symbol, kR + 1).translated(px);
+        const QPainterPath marker = contactSymbolPath(symbol, kR).translated(px);
 
         p.setBrush(kContactHalo);
         p.setPen(Qt::NoPen);
-        QPointF halo[4] = {
-            {double(x),      double(y - kR - 1)},
-            {double(x + kR + 1), double(y)      },
-            {double(x),      double(y + kR + 1)},
-            {double(x - kR - 1), double(y)      },
-        };
-        p.drawPolygon(halo, 4);
+        p.drawPath(halo);
 
-        p.setBrush(fill);
-        p.setPen(QPen(fill.darker(150), 1));
-        p.drawPolygon(pts, 4);
+        p.setBrush(marker_fill);
+        p.setPen(QPen(marker_fill.darker(150), 1));
+        p.drawPath(marker);
     }
 
     p.restore();

@@ -23,7 +23,7 @@ namespace dolphin::ui {
 //
 //  Overlays (drawn in order):
 //    paintSeabedOverlay  — cyan polyline tracking bottom-detection
-//    paintContactOverlay — yellow diamond markers for placed contacts
+//    paintContactOverlay — shared project symbols/colors for placed contacts
 //    paintScaleBar       — two-section port/starboard bar at the top edge
 //    paintAmplitudeBar   — per-column mean amplitude chart at the bottom edge
 //    paintRuler          — ping-index labels on the left depth ruler

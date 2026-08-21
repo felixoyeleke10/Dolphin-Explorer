@@ -93,7 +93,7 @@ signals:
     void scaleChanged (int px_per_trace, float px_per_sample);
     void cursorMoved  (int trace_idx, float depth_s, double lat, double lon, bool nav_projected);
     void cursorLeft   ();
-    void contextMenuRequested(const QPoint& global_pos);
+    void contextMenuRequested(const QPoint& global_pos, uint64_t contact_id);
     // Contact placed at a trace (geo = that trace's nav position).
     void contactPicked(int trace_idx, float depth_s, double lat, double lon,
                        bool is_projected);

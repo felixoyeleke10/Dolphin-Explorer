@@ -1,6 +1,7 @@
 #pragma once
 #include "core/SidescanPing.h"   // SidescanChannel
 #include <cstdint>
+#include <string>
 
 namespace dolphin::ui {
 
@@ -32,6 +33,8 @@ struct WfContact {
     ContactClass          classification = ContactClass::Unknown;
     uint64_t              id             = 0;   // project contact id (0 = local echo,
                                                 //  not yet round-tripped via the bus)
+    std::string           symbol;               // shared contact glyph id
+    uint32_t              color_rgb      = 0;   // 0xAARRGGBB; 0 = viewer default
 };
 
 } // namespace dolphin::ui

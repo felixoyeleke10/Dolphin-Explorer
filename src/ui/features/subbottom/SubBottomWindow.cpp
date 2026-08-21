@@ -424,9 +424,16 @@ void SubBottomWindow::applySettings(const SubBottomDisplayParams& params,
     if (m_inspector) m_inspector->setViewScale(px_per_trace, px_per_sample);
 }
 
-void SubBottomWindow::onContextMenu(const QPoint& global_pos)
+void SubBottomWindow::onContextMenu(const QPoint& global_pos, uint64_t contact_id)
 {
     QMenu menu(this);
+    if (contact_id != 0) {
+        menu.addAction(tr("Edit Contact Details…"), this, [this, contact_id] {
+            const QString line = m_layer ? QString::fromStdString(m_layer->id) : QString{};
+            emit contactEditRequested(contact_id, line);
+        });
+        menu.addSeparator();
+    }
     menu.addAction(tr("Zoom In"),  this, [this] {
         if (m_view) m_view->setPxPerTrace(m_view->pxPerTrace() + 1);
     });

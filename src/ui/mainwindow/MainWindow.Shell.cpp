@@ -214,6 +214,8 @@ void MainWindow::setupCentralWidget()
             this, &MainWindow::onRemoveLayer);
     connect(m_line_list, &LineListPanel::removeContactRequested,
             this, &MainWindow::onRemoveContact);
+    connect(m_line_list, &LineListPanel::editContactRequested,
+            this, [this](uint64_t id) { onContactEditRequested(id, {}); });
     connect(m_line_list, &LineListPanel::removeFeatureRequested,
             this, [this](uint64_t id) {
         if (currentProject())

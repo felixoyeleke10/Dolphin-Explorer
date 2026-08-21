@@ -225,7 +225,7 @@ signals:
     // Scroll attempt past data boundary; direction = -1 (top) or +1 (bottom)
     void scrollBeyondBounds(int direction);
     // Right-click; globalPos is in screen coordinates for QMenu::exec().
-    void contextMenuRequested(QPoint globalPos);
+    void contextMenuRequested(QPoint globalPos, uint64_t contact_id);
 
 protected:
     void initializeGL() override;
