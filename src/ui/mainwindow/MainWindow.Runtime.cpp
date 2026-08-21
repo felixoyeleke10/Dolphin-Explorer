@@ -5,6 +5,7 @@
 #include "ui/features/map/MapView.h"
 #include "ui/features/map/MapViewportHost.h"
 #include "ui/features/map/sidescan/SidescanViewController.h"
+#include "ui/features/import/ImportProgressDialog.h"
 #include "ui/features/waterfall/WaterfallWindow.h"
 #include "ui/mainwindow/rightpanel/RightPanelHost.h"
 #include "ui/shared/panels/LineListPanel.h"
