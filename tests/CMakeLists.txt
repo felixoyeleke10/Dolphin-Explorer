@@ -211,7 +211,10 @@ add_executable(test_raster_cache
     test_raster_cache.cpp
 )
 target_include_directories(test_raster_cache PRIVATE ${CMAKE_SOURCE_DIR}/src)
-target_link_libraries(test_raster_cache PRIVATE dolphin-ui-map)
+target_link_libraries(test_raster_cache PRIVATE
+    dolphin-ui-map
+    dolphin-ui-contacts
+)
 set_target_properties(test_raster_cache PROPERTIES
     CXX_STANDARD 20
     AUTOMOC OFF

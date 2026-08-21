@@ -134,6 +134,7 @@ public:
     const std::vector<ItemGroup>& contactGroups() const { return m_contact_groups; }
     void           setContactGroup(uint64_t contact_id, const std::string& group_id);
     void           setContactTags(uint64_t contact_id, std::vector<std::string> tags);
+    void           setContactSymbol(uint64_t contact_id, std::string symbol);
 
     // Metadata
     const std::string& name()         const { return m_name; }

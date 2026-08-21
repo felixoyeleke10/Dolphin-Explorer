@@ -664,7 +664,8 @@ void testCoverageAndRasterShareNadirPolicy()
         const double outer_distance = std::hypot(
             raster_outer.lon - pings[0].nav.lon,
             raster_outer.lat - pings[0].nav.lat);
-        const double expected_outer = bake_ranges ? 16.0 : std::sqrt(375.0);
+        const double expected_outer = bake_ranges ? 16.0
+            : close_nadir ? std::sqrt(375.0) : 20.0;
         CHECK(std::abs(outer_distance - expected_outer) < 1e-6);
         if (close_nadir) {
             CHECK(std::abs(raster_inner.lon - pings[0].nav.lon) < 1e-9);
@@ -678,6 +679,25 @@ void testCoverageAndRasterShareNadirPolicy()
     verify(false, false); // Raw sample geometry with an open water column.
     verify(true, false);  // UI-only close; sample ranges are still raw slant.
     verify(true, true);   // SlantRangeNode-baked ground ranges.
+
+    // Showing the nadir band must not make raw and corrected map geometry
+    // identical. Raw samples retain their slant-distance footprint; corrected
+    // samples are compressed to ground range.
+    {
+        ui::SssGeorefParams raw_params;
+        raw_params.heading_source = ui::SssHeadingSource::FishSensor;
+        raw_params.show_nadir = true;
+        raw_params.slant_range_corrected = false;
+        auto corrected_params = raw_params;
+        corrected_params.slant_range_corrected = true;
+        const auto raw = ui::georeferenceSidescanPings(pings, raw_params);
+        const auto corrected = ui::georeferenceSidescanPings(pings, corrected_params);
+        CHECK(raw.strips.size() == corrected.strips.size());
+        if (!raw.strips.empty() && !corrected.strips.empty()) {
+            CHECK(raw.strips[0].points.back().ground_range_m
+                  > corrected.strips[0].points.back().ground_range_m);
+        }
+    }
 
     // Default operator preference (show_nadir = true): even without slant
     // correction the near-nadir seabed band is displayed — the inner edge
@@ -1130,16 +1150,18 @@ void testBeamRaysRetainPhysicalPerPingGeometry()
     CHECK(port_ray.ping_number == 1);
     CHECK(stbd_ray.ping_number == 2);
 
-    // Bottom pick (5 m), not nav altitude (12 m), controls ground range.
-    const double expected_ground = std::sqrt(20.0 * 20.0 - 5.0 * 5.0);
+    // SRC is not applied in this fixture, so the overlay must retain the raw
+    // 20 m slant footprint instead of silently using the 5 m bottom pick to
+    // present corrected ground range.
+    const double expected_range = 20.0;
     CHECK(std::abs(port_ray.origin.x() - 100.0) < 1e-9);
     CHECK(std::abs(port_ray.origin.y() - 200.0) < 1e-9);
     CHECK(std::abs(stbd_ray.origin.x() - 110.0) < 1e-9);
     CHECK(std::abs(stbd_ray.origin.y() - 210.0) < 1e-9);
     CHECK(std::abs(port_ray.outer.x() - 100.0) < 1e-6);
-    CHECK(std::abs(port_ray.outer.y() - (200.0 + expected_ground)) < 1e-6);
+    CHECK(std::abs(port_ray.outer.y() - (200.0 + expected_range)) < 1e-6);
     CHECK(std::abs(stbd_ray.outer.x() - 110.0) < 1e-6);
-    CHECK(std::abs(stbd_ray.outer.y() - (210.0 - expected_ground)) < 1e-6);
+    CHECK(std::abs(stbd_ray.outer.y() - (210.0 - expected_range)) < 1e-6);
 
     // Longitude-branch alignment must move ray endpoints with all other layer
     // geometry or the overlay separates from its mosaic at the antimeridian.

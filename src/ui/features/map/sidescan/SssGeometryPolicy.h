@@ -34,8 +34,10 @@ inline double sssUncorrectedAltitudeMetres(const core::SidescanPing& ping)
 
 // Return the outer edge of the actual sample product. Baked pings carry ground
 // ranges in each sample, so their farthest valid bin is authoritative. The
-// Unbaked pings retain the bottom-pick-preferred map geometry.
+// Uncorrected pings retain their raw slant-distance footprint. For corrected
+// but unbaked pings, altitude converts that footprint to ground range.
 inline bool sssOuterGroundRangeMetres(const core::SidescanPing& ping,
+                                      const SssGeorefParams& params,
                                       double& ground_m)
 {
     const bool baked = sssHasBakedGroundRanges(ping);
@@ -54,11 +56,11 @@ inline bool sssOuterGroundRangeMetres(const core::SidescanPing& ping,
     const double slant_m = ping.slant_range_m > 0.0f
         ? static_cast<double>(ping.slant_range_m)
         : 75.0;
-    const double altitude_m = sssUncorrectedAltitudeMetres(ping);
-    if (altitude_m <= 0.0) {
+    if (!sssCorrectionPresented(ping, params)) {
         ground_m = slant_m;
         return true;
     }
+    const double altitude_m = sssUncorrectedAltitudeMetres(ping);
     const auto corrected = core::slantToGroundRangeMetres(slant_m, altitude_m);
     if (!corrected) return false;
     ground_m = *corrected;

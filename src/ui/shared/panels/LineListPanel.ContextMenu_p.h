@@ -23,6 +23,11 @@ QMenu* buildGroupMenu(
     std::function<void(std::string)> apply_group,
     std::function<app::ItemGroup*(const std::string&)> create_group);
 
+QMenu* buildSymbolMenu(
+    QWidget* parent,
+    const std::string& current_symbol,
+    std::function<void(std::string)> apply_symbol);
+
 QMenu* buildBulkLayerGroupMenu(
     QWidget* parent,
     const std::vector<app::ItemGroup>& groups,

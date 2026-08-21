@@ -1,6 +1,7 @@
 // ContactEditorDialog.Form.cpp — attribute-form construction and tag controls.
 
 #include "ui/features/contacts/ContactEditorDialog.h"
+#include "ui/features/contacts/ContactVisuals.h"
 #include "ui/shell/Theme.h"
 
 #include <QAbstractItemModel>
@@ -11,6 +12,7 @@
 #include <QFormLayout>
 #include <QFrame>
 #include <QHBoxLayout>
+#include <QIcon>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
@@ -22,18 +24,6 @@
 namespace dolphin::ui {
 
 namespace {
-
-// Symbol combo items: display label + stored id ("" = auto).
-struct SymbolOpt { const char* label; const char* id; };
-const SymbolOpt kSymbols[] = {
-    { QT_TRANSLATE_NOOP("ContactEditorDialog", "Auto"),     ""         },
-    { QT_TRANSLATE_NOOP("ContactEditorDialog", "Circle"),   "circle"   },
-    { QT_TRANSLATE_NOOP("ContactEditorDialog", "Square"),   "square"   },
-    { QT_TRANSLATE_NOOP("ContactEditorDialog", "Triangle"), "triangle" },
-    { QT_TRANSLATE_NOOP("ContactEditorDialog", "Diamond"),  "diamond"  },
-    { QT_TRANSLATE_NOOP("ContactEditorDialog", "Cross"),    "cross"    },
-    { QT_TRANSLATE_NOOP("ContactEditorDialog", "Star"),     "star"     },
-};
 
 QDoubleSpinBox* makeMetreSpin()
 {
@@ -100,8 +90,13 @@ QWidget* ContactEditorDialog::buildForm()
         rl->setSpacing(Theme::kSpacing3);
         m_symbol = new QComboBox(row);
         m_symbol->setObjectName(QStringLiteral("ceCombo"));
-        for (const auto& s : kSymbols)
-            m_symbol->addItem(tr(s.label), QString::fromLatin1(s.id));
+        for (int i = 0; i < cmvis::kContactSymbolCount; ++i) {
+            const auto& s = cmvis::kContactSymbols[i];
+            const QString id = QString::fromLatin1(s.id);
+            const QIcon icon = cmvis::contactSymbolIcon(
+                id, 16, QColor(255, 200, 40, 220), QColor(0, 0, 0, 160));
+            m_symbol->addItem(icon, tr(s.label), id);
+        }
         auto* col_lbl = makeFieldLabel(tr("Color:"));
         m_color_btn = new QPushButton(row);
         m_color_btn->setObjectName(QStringLiteral("ceColorBtn"));

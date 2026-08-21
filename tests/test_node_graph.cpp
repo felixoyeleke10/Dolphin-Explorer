@@ -524,6 +524,19 @@ void testPersistedProvenanceReplacesPriorState()
                                   core::CorrectionFlag::Arc));
     CHECK(provenance.slant_range_corrected);
 
+    // SBP uses the same persisted provenance envelope. Its modality-specific
+    // flags must survive aggregation so reload/history cannot claim that baked
+    // samples are raw and offer to apply the same correction again.
+    core::SubBottomTrace sbp;
+    sbp.correction_flags = static_cast<uint32_t>(core::SbpCorrectionFlag::Agc)
+                         | static_cast<uint32_t>(core::SbpCorrectionFlag::BandPass);
+    const auto sbp_provenance = app::contracts::deriveProcessingProvenance({sbp});
+    CHECK(core::hasSbpCorrectionFlag(sbp_provenance.baked_correction_flags,
+                                     core::SbpCorrectionFlag::Agc));
+    CHECK(core::hasSbpCorrectionFlag(sbp_provenance.baked_correction_flags,
+                                     core::SbpCorrectionFlag::BandPass));
+    CHECK(!sbp_provenance.slant_range_corrected);
+
     // A subsequent baseline run with no correction flags must produce an empty
     // replacement state; old flags must never leak into History.
     pipeline::ArtifactBuffer unprocessed{core::SidescanPing{}};

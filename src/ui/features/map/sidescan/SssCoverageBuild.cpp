@@ -163,7 +163,7 @@ void buildSwathCoverage(const std::vector<core::SidescanPing>& pings,
 
             // Slant → ground range with optional altitude correction.
             double ground_m = 0.0;
-            if (!sssOuterGroundRangeMetres(ping, ground_m)) {
+            if (!sssOuterGroundRangeMetres(ping, params, ground_m)) {
                 hardBreak();
                 continue;
             }
@@ -197,7 +197,7 @@ void buildSwathCoverage(const std::vector<core::SidescanPing>& pings,
 
             // Inner edge: vessel track when SRC applied ("closed"),
             // or nadir dead-zone offset when SRC not applied ("opened").
-            if (params.slant_range_corrected) {
+            if (sssCorrectionPresented(ping, params)) {
                 seg_inner.push_back({cn.lon, cn.lat});
             } else {
                 const double nadir_m = sssInnerGapMetres(ping, params);

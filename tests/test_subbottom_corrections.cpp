@@ -186,6 +186,18 @@ int main()
         zero_traces.front().correction_flags,
         core::SbpCorrectionFlag::Normalize));
 
+    // A gain control enabled over a truly silent trace is also an identity
+    // operation. Do not bake a flag that would make reload skip a future gain
+    // after real samples become available.
+    identity_gain = {};
+    identity_gain.static_gain_en = true;
+    identity_gain.static_gain_db = 6.f;
+    assert(app::corrections::applySubBottomCorrections(
+        zero_traces, identity_gain, {}));
+    assert(!core::hasSbpCorrectionFlag(
+        zero_traces.front().correction_flags,
+        core::SbpCorrectionFlag::StaticGain));
+
     std::cout << "Sub-bottom correction tests passed\n";
     return 0;
 }

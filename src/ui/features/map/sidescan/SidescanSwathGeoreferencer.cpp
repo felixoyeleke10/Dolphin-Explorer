@@ -105,6 +105,7 @@ SwathGeorefResult georeferenceSidescanPings(
         // Prefer user/auto-detected bottom pick over raw nav altitude — the pick
         // is more accurate and is what seabed correction was applied to in the viewer.
         const bool ranges_baked = sssHasBakedGroundRanges(ping);
+        const bool correction_presented = sssCorrectionPresented(ping, params);
         const double altitude_m = sssUncorrectedAltitudeMetres(ping);
         const double min_range_m = ping.blanking_m > 0.f
             ? static_cast<double>(ping.blanking_m)
@@ -155,7 +156,7 @@ SwathGeorefResult georeferenceSidescanPings(
                 // processed swaths. The per-ping correction flag is authoritative:
                 // the UI may close the nadir without baking sample geometry.
                 ground_m = slant_m;
-            } else if (altitude_m > 0.0) {
+            } else if (correction_presented && altitude_m > 0.0) {
                 if (slant_m <= altitude_m) continue;
                 ground_m = std::sqrt(slant_m * slant_m - altitude_m * altitude_m);
             } else {
@@ -203,8 +204,6 @@ SwathGeorefResult georeferenceSidescanPings(
             // geometry anchor but make it transparent: otherwise its strong
             // amplitude becomes a synthetic seabed line along the navigation
             // track in both the 2D mosaic and the 3D drape.
-            const bool correction_presented =
-                sssCorrectionPresented(ping, params);
             if (correction_presented
                     && !strip.points.empty()
                     && strip.points.front().ground_range_m <= kRangeEpsilonM) {

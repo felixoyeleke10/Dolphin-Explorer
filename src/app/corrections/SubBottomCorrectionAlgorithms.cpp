@@ -170,9 +170,15 @@ bool applySubBottomCorrections(std::vector<core::SubBottomTrace>& traces,
         ? std::pow(10.0, static_cast<double>(gain.static_gain_db) / 20.0) : 1.0;
     applyTracePass(traces, core::SbpCorrectionFlag::StaticGain, static_gain_enabled,
         [gain_factor](std::vector<float>& samples) -> bool {
-            for (float& value : samples)
-                value = static_cast<float>(static_cast<double>(value) * gain_factor);
-            return true;
+            bool modified = false;
+            for (float& value : samples) {
+                if (!std::isfinite(value) || value == 0.f) continue;
+                const float gained = static_cast<float>(
+                    static_cast<double>(value) * gain_factor);
+                modified |= gained != value;
+                value = gained;
+            }
+            return modified;
         });
     if (isCancelled(cancelled)) return false;
 

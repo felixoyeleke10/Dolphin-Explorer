@@ -1,6 +1,7 @@
-// Shared tag and group submenus used by LineListPanel context-menu aspects.
+// Shared tag, group, and symbol submenus used by LineListPanel context-menu aspects.
 #include "ui/shared/panels/LineListPanel.ContextMenu_p.h"
 #include "ui/shared/panels/LineListPanel_p.h"
+#include "ui/features/contacts/ContactVisuals.h"
 
 #include <QIcon>
 #include <QInputDialog>
@@ -100,6 +101,30 @@ QMenu* buildGroupMenu(QWidget* parent,
         auto* group = create_group(name.toStdString());
         if (group) apply_group(group->id);
     });
+
+    return menu;
+}
+
+QMenu* buildSymbolMenu(
+    QWidget* parent,
+    const std::string& current_symbol,
+    std::function<void(std::string)> apply_symbol)
+{
+    auto* menu = new QMenu(QObject::tr("Icon"), parent);
+
+    for (int i = 0; i < cmvis::kContactSymbolCount; ++i) {
+        const auto& entry = cmvis::kContactSymbols[i];
+        const std::string symbol_id(entry.id);
+        const QString qid = QString::fromLatin1(entry.id);
+
+        const QIcon icon = cmvis::contactSymbolIcon(
+            qid, 16, QColor(255, 200, 40, 220), QColor(0, 0, 0, 160));
+        auto* action = menu->addAction(
+            icon, QObject::tr(entry.label), parent,
+            [symbol_id, apply_symbol]() { apply_symbol(symbol_id); });
+        action->setCheckable(true);
+        action->setChecked(symbol_id == current_symbol);
+    }
 
     return menu;
 }

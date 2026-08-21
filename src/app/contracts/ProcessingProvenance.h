@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/SidescanPing.h"
+#include "core/SubBottomTrace.h"
 #include "pipeline/IProcessingNode.h"
 
 #include <cstdint>
@@ -19,11 +20,16 @@ inline ProcessingProvenance deriveProcessingProvenance(
 {
     ProcessingProvenance result;
     for (const auto& artifact : artifacts) {
-        const auto* ping = std::get_if<core::SidescanPing>(&artifact);
-        if (!ping) continue;
-        result.baked_correction_flags |= ping->correction_flags;
-        result.slant_range_corrected |= core::hasCorrectionFlag(
-            ping->correction_flags, core::CorrectionFlag::SlantRange);
+        if (const auto* ping = std::get_if<core::SidescanPing>(&artifact)) {
+            result.baked_correction_flags |= ping->correction_flags;
+            result.slant_range_corrected |= core::hasCorrectionFlag(
+                ping->correction_flags, core::CorrectionFlag::SlantRange);
+        } else if (const auto* trace = std::get_if<core::SubBottomTrace>(&artifact)) {
+            // DataLayer::baked_correction_flags is modality-specific. Preserve
+            // the SBP trace provenance through the same persistence path used
+            // by SSS instead of silently reporting an unprocessed layer.
+            result.baked_correction_flags |= trace->correction_flags;
+        }
     }
     return result;
 }

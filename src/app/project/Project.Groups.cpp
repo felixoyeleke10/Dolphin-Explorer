@@ -152,4 +152,16 @@ void Project::setContactTags(uint64_t contact_id, std::vector<std::string> tags)
     }
 }
 
+void Project::setContactSymbol(uint64_t contact_id, std::string symbol)
+{
+    for (auto& c : m_contacts) {
+        if (c.id != contact_id) continue;
+        if (c.symbol == symbol) return;
+        c.symbol = std::move(symbol);
+        emit contactUpdated(contact_id);
+        emit modified();
+        return;
+    }
+}
+
 } // namespace dolphin::app

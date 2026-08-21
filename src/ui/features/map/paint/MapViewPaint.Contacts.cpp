@@ -1,15 +1,17 @@
-// MapViewPaint.Contacts.cpp — contact diamonds and rubber-band selection rect.
+// MapViewPaint.Contacts.cpp — contact markers and rubber-band selection rect.
 #include "ui/features/map/MapView.h"
 #include "app/project/Project.h"
 #include "core/Contact.h"
 #include "core/SpatialRef.h"
 #include "geo/GeoUtils.h"
+#include "ui/features/contacts/ContactVisuals.h"
 #include "ui/shell/Theme.h"
 
 #include <QPainter>
+#include <QPainterPath>
 
 namespace {
-// Contact diamond palette
+// Contact marker palette — used when a contact has no custom color_rgb.
 const QColor kContactFill       (255, 200,  40, 220);
 const QColor kContactSelFill    (255,  80,  80, 255);
 const QColor kContactOutline    (  0,   0,   0, 160);
@@ -56,17 +58,21 @@ void MapView::paintContacts(QPainter& p) const
 
             const bool   selected = (c.id == m_selected_contact_id);
             const int    r        = selected ? kSelRadius    : kRadius;
-            const QColor fill     = selected ? kContactSelFill : kContactFill;
+            // Selection always shows as the bright selection color — an
+            // unambiguous "this one is selected" cue takes priority over a
+            // contact's custom color. Otherwise: custom color_rgb if the
+            // operator set one via the editor or the right-click Icon menu,
+            // else the default fill.
+            const QColor fill = selected ? kContactSelFill
+                              : c.color_rgb != 0 ? QColor::fromRgba(c.color_rgb)
+                              : kContactFill;
 
-            QPolygonF diamond;
-            diamond << QPointF(px.x(),     px.y() - r)
-                    << QPointF(px.x() + r, px.y()    )
-                    << QPointF(px.x(),     px.y() + r)
-                    << QPointF(px.x() - r, px.y()    );
+            const QPainterPath marker = cmvis::contactSymbolPath(
+                QString::fromStdString(c.symbol), r).translated(px);
 
             p.setPen(QPen(kContactOutline, selected ? 1.5 : 1.0));
             p.setBrush(fill);
-            p.drawPolygon(diamond);
+            p.drawPath(marker);
 
             const QString lbl = QString::fromStdString(c.label);
             const int tx = static_cast<int>(px.x()) + r + 3;

@@ -34,6 +34,15 @@ void LineListPanel::showContactContextMenu(QTreeWidgetItem* item,
     QMenu menu(this);
 
     if (contact) {
+        menu.addMenu(buildSymbolMenu(
+            this, contact->symbol,
+            [this, contact_id](std::string symbol) {
+                m_project->setContactSymbol(contact_id, std::move(symbol));
+                refreshContacts();
+                emit activityLogged(
+                    tr("Icon changed for contact #%1").arg(contact_id), 8);
+            }));
+
         menu.addMenu(buildTagMenu(
             this, contact->tags,
             [this, contact_id](std::vector<std::string> tags) {
