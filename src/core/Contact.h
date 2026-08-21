@@ -20,6 +20,11 @@ struct Contact {
     float       width_m      = 0.0f;
     float       height_m     = 0.0f;
     float       shadow_m     = 0.0f;  // acoustic shadow length
+    // Calibration captured with a waterfall snapshot. Across-track is the
+    // image X axis; along-track is Y. Zero means an older/unscaled snapshot.
+    float       snapshot_across_m_per_px = 0.0f;
+    float       snapshot_along_m_per_px  = 0.0f;
+    float       pick_altitude_m          = 0.0f;
     float       burial_depth_m = 0.0f;  // depth of burial below seabed
     bool        height_not_measurable = false;  // "Not measurable" — height is indeterminate
     uint64_t    artifact_id  = 0;    // which artifact this contact was picked on

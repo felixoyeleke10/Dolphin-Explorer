@@ -36,7 +36,8 @@ void MainWindow::onWaterfallContactCreated(float range_m, double lat, double lon
                                            const QString& line_id,
                                            uint64_t abs_row,
                                            int channel_idx,
-                                           const QPixmap& snapshot)
+                                           const QPixmap& snapshot, float across_m_per_px,
+                                           float along_m_per_px, float altitude_m)
 {
     if (!currentProject()) return;
 
@@ -53,6 +54,9 @@ void MainWindow::onWaterfallContactCreated(float range_m, double lat, double lon
     c.range_m        = range_m;
     c.artifact_id    = abs_row;
     c.sample_idx     = static_cast<uint32_t>(channel_idx);
+    c.snapshot_across_m_per_px = across_m_per_px;
+    c.snapshot_along_m_per_px  = along_m_per_px;
+    c.pick_altitude_m          = altitude_m;
 
     auto* cmd = new AddContactCommand(currentProject(), c, []() {});
     m_undo_stack->push(cmd);

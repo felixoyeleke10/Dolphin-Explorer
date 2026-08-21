@@ -260,6 +260,18 @@ void ContactEditorDialog::loadContactIntoForm(const core::Contact& c)
     if (!path.isEmpty()) pm.load(path);
     if (pm.isNull() && m_snapshot_provider) pm = m_snapshot_provider(c);
     m_snap->setPixmap(pm);
+    m_snap->setMeasurementScale(c.snapshot_across_m_per_px,
+                                c.snapshot_along_m_per_px);
+    m_snap->setContactSide(c.range_m > 0.f ? (c.sample_idx == 0 ? -1 : 1) : 0);
+    const bool calibrated = m_snap->hasMeasurementScale();
+    m_snap->setMeasurementMode(ContactSnapshotView::NoMeasurement);
+    const QString measurement_tip = calibrated
+        ? tr("Click this field, then drag on the source image to measure it.")
+        : tr("Manual entry is available. This snapshot has no physical scale for drawing.");
+    m_length->setToolTip(measurement_tip);
+    m_width->setToolTip(measurement_tip);
+    m_height->setToolTip(measurement_tip);
+    m_shadow->setToolTip(measurement_tip);
     m_snap->resetView();
     m_scale_sl->setValue(100);
     m_rot_sl->setValue(0);

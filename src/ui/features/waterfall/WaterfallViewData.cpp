@@ -234,7 +234,8 @@ int WaterfallView::detectContactCandidates(int sensitivity)
             double lat = 0.0, lon = 0.0;
             bool projected = false;
             rangeToGeo(row, channel, range_m, lat, lon, projected);
-            emit contactPicked(row, channel, range_m, lat, lon, projected, QPixmap{});
+            emit contactPicked(row, channel, range_m, lat, lon, projected, QPixmap{},
+                               0.f, 0.f, std::isfinite(ping.altitude_m) ? ping.altitude_m : 0.f);
             last_row[side] = row;
             ++detected;
         }

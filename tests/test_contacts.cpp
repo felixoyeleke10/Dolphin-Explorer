@@ -157,6 +157,9 @@ static void testEditorFieldsRoundTrip()
         c.height_m       = 3.5f;
         c.height_not_measurable = true;
         c.shadow_m       = 12.25f;
+        c.snapshot_across_m_per_px = 0.125f;
+        c.snapshot_along_m_per_px  = 0.25f;
+        c.pick_altitude_m          = 18.5f;
         c.width_m        = 4.0f;
         c.range_m        = 41.0f;     // pick slant range (measured, not editable)
         c.length_m       = 9.5f;      // object length ("Length" in the editor)
@@ -180,6 +183,9 @@ static void testEditorFieldsRoundTrip()
     CHECK(c->confidence == dolphin::core::Confidence::Certain);
     CHECK(c->height_not_measurable == true);
     CHECK(c->shadow_m == 12.25f);
+    CHECK(c->snapshot_across_m_per_px == 0.125f);
+    CHECK(c->snapshot_along_m_per_px == 0.25f);
+    CHECK(c->pick_altitude_m == 18.5f);
     CHECK(c->range_m == 41.0f);      // range and length stay distinct fields
     CHECK(c->length_m == 9.5f);
     CHECK(c->burial_depth_m == 1.75f);

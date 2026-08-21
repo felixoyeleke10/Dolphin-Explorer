@@ -212,7 +212,8 @@ signals:
     // snapshot is a square grab of the waterfall around the pick (may be null).
     void contactPicked(int row_idx, core::SidescanChannel ch,
                        float range_m, double lat, double lon, bool is_projected,
-                       const QPixmap& snapshot);
+                       const QPixmap& snapshot, float across_m_per_px,
+                       float along_m_per_px, float altitude_m);
     // Feature (polygon/polyline) drawn on the waterfall. vertices are (lon,lat);
     // polygon=true closes the shape. The window attaches classification + line.
     void featureDrawn(const std::vector<QPointF>& lonlat_vertices, bool polygon,

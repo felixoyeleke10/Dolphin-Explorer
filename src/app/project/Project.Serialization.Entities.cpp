@@ -87,6 +87,9 @@ bool Project::restoreEntitiesFromJson(const util::JsonValue& root)
         c.height_m       = jc.get("height_m").asFloat();
         c.length_m       = jc.get("object_length_m").asFloat();
         c.shadow_m       = jc.get("shadow_m").asFloat();
+        c.snapshot_across_m_per_px = jc.get("snapshot_across_m_per_px").asFloat();
+        c.snapshot_along_m_per_px  = jc.get("snapshot_along_m_per_px").asFloat();
+        c.pick_altitude_m          = jc.get("pick_altitude_m").asFloat();
         c.burial_depth_m = jc.get("burial_depth_m").asFloat();
         c.height_not_measurable = jc.get("height_not_measurable").asBool();
         c.symbol         = jc.get("symbol").asString();

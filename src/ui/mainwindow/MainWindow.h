@@ -170,7 +170,8 @@ private slots:
                                    const QString& line_id,
                                    uint64_t abs_row,
                                    int channel_idx,
-                                   const QPixmap& snapshot);
+                                   const QPixmap& snapshot, float across_m_per_px,
+                                   float along_m_per_px, float altitude_m);
     void onWaterfallFeatureCreated(const std::vector<QPointF>& lonlat_vertices,
                                    bool polygon, bool is_projected,
                                    const QString& classification,

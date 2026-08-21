@@ -102,7 +102,8 @@ signals:
                         const QString& line_id,
                         uint64_t abs_row,
                         int channel_idx,
-                        const QPixmap& snapshot);
+                        const QPixmap& snapshot, float across_m_per_px,
+                        float along_m_per_px, float altitude_m);
 
     // Open the shared "Edit contact details" editor. id = specific contact
     // (marker double-click) or 0 (panel button → first contact on this line);

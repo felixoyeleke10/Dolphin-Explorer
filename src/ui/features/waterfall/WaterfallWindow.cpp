@@ -314,7 +314,8 @@ WaterfallWindow::WaterfallWindow(AppState* app_state, QWidget* parent)
     connect(m_view, &WaterfallView::contactPicked,
             this, [this](int row_idx, core::SidescanChannel ch,
                          float range_m, double lat, double lon, bool is_projected,
-                         const QPixmap& snapshot) {
+                         const QPixmap& snapshot, float across_m_per_px,
+                         float along_m_per_px, float altitude_m) {
                 const QString side = (ch == core::SidescanChannel::Port) ? tr("Port") : tr("Stbd");
                 m_status_left->setText(
                     tr("Contact placed — ping %1  ·  %2  %3 m")
@@ -329,7 +330,8 @@ WaterfallWindow::WaterfallWindow(AppState* app_state, QWidget* parent)
                 const uint64_t  abs_row  = static_cast<uint64_t>(m_window_first_row + row_idx);
                 const int       ch_idx   = (ch == core::SidescanChannel::Port) ? 0 : 1;
                 emit contactCreated(range_m, lat, lon, is_projected, cls, line_id,
-                                    abs_row, ch_idx, snapshot);
+                                    abs_row, ch_idx, snapshot, across_m_per_px,
+                                    along_m_per_px, altitude_m);
             });
 
     connect(m_view, &WaterfallView::cursorMoved,

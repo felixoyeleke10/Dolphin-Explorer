@@ -9,7 +9,9 @@
 #include "ui/shell/Theme.h"
 
 #include <QCheckBox>
+#include <QApplication>
 #include <QComboBox>
+#include <QDoubleSpinBox>
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -19,6 +21,7 @@
 #include <QVBoxLayout>
 
 #include <utility>
+#include <cmath>
 
 namespace dolphin::ui {
 
@@ -101,6 +104,36 @@ QWidget* ContactEditorDialog::buildImagePane()
         fl2->addWidget(m_snap);
         vl->addWidget(frame, 1);
     }
+
+    // The existing dimension fields are the measurement-tool selectors. Focus
+    // one on the left, then drag on the image; no duplicate toolbar is needed.
+    connect(qApp, &QApplication::focusChanged, this,
+            [this](QWidget*, QWidget* now) {
+        ContactSnapshotView::MeasurementMode mode = ContactSnapshotView::NoMeasurement;
+        if (now == m_length) mode = ContactSnapshotView::MeasureLength;
+        else if (now == m_width) mode = ContactSnapshotView::MeasureWidth;
+        else if (now == m_height) mode = ContactSnapshotView::MeasureHeight;
+        else if (now == m_shadow) mode = ContactSnapshotView::MeasureShadow;
+        m_snap->setMeasurementMode(mode);
+    });
+    connect(m_snap, &ContactSnapshotView::measurementCompleted, this,
+            [this](int mode, double metres) {
+        if (mode == ContactSnapshotView::MeasureLength) m_length->setValue(metres);
+        else if (mode == ContactSnapshotView::MeasureWidth) m_width->setValue(metres);
+        else if (mode == ContactSnapshotView::MeasureHeight) {
+            m_height_nm->setChecked(false);
+            m_height->setValue(metres);
+        } else if (mode == ContactSnapshotView::MeasureShadow) {
+            m_shadow->setValue(metres);
+            const double altitude = m_before.pick_altitude_m;
+            const double slant = m_before.range_m;
+            if (altitude > 0.0 && slant > altitude && metres > 0.0) {
+                const double ground = std::sqrt(slant * slant - altitude * altitude);
+                m_height_nm->setChecked(false);
+                m_height->setValue(altitude * metres / (ground + metres));
+            }
+        }
+    });
 
     // Footer: position readout (left) + "Show / hide contact icon" (right).
     {

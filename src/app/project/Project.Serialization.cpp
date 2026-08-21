@@ -334,6 +334,9 @@ std::string Project::toJson() const
         // range and still maps to range_m on read — reusing it would corrupt reads.
         jc["object_length_m"] = util::JsonValue(std::isfinite(c.length_m) ? static_cast<double>(c.length_m) : 0.0);
         jc["shadow_m"]       = util::JsonValue(std::isfinite(c.shadow_m) ? static_cast<double>(c.shadow_m) : 0.0);
+        jc["snapshot_across_m_per_px"] = util::JsonValue(std::isfinite(c.snapshot_across_m_per_px) ? static_cast<double>(c.snapshot_across_m_per_px) : 0.0);
+        jc["snapshot_along_m_per_px"] = util::JsonValue(std::isfinite(c.snapshot_along_m_per_px) ? static_cast<double>(c.snapshot_along_m_per_px) : 0.0);
+        jc["pick_altitude_m"] = util::JsonValue(std::isfinite(c.pick_altitude_m) ? static_cast<double>(c.pick_altitude_m) : 0.0);
         jc["burial_depth_m"] = util::JsonValue(std::isfinite(c.burial_depth_m) ? static_cast<double>(c.burial_depth_m) : 0.0);
         jc["height_not_measurable"] = util::JsonValue(c.height_not_measurable);
         jc["symbol"]         = util::JsonValue(c.symbol);

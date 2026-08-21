@@ -2,6 +2,7 @@
 
 #include "ui/features/waterfall/WaterfallView.h"
 #include "ui/features/waterfall/painters/WaterfallOverlayPainter.h"
+#include "geo/GeoUtils.h"
 
 #include <QContextMenuEvent>
 #include <QImage>
@@ -98,6 +99,10 @@ void WaterfallView::mousePressEvent(QMouseEvent* ev)
             // thumbnail in the Contact Manager. Grabbed now, before update()
             // repaints, so the new marker dot is not baked into the snapshot.
             QPixmap snapshot;
+            float across_m_per_px = 0.f;
+            float along_m_per_px  = 0.f;
+            float altitude_m      = std::isfinite(m_rows[row].altitude_m)
+                                  ? m_rows[row].altitude_m : 0.f;
             {
                 const QImage fb = grabFramebuffer();
                 if (!fb.isNull()) {
@@ -111,10 +116,38 @@ void WaterfallView::mousePressEvent(QMouseEvent* ev)
                     const int   y    = std::clamp(cy - h / 2, 0, fb.height() - h);
                     snapshot = QPixmap::fromImage(fb.copy(QRect(x, y, w, h)));
                     snapshot.setDevicePixelRatio(dpr);
+
+                    // Preserve physical scale in the captured image. X is
+                    // across-track range; Y is along-track vessel motion.
+                    core::SidescanChannel c0, c1;
+                    float r0 = 0.f, r1 = 0.f;
+                    constexpr int kProbePx = 40;
+                    const int probe_x = ev->pos().x()
+                        + (ch == core::SidescanChannel::Port ? -kProbePx : kProbePx);
+                    if (m_renderer.xToRange(ev->pos().x(), row, m_rows,
+                                             m_scroll.hZoom(), m_scroll.hPan(), c0, r0)
+                            && m_renderer.xToRange(probe_x, row, m_rows,
+                                                   m_scroll.hZoom(), m_scroll.hPan(), c1, r1)
+                            && c0 == ch && c1 == ch) {
+                        across_m_per_px = std::abs(r1 - r0)
+                            / static_cast<float>(kProbePx * dpr);
+                    }
+                    const int r_prev = std::max(0, row - 1);
+                    const int r_next = std::min(rowCount() - 1, row + 1);
+                    if (r_next > r_prev) {
+                        const auto& a = m_rows[r_prev];
+                        const auto& b = m_rows[r_next];
+                        if (a.lat != 0.0 && a.lon != 0.0 && b.lat != 0.0 && b.lon != 0.0) {
+                            const double metres = geo::haversineMetres(a.lat, a.lon, b.lat, b.lon);
+                            const int logical_px = (r_next - r_prev) * m_renderer.layout().row_height;
+                            if (metres > 0.0 && logical_px > 0)
+                                along_m_per_px = static_cast<float>(metres / (logical_px * dpr));
+                        }
+                    }
                 }
             }
             emit contactPicked(row, ch, range_m, contact_lat, contact_lon, proj,
-                               snapshot);
+                               snapshot, across_m_per_px, along_m_per_px, altitude_m);
 
             m_dirty = true;
             update();
