@@ -467,6 +467,8 @@ int main(int argc, char** argv)
 {
     QCoreApplication app(argc, argv);
 
+    CHECK(dolphin::app::ImportJobManager::maxConcurrentJobs() == 2);
+
     testClassifyNullProject();
     testClassifyUnknownSource();
     testClassifyReuseExisting();

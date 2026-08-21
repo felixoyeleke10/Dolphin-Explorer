@@ -176,6 +176,8 @@ QString qssDialogContacts()
         "QDialog#contactEditor { background: @bg; }"
 
         "QLabel#ceFieldLabel { color: @textSubtle; font-family: @font; font-size: @fontSm; }"
+        "QLabel#ceFieldLabel[measurementActive=\"true\"] { color: @accentSoft; font-weight: 600; }"
+        "QLabel#ceFieldLabel[measurementUnavailable=\"true\"] { color: @caution; }"
         "QLabel#ceEcho      { color: @textMuted;  font-family: @font; font-size: @fontSm; }"
         "QLabel#ceFooter    { color: @textMuted;  font-family: @font; font-size: @fontSm; }"
         "QLabel#ceSection {"
@@ -201,6 +203,10 @@ QString qssDialogContacts()
 
         // Keep the value clear of the stepper column.
         "QDoubleSpinBox#ceSpin { padding-right: 18px; }"
+        "QDoubleSpinBox#ceSpin[measurementActive=\"true\"] {"
+        "  border-color: @accent; background: rgba(@accentRgb,0.12);"
+        "}"
+        "QDoubleSpinBox#ceSpin[measurementUnavailable=\"true\"] { border-color: @caution; }"
         "QDoubleSpinBox#ceSpin::up-button {"
         "  subcontrol-origin: border; subcontrol-position: top right;"
         "  width: 16px; border: none; background: transparent; margin: 1px 1px 0 0;"

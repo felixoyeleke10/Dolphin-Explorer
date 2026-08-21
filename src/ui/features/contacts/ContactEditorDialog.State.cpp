@@ -65,17 +65,14 @@ bool editableEqual(const core::Contact& a, const core::Contact& b)
 } // namespace
 
 void ContactEditorDialog::setSnapshotProvider(
-    std::function<QPixmap(const core::Contact&)> fn)
+    std::function<ContactSnapshotData(const core::Contact&)> fn)
 {
     m_snapshot_provider = std::move(fn);
     // The constructor loads the first contact before the owner installs the
     // provider — fetch now if that load came up empty.
-    if (m_snapshot_provider && m_snap && !m_snap->hasPixmap() && m_index >= 0) {
-        if (const core::Contact* c = findContact(currentId())) {
-            const QPixmap pm = m_snapshot_provider(*c);
-            if (!pm.isNull()) m_snap->setPixmap(pm);
-        }
-    }
+    if (m_snapshot_provider && m_snap && m_index >= 0)
+        if (const core::Contact* c = findContact(currentId()))
+            loadContactIntoForm(*c);
 }
 
 // ---------------------------------------------------------------------------
@@ -258,10 +255,26 @@ void ContactEditorDialog::loadContactIntoForm(const core::Contact& c)
     QPixmap pm;
     const QString path = contactSnapshotPath(m_project, c.id);
     if (!path.isEmpty()) pm.load(path);
-    if (pm.isNull() && m_snapshot_provider) pm = m_snapshot_provider(c);
+    m_measure_across_m_per_px = c.snapshot_across_m_per_px;
+    m_measure_along_m_per_px  = c.snapshot_along_m_per_px;
+    m_measure_altitude_m      = c.pick_altitude_m;
+    if (m_snapshot_provider && (pm.isNull()
+            || m_measure_across_m_per_px <= 0.f
+            || m_measure_along_m_per_px <= 0.f)) {
+        const ContactSnapshotData recovered = m_snapshot_provider(c);
+        if (recovered.calibrated()) {
+            pm = recovered.pixmap;
+            m_measure_across_m_per_px = recovered.across_m_per_px;
+            m_measure_along_m_per_px  = recovered.along_m_per_px;
+            if (recovered.altitude_m > 0.f)
+                m_measure_altitude_m = recovered.altitude_m;
+        } else if (pm.isNull() && !recovered.pixmap.isNull()) {
+            pm = recovered.pixmap;
+        }
+    }
     m_snap->setPixmap(pm);
-    m_snap->setMeasurementScale(c.snapshot_across_m_per_px,
-                                c.snapshot_along_m_per_px);
+    m_snap->setMeasurementScale(m_measure_across_m_per_px,
+                                m_measure_along_m_per_px);
     m_snap->setContactSide(c.range_m > 0.f ? (c.sample_idx == 0 ? -1 : 1) : 0);
     const bool calibrated = m_snap->hasMeasurementScale();
     m_snap->setMeasurementMode(ContactSnapshotView::NoMeasurement);
@@ -306,6 +319,9 @@ core::Contact ContactEditorDialog::readForm() const
     c.length_m       = static_cast<float>(m_length->value());
     c.depth_m        = static_cast<float>(m_depth->value());
     c.burial_depth_m = static_cast<float>(m_burial->value());
+    c.snapshot_across_m_per_px = m_measure_across_m_per_px;
+    c.snapshot_along_m_per_px  = m_measure_along_m_per_px;
+    c.pick_altitude_m          = m_measure_altitude_m;
 
     c.confidence     = static_cast<core::Confidence>(
                            std::clamp(m_confidence->currentIndex(), 0, 2));

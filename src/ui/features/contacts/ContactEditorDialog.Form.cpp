@@ -173,13 +173,16 @@ QWidget* ContactEditorDialog::buildForm()
         rl->addWidget(m_height, 0);
         rl->addWidget(m_height_nm, 0);
         rl->addStretch(1);
-        fl->addRow(makeFieldLabel(tr("Height:")), row);
+        m_height_label = makeFieldLabel(tr("Height:"));
+        m_height_label->setProperty("measurementKind", QStringLiteral("height"));
+        m_height->setProperty("measurementKind", QStringLiteral("height"));
+        fl->addRow(m_height_label, row);
     }
 
     // Width + Length share a row; Shadow + Burial share a row — halves the
     // vertical footprint without losing any field.
-    auto pairRow = [&](const QString& l1, QDoubleSpinBox*& s1,
-                       const QString& l2, QDoubleSpinBox*& s2) {
+    auto pairRow = [&](const QString& l1, QLabel*& label1, QDoubleSpinBox*& s1,
+                       const QString& l2, QLabel*& label2, QDoubleSpinBox*& s2) {
         auto* row = new QWidget(host);
         auto* rl  = new QHBoxLayout(row);
         rl->setContentsMargins(0, 0, 0, 0);
@@ -187,6 +190,7 @@ QWidget* ContactEditorDialog::buildForm()
         s1 = makeMetreSpin(); s1->setParent(row);
         s1->setFixedWidth(kDimW);
         auto* lbl2 = makeFieldLabel(l2);
+        label2 = lbl2;
         lbl2->setFixedWidth(kDimLbl);
         lbl2->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
         s2 = makeMetreSpin(); s2->setParent(row);
@@ -195,10 +199,20 @@ QWidget* ContactEditorDialog::buildForm()
         rl->addWidget(lbl2, 0);
         rl->addWidget(s2, 0);
         rl->addStretch(1);
-        fl->addRow(makeFieldLabel(l1), row);
+        label1 = makeFieldLabel(l1);
+        fl->addRow(label1, row);
     };
-    pairRow(tr("Width:"),  m_width,  tr("Length:"), m_length);
-    pairRow(tr("Shadow:"), m_shadow, tr("Burial:"),  m_burial);
+    QLabel* burial_label = nullptr;
+    pairRow(tr("Width:"), m_width_label, m_width,
+            tr("Length:"), m_length_label, m_length);
+    pairRow(tr("Shadow:"), m_shadow_label, m_shadow,
+            tr("Burial:"), burial_label, m_burial);
+    m_width_label->setProperty("measurementKind", QStringLiteral("width"));
+    m_width->setProperty("measurementKind", QStringLiteral("width"));
+    m_length_label->setProperty("measurementKind", QStringLiteral("length"));
+    m_length->setProperty("measurementKind", QStringLiteral("length"));
+    m_shadow_label->setProperty("measurementKind", QStringLiteral("shadow"));
+    m_shadow->setProperty("measurementKind", QStringLiteral("shadow"));
 
     // Depth stays in the same first column as the other spins.
     {

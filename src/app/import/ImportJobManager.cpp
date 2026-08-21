@@ -7,18 +7,14 @@
 #include <QSet>
 #include <QString>
 #include <algorithm>
-#include <thread>
 
 namespace dolphin::app {
 
 int ImportJobManager::maxConcurrentJobs()
 {
-    // Use every logical core (floor 2). Parsing/decoding is CPU-bound, so this is
-    // the practical ceiling — more parallelism than cores only thrashes the disk
-    // and scheduler. The queue dispatches the rest as slots free up, so any number
-    // of files can be imported in one batch without an artificial limit.
-    const unsigned hc = std::thread::hardware_concurrency();
-    return static_cast<int>(std::max(2u, hc));
+    // D-14: each parse/decode is heavy in both CPU and disk bandwidth. Two
+    // concurrent jobs preserve headroom for the map, viewers, and UI thread.
+    return 2;
 }
 
 int ImportJobManager::effectiveQueuedJobCount(

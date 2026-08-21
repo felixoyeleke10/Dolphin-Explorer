@@ -102,6 +102,12 @@ void ContactSnapshotView::mousePressEvent(QMouseEvent* e)
     if (e->button() == Qt::LeftButton && m_measure_mode != NoMeasurement
             && hasMeasurementScale()) {
         m_measure_start = widgetToImage(e->position());
+        const QSizeF image_size(m_pixmap.size());
+        if (std::abs(m_measure_start.x()) > image_size.width() / 2.0
+                || std::abs(m_measure_start.y()) > image_size.height() / 2.0) {
+            e->ignore();
+            return;
+        }
         m_measure_end = m_measure_start;
         m_measuring = true;
         e->accept();
@@ -126,15 +132,23 @@ void ContactSnapshotView::mouseReleaseEvent(QMouseEvent* e)
     if (m_measuring && e->button() == Qt::LeftButton) {
         m_measure_end = constrainedEnd(e->position());
         m_measuring = false;
+        const QSizeF image_size(m_pixmap.size());
+        m_measure_end.setX(std::clamp(m_measure_end.x(),
+            -image_size.width() / 2.0, image_size.width() / 2.0));
+        m_measure_end.setY(std::clamp(m_measure_end.y(),
+            -image_size.height() / 2.0, image_size.height() / 2.0));
         const int index = static_cast<int>(m_measure_mode) - 1;
         if (index >= 0 && index < static_cast<int>(m_measurements.size())) {
-            m_measurements[static_cast<size_t>(index)] = {true, m_measure_start, m_measure_end};
             const QPointF d = m_measure_end - m_measure_start;
             const double metres = (m_measure_mode == MeasureLength
                                     || m_measure_mode == MeasureHeight)
                 ? std::abs(d.y()) * m_along_m_per_px
                 : std::abs(d.x()) * m_across_m_per_px;
-            emit measurementCompleted(static_cast<int>(m_measure_mode), metres);
+            if (metres > 0.001) {
+                m_measurements[static_cast<size_t>(index)] = {
+                    true, m_measure_start, m_measure_end};
+                emit measurementCompleted(static_cast<int>(m_measure_mode), metres);
+            }
         }
         update();
         e->accept();

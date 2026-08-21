@@ -16,6 +16,7 @@
 #include "core/Contact.h"
 #include "core/SidescanPing.h"
 #include "core/SpatialRef.h"
+#include "geo/GeoUtils.h"
 
 #include <QDir>
 #include <QFileInfo>
@@ -175,8 +176,14 @@ namespace {
 // Loads a bounded window from the parsed-artifact cache (index-first policy:
 // never a full-file decode) and applies a 2–98 % percentile stretch.
 QPixmap renderContactSourcePatch(app::ImportService* svc, app::Project* proj,
-                                 const core::Contact& c)
+                                 const core::Contact& c,
+                                 float* across_m_per_px = nullptr,
+                                 float* along_m_per_px = nullptr,
+                                 float* altitude_m = nullptr)
 {
+    if (across_m_per_px) *across_m_per_px = 0.f;
+    if (along_m_per_px)  *along_m_per_px = 0.f;
+    if (altitude_m)      *altitude_m = 0.f;
     if (!svc || !proj || c.range_m <= 0.f || c.line_id.empty()) return {};
     auto* layer = proj->findLayer(c.line_id);
     if (!layer || !layer->index_built) return {};
@@ -217,6 +224,30 @@ QPixmap renderContactSourcePatch(app::ImportService* svc, app::Project* proj,
     }
     const int   span = std::min(ns_ctr, 480);          // samples across the patch
     const float step = static_cast<float>(span) / kSide;
+
+    if (across_m_per_px && ns_ctr > 1) {
+        const int half = std::max(1, span / 2);
+        const int a = std::clamp(si0 - half, 0, ns_ctr - 1);
+        const int b = std::clamp(si0 + half, 0, ns_ctr - 1);
+        if (b > a) {
+            const float range_span = std::abs(ctr.samples[b].range_m
+                                            - ctr.samples[a].range_m);
+            const float image_px = static_cast<float>(b - a) / step;
+            if (range_span > 0.f && image_px > 0.f)
+                *across_m_per_px = range_span / image_px;
+        }
+    }
+    if (along_m_per_px && rows.size() > 1) {
+        const size_t mid = rows.size() / 2;
+        const size_t a = mid > 0 ? mid - 1 : mid;
+        const size_t b = std::min(rows.size() - 1, mid + 1);
+        if (b > a && rows[a].nav.valid && rows[b].nav.valid) {
+            const double dist = geo::navDistanceMetres(rows[a].nav, rows[b].nav);
+            if (dist > 0.0) *along_m_per_px = static_cast<float>(dist / (b - a));
+        }
+    }
+    if (altitude_m && std::isfinite(ctr.nav.altitude_m) && ctr.nav.altitude_m > 0.f)
+        *altitude_m = ctr.nav.altitude_m;
 
     // Map pixels → sample indices (port mirrors: range grows leftwards).
     std::vector<int> idx(static_cast<size_t>(kSide) * H, -1);
@@ -261,19 +292,22 @@ QPixmap renderContactSourcePatch(app::ImportService* svc, app::Project* proj,
 
 } // namespace
 
-QPixmap MainWindow::fetchContactSnapshot(const core::Contact& c)
+ContactSnapshotData MainWindow::fetchContactSnapshot(const core::Contact& c)
 {
-    QPixmap pm = renderContactSourcePatch(m_import_service, currentProject(), c);
-    if (!pm.isNull()) {
+    ContactSnapshotData result;
+    result.pixmap = renderContactSourcePatch(
+        m_import_service, currentProject(), c,
+        &result.across_m_per_px, &result.along_m_per_px, &result.altitude_m);
+    if (!result.pixmap.isNull()) {
         // Persist so the next open (and the Contact Manager thumbnails) reuse it.
         const QString path = cmvis::contactSnapshotPath(currentProject(), c.id);
         if (!path.isEmpty()) {
             QFileInfo fi(path);
             QDir().mkpath(fi.absolutePath());
-            pm.save(path, "PNG");
+            result.pixmap.save(path, "PNG");
         }
     }
-    return pm;
+    return result;
 }
 
 void MainWindow::onContactEditRequested(uint64_t id, const QString& line_id)

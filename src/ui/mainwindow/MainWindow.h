@@ -1,6 +1,7 @@
 #pragma once
 #include <QDateTime>
 #include <QMainWindow>
+#include "ui/features/contacts/ContactSnapshotData.h"
 #include <QMap>
 #include <QPointF>
 #include <QPointer>
@@ -200,7 +201,7 @@ private slots:
     void onContactEditRequested(uint64_t id, const QString& line_id);
     // Fetch-from-source: render a snapshot patch from the cached source pings
     // for a waterfall pick with no persisted PNG, persist it, and return it.
-    QPixmap fetchContactSnapshot(const core::Contact& c);
+    ContactSnapshotData fetchContactSnapshot(const core::Contact& c);
     void onLineProps();
     void showSidescanCorrectionDialog(bool navigation_mode);
     void onResetRaw();

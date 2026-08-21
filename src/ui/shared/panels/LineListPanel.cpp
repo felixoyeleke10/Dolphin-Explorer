@@ -288,7 +288,13 @@ void LineListPanel::onItemClicked(QTreeWidgetItem* item, int)
 
 void LineListPanel::onItemDoubleClicked(QTreeWidgetItem* item, int)
 {
-    if (!item || itemTypeOf(item) != ItemType::Layer) return;
+    if (!item) return;
+    if (itemTypeOf(item) == ItemType::Contact) {
+        const uint64_t id = item->data(0, kRoleId).toULongLong();
+        if (id != 0) emit editContactRequested(id);
+        return;
+    }
+    if (itemTypeOf(item) != ItemType::Layer) return;
     const std::string id = item->data(0, kRoleId).toString().toStdString();
     if (id.empty()) return;
 

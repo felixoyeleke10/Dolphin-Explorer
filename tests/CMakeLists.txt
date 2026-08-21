@@ -156,6 +156,21 @@ set_target_properties(test_contact_report PROPERTIES
 )
 add_test(NAME ContactReport COMMAND test_contact_report)
 
+# -- Contact snapshot interaction: constrained calibrated dimension drawing --
+add_executable(test_contact_snapshot_measurement
+    test_contact_snapshot_measurement.cpp
+)
+target_include_directories(test_contact_snapshot_measurement PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_contact_snapshot_measurement PRIVATE
+    dolphin-ui-contacts
+    Qt6::Widgets
+)
+set_target_properties(test_contact_snapshot_measurement PROPERTIES
+    CXX_STANDARD 20
+    AUTOMOC OFF
+)
+add_test(NAME ContactSnapshotMeasurement COMMAND test_contact_snapshot_measurement)
+
 # -- ZipWriter: structural ZIP validity (backs .docx export) --------------------
 add_executable(test_zip_writer
     test_zip_writer.cpp

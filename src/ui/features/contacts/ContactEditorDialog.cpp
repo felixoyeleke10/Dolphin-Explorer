@@ -13,15 +13,18 @@
 #include <QComboBox>
 #include <QDoubleSpinBox>
 #include <QFrame>
+#include <QEvent>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPushButton>
 #include <QSlider>
+#include <QStyle>
 #include <QToolButton>
 #include <QVBoxLayout>
 
 #include <utility>
 #include <cmath>
+#include <array>
 
 namespace dolphin::ui {
 
@@ -54,6 +57,14 @@ ContactEditorDialog::ContactEditorDialog(app::Project* project,
     form->setMaximumWidth(318);
     body->addWidget(form, 0, Qt::AlignTop);
 
+    for (QLabel* label : {m_height_label, m_width_label,
+                          m_length_label, m_shadow_label}) {
+        if (label) {
+            label->installEventFilter(this);
+            label->setCursor(Qt::PointingHandCursor);
+        }
+    }
+
     body->addWidget(buildImagePane(), 1);
     root->addWidget(buildCommandRow());
 
@@ -61,6 +72,27 @@ ContactEditorDialog::ContactEditorDialog(app::Project* project,
     for (int i = 0; i < static_cast<int>(m_ids.size()); ++i)
         if (m_ids[i] == current_id) { start = i; break; }
     loadIndex(start);
+}
+
+bool ContactEditorDialog::eventFilter(QObject* watched, QEvent* event)
+{
+    if (event->type() == QEvent::MouseButtonPress) {
+        QDoubleSpinBox* field = watched == m_height_label ? m_height
+                              : watched == m_width_label  ? m_width
+                              : watched == m_length_label ? m_length
+                              : watched == m_shadow_label ? m_shadow : nullptr;
+        if (field) {
+            // Choosing Height is an explicit request to measure it. Re-enable
+            // the existing field if this contact had previously been marked
+            // not measurable, otherwise the click cannot arm the canvas.
+            if (field == m_height && m_height_nm && m_height_nm->isChecked())
+                m_height_nm->setChecked(false);
+            field->setFocus(Qt::MouseFocusReason);
+            field->selectAll();
+            return true;
+        }
+    }
+    return QDialog::eventFilter(watched, event);
 }
 
 // ---------------------------------------------------------------------------
@@ -115,6 +147,43 @@ QWidget* ContactEditorDialog::buildImagePane()
         else if (now == m_height) mode = ContactSnapshotView::MeasureHeight;
         else if (now == m_shadow) mode = ContactSnapshotView::MeasureShadow;
         m_snap->setMeasurementMode(mode);
+        const auto setActive = [](QWidget* widget, bool active) {
+            if (!widget || widget->property("measurementActive").toBool() == active) return;
+            widget->setProperty("measurementActive", active);
+            widget->style()->unpolish(widget);
+            widget->style()->polish(widget);
+            widget->update();
+        };
+        setActive(m_height, mode == ContactSnapshotView::MeasureHeight);
+        setActive(m_height_label, mode == ContactSnapshotView::MeasureHeight);
+        setActive(m_width, mode == ContactSnapshotView::MeasureWidth);
+        setActive(m_width_label, mode == ContactSnapshotView::MeasureWidth);
+        setActive(m_length, mode == ContactSnapshotView::MeasureLength);
+        setActive(m_length_label, mode == ContactSnapshotView::MeasureLength);
+        setActive(m_shadow, mode == ContactSnapshotView::MeasureShadow);
+        setActive(m_shadow_label, mode == ContactSnapshotView::MeasureShadow);
+        const bool unavailable = mode != ContactSnapshotView::NoMeasurement
+                              && !m_snap->hasMeasurementScale();
+        const std::array<QWidget*, 8> measurement_widgets = {
+            m_height, m_height_label, m_width, m_width_label,
+            m_length, m_length_label, m_shadow, m_shadow_label};
+        for (QWidget* widget : measurement_widgets) {
+            const bool applies = widget && widget->property("measurementActive").toBool();
+            widget->setProperty("measurementUnavailable", applies && unavailable);
+            widget->style()->unpolish(widget);
+            widget->style()->polish(widget);
+        }
+        if (mode != ContactSnapshotView::NoMeasurement && m_img_coords) {
+            if (m_snap->hasMeasurementScale()) {
+                const QString name = mode == ContactSnapshotView::MeasureLength ? tr("LENGTH")
+                                   : mode == ContactSnapshotView::MeasureWidth  ? tr("WIDTH")
+                                   : mode == ContactSnapshotView::MeasureHeight ? tr("HEIGHT")
+                                                                                : tr("SHADOW");
+                m_img_coords->setText(tr("%1 armed — drag on the image").arg(name));
+            } else {
+                m_img_coords->setText(tr("Drawing unavailable: source scale could not be recovered"));
+            }
+        }
     });
     connect(m_snap, &ContactSnapshotView::measurementCompleted, this,
             [this](int mode, double metres) {
@@ -125,7 +194,7 @@ QWidget* ContactEditorDialog::buildImagePane()
             m_height->setValue(metres);
         } else if (mode == ContactSnapshotView::MeasureShadow) {
             m_shadow->setValue(metres);
-            const double altitude = m_before.pick_altitude_m;
+            const double altitude = m_measure_altitude_m;
             const double slant = m_before.range_m;
             if (altitude > 0.0 && slant > altitude && metres > 0.0) {
                 const double ground = std::sqrt(slant * slant - altitude * altitude);
@@ -133,6 +202,8 @@ QWidget* ContactEditorDialog::buildImagePane()
                 m_height->setValue(altitude * metres / (ground + metres));
             }
         }
+        if (m_img_coords)
+            m_img_coords->setText(tr("Measured %1 m").arg(metres, 0, 'f', 2));
     });
 
     // Footer: position readout (left) + "Show / hide contact icon" (right).

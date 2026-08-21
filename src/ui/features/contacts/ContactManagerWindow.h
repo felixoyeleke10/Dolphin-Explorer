@@ -10,6 +10,7 @@
 #include <set>
 #include <vector>
 #include "core/Contact.h"
+#include "ui/features/contacts/ContactSnapshotData.h"
 
 class QTreeWidget;
 class QTreeWidgetItem;
@@ -44,7 +45,7 @@ public:
 
     // Fetch-from-source snapshot fallback, forwarded to the contact editor
     // (set by MainWindow, which owns the ImportService).
-    void setSnapshotProvider(std::function<QPixmap(const core::Contact&)> fn)
+    void setSnapshotProvider(std::function<ContactSnapshotData(const core::Contact&)> fn)
         { m_snapshot_provider = std::move(fn); }
 
 signals:
@@ -175,7 +176,7 @@ private:
     bool m_confirm_delete  = false;
 
     QPointer<ContactEditorDialog> m_editor;   // one editor at a time
-    std::function<QPixmap(const core::Contact&)> m_snapshot_provider;
+    std::function<ContactSnapshotData(const core::Contact&)> m_snapshot_provider;
 };
 
 } // namespace dolphin::ui

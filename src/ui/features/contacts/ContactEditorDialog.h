@@ -6,6 +6,7 @@
 #include <functional>
 #include <vector>
 #include "core/Contact.h"
+#include "ui/features/contacts/ContactSnapshotData.h"
 
 class QCheckBox;
 class QComboBox;
@@ -58,7 +59,7 @@ public:
     // snapshot PNG so the owner can render one from the source pings on demand.
     // Re-attempts the fetch for the already-loaded contact (the constructor loads
     // the first contact before the owner can install the provider).
-    void setSnapshotProvider(std::function<QPixmap(const core::Contact&)> fn);
+    void setSnapshotProvider(std::function<ContactSnapshotData(const core::Contact&)> fn);
 
     // Re-sync after the project changed underneath us (edit committed, contact
     // removed elsewhere, project replaced). Keeps the current contact selected
@@ -77,6 +78,7 @@ protected:
     // All close paths (Close button → accept(), Esc → reject(), titlebar X →
     // closeEvent → reject()) funnel through done(); commit pending edits there.
     void done(int r) override;
+    bool eventFilter(QObject* watched, QEvent* event) override;
 
 private:
     QWidget* buildForm();
@@ -102,7 +104,10 @@ private:
     int                   m_index = -1;
     core::Contact         m_before;      // snapshot of the contact as loaded
     bool                  m_loading = false;
-    std::function<QPixmap(const core::Contact&)> m_snapshot_provider;
+    std::function<ContactSnapshotData(const core::Contact&)> m_snapshot_provider;
+    float m_measure_across_m_per_px = 0.f;
+    float m_measure_along_m_per_px  = 0.f;
+    float m_measure_altitude_m      = 0.f;
 
     // -- Form ------------------------------------------------------------------
     QLineEdit*      m_name       = nullptr;
@@ -120,10 +125,14 @@ private:
     QLabel*         m_coord_n_echo = nullptr;
     QLabel*         m_coord_e_echo = nullptr;
     QDoubleSpinBox* m_height     = nullptr;
+    QLabel*         m_height_label = nullptr;
     QCheckBox*      m_height_nm  = nullptr;
     QDoubleSpinBox* m_shadow     = nullptr;
+    QLabel*         m_shadow_label = nullptr;
     QDoubleSpinBox* m_width      = nullptr;
+    QLabel*         m_width_label = nullptr;
     QDoubleSpinBox* m_length     = nullptr;     // length_m (object length, not pick range)
+    QLabel*         m_length_label = nullptr;
     QDoubleSpinBox* m_depth      = nullptr;
     QDoubleSpinBox* m_burial     = nullptr;
     QComboBox*      m_confidence = nullptr;
