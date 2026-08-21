@@ -167,7 +167,8 @@ void MainWindow::setupRuntimeServices()
                 // Submitted but parked behind a lane cap — show as Queued, not Running.
                 m_op_job_ids[op_id] = m_diag_hub->beginJob(
                     name, {}, 0, {}, 0.f, DiagnosticsHub::JobStatus::Queued);
-                if (m_import_overlay)
+                if (m_import_overlay
+                        && !name.startsWith(QStringLiteral("Loading sidescan map")))
                     m_import_overlay->addJob("op:" + std::to_string(op_id),
                                              name, "RUN", 0.f, false);
             });
@@ -177,7 +178,8 @@ void MainWindow::setupRuntimeServices()
                 const auto it = m_op_job_ids.find(op_id);
                 if (it != m_op_job_ids.end()) m_diag_hub->startJob(it->second);
                 else m_op_job_ids[op_id] = m_diag_hub->beginJob(name);
-                if (m_import_overlay) {
+                if (m_import_overlay
+                        && !name.startsWith(QStringLiteral("Loading sidescan map"))) {
                     const std::string row_id = "op:" + std::to_string(op_id);
                     m_import_overlay->addJob(row_id, name, "RUN", 0.f, false);
                     m_import_overlay->updateJob(row_id, 0, tr("Running"));

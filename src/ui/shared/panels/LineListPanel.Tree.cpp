@@ -5,6 +5,7 @@
 #include "app/layers/LayerUtils.h"
 #include "app/project/Project.h"
 #include "core/Contact.h"
+#include "ui/shared/contacts/ContactSymbols.h"
 #include "ui/shell/Theme.h"
 #include <QApplication>
 #include <QBrush>
@@ -171,7 +172,15 @@ static void applyContactRow(QTreeWidgetItem* item,
     setItemType(item, ItemType::Contact);
     item->setData(0, kRoleId, static_cast<qulonglong>(contact.id));
     item->setForeground(0, softText());
-    applyTagDecoration(item, contact.tags);
+    // The Icon context action must give immediate feedback in the explorer,
+    // not only on the map. Tags remain available in the tooltip; the decoration
+    // itself represents the explicitly selected contact symbol and colour.
+    const QColor fill = contact.color_rgb != 0
+        ? QColor::fromRgba(contact.color_rgb)
+        : QColor(255, 200, 40, 220);
+    item->setIcon(0, contactSymbolIcon(
+        QString::fromStdString(contact.symbol), 16, fill, QColor(0, 0, 0, 160)));
+    item->setToolTip(0, tagToolTip(contact.tags));
 }
 
 static QTreeWidgetItem* addContactItem(QTreeWidgetItem* parent,

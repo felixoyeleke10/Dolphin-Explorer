@@ -164,4 +164,19 @@ void Project::setContactSymbol(uint64_t contact_id, std::string symbol)
     }
 }
 
+void Project::setContactSymbols(const std::vector<uint64_t>& contact_ids,
+                                const std::string& symbol)
+{
+    bool changed = false;
+    for (auto& c : m_contacts) {
+        if (std::find(contact_ids.begin(), contact_ids.end(), c.id)
+                == contact_ids.end() || c.symbol == symbol)
+            continue;
+        c.symbol = symbol;
+        changed = true;
+        emit contactUpdated(c.id);
+    }
+    if (changed) emit modified();
+}
+
 } // namespace dolphin::app

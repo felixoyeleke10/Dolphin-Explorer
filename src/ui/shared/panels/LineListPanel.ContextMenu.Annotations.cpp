@@ -23,6 +23,20 @@ void LineListPanel::showContactContextMenu(QTreeWidgetItem* item,
 {
     const uint64_t contact_id = item->data(0, kRoleId).toULongLong();
 
+    // Right-clicking one member of an existing multi-selection must operate on
+    // the complete selected contact set. A right-click outside that selection
+    // remains a single-contact action.
+    std::vector<uint64_t> target_contact_ids;
+    bool clicked_is_selected = false;
+    for (QTreeWidgetItem* selected : m_tree->selectedItems()) {
+        if (itemTypeOf(selected) != ItemType::Contact) continue;
+        const uint64_t id = selected->data(0, kRoleId).toULongLong();
+        target_contact_ids.push_back(id);
+        clicked_is_selected |= id == contact_id;
+    }
+    if (!clicked_is_selected)
+        target_contact_ids = {contact_id};
+
     const core::Contact* contact = nullptr;
     for (const auto& candidate : m_project->contacts()) {
         if (candidate.id == contact_id) {
@@ -36,11 +50,11 @@ void LineListPanel::showContactContextMenu(QTreeWidgetItem* item,
     if (contact) {
         menu.addMenu(buildSymbolMenu(
             this, contact->symbol,
-            [this, contact_id](std::string symbol) {
-                m_project->setContactSymbol(contact_id, std::move(symbol));
-                refreshContacts();
+            [this, target_contact_ids](std::string symbol) {
+                m_project->setContactSymbols(target_contact_ids, symbol);
                 emit activityLogged(
-                    tr("Icon changed for contact #%1").arg(contact_id), 8);
+                    tr("Icon changed for %n contact(s)", nullptr,
+                       static_cast<int>(target_contact_ids.size())), 8);
             }));
 
         menu.addMenu(buildTagMenu(

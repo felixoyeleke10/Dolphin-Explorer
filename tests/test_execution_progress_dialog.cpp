@@ -120,7 +120,7 @@ int main(int argc, char** argv)
 
     // A later map-only batch must discard old import rows and stage state.
     dialog.onMapLoadPending(9);
-    CHECK(label(dialog, "titleLabel")->text() == QStringLiteral("Opening project"));
+    CHECK(label(dialog, "titleLabel")->text() == QStringLiteral("Building map"));
     CHECK(!label(dialog, "subtitleLabel")->text().contains(QStringLiteral("line(s)")));
     dialog.onMapLoadDone(9);
 

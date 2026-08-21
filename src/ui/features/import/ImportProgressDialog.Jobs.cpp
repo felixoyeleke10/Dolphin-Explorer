@@ -13,6 +13,7 @@
 #include <QProgressBar>
 #include <QPushButton>
 #include <QRegularExpression>
+#include <QScrollArea>
 #include <QStringList>
 #include <QStyle>
 #include <QTimer>
@@ -108,6 +109,7 @@ void ExecutionProgressDialog::addJob(const std::string& layer_id,
     row.last_status  = tr("Queued");
 
     m_rows.push_back(std::move(row));
+    if (m_scroll) m_scroll->show();
 
     FileRow& r = m_rows.back();
     r.card = buildCard(r, m_list_body);
@@ -316,7 +318,7 @@ void ExecutionProgressDialog::updateHeader()
         m_title_lbl->setText(tr("All Done"));
     else if (total <= 0)
         // No per-file rows: either idle, or a map-only phase (opening a project).
-        m_title_lbl->setText(m_has_map_phase ? tr("Opening project")
+        m_title_lbl->setText(m_has_map_phase ? tr("Building map")
                                              : tr("Background Tasks"));
     else
         m_title_lbl->setText(m_op_is_processing
@@ -480,9 +482,13 @@ void ExecutionProgressDialog::onMapLoadPending(uint64_t task_id,
     ++m_pending_map_loads;
     ++m_map_total;
     m_map_task_names[task_id] = layer_name;
-    if (!layer_name.isEmpty()) m_active_map_name = layer_name;
+    // loadingProgress belongs to the active/first requested map build. Do not
+    // relabel that percentage with a later concurrently queued line.
+    if (!layer_name.isEmpty() && m_active_map_name.isEmpty())
+        m_active_map_name = layer_name;
     m_map_percent = 0;
     m_has_map_phase = true;
+    if (m_rows.empty() && m_scroll) m_scroll->hide();
 
     // Map-only phase (project open / reload): give the panel a "Building map" stage so
     // it reads sensibly even with no per-file rows.

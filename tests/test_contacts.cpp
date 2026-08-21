@@ -190,6 +190,31 @@ static void testEditorFieldsRoundTrip()
     CHECK(c->tags.size() == 2);
 }
 
+static void testQuickSymbolMutation()
+{
+    QTemporaryDir tmp; CHECK(tmp.isValid()); if (!tmp.isValid()) return;
+    auto p = Project::create("P", (tmp.path() + "/P.dlp").toStdString());
+    const uint64_t id = add(*p);
+    int updates = 0;
+    QObject::connect(p.get(), &Project::contactUpdated,
+                     [&updates, id](uint64_t changed) {
+                         if (changed == id) ++updates;
+                     });
+    p->setContactSymbol(id, "pin");
+    CHECK(find(p->contacts(), id)->symbol == "pin");
+    CHECK(updates == 1);
+    p->setContactSymbol(id, "pin");
+    CHECK(updates == 1); // idempotent menu selection does not repaint twice
+
+    const uint64_t second = add(*p);
+    int modified = 0;
+    QObject::connect(p.get(), &Project::modified, [&modified]() { ++modified; });
+    p->setContactSymbols({id, second}, "star");
+    CHECK(find(p->contacts(), id)->symbol == "star");
+    CHECK(find(p->contacts(), second)->symbol == "star");
+    CHECK(modified == 1);
+}
+
 int main(int argc, char** argv)
 {
     QCoreApplication app(argc, argv);
@@ -198,6 +223,7 @@ int main(int argc, char** argv)
     testRecycleBin();
     testSerializationRoundTrip();
     testEditorFieldsRoundTrip();
+    testQuickSymbolMutation();
     std::printf("\n%d passed, %d failed\n", g_pass, g_fail);
     return g_fail == 0 ? 0 : 1;
 }
