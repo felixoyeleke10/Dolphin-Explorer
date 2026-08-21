@@ -207,6 +207,12 @@ void ExecutionProgressDialog::applyCardState(FileRow& row, FileRow::State s)
 {
     row.state = s;
     if (!row.badge) return;
+    if (s == FileRow::State::Cancelled) {
+        row.badge->setText(QStringLiteral("-"));
+        row.badge->setStyleSheet(QString("color:%1; font-weight:600;")
+            .arg(QColor(Theme::kTextMuted).name()));
+        return;
+    }
     const QString glyph = (s == FileRow::State::Done)   ? QStringLiteral("✓")
                         : (s == FileRow::State::Failed) ? QStringLiteral("✕")
                                                         : QStringLiteral("●");
