@@ -259,7 +259,8 @@ void testRadiometryNodesAreLineStableAndIdempotent()
     const auto twice = gain.process(once, gain_params);
     const auto& out_dark = std::get<core::SidescanPing>(once[0]);
     const auto& out_bright = std::get<core::SidescanPing>(once[1]);
-    CHECK(out_bright.samples[0].amplitude > out_dark.samples[0].amplitude * 3);
+    CHECK(out_bright.samples[0].amplitude == out_dark.samples[0].amplitude);
+    CHECK(out_dark.samples[0].amplitude == 10000);
     CHECK(core::hasCorrectionFlag(out_dark.correction_flags,
                                   core::CorrectionFlag::GainNormalized));
     CHECK(std::get<core::SidescanPing>(twice[0]).samples[0].amplitude

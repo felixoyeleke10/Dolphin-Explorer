@@ -131,33 +131,10 @@ bool SidescanViewController::activateLayer(const std::string& layer_id,
     SssGeorefParams georef_params = m_georef_params;
     georef_params.slant_range_corrected = layer->slant_range_corrected;
 
-    // Progressive load: the heavy tiers (Medium/High) paint a fast Low preview
-    // first, then upgrade to the requested tier in the background (prebuildTier →
-    // prebuildTierComplete swap). BUT if the requested tier's raster is already
-    // cached fresh on disk (reopening a project, or re-applying the same settings),
-    // load it DIRECTLY — no Low preview, no ping decode/re-rasterize. CoverageOnly/
-    // Low build directly too, so only an uncached slow tier stages.
-    bool            requested_tier_fresh = false;
-    bool            low_tier_fresh = false;
-    if (m_quality == MapSonarQuality::Medium || m_quality == MapSonarQuality::High) {
-        const rastercache::Meta full_meta = rastercache::makeMeta(
-            store_path, nav_params, georef_params, m_quality,
-            display_ref.id, sss_params);
-        const std::string full_path =
-            rastercache::cachePath(store_path, layer_id, m_quality);
-        requested_tier_fresh = rastercache::isFresh(full_path, full_meta);
-        if (!requested_tier_fresh) {
-            const rastercache::Meta low_meta = rastercache::makeMeta(
-                store_path, nav_params, georef_params, MapSonarQuality::Low,
-                display_ref.id, sss_params);
-            const std::string low_path = rastercache::cachePath(
-                store_path, layer_id, MapSonarQuality::Low);
-            low_tier_fresh = rastercache::isFresh(low_path, low_meta);
-        }
-    }
-
-    const auto load_plan = detail::qualityLoadPlan(
-        m_quality, requested_tier_fresh, low_tier_fresh, as_active);
+    // Pick the tier to build. Active layers build the requested tier once while
+    // their index nav track remains visible. Non-active overview lines stay Low.
+    // This avoids the former cold Low-then-Medium/High double decode/raster pass.
+    const auto load_plan = detail::qualityLoadPlan(m_quality, as_active);
     MapSonarQuality build_quality = load_plan.build_quality;
     bool stage_upgrade = load_plan.stage_upgrade;
 
@@ -267,13 +244,17 @@ bool SidescanViewController::activateLayer(const std::string& layer_id,
                 // Extract intensity cache before moving res.layer_data.
                 {
                     IntensityCache ic;
-                    ic.pixels    = std::move(res.layer_data.intensity_cache);
+                    ic.pixels    = std::make_shared<std::vector<uint16_t>>(
+                        std::move(res.layer_data.intensity_cache));
                     ic.w         = res.layer_data.intensity_w;
                     ic.h         = res.layer_data.intensity_h;
                     ic.disp_low  = res.layer_data.intensity_disp_low;
                     ic.disp_high = res.layer_data.intensity_disp_high;
 
                     if (ic.valid()) {
+                        res.layer_data.gpu_intensity_image = makeGpuIntensityImage(ic);
+                        res.layer_data.gpu_display_params = effectiveGpuDisplayParams(
+                            ic, m_display_params, m_auto_stretch_enabled);
                         // The persisted raster is the durable quality-tier cache.
                         // Keep one resident intensity grid for the displayed tier;
                         // duplicating it in m_quality_tier_cache cost another
@@ -313,12 +294,8 @@ bool SidescanViewController::activateLayer(const std::string& layer_id,
                 m_loaded_layers.insert(layer_id);
                 m_resident_quality[layer_id] = current_quality;
 
-                // Progressive scheduling is deliberately sequential per line:
-                // paint the bounded first raster before queueing its expensive
-                // requested-tier upgrade. Starting both together let one line
-                // occupy both map-lane slots and starved every other imported
-                // line at nav-track-only state. With deferred upgrades, all
-                // queued Low previews get a chance to paint first.
+                // Retained for compatibility with cached plans created by older
+                // callers. Current cold loads build the requested tier once.
                 if (stage_upgrade
                         && has_raster
                         && m_project
@@ -458,8 +435,6 @@ bool SidescanViewController::activateLayer(const std::string& layer_id,
         // at once and stays separate from the import/decode ("heavy") lane.
         /*lane=*/"map");
 
-    // Stage 2 is queued by the successful first-paint handler above. Do not launch
-    // it here: first previews for other lines have priority over quality upgrades.
     return true;
 }
 

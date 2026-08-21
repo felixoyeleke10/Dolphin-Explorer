@@ -229,15 +229,14 @@ QWidget* ViewsPanel::buildSssPage()
     gl->addWidget(makeRowLabel(tr("Beam spacing"), page), 6, 0);
     gl->addWidget(m_sss_beam_spacing, 6, 1);
 
-    // Show/hide the near-nadir seabed band. Survey-wide operator preference
-    // (persisted as "sss/showNadir"); toggling re-rasters loaded lines, so the
-    // shell handles the rebuild + progress.
+    // Show/hide the near-nadir seabed band. Both footprints accompany the
+    // resident raster, so the survey-wide preference repaints immediately.
     m_sss_nadir = new QCheckBox(tr("Show nadir band"), page);
     m_sss_nadir->setObjectName("viewsCheck");
     m_sss_nadir->setToolTip(tr(
         "Show seabed data in the near-nadir zone under the vessel track.\n"
         "Off leaves the nadir gap open, making the geometrically compressed\n"
-        "near-track zone obvious for QC. Toggling rebuilds loaded lines."));
+        "near-track zone obvious for QC."));
     m_sss_nadir->setChecked(
         QSettings().value(QStringLiteral("sss/showNadir"), true).toBool());
     connect(m_sss_nadir, &QCheckBox::toggled,
@@ -245,8 +244,8 @@ QWidget* ViewsPanel::buildSssPage()
     gl->addWidget(m_sss_nadir, 7, 0, 1, 2);
 
     // Dynamic range — black/white points on the amplitude histogram. The
-    // handles set SonarDisplayParams::display_low/high; the caller re-rasters
-    // on commit (drag release), keeping the histogram itself instant.
+    // handles set SonarDisplayParams::display_low/high; commit recolours the
+    // resident intensity grid and updates GPU uniforms without re-rasterizing.
     gl->addWidget(makeRowLabel(tr("Dynamic range"), page), 8, 0, 1, 2);
     m_sss_hist = new HistogramRangeSlider(page);
     connect(m_sss_hist, &HistogramRangeSlider::rangeCommitted,

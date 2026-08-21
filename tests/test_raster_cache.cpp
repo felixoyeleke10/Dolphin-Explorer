@@ -45,6 +45,9 @@ static LayerMapData makeSample()
     cov.ribbons = { { {0.0, 0.0}, {1.0, 1.0}, {2.0, 0.0} },
                     { {3.0, 3.0}, {4.0, 4.0} } };
     d.coverage = { cov };
+    SwathCoverage hidden = cov;
+    hidden.ribbons[0][0] = QPointF(0.25, 0.25);
+    d.coverage_nadir_hidden = { hidden };
     d.beam_rays = {
         {core::SidescanChannel::Port, 1'000'000, 7,
          QPointF(-16.20, 57.30), QPointF(-16.21, 57.31)},
@@ -168,6 +171,22 @@ static bool locateCacheOffsets(const std::string& path, CacheOffsets& offsets)
         }
     }
 
+    quint64 hidden_coverage_count = 0;
+    ds >> hidden_coverage_count;
+    for (quint64 c = 0; c < hidden_coverage_count; ++c) {
+        ds >> u8;
+        quint64 ribbon_count = 0;
+        ds >> ribbon_count;
+        for (quint64 r = 0; r < ribbon_count; ++r) {
+            quint64 point_count = 0;
+            ds >> point_count;
+            for (quint64 p = 0; p < point_count; ++p) {
+                QPointF point;
+                ds >> point;
+            }
+        }
+    }
+
     offsets.beam_count = file.pos();
     quint64 beam_count = 0;
     ds >> beam_count;
@@ -271,6 +290,10 @@ int main()
         CHECK(out.coverage[0].ribbons.size() == 2, "ribbon count mismatch");
         CHECK(out.coverage[0].ribbons[0].size() == 3, "ribbon[0] size mismatch");
         CHECK(out.coverage[0].ribbons[0][1] == src.coverage[0].ribbons[0][1], "ribbon point mismatch");
+        CHECK(out.coverage_nadir_hidden.size() == 1, "hidden coverage size mismatch");
+        CHECK(out.coverage_nadir_hidden[0].ribbons[0][0]
+              == src.coverage_nadir_hidden[0].ribbons[0][0],
+              "hidden coverage point mismatch");
         CHECK(out.beam_rays.size() == src.beam_rays.size(), "beam-ray count mismatch");
         CHECK(out.beam_rays[0].channel == src.beam_rays[0].channel, "beam-ray channel mismatch");
         CHECK(out.beam_rays[0].timestamp_us == src.beam_rays[0].timestamp_us, "beam-ray timestamp mismatch");
@@ -510,6 +533,10 @@ int main()
         const auto base = hashOf(p, georef);
 
         CHECK(hashOf(p, georef) == base, "makeMeta not deterministic for identical params");
+        SssGeorefParams hidden_nadir = georef;
+        hidden_nadir.show_nadir = !georef.show_nadir;
+        CHECK(hashOf(p, hidden_nadir) == base,
+              "display-only nadir toggle invalidated the raster cache");
 
         // Sub-quantum drift (what a float→double→JSON→float round-trip introduces)
         // must NOT change the fingerprint.
@@ -646,7 +673,8 @@ int main()
         intensity.h = 1;
         intensity.disp_low = 0.10f;
         intensity.disp_high = 0.20f;
-        intensity.pixels = {6555}; // stored amplitude+1 ~= 10% full scale
+        intensity.pixels = std::make_shared<std::vector<uint16_t>>(
+            std::initializer_list<uint16_t>{6555}); // stored amplitude+1 ~= 10%
 
         const auto automatic = SidescanViewController::colorizeIntensityCache(
             intensity, std::nullopt, PaletteIndex::Greyscale, true);
@@ -666,6 +694,13 @@ int main()
             intensity, explicit_range, PaletteIndex::Greyscale, false);
         CHECK(explicit_on.pixel(0, 0) == explicit_off.pixel(0, 0),
               "auto-stretch overrode an explicit map display range");
+
+        QImage gpu_image = makeGpuIntensityImage(intensity);
+        CHECK(!gpu_image.isNull() && gpu_image.format() == QImage::Format_Grayscale16,
+              "GPU intensity handoff did not produce Grayscale16");
+        intensity.pixels.reset();
+        CHECK(*reinterpret_cast<const uint16_t*>(gpu_image.constBits()) == 6555,
+              "GPU intensity handoff did not retain shared buffer lifetime");
     }
 
     fs::remove(path, ec);

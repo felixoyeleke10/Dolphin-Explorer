@@ -285,6 +285,16 @@ void MapView3D::drawDrapes()
 
         D.texture->bind(0);
         m_drape_shader->setUniformValue(m_loc_drape_tex, 0);
+        if (m_drape_palette_texture) {
+            m_drape_palette_texture->bind(1);
+            m_drape_shader->setUniformValue(m_loc_drape_palette_tex, 1);
+        }
+        m_drape_shader->setUniformValue(m_loc_drape_raw, D.raw_intensity);
+        m_drape_shader->setUniformValue(m_loc_drape_low, D.display_params.display_low);
+        m_drape_shader->setUniformValue(m_loc_drape_high, D.display_params.display_high);
+        m_drape_shader->setUniformValue(m_loc_drape_gain, D.display_params.gain);
+        m_drape_shader->setUniformValue(m_loc_drape_contrast, D.display_params.contrast);
+        m_drape_shader->setUniformValue(m_loc_drape_threshold, D.display_params.threshold);
         m_drape_shader->setUniformValue(m_loc_drape_origin,
             QVector2D(D.bbox_x0, D.bbox_y0));
         m_drape_shader->setUniformValue(m_loc_drape_invext,
@@ -317,6 +327,7 @@ void MapView3D::drawDrapes()
         }
 
         D.texture->release();
+        if (m_drape_palette_texture) m_drape_palette_texture->release();
     }
 
     glDisable(GL_POLYGON_OFFSET_FILL);

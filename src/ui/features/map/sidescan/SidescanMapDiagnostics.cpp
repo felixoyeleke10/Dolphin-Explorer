@@ -37,6 +37,10 @@ void SidescanViewController::setShowNadir(bool show)
     if (m_georef_params.show_nadir == show) return;
     m_georef_params.show_nadir = show;
     QSettings().setValue(QStringLiteral("sss/showNadir"), show);
+    if (m_map_view) {
+        for (const auto& layer_id : m_loaded_layers)
+            m_map_view->setLayerShowNadir(layer_id, show);
+    }
 }
 
 void SidescanViewController::reloadCurrentLayer()
@@ -58,7 +62,7 @@ void SidescanViewController::reloadCurrentLayer()
     m_layer_intensity_cache.clear();  // stale at old CRS / georef
     m_quality_tier_cache.clear();     // stale at old CRS / georef
     for (const auto& id : to_reload)
-        activateLayer(id, m_project);
+        activateLayer(id, m_project, id == saved_active);
     // Restore active-layer selection (activateLayer overwrites m_active_layer_id).
     m_active_layer_id = saved_active;
     if (m_map_view && !saved_active.empty())
@@ -76,7 +80,7 @@ void SidescanViewController::reloadLayer(const std::string& layer_id)
     m_resident_quality.erase(layer_id);
     m_layer_intensity_cache.erase(layer_id);
     m_quality_tier_cache.erase(layer_id);
-    activateLayer(layer_id, m_project);
+    activateLayer(layer_id, m_project, layer_id == m_active_layer_id);
 }
 
 void SidescanViewController::applyInvalidations(
@@ -116,12 +120,10 @@ void SidescanViewController::applyLiveCorrections(const std::vector<std::string>
     // freshly-corrected tier in when it's ready (applyCachedTier). No blank, no
     // quality downgrade — the data never disappears during Apply.
     //
-    // Process line-by-line: a dedicated "sss:apply" lane with cap 1 rebuilds one
-    // line at a time so each completes and lands on the map before the next starts —
-    // clear sequential progress ("2 of 4 … 3 of 4"), one ~64 MB raster in flight at
-    // a time, and no CPU/IO thrash. The bounded source subset is decoded afresh,
-    // while the existing raster stays visible until the replacement is complete.
-    if (m_op_mgr) m_op_mgr->setLaneCap("sss:apply", 1);
+    // Use the same bounded concurrency as other heavy work (D-14). Two lines can
+    // decode/rasterize concurrently without the unbounded fan-out that caused CPU,
+    // memory, and disk thrash, while cutting multi-line Apply latency materially.
+    if (m_op_mgr) m_op_mgr->setLaneCap("sss:apply", 2);
     for (const auto& layer_id : targets)
         prebuildTier(layer_id, m_quality, m_project, "sss:apply");
 }
@@ -139,7 +141,11 @@ void SidescanViewController::applyDisplayParams(
             static_cast<const SonarDisplayParams&>(layer->sss_display_state.params);
         QImage image = colorizeIntensityCache(
             cache->second, display, m_palette_idx, m_auto_stretch_enabled);
-        if (!image.isNull()) m_map_view->updatePreviewImage(layer_id, std::move(image));
+        if (!image.isNull()) {
+            const SonarDisplayParams gpu = effectiveGpuDisplayParams(
+                cache->second, display, m_auto_stretch_enabled);
+            m_map_view->updatePreviewImage(layer_id, std::move(image), &gpu);
+        }
     }
 }
 
@@ -173,13 +179,8 @@ QImage SidescanViewController::colorizeIntensityCache(
     // Identity bounds inherit the canonical line-level stretch only while the
     // application-wide auto-stretch preference is enabled. Explicit non-identity
     // bounds always win. This keeps map and waterfall semantics identical.
-    SonarDisplayParams params = dp.value_or(SonarDisplayParams{});
-    if (auto_stretch_enabled
-        && (!dp.has_value()
-            || (params.display_low == 0.f && params.display_high == 1.f))) {
-        params.display_low  = cache.disp_low;
-        params.display_high = cache.disp_high;
-    }
+    const SonarDisplayParams params = effectiveGpuDisplayParams(
+        cache, dp, auto_stretch_enabled);
 
     // Build a 65 536-entry uint16 → QRgb LUT (same path as SwathRasterizer).
     std::array<QRgb, 65536> lut;
@@ -192,7 +193,7 @@ QImage SidescanViewController::colorizeIntensityCache(
     QImage img(cache.w, cache.h, QImage::Format_ARGB32_Premultiplied);
     img.fill(Qt::transparent);
     QRgb*           dst = reinterpret_cast<QRgb*>(img.bits());
-    const uint16_t* src = cache.pixels.data();
+    const uint16_t* src = cache.pixels->data();
     const int       n   = cache.w * cache.h;
 
     for (int i = 0; i < n; ++i) {
@@ -213,7 +214,7 @@ std::vector<float> SidescanViewController::amplitudeHistogram(
     const auto it = m_layer_intensity_cache.find(layer_id);
     if (it == m_layer_intensity_cache.end() || !it->second.valid() || nbins <= 0)
         return {};
-    const auto& px = it->second.pixels;   // uint16, stored amplitude+1; 0 = no return
+    const auto& px = *it->second.pixels;  // uint16, stored amplitude+1; 0 = no return
     const size_t n = px.size();
     // Sample to a fixed budget so layer selection stays instant on High tiers.
     const size_t stride = std::max<size_t>(1, n / 200000);
@@ -264,8 +265,11 @@ void SidescanViewController::repaletteAllLayers()
             QImage img = colorizeIntensityCache(
                 ic_it->second, m_display_params, m_palette_idx,
                 m_auto_stretch_enabled);
-            if (!img.isNull() && m_map_view)
-                m_map_view->updatePreviewImage(layer_id, std::move(img));
+            if (!img.isNull() && m_map_view) {
+                const SonarDisplayParams gpu = effectiveGpuDisplayParams(
+                    ic_it->second, m_display_params, m_auto_stretch_enabled);
+                m_map_view->updatePreviewImage(layer_id, std::move(img), &gpu);
+            }
             continue;
         }
         // Legacy/incomplete resident state: leave the old image visible and load

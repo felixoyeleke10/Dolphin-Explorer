@@ -2,6 +2,7 @@
 #include <string>
 #include <vector>
 #include <QImage>
+#include "render/sonar/SonarDisplayParams.h"
 #include <QPointF>
 #include <QRect>
 #include "core/SidescanPing.h"
@@ -150,6 +151,14 @@ struct NavStats {
     std::string     crs_label;              // e.g. "EPSG:32632 projected exact"
     std::string     unsupported_crs_id;     // non-empty if any pings used pseudo-degree fallback
 
+    // Transient wall-clock timings for the most recent cold build. They are not
+    // serialized into the raster cache; cache hits report only total_build_ms.
+    double decode_ms      = 0.0;
+    double corrections_ms = 0.0;
+    double normalize_ms   = 0.0;
+    double raster_ms      = 0.0;
+    double total_build_ms = 0.0;
+
     // -- View state (set post-placement on main thread) ------------------------
     bool  layer_visible  = true;
     bool  layer_active   = true;
@@ -217,6 +226,11 @@ struct LayerMapData {
 
     // Coverage footprints (port + starboard swath outlines).
     std::vector<SwathCoverage> coverage;
+    // Alternate footprint with the near-nadir QC gap open. Both footprints are
+    // built from the same decoded pings so the Views toggle is a repaint, not a
+    // sonar reload/raster rebuild.
+    std::vector<SwathCoverage> coverage_nadir_hidden;
+    bool show_nadir = true;
 
     // Per-ping overlay geometry generated from the same corrected pose and
     // slant/ground-range policy used by the mosaic.
@@ -251,6 +265,11 @@ struct LayerMapData {
     // Drawn below coverage ribbons and nav track in the map view.
     // The image covers exactly [lon_min, lon_max] × [lat_min, lat_max].
     QImage   preview_image;
+    // Palette-free amplitude image for the OpenGL drape path. Grayscale16 uses
+    // the same sentinel as intensity_cache (0=no return, amplitude stored +1).
+    // QImage implicit sharing keeps MapView and MapView3D handoffs cheap.
+    QImage   gpu_intensity_image;
+    SonarDisplayParams gpu_display_params;
     bool     preview_reduced = false;  // true: image downgraded due to memory cap
 
     // Greyscale intensity cache for zero-cost palette recoloring.

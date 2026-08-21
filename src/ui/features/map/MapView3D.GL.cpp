@@ -5,6 +5,7 @@
 #include "ui/features/map/MapView3D.h"
 
 #include <QOpenGLTexture>
+#include "render/sonar/SSSPalette.h"
 
 #include <cmath>
 #include <limits>
@@ -122,12 +123,31 @@ static const char* kDrapeFragSrc = R"glsl(
 #version 330 core
 in  vec2      vUV;
 uniform sampler2D uSonarTex;
+uniform sampler2D uPaletteTex;
+uniform bool  uRawIntensity;
+uniform float uDisplayLow;
+uniform float uDisplayHigh;
+uniform float uGain;
+uniform float uContrast;
+uniform float uThreshold;
 uniform float uAlpha;
 out vec4 fragColor;
 void main() {
     if (vUV.x < 0.0 || vUV.x > 1.0 || vUV.y < 0.0 || vUV.y > 1.0) discard;
     vec4 c = texture(uSonarTex, vUV);
-    if (c.a < 0.01) discard;
+    if (uRawIntensity) {
+        if (c.r <= (0.5 / 65535.0)) discard;
+        float v = max(0.0, (c.r * 65535.0 - 1.0) / 65535.0);
+        if (uDisplayHigh > uDisplayLow + 1.0 / 65535.0)
+            v = clamp((v - uDisplayLow) / (uDisplayHigh - uDisplayLow), 0.0, 1.0);
+        if (uGain > 0.0) v = pow(v, 1.0 / uGain);
+        v = (v - 0.5) * uContrast + 0.5;
+        float threshold = clamp(uThreshold, 0.0, 0.99);
+        v = v < threshold ? 0.0 : (v - threshold) / (1.0 - threshold);
+        c = texture(uPaletteTex, vec2(clamp(v, 0.0, 1.0), 0.5));
+    } else if (c.a < 0.01) {
+        discard;
+    }
     fragColor = vec4(c.rgb, c.a * uAlpha);
 }
 )glsl";
@@ -344,6 +364,13 @@ void MapView3D::initializeGL()
     m_loc_drape_vexag  = m_drape_shader->uniformLocation("uVExag");
     m_loc_drape_tex    = m_drape_shader->uniformLocation("uSonarTex");
     m_loc_drape_alpha  = m_drape_shader->uniformLocation("uAlpha");
+    m_loc_drape_raw    = m_drape_shader->uniformLocation("uRawIntensity");
+    m_loc_drape_palette_tex = m_drape_shader->uniformLocation("uPaletteTex");
+    m_loc_drape_low = m_drape_shader->uniformLocation("uDisplayLow");
+    m_loc_drape_high = m_drape_shader->uniformLocation("uDisplayHigh");
+    m_loc_drape_gain = m_drape_shader->uniformLocation("uGain");
+    m_loc_drape_contrast = m_drape_shader->uniformLocation("uContrast");
+    m_loc_drape_threshold = m_drape_shader->uniformLocation("uThreshold");
 
     m_vao.create();
     m_gl_ready = true;
@@ -449,6 +476,22 @@ void MapView3D::rebuildAllTerrainVbos()
 
 void MapView3D::uploadPendingDrapes()
 {
+    if (m_drape_palette_dirty || !m_drape_palette_texture) {
+        QImage palette(1024, 1, QImage::Format_RGBA8888);
+        for (int x = 0; x < palette.width(); ++x) {
+            const QRgb rgb = SSSPalette::color(
+                static_cast<float>(x) / static_cast<float>(palette.width() - 1),
+                m_sonar_palette);
+            palette.setPixelColor(x, 0, QColor::fromRgb(rgb));
+        }
+        auto* texture = new QOpenGLTexture(palette);
+        texture->setMinificationFilter(QOpenGLTexture::Linear);
+        texture->setMagnificationFilter(QOpenGLTexture::Linear);
+        texture->setWrapMode(QOpenGLTexture::ClampToEdge);
+        delete m_drape_palette_texture;
+        m_drape_palette_texture = texture;
+        m_drape_palette_dirty = false;
+    }
     for (auto& D : m_drape_layers) {
         if (!D.dirty) continue;
 
@@ -456,6 +499,12 @@ void MapView3D::uploadPendingDrapes()
             // Construct before destroying the old texture: if allocation throws,
             // D.texture remains valid and pointing at the previous resource.
             auto* tex = new QOpenGLTexture(D.pending_image);
+            if ((!tex->isCreated() || tex->textureId() == 0)
+                    && D.raw_intensity && !D.pending_fallback_image.isNull()) {
+                delete tex;
+                tex = new QOpenGLTexture(D.pending_fallback_image);
+                D.raw_intensity = false;
+            }
             tex->setMinificationFilter(QOpenGLTexture::LinearMipMapLinear);
             tex->setMagnificationFilter(QOpenGLTexture::Linear);
             tex->setWrapMode(QOpenGLTexture::ClampToEdge);
@@ -463,6 +512,7 @@ void MapView3D::uploadPendingDrapes()
             D.texture = tex;
             buildDrapeQuad(D);
             D.pending_image = QImage();
+            D.pending_fallback_image = QImage();
         }
 
         if (!D.pending_hull.empty())

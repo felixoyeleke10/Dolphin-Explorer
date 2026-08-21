@@ -6,7 +6,9 @@
 #include <QRgb>
 #include <array>
 #include <atomic>
+#include <cstring>
 #include <optional>
+#include <memory>
 #include <set>
 #include <string>
 #include <unordered_map>
@@ -32,18 +34,46 @@ class MapView;
 // the preview image can be rebuilt with a new palette without any disk I/O or
 // geometry work.  Sentinel: 0 = transparent (no sonar return).
 struct IntensityCache {
-    std::vector<uint16_t> pixels;
+    std::shared_ptr<std::vector<uint16_t>> pixels;
     int   w = 0, h = 0;
     float disp_low = 0.f, disp_high = 1.f;
 
-    bool valid() const { return !pixels.empty() && w > 0 && h > 0; }
+    bool valid() const { return pixels && !pixels->empty() && w > 0 && h > 0; }
 };
+
+inline QImage makeGpuIntensityImage(const IntensityCache& cache)
+{
+    if (!cache.valid()) return {};
+    auto* owner = new std::shared_ptr<std::vector<uint16_t>>(cache.pixels);
+    return QImage(reinterpret_cast<uchar*>((*owner)->data()),
+                  cache.w, cache.h, cache.w * static_cast<int>(sizeof(uint16_t)),
+                  QImage::Format_Grayscale16,
+                  [](void* info) {
+                      delete static_cast<std::shared_ptr<std::vector<uint16_t>>*>(info);
+                  }, owner);
+}
+
+inline SonarDisplayParams effectiveGpuDisplayParams(
+    const IntensityCache& cache,
+    const std::optional<SonarDisplayParams>& display,
+    bool auto_stretch_enabled)
+{
+    SonarDisplayParams params = display.value_or(SonarDisplayParams{});
+    if (auto_stretch_enabled
+            && (!display.has_value()
+                || (params.display_low == 0.f && params.display_high == 1.f))) {
+        params.display_low = cache.disp_low;
+        params.display_high = cache.disp_high;
+    }
+    return params;
+}
 
 // -- Per-quality-tier pre-built result -----------------------------------------
 // Produced by prebuildTier() as a short-lived main-thread handoff. The persisted
 // raster remains the durable tier cache; this object is consumed when displayed.
 struct PrebuiltTier {
     std::vector<SwathCoverage> coverage;
+    std::vector<SwathCoverage> coverage_nadir_hidden;
     std::vector<SidescanBeamRay> beam_rays;
     std::vector<QPointF>       nav_track;
     double lon_min =  1e18, lon_max = -1e18;

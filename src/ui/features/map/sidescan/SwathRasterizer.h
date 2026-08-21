@@ -345,13 +345,27 @@ inline size_t SwathRasterizer::rasterizeCell(QRgb*     pixels,
             double best_amplitude = 0.0;
             bool intersects = false;
             for (const Triangle& triangle : triangles) {
-                if (!triangleIntersectsPixel(triangle, px, py))
-                    continue;
                 double distance_sq = 0.0;
                 double edge_amplitude = 0.0;
-                if (closestTriangleSample(
-                        triangle, centre, distance_sq, edge_amplitude)
-                        && distance_sq < best_distance_sq) {
+                if (!closestTriangleSample(
+                        triangle, centre, distance_sq, edge_amplitude))
+                    continue;
+
+                // A unit pixel square is bounded by the circle of radius
+                // sqrt(0.5) around its centre and contains the circle of radius
+                // 0.5. Distance therefore gives two cheap exact decisions:
+                // outside the outer circle cannot intersect; inside the inner
+                // circle certainly intersects. Only the narrow corner annulus
+                // needs the expensive triangle/square edge test.
+                constexpr double kInnerRadiusSq = 0.25;
+                constexpr double kOuterRadiusSq = 0.5;
+                if (distance_sq > kOuterRadiusSq + area_epsilon)
+                    continue;
+                if (distance_sq > kInnerRadiusSq + area_epsilon
+                        && !triangleIntersectsPixel(triangle, px, py))
+                    continue;
+
+                if (distance_sq < best_distance_sq) {
                     intersects = true;
                     best_distance_sq = distance_sq;
                     best_amplitude = edge_amplitude;

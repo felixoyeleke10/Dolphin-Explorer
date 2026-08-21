@@ -165,14 +165,14 @@ bool applyAgc(std::vector<core::SidescanPing>& pings, const AgcSettings& input)
 
         std::vector<float> factors(channel_pings.size(), 1.f);
         if (input.mode == AgcMode::Global) {
-            double sum = 0.0; uint64_t count = 0;
-            for (const auto* ping : channel_pings) {
-                const auto sample_stats = stats(*ping);
-                sum += sample_stats.first; count += sample_stats.second;
+            // "Global" describes the across-sample statistic used for each
+            // ping. It must not collapse an entire channel to one gain: doing
+            // so preserves along-track level jumps instead of normalising them.
+            for (size_t row = 0; row < channel_pings.size(); ++row) {
+                const auto [sum, count] = stats(*channel_pings[row]);
+                if (count > 0 && sum > 0.0)
+                    factors[row] = static_cast<float>(gainFor(sum / count));
             }
-            if (count == 0 || !(sum > 0.0)) continue;
-            std::fill(factors.begin(), factors.end(),
-                      static_cast<float>(gainFor(sum / count)));
         } else {
             const size_t count = channel_pings.size();
             std::vector<double> prefix_sum(count + 1, 0.0);

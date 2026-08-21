@@ -448,15 +448,26 @@ void runChannel(std::vector<core::SidescanPing*>& chan, const WaterfallParams& p
     const auto applyUnlessBaked = [&](core::CorrectionFlag flag,
                                       const auto& operation) {
         std::vector<std::vector<uint16_t>*> unbaked_rows;
+        std::vector<core::SidescanPing*> unbaked_pings;
+        std::vector<std::vector<uint16_t>> before;
         unbaked_rows.reserve(chan.size());
-        for (size_t i = 0; i < chan.size(); ++i)
-            if (!core::hasCorrectionFlag(chan[i]->correction_flags, flag))
+        unbaked_pings.reserve(chan.size());
+        before.reserve(chan.size());
+        for (size_t i = 0; i < chan.size(); ++i) {
+            if (!core::hasCorrectionFlag(chan[i]->correction_flags, flag)) {
                 unbaked_rows.push_back(rows[i]);
+                unbaked_pings.push_back(chan[i]);
+                before.push_back(*rows[i]);
+            }
+        }
         if (unbaked_rows.empty()) return;
         if (!operation(unbaked_rows)) return;
-        for (size_t i = 0; i < chan.size(); ++i)
-            if (!core::hasCorrectionFlag(chan[i]->correction_flags, flag))
-                chan[i]->correction_flags |= flag;
+        // Line operators may change only some rows. Record provenance only on
+        // rows that actually changed so a no-op row remains eligible when a
+        // later run has enough/different context to correct it.
+        for (size_t i = 0; i < unbaked_rows.size(); ++i)
+            if (*unbaked_rows[i] != before[i])
+                unbaked_pings[i]->correction_flags |= flag;
     };
 
     if (params.beam_pattern.enabled)

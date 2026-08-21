@@ -82,6 +82,12 @@ int main(int argc, char* argv[])
     // lines must therefore produce two nav layers and two mosaics in 3D as well.
     {
         dolphin::ui::MapViewportHost host;
+        int host_gl_errors = 0;
+        QObject::connect(&host, &dolphin::ui::MapViewportHost::glInitError,
+                         [&host_gl_errors](const QString& msg) {
+            std::fprintf(stderr, "Host GL error: %s\n", msg.toUtf8().constData());
+            ++host_gl_errors;
+        });
         host.resize(800, 600);
         host.show();
 
@@ -96,6 +102,19 @@ int main(int argc, char* argv[])
             data.lat_max = 20.0;
             data.preview_image = QImage(4, 4, QImage::Format_RGBA8888);
             data.preview_image.fill(Qt::white);
+            data.gpu_intensity_image = QImage(4, 4, QImage::Format_Grayscale16);
+            data.gpu_intensity_image.fill(32768);
+            data.gpu_display_params.display_low = 0.1f;
+            data.gpu_display_params.display_high = 0.9f;
+            dolphin::ui::SwathCoverage full;
+            full.channel = dolphin::core::SidescanChannel::Port;
+            full.ribbons = {{QPointF(offset, 0.0), QPointF(offset, 20.0),
+                             QPointF(offset + 10.0, 20.0), QPointF(offset + 10.0, 0.0)}};
+            data.coverage = {full};
+            auto hidden = full;
+            hidden.ribbons[0][0].setX(offset + 2.0);
+            hidden.ribbons[0][1].setX(offset + 2.0);
+            data.coverage_nadir_hidden = {hidden};
             host.view2D()->setLayerMapData(id, std::move(data));
         };
         addLine("line-a", 0.0);
@@ -105,6 +124,16 @@ int main(int argc, char* argv[])
         CHECK(host.view2D()->layerDataIds().size() == 2);
         CHECK(host.view3D()->navLayerCount() == 2);
         CHECK(host.view3D()->drapeLayerCount() == 2);
+        host.setLayerShowNadir("line-a", false);
+        QApplication::processEvents();
+        CHECK(host.view2D()->layerData("line-a") != nullptr);
+        CHECK(!host.view2D()->layerData("line-a")->show_nadir);
+        CHECK(host.view3D()->drapeLayerCount() == 2);
+        host.setSonarPalette(dolphin::ui::PaletteIndex::Viridis);
+        host.setMode3D(true);
+        host.view3D()->update();
+        QApplication::processEvents();
+        CHECK(host_gl_errors == 0);
     }
 
     std::fprintf(stdout, "\n%d/%d tests passed\n", g_pass, g_pass + g_fail);

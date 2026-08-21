@@ -52,6 +52,8 @@ MapView3D::~MapView3D()
             D.quad_vbo.destroy();
             D.outline_vbo.destroy();
         }
+        delete m_drape_palette_texture;
+        m_drape_palette_texture = nullptr;
         m_vao.destroy();
     }
     delete m_shader;
@@ -59,6 +61,8 @@ MapView3D::~MapView3D()
     delete m_curtain_shader;
     delete m_terrain_shader;
     delete m_drape_shader;
+    delete m_drape_palette_texture;
+    m_drape_palette_texture = nullptr;
     doneCurrent();
 }
 
@@ -131,13 +135,16 @@ void MapView3D::removeLayer(const std::string& layer_id)
 
 void MapView3D::setSonarDrape(const std::string& layer_id,
                                const QImage& image,
+                               const QImage& intensity_image,
+                               const SonarDisplayParams& display_params,
                                double lon_min, double lat_min,
                                double lon_max, double lat_max,
                                std::vector<QPointF> hull_geo,
                                float opacity)
 {
     if (!m_has_origin) return;
-    if (image.isNull() || lon_min >= lon_max || lat_min >= lat_max) return;
+    if ((image.isNull() && intensity_image.isNull())
+            || lon_min >= lon_max || lat_min >= lat_max) return;
 
     const QVector3D sw = toLocal(lon_min, lat_min);
     const QVector3D ne = toLocal(lon_max, lat_max);
@@ -151,16 +158,44 @@ void MapView3D::setSonarDrape(const std::string& layer_id,
         it->opacity = opacity;   // seed once; live changes go through setLayerOpacity
     }
 
-    // GL tex row 0 = south (low Y), QImage row 0 = north (high Y) — mirror.
-    it->pending_image = image.convertToFormat(QImage::Format_RGBA8888).mirrored();
-    it->pending_hull  = std::move(hull_geo);
+    const bool use_raw = !intensity_image.isNull();
+    const QImage& source = use_raw ? intensity_image : image;
+    const quint64 source_key = source.cacheKey();
+    if (it->source_key != source_key || it->raw_intensity != use_raw) {
+        // GL tex row 0 = south (low Y), QImage row 0 = north (high Y).
+        it->pending_image = use_raw
+            ? source.mirrored()
+            : source.convertToFormat(QImage::Format_RGBA8888).mirrored();
+        it->pending_fallback_image = use_raw
+            ? image.convertToFormat(QImage::Format_RGBA8888).mirrored()
+            : QImage{};
+        it->source_key = source_key;
+        it->raw_intensity = use_raw;
+        it->dirty = true;
+        m_drapes_dirty = true;
+    }
+    it->display_params = display_params;
+    const bool geometry_changed = it->bbox_x0 != sw.x() || it->bbox_y0 != sw.y()
+        || it->bbox_w != ne.x() - sw.x() || it->bbox_h != ne.y() - sw.y();
+    if (geometry_changed || it->outline_vert_count == 0) {
+        it->pending_hull = std::move(hull_geo);
+        it->dirty = true;
+        m_drapes_dirty = true;
+    }
     it->bbox_x0 = sw.x();
     it->bbox_y0 = sw.y();
     it->bbox_w  = ne.x() - sw.x();
     it->bbox_h  = ne.y() - sw.y();
-    it->dirty   = true;
-    m_drapes_dirty = true;
+    update();
+}
 
+void MapView3D::setSonarPalette(int palette_index)
+{
+    palette_index = std::clamp(palette_index, 0, PaletteIndex::Count - 1);
+    if (m_sonar_palette == palette_index) return;
+    m_sonar_palette = palette_index;
+    m_drape_palette_dirty = true;
+    m_drapes_dirty = true;
     update();
 }
 

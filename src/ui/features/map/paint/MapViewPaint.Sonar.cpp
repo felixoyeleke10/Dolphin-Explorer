@@ -93,9 +93,12 @@ void MapView::paintSonarLayers(QPainter& p) const
     // show_inner=true: OddEvenFill donut (fill with nadir dead-zone hole).
     // show_inner=false: outer hull only (used for selection outline).
     auto drawMergedSwath = [&](const LayerMapData& ld, bool show_inner) {
+        const auto& display_coverage =
+            (!ld.show_nadir && !ld.coverage_nadir_hidden.empty())
+                ? ld.coverage_nadir_hidden : ld.coverage;
         const SwathCoverage* port_cov = nullptr;
         const SwathCoverage* stbd_cov = nullptr;
-        for (const auto& cov : ld.coverage) {
+        for (const auto& cov : display_coverage) {
             if      (cov.channel == core::SidescanChannel::Port)      port_cov = &cov;
             else if (cov.channel == core::SidescanChannel::Starboard) stbd_cov = &cov;
         }
@@ -144,7 +147,7 @@ void MapView::paintSonarLayers(QPainter& p) const
                 }
             }
         } else {
-            for (const auto& cov : ld.coverage) {
+            for (const auto& cov : display_coverage) {
                 for (const auto& ribbon : cov.ribbons) {
                     if (ribbon.size() < 3) continue;
                     QPolygonF poly;
@@ -167,14 +170,29 @@ void MapView::paintSonarLayers(QPainter& p) const
         p.setRenderHint(QPainter::SmoothPixmapTransform, true);
         forEachVisibleLayer([&](const LayerMapData& ld) {
             if (ld.preview_image.isNull()) return;
+            p.save();
             const QPointF tl = geoToPixel(ld.lon_min, ld.lat_max);
             const QPointF br = geoToPixel(ld.lon_max, ld.lat_min);
+            if (!ld.show_nadir && !ld.coverage_nadir_hidden.empty()) {
+                QPainterPath footprint;
+                footprint.setFillRule(Qt::WindingFill);
+                for (const auto& coverage : ld.coverage_nadir_hidden) {
+                    for (const auto& ribbon : coverage.ribbons) {
+                        if (ribbon.size() < 3) continue;
+                        QPolygonF polygon;
+                        polygon.reserve(static_cast<int>(ribbon.size()));
+                        for (const auto& point : ribbon)
+                            polygon.append(geoToPixel(point.x(), point.y()));
+                        footprint.addPolygon(polygon);
+                    }
+                }
+                if (!footprint.isEmpty()) p.setClipPath(footprint);
+            }
             // Clip this layer's mosaic to the drawn polygons (show inside) when
             // enabled and at least one polygon exists.
-            bool clipped = false;
             if (ld.clip_polygons) {
                 const QPainterPath& cp = sonarClipPath();
-                if (!cp.isEmpty()) { p.save(); p.setClipPath(cp); clipped = true; }
+                if (!cp.isEmpty()) p.setClipPath(cp, Qt::IntersectClip);
             }
             // Blend mode controls how this layer composites over layers already
             // drawn beneath it (visible where surveys overlap):
@@ -197,7 +215,7 @@ void MapView::paintSonarLayers(QPainter& p) const
             p.drawImage(QRectF(tl, br), ld.preview_image);
             p.setOpacity(1.0);
             p.setCompositionMode(QPainter::CompositionMode_SourceOver);
-            if (clipped) p.restore();
+            p.restore();
         });
         p.restore();
     }

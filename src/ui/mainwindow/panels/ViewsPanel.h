@@ -69,7 +69,7 @@ signals:
     void sssClipPolygonsToggled(bool on);
     void sssShowBeamsToggled(bool on);
     void sssBeamSpacingChanged(int spacing);
-    // Show/hide the near-nadir seabed band — survey-wide; re-rasters loaded lines.
+    // Show/hide the near-nadir seabed band — survey-wide, immediate repaint.
     void sssShowNadirToggled(bool on);
     // SSS dynamic range (black/white points in [0,1]). Committed fires on drag
     // release → the caller does the mosaic re-raster there.

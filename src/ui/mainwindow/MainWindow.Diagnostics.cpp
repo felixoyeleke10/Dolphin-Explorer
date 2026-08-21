@@ -259,6 +259,15 @@ void MainWindow::onMapDiagnosticsReady(const QString& layer_id, const NavStats& 
             .arg(stats.pings_available)
             .arg(stats.memory_reduced ? tr("  memory-reduced") : QString{})
             .arg(QString::fromStdString(stats.crs_label)));
+    if (stats.total_build_ms > 0.0) {
+        m_diag_hub->logOutput(
+            tr("    timing total=%1 ms  decode=%2  corrections=%3  normalize=%4  raster=%5")
+                .arg(stats.total_build_ms, 0, 'f', 1)
+                .arg(stats.decode_ms, 0, 'f', 1)
+                .arg(stats.corrections_ms, 0, 'f', 1)
+                .arg(stats.normalize_ms, 0, 'f', 1)
+                .arg(stats.raster_ms, 0, 'f', 1));
+    }
 
     // Stage 3: view
     {

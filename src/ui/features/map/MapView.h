@@ -44,7 +44,8 @@ public:
     // Replace only the preview image for an already-loaded layer.
     // Used by SidescanViewController for instant palette recoloring — no geometry
     // rebuild needed because coverage + nav track are palette-independent.
-    void updatePreviewImage(const std::string& layer_id, QImage img);
+    void updatePreviewImage(const std::string& layer_id, QImage img,
+                            const SonarDisplayParams* gpu_params = nullptr);
 
     void removeLayerData    (const std::string& layer_id);
     void setLayerVisible    (const std::string& layer_id, bool visible);
@@ -53,6 +54,7 @@ public:
     void setLayerClipPolygons(const std::string& layer_id, bool clip);
     void setLayerShowBeams  (const std::string& layer_id, bool show);
     void setLayerBeamSpacing(const std::string& layer_id, int spacing);
+    void setLayerShowNadir(const std::string& layer_id, bool show);
     void clearAllLayerData  ();
 
     // Input mode: ModePan for pan+click-select, ModeSelect for rubber-band.

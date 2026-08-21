@@ -187,9 +187,9 @@ int main()
                    == full.front().samples[source_indices[i]].amplitude);
     }
 
-    // Global AGC is one line-level gain per channel. It must preserve the
-    // relative brightness between pings instead of independently forcing every
-    // ping to the same mean (which is Variable AGC behaviour at window=1).
+    // Global AGC derives an across-sample statistic for each ping. It must
+    // remove an along-track level discontinuity instead of applying one
+    // channel-wide gain that leaves the discontinuity intact.
     {
         WaterfallParams params;
         params.agc.enabled = true;
@@ -197,6 +197,8 @@ int main()
         params.agc.strength = 1.f;
         params.agc.edge_skip_samples = 0;
         params.agc.noise_floor_pct = 0.f;
+        params.agc.gain_cap_db = 60.f;
+        params.agc.target_mean = 20000.f;
 
         auto dark = makePing(0.f, 10.f, 16, 1000);
         auto bright = makePing(0.f, 10.f, 16, 4000);
@@ -204,10 +206,8 @@ int main()
         std::vector<core::SidescanPing> pings{dark, bright};
         dolphin::ui::imaging::applyCalibration(pings, params);
 
-        const float dark_gain = static_cast<float>(pings[0].samples[0].amplitude) / 1000.f;
-        const float bright_gain = static_cast<float>(pings[1].samples[0].amplitude) / 4000.f;
-        assert(near(dark_gain, bright_gain, 0.01f));
-        assert(pings[1].samples[0].amplitude > pings[0].samples[0].amplitude * 3);
+        assert(near(static_cast<float>(pings[0].samples[0].amplitude),
+                    static_cast<float>(pings[1].samples[0].amplitude)));
     }
 
     // Mixed stores are defensive input, but baked gain records must still never
@@ -300,8 +300,6 @@ int main()
     }
 
     // Mixed durable stores must not apply already-baked line operators twice.
-    // Baked rows still participate in the correction statistics so unbaked
-    // neighbours receive the same line-level correction.
     {
         WaterfallParams params;
         params.beam_pattern.enabled = true;
@@ -325,6 +323,8 @@ int main()
         // of forcing every column toward an arbitrary half-scale target.
         assert(pings[1].samples[0].amplitude
                == unbaked_before[0].amplitude);
+        assert(!core::hasCorrectionFlag(
+            pings[1].correction_flags, core::CorrectionFlag::BeamPattern));
     }
 
     {
@@ -342,13 +342,22 @@ int main()
             pings[i].timestamp_us = static_cast<int64_t>(i + 1);
         pings[0].correction_flags |= core::CorrectionFlag::Destriping;
         const auto baked = pings[0].samples;
-        const auto unbaked_before = pings[2].samples;
+        const std::array before{pings[1].samples, pings[2].samples};
 
         dolphin::ui::imaging::applyImagingChain(pings, params);
         for (size_t i = 0; i < baked.size(); ++i)
             assert(pings[0].samples[i].amplitude == baked[i].amplitude);
-        assert(pings[2].samples[0].amplitude
-               != unbaked_before[0].amplitude);
+        for (size_t i = 1; i < pings.size(); ++i) {
+            const bool changed = !std::equal(
+                pings[i].samples.cbegin(), pings[i].samples.cend(),
+                before[i - 1].cbegin(), before[i - 1].cend(),
+                [](const auto& lhs, const auto& rhs) {
+                    return lhs.amplitude == rhs.amplitude;
+                });
+            assert(core::hasCorrectionFlag(
+                       pings[i].correction_flags,
+                       core::CorrectionFlag::Destriping) == changed);
+        }
     }
 
     // A canonical line context makes context-sensitive enhancements independent

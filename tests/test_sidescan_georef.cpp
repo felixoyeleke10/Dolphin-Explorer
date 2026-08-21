@@ -52,23 +52,19 @@ void testQualityLoadPlanning()
     using ui::MapSonarQuality;
     using ui::detail::qualityLoadPlan;
 
-    auto plan = qualityLoadPlan(MapSonarQuality::High, false, false, true);
-    CHECK(plan.build_quality == MapSonarQuality::Low);
-    CHECK(plan.stage_upgrade);
-
-    plan = qualityLoadPlan(MapSonarQuality::High, false, true, true);
-    CHECK(plan.build_quality == MapSonarQuality::Low);
-    CHECK(plan.stage_upgrade);
-
-    plan = qualityLoadPlan(MapSonarQuality::High, true, true, true);
+    auto plan = qualityLoadPlan(MapSonarQuality::High, true);
     CHECK(plan.build_quality == MapSonarQuality::High);
     CHECK(!plan.stage_upgrade);
 
-    plan = qualityLoadPlan(MapSonarQuality::Medium, false, false, false);
+    plan = qualityLoadPlan(MapSonarQuality::Medium, true);
+    CHECK(plan.build_quality == MapSonarQuality::Medium);
+    CHECK(!plan.stage_upgrade);
+
+    plan = qualityLoadPlan(MapSonarQuality::Medium, false);
     CHECK(plan.build_quality == MapSonarQuality::Low);
     CHECK(!plan.stage_upgrade);
 
-    plan = qualityLoadPlan(MapSonarQuality::Low, false, false, true);
+    plan = qualityLoadPlan(MapSonarQuality::Low, true);
     CHECK(plan.build_quality == MapSonarQuality::Low);
     CHECK(!plan.stage_upgrade);
 }

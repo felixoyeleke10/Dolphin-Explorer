@@ -342,6 +342,11 @@ void MapViewportHost::setLayerBeamSpacing(const std::string& layer_id, int spaci
     m_view2d->setLayerBeamSpacing(layer_id, spacing);  // 2D mosaic only
 }
 
+void MapViewportHost::setLayerShowNadir(const std::string& layer_id, bool show)
+{
+    m_view2d->setLayerShowNadir(layer_id, show);
+}
+
 void MapViewportHost::setNavTrackVisible(const std::string& layer_id, bool visible)
 {
     m_nav_track_visibility[layer_id] = visible;
@@ -547,7 +552,10 @@ void MapViewportHost::onLayerDataLoaded(const std::string& layer_id,
             // Segments are separated by NaN sentinels; buildDrapeHullVbo closes each one.
             const SwathCoverage* port_cov = nullptr;
             const SwathCoverage* stbd_cov = nullptr;
-            for (const auto& cov : data.coverage) {
+            const auto& display_coverage =
+                (!data.show_nadir && !data.coverage_nadir_hidden.empty())
+                    ? data.coverage_nadir_hidden : data.coverage;
+            for (const auto& cov : display_coverage) {
                 if      (cov.channel == core::SidescanChannel::Port)      port_cov = &cov;
                 else if (cov.channel == core::SidescanChannel::Starboard) stbd_cov = &cov;
             }
@@ -555,7 +563,7 @@ void MapViewportHost::onLayerDataLoaded(const std::string& layer_id,
             static const QPointF kNaN { std::numeric_limits<double>::quiet_NaN(),
                                         std::numeric_limits<double>::quiet_NaN() };
             std::vector<QPointF> hull_geo;
-            if (port_cov && stbd_cov) {
+            if (port_cov && stbd_cov && data.show_nadir) {
                 const int count = static_cast<int>(
                     std::min(port_cov->ribbons.size(), stbd_cov->ribbons.size()));
                 for (int i = 0; i < count; ++i) {
@@ -571,21 +579,27 @@ void MapViewportHost::onLayerDataLoaded(const std::string& layer_id,
                         hull_geo.push_back(sr[static_cast<size_t>(j)]);
                     hull_geo.push_back(kNaN);   // segment separator
                 }
-            } else if (port_cov || stbd_cov) {
-                const SwathCoverage* cov = port_cov ? port_cov : stbd_cov;
-                for (const auto& ribbon : cov->ribbons) {
-                    const int n  = static_cast<int>(ribbon.size());
-                    if (n < 4) continue;
-                    const int h = n / 2;
-                    for (int j = n - 1; j >= h; --j)
-                        hull_geo.push_back(ribbon[static_cast<size_t>(j)]);
-                    for (int j = 0; j < h; ++j)
-                        hull_geo.push_back(ribbon[static_cast<size_t>(j)]);
-                    hull_geo.push_back(kNaN);
-                }
+            } else {
+                const auto appendCoverage = [&](const SwathCoverage* cov) {
+                    if (!cov) return;
+                    for (const auto& ribbon : cov->ribbons) {
+                        const int n = static_cast<int>(ribbon.size());
+                        if (n < 4) continue;
+                        const int h = n / 2;
+                        for (int j = n - 1; j >= h; --j)
+                            hull_geo.push_back(ribbon[static_cast<size_t>(j)]);
+                        for (int j = 0; j < h; ++j)
+                            hull_geo.push_back(ribbon[static_cast<size_t>(j)]);
+                        hull_geo.push_back(kNaN);
+                    }
+                };
+                appendCoverage(port_cov);
+                appendCoverage(stbd_cov);
             }
 
             m_view3d->setSonarDrape(layer_id, data.preview_image,
+                                    data.gpu_intensity_image,
+                                    data.gpu_display_params,
                                     data.lon_min, data.lat_min,
                                     data.lon_max, data.lat_max,
                                     std::move(hull_geo), data.opacity);
@@ -603,6 +617,11 @@ void MapViewportHost::onLayerDataLoaded(const std::string& layer_id,
             m_view3d->setNavTrackVisible(layer_id, it->second);
         }
     }
+}
+
+void MapViewportHost::setSonarPalette(int palette_index)
+{
+    if (m_view3d) m_view3d->setSonarPalette(palette_index);
 }
 
 void MapViewportHost::loadRasterTerrain(const std::string& layer_id,

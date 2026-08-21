@@ -17,6 +17,7 @@
 #include "geo/GeoUtils.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <optional>
 
@@ -28,6 +29,14 @@ SidescanLoadResult buildSidescanLoadResult(const SssLoadInputs&            in,
                                            app::CancellationToken          cancel)
 {
     try {
+    using Clock = std::chrono::steady_clock;
+    const auto build_started = Clock::now();
+    const auto elapsedMs = [](Clock::time_point start) {
+        return std::chrono::duration<double, std::milli>(Clock::now() - start).count();
+    };
+    double decode_ms = 0.0;
+    double corrections_ms = 0.0;
+    double normalize_ms = 0.0;
     SidescanLoadResult result;
     result.layer_id   = in.layer_id;
 
@@ -38,6 +47,8 @@ SidescanLoadResult buildSidescanLoadResult(const SssLoadInputs&            in,
     {
         rastercache::Summary sum;
         if (rastercache::load(in.cache_path, in.cache_meta, result.layer_data, sum)) {
+            result.layer_data.show_nadir = in.georef_params.show_nadir;
+            result.layer_data.nav_stats.total_build_ms = elapsedMs(build_started);
             result.raw_count          = 1;  // non-zero → not a load failure
             result.has_sample_nav     = sum.has_sample_nav;
             result.sample_lat         = sum.sample_lat;
@@ -55,7 +66,8 @@ SidescanLoadResult buildSidescanLoadResult(const SssLoadInputs&            in,
                 // Temporarily transfer ownership instead of copying a High-tier
                 // grid (up to 32 MiB) merely to colourise it, then put it back for
                 // the main-thread intensity cache.
-                ic.pixels    = std::move(result.layer_data.intensity_cache);
+                ic.pixels    = std::make_shared<std::vector<uint16_t>>(
+                    std::move(result.layer_data.intensity_cache));
                 ic.w         = result.layer_data.intensity_w;
                 ic.h         = result.layer_data.intensity_h;
                 ic.disp_low  = result.layer_data.intensity_disp_low;
@@ -64,7 +76,7 @@ SidescanLoadResult buildSidescanLoadResult(const SssLoadInputs&            in,
                     SidescanViewController::colorizeIntensityCache(
                         ic, std::nullopt, in.palette_idx,
                         in.auto_stretch_enabled);
-                result.layer_data.intensity_cache = std::move(ic.pixels);
+                result.layer_data.intensity_cache = std::move(*ic.pixels);
             }
             report(100);   // cache hit: instant
             return result;
@@ -91,6 +103,7 @@ SidescanLoadResult buildSidescanLoadResult(const SssLoadInputs&            in,
     }
 
     // Reading pings is the bulk of the work — map its 0..1 fraction to 5–60%.
+    const auto decode_started = Clock::now();
     auto raw = app::ImportService::loadAllSidescanPingsFromStore(
         in.store_path, in.store_format, map_idx, in.source_path,
         in.qp.max_samples_per_ping,
@@ -102,6 +115,7 @@ SidescanLoadResult buildSidescanLoadResult(const SssLoadInputs&            in,
                 }}
             : std::function<void(core::SidescanPing&)>{},
         [&cancel]() { return cancel.isCancelled(); });
+    decode_ms = elapsedMs(decode_started);
 
     result.raw_count = raw.size();
     if (raw.empty()) {
@@ -124,6 +138,7 @@ SidescanLoadResult buildSidescanLoadResult(const SssLoadInputs&            in,
     // waterfall applies via WaterfallView::runNavCorrections, so the map and
     // waterfall agree. No-op when the layer has none; applied to the source
     // nav before normalize/reprojection.
+    const auto corrections_started = Clock::now();
     raw = applySidescanNavCorrections(std::move(raw), in.nav_params);
     if (cancel.isCancelled()) {
         result.load_failed = true; return result;
@@ -154,6 +169,7 @@ SidescanLoadResult buildSidescanLoadResult(const SssLoadInputs&            in,
             result.load_failed = true; return result;
         }
     }
+    corrections_ms = elapsedMs(corrections_started);
     if (cancel.isCancelled()) {
         result.load_failed = true; return result;
     }
@@ -161,8 +177,10 @@ SidescanLoadResult buildSidescanLoadResult(const SssLoadInputs&            in,
     // Preserve the already-decoded calibrated pings until the shared line context
     // has consumed them. Moving `raw` earlier left an empty seed and forced a
     // redundant store read on every cold map build.
+    const auto normalize_started = Clock::now();
     auto map_pings = geo::normalizeSidescanPingsForMap(
         std::move(raw), in.display_ref, &result.unresolved_crs);
+    normalize_ms = elapsedMs(normalize_started);
     if (cancel.isCancelled()) {
         result.load_failed = true; return result;
     }
@@ -182,8 +200,19 @@ SidescanLoadResult buildSidescanLoadResult(const SssLoadInputs&            in,
             break;
         }
 
+    const auto raster_started = Clock::now();
     buildSwathNavTrack(map_pings, result.layer_data, in.georef_params);
-    buildSwathCoverage(map_pings, result.layer_data, in.georef_params);
+    SssGeorefParams shown_geometry = in.georef_params;
+    shown_geometry.show_nadir = true;
+    buildSwathCoverage(map_pings, result.layer_data, shown_geometry);
+    LayerMapData hidden_footprint;
+    hidden_footprint.is_projected = result.layer_data.is_projected;
+    SssGeorefParams hidden_geometry = in.georef_params;
+    hidden_geometry.show_nadir = false;
+    buildSwathCoverage(map_pings, hidden_footprint, hidden_geometry);
+    result.layer_data.coverage_nadir_hidden =
+        std::move(hidden_footprint.coverage);
+    result.layer_data.show_nadir = in.georef_params.show_nadir;
     report(80);   // coverage + nav track built; rasterizing next
 
     // -- Sonar preview image (quality >= Low) --------------------------
@@ -191,12 +220,17 @@ SidescanLoadResult buildSidescanLoadResult(const SssLoadInputs&            in,
         const bool built = buildSwathPreviewImage(
             map_pings, result.layer_data,
             in.qp.max_image_dim, in.palette_idx, *cancel.flag(),
-            in.georef_params, in.qp.min_strip_cos, in.qp.cell_budget_div,
+            shown_geometry, in.qp.min_strip_cos, in.qp.cell_budget_div,
             /*ping_lines_only=*/false, {},
             amplitude_context ? amplitude_context->stretch_low : -1.f,
             amplitude_context ? amplitude_context->stretch_high : -1.f);
         result.quality_reduced = built && result.layer_data.preview_reduced;
     }
+    result.layer_data.nav_stats.raster_ms = elapsedMs(raster_started);
+    result.layer_data.nav_stats.decode_ms = decode_ms;
+    result.layer_data.nav_stats.corrections_ms = corrections_ms;
+    result.layer_data.nav_stats.normalize_ms = normalize_ms;
+    result.layer_data.nav_stats.total_build_ms = elapsedMs(build_started);
     report(98);   // raster done; placing on the map
     // -- Build / CRS fields for diagnostics ---------------------------
     result.layer_data.nav_stats.quality_used    = in.current_quality;

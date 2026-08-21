@@ -517,6 +517,10 @@ void MapView::setLayerMapData(const std::string& layer_id, LayerMapData data)
     // truth) so a rebuild never resets them and a fresh open restores them.
     if (m_project) {
         if (const auto* l = m_project->findLayer(layer_id)) {
+            // The project checkbox is authoritative. In particular, selecting an
+            // unchecked layer may build data for an editor, but must never make it
+            // appear on the map merely because this is its first map-data insert.
+            data.visible       = l->visible;
             data.opacity       = l->map_opacity;
             data.blend_mode    = l->map_blend_mode;
             data.clip_polygons = l->map_clip_polygons;
@@ -529,6 +533,7 @@ void MapView::setLayerMapData(const std::string& layer_id, LayerMapData data)
     if (it != m_layer_data.end()) {
         data.visible        = it->second.visible;
         data.show_nav_track = it->second.show_nav_track;
+        data.show_nadir     = it->second.show_nadir;
         it->second = std::move(data);
     } else {
         it = m_layer_data.emplace(layer_id, std::move(data)).first;
@@ -568,11 +573,13 @@ std::vector<std::string> MapView::layerDataIds() const
 // All other LayerMapData fields (coverage, nav track, bbox) are unchanged.
 // This is O(1) on the map side — the heavy recolor work was done by the caller.
 
-void MapView::updatePreviewImage(const std::string& layer_id, QImage img)
+void MapView::updatePreviewImage(const std::string& layer_id, QImage img,
+                                 const SonarDisplayParams* gpu_params)
 {
     const auto it = m_layer_data.find(layer_id);
     if (it == m_layer_data.end()) return;
     it->second.preview_image = std::move(img);
+    if (gpu_params) it->second.gpu_display_params = *gpu_params;
     update();
     emit layerDataUpdated(layer_id);
 }
@@ -639,6 +646,15 @@ void MapView::setLayerBeamSpacing(const std::string& layer_id, int spacing)
     if (it->second.beam_spacing == spacing) return;
     it->second.beam_spacing = spacing;
     update();
+}
+
+void MapView::setLayerShowNadir(const std::string& layer_id, bool show)
+{
+    auto it = m_layer_data.find(layer_id);
+    if (it == m_layer_data.end() || it->second.show_nadir == show) return;
+    it->second.show_nadir = show;
+    update();
+    emit layerDataUpdated(layer_id);
 }
 
 void MapView::setSelectedLayers(const std::vector<std::string>& ids)

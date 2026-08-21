@@ -183,21 +183,18 @@ void MainWindow::buildContextPanel(QWidget* parent)
         if (l && l->modality == app::Modality::Sidescan)
             m_display_state->setLayerBeamSpacing(l->id, spacing);
     });
-    // Show/hide the near-nadir seabed band — survey-wide display-geometry
-    // preference. Changes the raster fingerprint, so loaded lines re-raster
-    // (explicit operator action; the mosaic stays on screen until each
-    // replacement is ready).
+    // Show/hide the near-nadir seabed band. Both footprints are retained with
+    // the resident raster, so this is an immediate 2D/3D display-state update.
     connect(m_views_panel, &ViewsPanel::sssShowNadirToggled, this, [this](bool on) {
         if (!m_sss_ctrl) return;
         m_sss_ctrl->setShowNadir(on);
-        m_sss_ctrl->reloadCurrentLayer();
         appendJobMessage(on
-            ? tr("Nadir band shown — rebuilding loaded lines…")
-            : tr("Nadir band hidden (QC gap) — rebuilding loaded lines…"));
+            ? tr("Nadir band shown")
+            : tr("Nadir band hidden (QC gap)"));
     });
-    // Dynamic range — black/white points (display_low/high). Committed on drag
-    // release, so re-raster once here (heavier than gain/contrast's debounce
-    // because it fires per gesture, not per tick).
+    // Dynamic range — black/white points (display_low/high). This recolours the
+    // resident 2D intensity image and updates 3D shader uniforms; no geometry,
+    // sonar decode, correction, or rasterization is repeated.
     connect(m_views_panel, &ViewsPanel::sssDynamicRangeCommitted, this,
             [this](double low, double high) {
         if (!m_display_state || !currentProject()) return;

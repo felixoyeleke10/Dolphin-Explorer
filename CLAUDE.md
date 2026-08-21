@@ -41,6 +41,20 @@ ctest --output-on-failure
 
 Run a single test executable directly from `build_mingw/tests/`. Test fixtures (real vendor data samples) live in `tests/fixtures/`.
 
+A single green `ctest` run does not prove a test is non-flaky — concurrency-adjacent
+code (anything using `std::async`/threads) can pass by luck. Before trusting or
+dismissing an intermittent failure, use `stress_test.bat` to repeat it until it
+either recurs or you have enough clean runs to be confident:
+```bat
+stress_test.bat                              REM whole suite, 50 repeats
+stress_test.bat 200                          REM whole suite, 200 repeats
+stress_test.bat 200 "NodeGraph,Waterfall"    REM only matching tests, 200 repeats
+```
+Use comma-separated or separate test names; the script combines them into a
+CTest regex internally. This works unchanged from both PowerShell and cmd and
+avoids shell-specific quoting for `|`. Stress runs are forced sequentially so
+machine-load interference between tests cannot masquerade as a test race.
+
 ## Architecture
 
 ### Layer Model (strict dependency direction)

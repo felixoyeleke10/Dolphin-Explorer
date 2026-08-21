@@ -452,7 +452,8 @@ Meta makeMeta(const std::string&         store_path,
     h = fnvMix (h, georef.smoothing_window);
     h = fnvMix (h, georef.debug_ping_lines_only);
     h = fnvMix (h, georef.slant_range_corrected);
-    h = fnvMix (h, georef.show_nadir);
+    // show_nadir is display state. Each cache contains both footprints, so a
+    // checkbox toggle must not invalidate the expensive amplitude raster.
     for (char c : display_crs_id) h = fnvMix(h, c);
 
     // Gain/imaging corrections — changing any re-rasterizes the mosaic. Floats are
@@ -529,6 +530,13 @@ bool save(const std::string&  path,
 
     ds << static_cast<quint64>(data.coverage.size());
     for (const auto& cov : data.coverage) {
+        ds << static_cast<quint8>(cov.channel);
+        ds << static_cast<quint64>(cov.ribbons.size());
+        for (const auto& ribbon : cov.ribbons) writePoints(ds, ribbon);
+    }
+
+    ds << static_cast<quint64>(data.coverage_nadir_hidden.size());
+    for (const auto& cov : data.coverage_nadir_hidden) {
         ds << static_cast<quint8>(cov.channel);
         ds << static_cast<quint64>(cov.ribbons.size());
         for (const auto& ribbon : cov.ribbons) writePoints(ds, ribbon);
@@ -647,6 +655,38 @@ bool load(const std::string& path,
                 coverage.ribbons.push_back(std::move(ribbon));
             }
             decoded.coverage.push_back(std::move(coverage));
+        }
+
+        quint64 hidden_coverage_count = 0;
+        ds >> hidden_coverage_count;
+        if (ds.status() != QDataStream::Ok ||
+            hidden_coverage_count > kMaxCoverageCollections ||
+            !fitsSizeT(hidden_coverage_count))
+            return false;
+        decoded.coverage_nadir_hidden.reserve(
+            static_cast<size_t>(hidden_coverage_count));
+        for (quint64 c = 0; c < hidden_coverage_count; ++c) {
+            SwathCoverage coverage;
+            quint8 channel = 0;
+            ds >> channel;
+            if (ds.status() != QDataStream::Ok || !isKnownChannel(channel))
+                return false;
+            coverage.channel = static_cast<core::SidescanChannel>(channel);
+            quint64 ribbon_count = 0;
+            ds >> ribbon_count;
+            if (ds.status() != QDataStream::Ok ||
+                ribbon_count > kMaxRibbonsPerCoverage ||
+                ribbon_count > budget.ribbons_remaining ||
+                !fitsSizeT(ribbon_count))
+                return false;
+            budget.ribbons_remaining -= ribbon_count;
+            coverage.ribbons.reserve(static_cast<size_t>(ribbon_count));
+            for (quint64 r = 0; r < ribbon_count; ++r) {
+                std::vector<QPointF> ribbon;
+                if (!readPoints(ds, ribbon, budget)) return false;
+                coverage.ribbons.push_back(std::move(ribbon));
+            }
+            decoded.coverage_nadir_hidden.push_back(std::move(coverage));
         }
 
         quint64 beam_count = 0;

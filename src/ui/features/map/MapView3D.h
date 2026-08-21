@@ -108,12 +108,15 @@ public:
     // whenever a swath with a preview image is loaded or its palette changes.
     void setSonarDrape(const std::string& layer_id,
                        const QImage& image,
+                       const QImage& intensity_image,
+                       const SonarDisplayParams& display_params,
                        double lon_min, double lat_min,
                        double lon_max, double lat_max,
                        std::vector<QPointF> hull_geo = {},
                        float opacity = 1.f);
     void removeSonarDrape(const std::string& layer_id);
     int  drapeLayerCount() const { return static_cast<int>(m_drape_layers.size()); }
+    void setSonarPalette(int palette_index);
 
     // -- Scene -------------------------------------------------------------
     void clearScene();
@@ -239,12 +242,16 @@ private:
         std::string       id;
         // CPU side — set by setSonarDrape(), consumed by uploadPendingDrapes()
         QImage            pending_image;     // RGBA8888 flipped (row0=south)
+        QImage            pending_fallback_image; // coloured fallback for raw upload failure
         std::vector<QPointF> pending_hull;   // geo coords of swath outline polygon
         bool              dirty   = true;
         bool              visible = true;
         float             opacity = 1.f;     // user transparency [0,1] (Views ▸ SSS)
         // GPU side — created in uploadPendingDrapes() inside GL context
         QOpenGLTexture*   texture    = nullptr;
+        bool              raw_intensity = false;
+        quint64           source_key = 0;
+        SonarDisplayParams display_params;
         // Sonar bbox in local metres (computed once from geo bbox + origin)
         float bbox_x0 = 0.f, bbox_y0 = 0.f;  // SW corner (lon_min, lat_min)
         float bbox_w  = 1.f, bbox_h  = 1.f;  // extent (lon_max-min, lat_max-min)
@@ -336,6 +343,16 @@ private:
     GLint m_loc_drape_vexag  = -1;
     GLint m_loc_drape_tex    = -1;   // sampler2D: texture unit 0
     GLint m_loc_drape_alpha  = -1;
+    GLint m_loc_drape_raw    = -1;
+    GLint m_loc_drape_palette_tex = -1;
+    GLint m_loc_drape_low = -1;
+    GLint m_loc_drape_high = -1;
+    GLint m_loc_drape_gain = -1;
+    GLint m_loc_drape_contrast = -1;
+    GLint m_loc_drape_threshold = -1;
+    QOpenGLTexture* m_drape_palette_texture = nullptr;
+    int m_sonar_palette = PaletteIndex::Greyscale;
+    bool m_drape_palette_dirty = true;
 
     // -- Shared VAO + static VBOs ------------------------------------------
     QOpenGLVertexArrayObject m_vao;

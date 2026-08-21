@@ -118,7 +118,7 @@ void MainWindow::onLayerSelected(const std::string& layer_id)
         const M mod = layer->modality;
 
         // Sidescan: full background swath build via the SSS controller.
-        if (m_sss_ctrl && mod == M::Sidescan)
+        if (m_sss_ctrl && mod == M::Sidescan && layer->visible)
             m_sss_ctrl->activateLayer(layer_id, currentProject());
 
         // MAG / MBE: rebuildNavTrack (called by setActiveLayer) builds the track.

@@ -43,6 +43,7 @@ void MainWindow::setupRuntimeServices()
             if (m_modal_host)    m_modal_host->setPalette(pal);
             if (m_waterfall_win) m_waterfall_win->setPalette(pal);
             if (m_sss_ctrl)      m_sss_ctrl->setPaletteIndex(pal);
+            if (m_viewport_host) m_viewport_host->setSonarPalette(pal);
         }
         // A per-layer display change (palette/gain/visibility/nav) means the project
         // look differs from disk — mark it dirty so it's saved.
@@ -60,6 +61,15 @@ void MainWindow::setupRuntimeServices()
             if (m_viewport_host) m_viewport_host->setLayerVisible(lid, v);
             else if (m_map_view) m_map_view->setLayerVisible(lid, v);
             if (m_line_list)     m_line_list->setLayerVisibility(lid, v);
+
+            // Checkbox-on means materialize this layer; selection is independent.
+            // Keep overview lines background/Low and promote only the selected line.
+            if (v && l && l->modality == app::Modality::Sidescan && m_sss_ctrl) {
+                m_sss_ctrl->showNavTrackFromIndex(lid, currentProject());
+                m_sss_ctrl->activateLayer(lid, currentProject(),
+                                          lid == activeLayerId(),
+                                          /*cache_only=*/false);
+            }
         }
         // Per-layer map compositing (transparency + blend mode): fan out to the
         // map viewport (2D mosaic + 3D drape/curtain for opacity; 2D-only for

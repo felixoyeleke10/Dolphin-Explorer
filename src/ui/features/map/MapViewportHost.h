@@ -73,6 +73,7 @@ public slots:
     void setLayerClipPolygons (const std::string& layer_id, bool clip);      // 2D mosaic
     void setLayerShowBeams    (const std::string& layer_id, bool show);      // 2D mosaic
     void setLayerBeamSpacing  (const std::string& layer_id, int spacing);   // 2D mosaic
+    void setLayerShowNadir    (const std::string& layer_id, bool show);
     void setNavTrackVisible   (const std::string& layer_id, bool visible);
     void setActiveLayer       (const std::string& layer_id);
     void setSelectedLayers (const std::vector<std::string>& ids);
@@ -83,6 +84,7 @@ public slots:
 
     // Keep the 3D SBP curtains on the same SbpPalette as the SBP viewer.
     void setSbpCurtainPalette(int palette_index);
+    void setSonarPalette(int palette_index);
 
     // Load / remove a bathymetry file as 3D terrain directly (no dialog).
     // Used by the Views panel's "Draping surface" setting; the file path is

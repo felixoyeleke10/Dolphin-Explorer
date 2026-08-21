@@ -73,7 +73,7 @@ void SidescanViewController::setMapSonarQuality(MapSonarQuality quality)
             continue;
         }
         // Fallback: rebuild from disk.
-        activateLayer(id, m_project);
+        activateLayer(id, m_project, id == saved_active);
     }
 
     m_active_layer_id = saved_active;
@@ -100,6 +100,8 @@ bool SidescanViewController::applyCachedTier(const std::string& layer_id,
     if (tier_map_it->second.empty()) m_quality_tier_cache.erase(tier_map_it);
     LayerMapData ld;
     ld.coverage        = std::move(tier.coverage);
+    ld.coverage_nadir_hidden = std::move(tier.coverage_nadir_hidden);
+    ld.show_nadir      = m_georef_params.show_nadir;
     ld.beam_rays       = std::move(tier.beam_rays);
     ld.nav_track       = std::move(tier.nav_track);
     ld.lon_min         = tier.lon_min;
@@ -112,6 +114,9 @@ bool SidescanViewController::applyCachedTier(const std::string& layer_id,
     ld.preview_image   = colorizeIntensityCache(
         tier.intensity, m_display_params, m_palette_idx,
         m_auto_stretch_enabled);
+    ld.gpu_intensity_image = makeGpuIntensityImage(tier.intensity);
+    ld.gpu_display_params = effectiveGpuDisplayParams(
+        tier.intensity, m_display_params, m_auto_stretch_enabled);
     m_layer_intensity_cache[layer_id] = std::move(tier.intensity);
     if (m_map_view) m_map_view->setLayerMapData(layer_id, std::move(ld));
     m_resident_quality[layer_id] = quality;
@@ -255,6 +260,8 @@ void SidescanViewController::prebuildTier(const std::string& layer_id,
                 LayerMapData cached;
                 if (rastercache::load(cache_path, cache_meta, cached, sum)) {
                     res.tier.coverage        = std::move(cached.coverage);
+                    res.tier.coverage_nadir_hidden =
+                        std::move(cached.coverage_nadir_hidden);
                     res.tier.beam_rays       = std::move(cached.beam_rays);
                     res.tier.nav_track       = std::move(cached.nav_track);
                     res.tier.lon_min         = cached.lon_min;
@@ -264,7 +271,8 @@ void SidescanViewController::prebuildTier(const std::string& layer_id,
                     res.tier.is_projected    = cached.is_projected;
                     res.tier.preview_reduced = cached.preview_reduced;
                     res.tier.nav_stats       = cached.nav_stats;
-                    res.tier.intensity.pixels    = std::move(cached.intensity_cache);
+                    res.tier.intensity.pixels = std::make_shared<std::vector<uint16_t>>(
+                        std::move(cached.intensity_cache));
                     res.tier.intensity.w         = cached.intensity_w;
                     res.tier.intensity.h         = cached.intensity_h;
                     res.tier.intensity.disp_low  = cached.intensity_disp_low;
@@ -347,14 +355,23 @@ void SidescanViewController::prebuildTier(const std::string& layer_id,
                 if (p.nav.valid) { ld.is_projected = p.nav.is_projected; break; }
 
             buildSwathNavTrack(map_pings, ld, georef);
-            buildSwathCoverage(map_pings, ld, georef);
+            SssGeorefParams shown_geometry = georef;
+            shown_geometry.show_nadir = true;
+            buildSwathCoverage(map_pings, ld, shown_geometry);
+            LayerMapData hidden_footprint;
+            hidden_footprint.is_projected = ld.is_projected;
+            SssGeorefParams hidden_geometry = georef;
+            hidden_geometry.show_nadir = false;
+            buildSwathCoverage(map_pings, hidden_footprint, hidden_geometry);
+            ld.coverage_nadir_hidden = std::move(hidden_footprint.coverage);
+            ld.show_nadir = georef.show_nadir;
             report(82);   // coverage built; rasterizing next
 
             if (cancel.isCancelled()) return PrebuildResult{};
             if (qp.max_image_dim > 0)
                 buildSwathPreviewImage(map_pings, ld, qp.max_image_dim,
                     0 /* palette 0 = unused — intensity_cache is palette-free */,
-                    *cancel.flag(), georef, qp.min_strip_cos, qp.cell_budget_div,
+                    *cancel.flag(), shown_geometry, qp.min_strip_cos, qp.cell_budget_div,
                     /*ping_lines_only=*/false,
                     // Map the rasterizer's 0–1 onto the card's 82–98 band so the
                     // longest phase shows live sub-progress instead of freezing at 82.
@@ -375,6 +392,8 @@ void SidescanViewController::prebuildTier(const std::string& layer_id,
             }
 
             res.tier.coverage        = std::move(ld.coverage);
+            res.tier.coverage_nadir_hidden =
+                std::move(ld.coverage_nadir_hidden);
             res.tier.beam_rays       = std::move(ld.beam_rays);
             res.tier.nav_track       = std::move(ld.nav_track);
             res.tier.lon_min         = ld.lon_min;
@@ -384,7 +403,8 @@ void SidescanViewController::prebuildTier(const std::string& layer_id,
             res.tier.is_projected    = ld.is_projected;
             res.tier.preview_reduced = ld.preview_reduced;
             res.tier.nav_stats       = ld.nav_stats;
-            res.tier.intensity.pixels    = std::move(ld.intensity_cache);
+            res.tier.intensity.pixels = std::make_shared<std::vector<uint16_t>>(
+                std::move(ld.intensity_cache));
             res.tier.intensity.w         = ld.intensity_w;
             res.tier.intensity.h         = ld.intensity_h;
             res.tier.intensity.disp_low  = ld.intensity_disp_low;
