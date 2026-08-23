@@ -2,6 +2,7 @@
 /build/
 /build-ninja/
 /build_mingw/
+/build_mingw_stale_*/
 /cmake-build-*/
 /website/dist/
 /website/.vite/
