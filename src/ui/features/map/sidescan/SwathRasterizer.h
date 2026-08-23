@@ -100,7 +100,7 @@ inline size_t SwathRasterizer::rasterizeCell(QRgb*     pixels,
                                               int       max_cell_pix,
                                               uint16_t* amp_out) const noexcept
 {
-    if (!pixels || img_w <= 0 || img_h <= 0)
+    if ((!pixels && !amp_out) || img_w <= 0 || img_h <= 0)
         return 0;
 
     struct Vertex {
@@ -180,7 +180,7 @@ inline size_t SwathRasterizer::rasterizeCell(QRgb*     pixels,
         const int clamped = std::clamp(amp_i, 0, 65535);
         const size_t idx = static_cast<size_t>(py) * static_cast<size_t>(img_w)
                          + static_cast<size_t>(px);
-        pixels[idx] = m_lut[static_cast<size_t>(clamped)];
+        if (pixels) pixels[idx] = m_lut[static_cast<size_t>(clamped)];
         if (amp_out)
             amp_out[idx] = static_cast<uint16_t>(clamped < 65535
                 ? clamped + 1 : 65535);

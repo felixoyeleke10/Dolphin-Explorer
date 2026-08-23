@@ -235,6 +235,33 @@ SwathGeorefResult georeferenceSidescanPings(
                      static_cast<float>(inner_gap_m),
                      !correction_presented});
             }
+
+            // The bottom pick maps to ground range zero by definition. The
+            // immediately following pulse-length bin normally belongs to the
+            // same specular return; painting it makes a false straight seam
+            // along the navigation track. Run this after canonical-anchor
+            // insertion because blanking may have removed the source zero bin.
+            // Keep at least two later seabed cells so sparse records survive.
+            if (correction_presented && strip.points.size() >= 4
+                    && strip.points.front().ground_range_m <= kRangeEpsilonM) {
+                strip.points.front().renderable = false;
+                const double first_positive = strip.points[1].ground_range_m;
+                const double second_positive = strip.points[2].ground_range_m;
+                if (std::isfinite(first_positive)
+                        && std::isfinite(second_positive)
+                        && first_positive > kRangeEpsilonM
+                        && second_positive > first_positive) {
+                    const double bottom_band_limit = first_positive
+                        + 0.5 * (second_positive - first_positive);
+                    for (size_t point_i = 1;
+                         point_i + 2 < strip.points.size(); ++point_i) {
+                        if (strip.points[point_i].ground_range_m
+                                > bottom_band_limit)
+                            break;
+                        strip.points[point_i].renderable = false;
+                    }
+                }
+            }
             result.strips.push_back(std::move(strip));
         } else {
             ++continuity_segment;

@@ -24,12 +24,12 @@ inline bool sssCorrectionPresented(const core::SidescanPing& ping,
     if (sssHasBakedGroundRanges(ping))
         return true;
     return params.slant_range_corrected
-        && core::sidescanAltitudeMetres(ping).has_value();
+        && core::sidescanCorrectionAltitudeMetres(ping).has_value();
 }
 
 inline double sssUncorrectedAltitudeMetres(const core::SidescanPing& ping)
 {
-    return core::sidescanAltitudeMetres(ping).value_or(0.0);
+    return core::sidescanCorrectionAltitudeMetres(ping).value_or(0.0);
 }
 
 // Return the outer edge of the actual sample product. Baked pings carry ground

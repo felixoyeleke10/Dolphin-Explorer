@@ -16,10 +16,12 @@ namespace dolphin::ui {
 
 void buildSwathCoverage(const std::vector<core::SidescanPing>& pings,
                         LayerMapData& ld,
-                        const SssGeorefParams& params)
+                        const SssGeorefParams& params,
+                        std::vector<SwathCoverage>* nadir_hidden)
 {
     ld.coverage.clear();
     ld.beam_rays.clear();
+    if (nadir_hidden) nadir_hidden->clear();
     if (pings.empty()) return;
 
     // Sort by timestamp (matches georeferenceSidescanPings ordering).
@@ -88,9 +90,12 @@ void buildSwathCoverage(const std::vector<core::SidescanPing>& pings,
 
         SwathCoverage cov;
         cov.channel = channel;
+        SwathCoverage hidden_cov;
+        hidden_cov.channel = channel;
         const ssscontinuity::Thresholds thresholds = channelThresholds(channel);
 
         std::vector<QPointF> seg_inner;   // vessel nav positions
+        std::vector<QPointF> seg_hidden_inner;
         std::vector<QPointF> seg_outer;   // swath edge positions
         core::NavPoint previous_nav;
         bool     have_previous = false;
@@ -98,7 +103,12 @@ void buildSwathCoverage(const std::vector<core::SidescanPing>& pings,
         uint32_t prev_ping     = 0;
 
         auto flush = [&]() {
-            if (seg_inner.size() < 2) { seg_inner.clear(); seg_outer.clear(); return; }
+            if (seg_inner.size() < 2) {
+                seg_inner.clear();
+                seg_hidden_inner.clear();
+                seg_outer.clear();
+                return;
+            }
             // Closed polygon: inner forward + outer reversed.
             std::vector<QPointF> ribbon;
             ribbon.reserve(seg_inner.size() * 2);
@@ -106,7 +116,16 @@ void buildSwathCoverage(const std::vector<core::SidescanPing>& pings,
             for (int j = static_cast<int>(seg_outer.size()) - 1; j >= 0; --j)
                 ribbon.push_back(seg_outer[static_cast<size_t>(j)]);
             cov.ribbons.push_back(std::move(ribbon));
+            if (nadir_hidden) {
+                std::vector<QPointF> hidden_ribbon;
+                hidden_ribbon.reserve(seg_hidden_inner.size() + seg_outer.size());
+                for (const auto& pt : seg_hidden_inner) hidden_ribbon.push_back(pt);
+                for (int j = static_cast<int>(seg_outer.size()) - 1; j >= 0; --j)
+                    hidden_ribbon.push_back(seg_outer[static_cast<size_t>(j)]);
+                hidden_cov.ribbons.push_back(std::move(hidden_ribbon));
+            }
             seg_inner.clear();
+            seg_hidden_inner.clear();
             seg_outer.clear();
         };
         auto hardBreak = [&]() {
@@ -210,6 +229,20 @@ void buildSwathCoverage(const std::vector<core::SidescanPing>& pings,
                 else
                     seg_inner.push_back({inner_lon, inner_lat});
             }
+            if (nadir_hidden) {
+                SssGeorefParams hidden_params = params;
+                hidden_params.show_nadir = false;
+                const double hidden_nadir_m = sssInnerGapMetres(ping, hidden_params);
+                double hidden_lon = 0.0, hidden_lat = 0.0;
+                if (hidden_nadir_m <= 0.0
+                        || !geo::offsetNavByGroundMetres(pos_nav,
+                            hidden_nadir_m * std::sin(side_rad),
+                            hidden_nadir_m * std::cos(side_rad),
+                            hidden_lon, hidden_lat))
+                    seg_hidden_inner.push_back({cn.lon, cn.lat});
+                else
+                    seg_hidden_inner.push_back({hidden_lon, hidden_lat});
+            }
             seg_outer.push_back({out_lon, out_lat});
             previous_nav = current_nav;
             have_previous = true;
@@ -220,6 +253,8 @@ void buildSwathCoverage(const std::vector<core::SidescanPing>& pings,
 
         if (!cov.ribbons.empty())
             ld.coverage.push_back(std::move(cov));
+        if (nadir_hidden && !hidden_cov.ribbons.empty())
+            nadir_hidden->push_back(std::move(hidden_cov));
     }
 
     size_t ribbon_count = 0;

@@ -15,6 +15,7 @@
 #include <vector>
 #include "ui/features/map/MapTypes.h"
 #include "ui/features/map/sidescan/SidescanInvalidation.h"
+#include "ui/features/map/sidescan/SidescanStagedRefresh.h"
 #include "ui/features/map/sidescan/SssGeorefParams.h"
 #include "core/SidescanPing.h"
 
@@ -188,7 +189,8 @@ public:
     void prebuildTier(const std::string& layer_id,
                       MapSonarQuality    quality,
                       app::Project*      project,
-                      const std::string& lane = "map");
+                      const std::string& lane = "map",
+                      uint64_t           refresh_generation = 0);
 
     bool hasCachedTier(const std::string& layer_id, MapSonarQuality quality) const;
 
@@ -291,9 +293,8 @@ private:
     std::unordered_map<std::string,
         std::unordered_map<int, PrebuiltTier>> m_quality_tier_cache;
 
-    // Layers showing a freshly rebuilt Low geometry preview while the requested
-    // Medium/High tier is queued immediately afterwards.
-    std::unordered_map<std::string, MapSonarQuality> m_geometry_preview_upgrades;
+    std::unordered_map<std::string, SidescanStagedRefresh> m_staged_refreshes;
+    uint64_t m_next_refresh_generation = 1;
 
     // Apply a pre-built quality tier (from m_quality_tier_cache) to the map with no
     // background work — O(pixels) recolour only. Returns false if no tier is cached
@@ -302,6 +303,12 @@ private:
     bool applyCachedTier(const std::string& layer_id, MapSonarQuality quality);
 
     void applyGeometryCorrections(const std::vector<std::string>& layer_ids);
+    void handleRefreshTierComplete(const std::string& layer_id,
+                                   MapSonarQuality quality,
+                                   uint64_t generation);
+    void handleRefreshTierFinished(const std::string& layer_id,
+                                   MapSonarQuality quality,
+                                   uint64_t generation);
 
     void repaletteAllLayers();
 };

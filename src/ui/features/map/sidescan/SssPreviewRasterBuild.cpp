@@ -116,7 +116,8 @@ bool buildSwathPreviewImage(const std::vector<core::SidescanPing>& pings,
                             bool   ping_lines_only,
                             const std::function<void(float)>& progress,
                             float canonical_stretch_low,
-                            float canonical_stretch_high)
+                            float canonical_stretch_high,
+                            bool  produce_color_image)
 {
     // Throttle progress to integer-percent buckets so a callback that marshals
     // across threads isn't flooded; no-op when no callback was supplied.
@@ -210,8 +211,11 @@ bool buildSwathPreviewImage(const std::vector<core::SidescanPing>& pings,
     // Rasterized cells write fully-opaque pixels; cells with no data stay
     // transparent (alpha 0). The paint path applies only the layer's explicit
     // opacity; it does not silently fade valid sonar pixels into the basemap.
-    QImage img(img_w, img_h, QImage::Format_ARGB32_Premultiplied);
-    img.fill(Qt::transparent);
+    QImage img;
+    if (produce_color_image) {
+        img = QImage(img_w, img_h, QImage::Format_ARGB32_Premultiplied);
+        img.fill(Qt::transparent);
+    }
 
     // Parallel uint16 intensity buffer: 0 = no data, 1-65535 = raw amplitude+1.
     // Populated alongside the colour image so palette changes never need to
@@ -250,9 +254,10 @@ bool buildSwathPreviewImage(const std::vector<core::SidescanPing>& pings,
     params.palette      = palette_index;
 
     SwathRasterizer rast;
-    rast.buildLut(params, palette_index);
+    if (produce_color_image) rast.buildLut(params, palette_index);
 
-    QRgb* pixels = reinterpret_cast<QRgb*>(img.bits());
+    QRgb* pixels = produce_color_image
+        ? reinterpret_cast<QRgb*>(img.bits()) : nullptr;
 
     // -- Debug mode: skip stitching; render each strip as individual sample dots --
     // Enabled by the explicit flag or by georef_params.debug_ping_lines_only.
@@ -269,8 +274,11 @@ bool buildSwathPreviewImage(const std::vector<core::SidescanPing>& pings,
                     const size_t idx = static_cast<size_t>(iy) * img_w + ix;
                     if (amp_buf[idx] == 0)
                         ++dots_written;
-                    const float norm = SSSAmplitudeProcessor::displayIntensity(pt.amplitude, params);
-                    pixels[idx] = SSSPalette::color(norm, palette_index);
+                    if (pixels) {
+                        const float norm = SSSAmplitudeProcessor::displayIntensity(
+                            pt.amplitude, params);
+                        pixels[idx] = SSSPalette::color(norm, palette_index);
+                    }
                     const int ai = static_cast<int>(pt.amplitude);
                     amp_buf[idx] =
                         static_cast<uint16_t>(ai < 65535 ? ai + 1 : 65535);
@@ -278,7 +286,7 @@ bool buildSwathPreviewImage(const std::vector<core::SidescanPing>& pings,
             }
         }
         ld.nav_stats.preview_pixels_written = dots_written;
-        ld.preview_image = std::move(img);
+        if (produce_color_image) ld.preview_image = std::move(img);
         report(1.0f);
         return true;
     }
@@ -447,20 +455,21 @@ bool buildSwathPreviewImage(const std::vector<core::SidescanPing>& pings,
                         || !pb.renderable || !nb.renderable)
                     continue;
                 ++ld.nav_stats.cells_attempted;
-                const size_t writes = rast.rasterizeCell(
-                    pixels, img_w, img_h,
-                    geoToImg(pa.lon, pa.lat), geoToImg(na.lon, na.lat),
-                    geoToImg(pb.lon, pb.lat), geoToImg(nb.lon, nb.lat),
-                    pa.amplitude, na.amplitude, pb.amplitude, nb.amplitude,
-                    max_cell_pix,
-                    amp_buf);
-                if (writes > 0)
-                    ++ld.nav_stats.cells_rasterized;
+                const QPointF ppa = geoToImg(pa.lon, pa.lat);
+                const QPointF pna = geoToImg(na.lon, na.lat);
+                const QPointF ppb = geoToImg(pb.lon, pb.lat);
+                const QPointF pnb = geoToImg(nb.lon, nb.lat);
+                const size_t writes=rast.rasterizeCell(
+                    pixels,img_w,img_h,ppa,pna,ppb,pnb,
+                    pa.amplitude,na.amplitude,pb.amplitude,nb.amplitude,
+                    max_cell_pix,amp_buf);
+                if(writes>0) ++ld.nav_stats.cells_rasterized;
             }
         }
     }
 
     if (cancelled.load(std::memory_order_relaxed)) return false;
+    amp_buf=ld.intensity_cache.data();
     report(0.85f);   // stitch done; pixel accounting next
 
     // Count raw non-transparent pixels.  If nothing was rasterized, discard the
@@ -468,10 +477,9 @@ bool buildSwathPreviewImage(const std::vector<core::SidescanPing>& pings,
     // painting a fully-transparent rectangle that silently hides them.
     size_t px_written = 0;
     {
-        const QRgb* bits  = reinterpret_cast<const QRgb*>(img.constBits());
-        const int   total = img_w * img_h;
+        const int total = img_w * img_h;
         for (int k = 0; k < total; ++k)
-            if (qAlpha(bits[k]) > 0) ++px_written;
+            if (amp_buf[k] != 0) ++px_written;
     }
 
     // No post-hoc hole filling: conservative quad coverage handles sub-pixel
@@ -484,7 +492,7 @@ bool buildSwathPreviewImage(const std::vector<core::SidescanPing>& pings,
     report(1.0f);   // raster complete
 
     if (px_written > 0) {
-        ld.preview_image = std::move(img);
+        if (produce_color_image) ld.preview_image = std::move(img);
     } else {
         // No data rasterized — discard intensity cache too so MapView falls back
         // to drawing coverage ribbons.

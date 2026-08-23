@@ -3,6 +3,8 @@
 #include "core/SidescanGeometry.h"
 #include "core/SidescanPing.h"
 
+#include <algorithm>
+
 namespace dolphin::pipeline {
 
 NodeSchema SlantRangeNode::schema() const
@@ -42,23 +44,39 @@ ArtifactBuffer SlantRangeNode::process(const ArtifactBuffer& input,
         if (core::hasCorrectionFlag(ping->correction_flags,
                                     core::CorrectionFlag::SlantRange))
             continue;
-        auto altitude_m = core::sidescanAltitudeMetres(*ping);
-        if (!altitude_m && auto_detect
-            && BottomDetectNode::detectBottom(*ping, threshold, search_start, search_end))
-            altitude_m = core::sidescanAltitudeMetres(*ping);
+        auto altitude_m = core::sidescanCorrectionAltitudeMetres(*ping);
+        if (!altitude_m && auto_detect) {
+            auto candidate = *ping;
+            if (BottomDetectNode::detectBottom(
+                    candidate, threshold, search_start, search_end)) {
+                altitude_m = core::sidescanCorrectionAltitudeMetres(candidate);
+                if (altitude_m) {
+                    *ping = std::move(candidate);
+                } else {
+                    // Retain the weak pick for QC without destructively masking
+                    // samples when it is not trusted enough to drive geometry.
+                    ping->bottom_pick = candidate.bottom_pick;
+                    ping->qc_flags = candidate.qc_flags;
+                }
+            }
+        }
         if (!altitude_m) continue;
 
-        bool transformed = false;
+        const bool has_seabed_sample = std::any_of(
+            ping->samples.begin(), ping->samples.end(), [&](const auto& sample) {
+                return std::isfinite(sample.range_m)
+                    && static_cast<double>(sample.range_m) > *altitude_m;
+            });
+        if (!has_seabed_sample) continue;
+
         for (auto& sample : ping->samples) {
             if (sample.range_m < 0.f) continue;  // water column marker
             if (!std::isfinite(sample.range_m)) continue;
             const auto ground_m = core::slantToGroundRangeMetres(sample.range_m,
                                                                   *altitude_m);
             sample.range_m = ground_m ? static_cast<float>(*ground_m) : 0.0f;
-            transformed = true;
         }
-        if (transformed)
-            ping->correction_flags |= core::CorrectionFlag::SlantRange;
+        ping->correction_flags |= core::CorrectionFlag::SlantRange;
     }
 
     return output;

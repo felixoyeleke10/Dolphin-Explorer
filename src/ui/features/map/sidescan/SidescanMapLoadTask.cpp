@@ -131,9 +131,9 @@ bool SidescanViewController::activateLayer(const std::string& layer_id,
     SssGeorefParams georef_params = m_georef_params;
     georef_params.slant_range_corrected = layer->slant_range_corrected;
 
-    // Pick the tier to build. Active layers build the requested tier once while
-    // their index nav track remains visible. Non-active overview lines stay Low.
-    // This avoids the former cold Low-then-Medium/High double decode/raster pass.
+    // Pick the tier to build. Medium/High active layers first publish a Low
+    // raster, then upgrade in the bounded background map lane. Non-active
+    // overview lines stay Low until selected.
     const auto load_plan = detail::qualityLoadPlan(m_quality, as_active);
     MapSonarQuality build_quality = load_plan.build_quality;
     bool stage_upgrade = load_plan.stage_upgrade;
@@ -233,6 +233,25 @@ bool SidescanViewController::activateLayer(const std::string& layer_id,
                 return;
             }
 
+            // A completed raster is display-ready. Persist its derived cache on a
+            // separate cap-1 lane so large High-tier writes never delay first paint
+            // or compete with another line's decode/raster work.
+            if (res.deferred_cache_write && m_op_mgr) {
+                auto write = std::move(res.deferred_cache_write);
+                m_op_mgr->setLaneCap("sss:raster-cache", 1);
+                m_op_mgr->run<bool>(
+                    tr("Caching sidescan map — %1")
+                        .arg(QString::fromStdString(layer_id)),
+                    [write](app::CancellationToken cancel) {
+                        if (cancel.isCancelled()) return false;
+                        return rastercache::save(
+                            write->path, write->meta, write->summary, write->data);
+                    },
+                    [](bool) {},
+                    "sss:raster-cache:" + write->path,
+                    /*heavy=*/false, {}, "sss:raster-cache");
+            }
+
             if (m_map_view) {
                 // Copy diagnostics before the move so we can enrich with
                 // view state (visibility, fit, paint rect) after placement.
@@ -297,7 +316,6 @@ bool SidescanViewController::activateLayer(const std::string& layer_id,
                 // Retained for compatibility with cached plans created by older
                 // callers. Current cold loads build the requested tier once.
                 if (stage_upgrade
-                        && has_raster
                         && m_project
                         && m_quality == requested_quality
                         && requested_quality != current_quality) {

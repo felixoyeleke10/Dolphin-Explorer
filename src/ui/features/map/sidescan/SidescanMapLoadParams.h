@@ -16,6 +16,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -50,15 +51,18 @@ struct QualityLoadPlan {
 inline QualityLoadPlan qualityLoadPlan(MapSonarQuality requested,
                                        bool active_layer) noexcept
 {
+    if (active_layer
+            && (requested == MapSonarQuality::Medium
+                || requested == MapSonarQuality::High))
+        return {MapSonarQuality::Low, true};
+
     if (!active_layer
             && (requested == MapSonarQuality::Medium
                 || requested == MapSonarQuality::High))
         return {MapSonarQuality::Low, false};
 
-    // Build an uncached active tier once.  The former Low-then-requested plan
-    // reopened the artifact store, decoded and calibrated pings, rebuilt nav and
-    // coverage, and rasterized twice.  The index nav track already supplies the
-    // immediate visible-first representation while this requested raster builds.
+    // Low is already the bounded first image tier; Off/CoverageOnly have no image
+    // upgrade to stage.
     return {requested, false};
 }
 
@@ -181,6 +185,14 @@ struct SidescanLoadResult {
     // CRS IDs for which no supported transform was found (pseudo-degree fallback used).
     std::vector<core::SpatialRef> unresolved_crs;
 
+    struct DeferredCacheWrite {
+        std::string          path;
+        rastercache::Meta    meta;
+        rastercache::Summary summary;
+        LayerMapData         data;
+    };
+    std::shared_ptr<DeferredCacheWrite> deferred_cache_write;
+
 };
 
 // Immutable snapshot of everything the off-thread build needs — gathered on the
@@ -207,6 +219,18 @@ struct SssLoadInputs {
     std::string         cache_path;
     rastercache::Meta   cache_meta;
 };
+
+bool buildSidescanMapProducts(
+    const std::vector<core::SidescanPing>& pings,
+    LayerMapData& data,
+    const SssGeorefParams& georef,
+    const QualityParams& quality,
+    int palette_idx,
+    const std::atomic_bool& cancelled,
+    const std::function<void(float)>& raster_progress = {},
+    float canonical_stretch_low = -1.f,
+    float canonical_stretch_high = -1.f,
+    bool produce_color_image = true);
 
 // The full off-thread sidescan map build: raster fast-path, bounded preview
 // index, ping load + nav correction + reprojection, coverage/track/raster build,

@@ -28,7 +28,8 @@ namespace dolphin::ui {
 // Fills ld.coverage; existing coverage is cleared.
 void buildSwathCoverage(const std::vector<core::SidescanPing>& pings,
                         LayerMapData& ld,
-                        const SssGeorefParams& params = {});
+                        const SssGeorefParams& params = {},
+                        std::vector<SwathCoverage>* nadir_hidden = nullptr);
 
 // Build corrected sonar track + bounding box from pings. Uses the same
 // georeference parameters as coverage/raster so placement cannot be cropped by
@@ -64,6 +65,7 @@ bool buildSwathPreviewImage(const std::vector<core::SidescanPing>& pings,
                             bool   ping_lines_only  = false,
                             const std::function<void(float)>& progress = {},
                             float canonical_stretch_low  = -1.f,
-                            float canonical_stretch_high = -1.f);
+                            float canonical_stretch_high = -1.f,
+                            bool  produce_color_image = true);
 
 } // namespace dolphin::ui

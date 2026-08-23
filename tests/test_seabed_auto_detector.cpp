@@ -1,4 +1,5 @@
 #include "ui/features/waterfall/processing/SeabedAutoDetector.h"
+#include "ui/features/waterfall/rendering/WaterfallRenderer.h"
 
 #include <cassert>
 #include <cmath>
@@ -9,6 +10,9 @@ using dolphin::ui::PingRow;
 using dolphin::ui::SeabedAutoDetector;
 using dolphin::ui::SeabedAutoParams;
 using dolphin::ui::SeabedMethod;
+using dolphin::ui::WaterfallParams;
+using dolphin::ui::WaterfallRenderer;
+using dolphin::ui::WfLayout;
 
 namespace {
 
@@ -171,6 +175,43 @@ int main()
 
         for (const auto& row : rows_nl)
             assert(row.seabed.range_m > 82.f && row.seabed.range_m < 98.f);
+    }
+
+    // Rendering and hit-testing share the same nonlinear range table and the
+    // same per-channel altitude fallback when no displayed seabed pick exists.
+    {
+        PingRow row;
+        row.port = {1, 2, 3, 4, 5};
+        row.stbd = row.port;
+        row.port_ranges = {0.f, 10.f, 25.f, 60.f, 100.f};
+        row.stbd_ranges = row.port_ranges;
+        row.slant_range_m = 100.f;
+        row.port_altitude_m = 10.f;
+        row.stbd_altitude_m = 20.f;
+
+        WaterfallRenderer renderer;
+        WfLayout layout;
+        layout.widget_w = 200;
+        layout.widget_h = 100;
+        layout.nadir_x = 100;
+        layout.img_h = 50;
+        renderer.setLayout(layout);
+        WaterfallParams display;
+        display.slant_range_correction = true;
+        renderer.setParams(display);
+
+        std::vector<PingRow> rows{row};
+        dolphin::core::SidescanChannel channel{};
+        float port_range = 0.f;
+        float stbd_range = 0.f;
+        assert(renderer.xToRange(49, 0, rows, 0.f, 0,
+                                 channel, port_range));
+        assert(channel == dolphin::core::SidescanChannel::Port);
+        assert(renderer.xToRange(150, 0, rows, 0.f, 0,
+                                 channel, stbd_range));
+        assert(channel == dolphin::core::SidescanChannel::Starboard);
+        assert(port_range > 50.f && stbd_range > 50.f);
+        assert(std::abs(port_range - stbd_range) > 0.5f);
     }
 
     return 0;

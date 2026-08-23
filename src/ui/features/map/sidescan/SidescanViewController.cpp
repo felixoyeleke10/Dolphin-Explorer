@@ -8,6 +8,7 @@
 #include "ui/features/map/MapView.h"
 #include "ui/shared/settings/SettingsKeys.h"
 #include "render/sonar/SSSPalette.h"
+#include "app/tasks/OperationManager.h"
 
 #include <QSettings>
 
@@ -49,35 +50,12 @@ SidescanViewController::SidescanViewController(MapView*            map_view,
     // and the layer is still on the map.
     connect(this, &SidescanViewController::prebuildTierComplete, this,
             [this](const std::string& layer_id, MapSonarQuality quality) {
-                const auto upgrade = m_geometry_preview_upgrades.find(layer_id);
-                if (upgrade != m_geometry_preview_upgrades.end()
-                        && quality == MapSonarQuality::Low) {
-                    const MapSonarQuality target = upgrade->second;
-                    m_geometry_preview_upgrades.erase(upgrade);
-                    if (m_loaded_layers.count(layer_id)) {
-                        applyCachedTier(layer_id, quality);
-                        prebuildTier(layer_id, target, m_project, "sss:apply");
-                    }
-                    return;
-                }
+                if (m_staged_refreshes.count(layer_id)) return;
                 if (quality != m_quality) return;
                 if (!m_loaded_layers.count(layer_id)) return;
                 if (applyCachedTier(layer_id, quality) && m_map_view
                         && layer_id == m_active_layer_id)
                     m_map_view->setActiveLayer(layer_id);
-            });
-
-    // A failed/cancelled preview must not leave the old geometry indefinitely.
-    // Successful previews erase their entry synchronously in the handler above.
-    connect(this, &SidescanViewController::prebuildTierFinished, this,
-            [this](const std::string& layer_id, MapSonarQuality quality) {
-                const auto upgrade = m_geometry_preview_upgrades.find(layer_id);
-                if (upgrade == m_geometry_preview_upgrades.end()
-                        || quality != MapSonarQuality::Low) return;
-                const MapSonarQuality target = upgrade->second;
-                m_geometry_preview_upgrades.erase(upgrade);
-                if (m_project && m_loaded_layers.count(layer_id))
-                    prebuildTier(layer_id, target, m_project, "sss:apply");
             });
 }
 
@@ -87,8 +65,21 @@ void SidescanViewController::onViewerRefresh(ViewerRefreshReason reason,
 {
     switch (reason) {
     case ViewerRefreshReason::LayerDataChanged:
-        if (!layer_id.empty() && m_loaded_layers.count(layer_id))
-            reloadLayer(layer_id);
+        if (!layer_id.empty() && m_loaded_layers.count(layer_id)) {
+            // The authoritative store/index changed (including reverting the last
+            // baked correction to the imported baseline). Invalidate every cache,
+            // but retain the old map until a Low raster from the new store is
+            // ready; then upgrade to the requested image tier.
+            if (m_op_mgr) {
+                m_op_mgr->cancelByKey("sss:load:" + layer_id);
+                m_op_mgr->cancelByPrefix("sss:prebuild:" + layer_id + ":");
+            }
+            m_resident_quality.erase(layer_id);
+            m_layer_intensity_cache.erase(layer_id);
+            m_quality_tier_cache.erase(layer_id);
+            m_staged_refreshes.erase(layer_id);
+            applyGeometryCorrections({layer_id});
+        }
         else if (layer_id.empty() && !m_active_layer_id.empty())
             reloadCurrentLayer();
         break;

@@ -24,6 +24,38 @@
 namespace dolphin::ui {
 namespace detail {
 
+bool buildSidescanMapProducts(
+    const std::vector<core::SidescanPing>& pings,
+    LayerMapData& data,
+    const SssGeorefParams& georef,
+    const QualityParams& quality,
+    int palette_idx,
+    const std::atomic_bool& cancelled,
+    const std::function<void(float)>& raster_progress,
+    float canonical_stretch_low,
+    float canonical_stretch_high,
+    bool produce_color_image)
+{
+    for (const auto& ping : pings)
+        if (ping.nav.valid) {
+            data.is_projected = ping.nav.is_projected;
+            break;
+        }
+    buildSwathNavTrack(pings, data, georef);
+    SssGeorefParams shown_geometry = georef;
+    shown_geometry.show_nadir = true;
+    buildSwathCoverage(pings, data, shown_geometry,
+                       &data.coverage_nadir_hidden);
+    data.show_nadir = georef.show_nadir;
+    if (quality.max_image_dim <= 0 || cancelled.load(std::memory_order_relaxed))
+        return !cancelled.load(std::memory_order_relaxed);
+    return buildSwathPreviewImage(
+        pings, data, quality.max_image_dim, palette_idx, cancelled,
+        shown_geometry, quality.min_strip_cos, quality.cell_budget_div,
+        false, raster_progress, canonical_stretch_low, canonical_stretch_high,
+        produce_color_image);
+}
+
 SidescanLoadResult buildSidescanLoadResult(const SssLoadInputs&            in,
                                            const std::function<void(int)>& report,
                                            app::CancellationToken          cancel)
@@ -191,40 +223,19 @@ SidescanLoadResult buildSidescanLoadResult(const SssLoadInputs&            in,
             imaging::applyContextCalibrationAndImaging(map_pings, in.sss_params);
     }
 
-    // -- Coverage + nav track (always built for CoverageOnly+) ---------
-    // is_projected must be set before the build calls: both functions use
-    // it to pick degree vs. metre gap thresholds and bbox padding units.
-    for (const auto& ping : map_pings)
-        if (ping.nav.valid) {
-            result.layer_data.is_projected = ping.nav.is_projected;
-            break;
-        }
-
     const auto raster_started = Clock::now();
-    buildSwathNavTrack(map_pings, result.layer_data, in.georef_params);
-    SssGeorefParams shown_geometry = in.georef_params;
-    shown_geometry.show_nadir = true;
-    buildSwathCoverage(map_pings, result.layer_data, shown_geometry);
-    LayerMapData hidden_footprint;
-    hidden_footprint.is_projected = result.layer_data.is_projected;
-    SssGeorefParams hidden_geometry = in.georef_params;
-    hidden_geometry.show_nadir = false;
-    buildSwathCoverage(map_pings, hidden_footprint, hidden_geometry);
-    result.layer_data.coverage_nadir_hidden =
-        std::move(hidden_footprint.coverage);
-    result.layer_data.show_nadir = in.georef_params.show_nadir;
-    report(80);   // coverage + nav track built; rasterizing next
-
-    // -- Sonar preview image (quality >= Low) --------------------------
-    if (in.qp.max_image_dim > 0 && !cancel.isCancelled()) {
-        const bool built = buildSwathPreviewImage(
-            map_pings, result.layer_data,
-            in.qp.max_image_dim, in.palette_idx, *cancel.flag(),
-            shown_geometry, in.qp.min_strip_cos, in.qp.cell_budget_div,
-            /*ping_lines_only=*/false, {},
-            amplitude_context ? amplitude_context->stretch_low : -1.f,
-            amplitude_context ? amplitude_context->stretch_high : -1.f);
-        result.quality_reduced = built && result.layer_data.preview_reduced;
+    report(80);
+    const bool built = buildSidescanMapProducts(
+        map_pings, result.layer_data, in.georef_params, in.qp,
+        in.palette_idx, *cancel.flag(), {},
+        amplitude_context ? amplitude_context->stretch_low : -1.f,
+        amplitude_context ? amplitude_context->stretch_high : -1.f,
+        true);
+    result.quality_reduced = built && result.layer_data.preview_reduced;
+    if (!built || (in.qp.max_image_dim > 0
+            && result.layer_data.intensity_cache.empty())) {
+        result.load_failed = true;
+        return result;
     }
     result.layer_data.nav_stats.raster_ms = elapsedMs(raster_started);
     result.layer_data.nav_stats.decode_ms = decode_ms;
@@ -302,7 +313,16 @@ SidescanLoadResult buildSidescanLoadResult(const SssLoadInputs&            in,
         sum.total_ssc_entries  = result.total_ssc_entries;
         sum.preview_port_count = result.preview_port_count;
         sum.quality_reduced    = result.quality_reduced;
-        rastercache::save(in.cache_path, in.cache_meta, sum, result.layer_data);
+        auto write = std::make_shared<SidescanLoadResult::DeferredCacheWrite>();
+        write->path = in.cache_path;
+        write->meta = in.cache_meta;
+        write->summary = std::move(sum);
+        write->data = result.layer_data;
+        // Cache persistence needs the palette-free grid and geometry only. Do not
+        // retain either display image while the deferred disk write is pending.
+        write->data.preview_image = {};
+        write->data.gpu_intensity_image = {};
+        result.deferred_cache_write = std::move(write);
     }
 
     return result;

@@ -34,6 +34,8 @@ struct PingRow {
     bool                  is_projected  = false;
     float                 heading_deg   = 0.f;  // vessel heading, clockwise from North
     float                 altitude_m    = 0.f;  // sensor altitude above seabed
+    float                 port_altitude_m = 0.f; // trusted per-channel SRC reference
+    float                 stbd_altitude_m = 0.f;
 };
 
 } // namespace dolphin::ui

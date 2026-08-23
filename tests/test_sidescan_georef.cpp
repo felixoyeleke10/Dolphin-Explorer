@@ -13,6 +13,7 @@
 #include "geo/GeoUtils.h"
 #include "ui/features/map/sidescan/SidescanMapLoadParams.h"
 #include "ui/features/map/sidescan/SidescanInvalidation.h"
+#include "ui/features/map/sidescan/SidescanStagedRefresh.h"
 #include "ui/features/map/sidescan/SssContinuity.h"
 #include "ui/features/map/sidescan/SssGeorefParams.h"
 #include "ui/features/map/sidescan/SidescanSwathGeoreferencer.h"
@@ -53,12 +54,12 @@ void testQualityLoadPlanning()
     using ui::detail::qualityLoadPlan;
 
     auto plan = qualityLoadPlan(MapSonarQuality::High, true);
-    CHECK(plan.build_quality == MapSonarQuality::High);
-    CHECK(!plan.stage_upgrade);
+    CHECK(plan.build_quality == MapSonarQuality::Low);
+    CHECK(plan.stage_upgrade);
 
     plan = qualityLoadPlan(MapSonarQuality::Medium, true);
-    CHECK(plan.build_quality == MapSonarQuality::Medium);
-    CHECK(!plan.stage_upgrade);
+    CHECK(plan.build_quality == MapSonarQuality::Low);
+    CHECK(plan.stage_upgrade);
 
     plan = qualityLoadPlan(MapSonarQuality::Medium, false);
     CHECK(plan.build_quality == MapSonarQuality::Low);
@@ -87,6 +88,32 @@ void testSidescanInvalidationContract()
           == SidescanRefreshAction::Reraster);
     CHECK(refreshActionFor(SidescanInvalidation::Geometry)
           == SidescanRefreshAction::ProgressiveReraster);
+}
+
+void testStagedRefreshGenerationContract()
+{
+    using namespace dolphin::ui;
+    SidescanStagedRefresh refresh{
+        42, MapSonarQuality::High, MapSonarQuality::Low, true};
+
+    CHECK(acceptCompletedTier(refresh, 41, MapSonarQuality::Low)
+          == StagedRefreshStep::Ignore);
+    CHECK(refresh.awaiting_preview);
+    CHECK(acceptCompletedTier(refresh, 42, MapSonarQuality::Low)
+          == StagedRefreshStep::ShowPreviewThenBuildTarget);
+    CHECK(!refresh.awaiting_preview);
+    CHECK(acceptCompletedTier(refresh, 42, MapSonarQuality::High)
+          == StagedRefreshStep::ShowFinal);
+
+    SidescanStagedRefresh failed{
+        43, MapSonarQuality::Medium, MapSonarQuality::Low, true};
+    CHECK(acceptFailedTier(failed, 42, MapSonarQuality::Low)
+          == StagedRefreshStep::Ignore);
+    CHECK(acceptFailedTier(failed, 43, MapSonarQuality::Low)
+          == StagedRefreshStep::BuildTargetAfterPreviewFailure);
+    CHECK(!failed.awaiting_preview);
+    CHECK(acceptFailedTier(failed, 43, MapSonarQuality::Medium)
+          == StagedRefreshStep::FinalFailed);
 }
 
 core::SidescanPing makePing(double lat_m,
@@ -509,6 +536,15 @@ void testDatelineMosaicUsesOneLocalLongitudeBranch()
     CHECK(data.nav_stats.stitch_nav_rejects == 0);
     CHECK(data.nav_stats.stitch_time_rejects == 0);
     CHECK(data.nav_stats.stitch_ping_rejects == 0);
+
+    ui::LayerMapData intensity_only;
+    CHECK(ui::buildSwathNavTrack(pings, intensity_only, params) == pings.size());
+    CHECK(ui::buildSwathPreviewImage(
+        pings, intensity_only, 256, 0, cancelled, params, 0.0, 0,
+        false, {}, -1.f, -1.f, false));
+    CHECK(intensity_only.preview_image.isNull());
+    CHECK(!intensity_only.intensity_cache.empty());
+    CHECK(intensity_only.nav_stats.preview_pixels_written > 0);
     for (const auto& point : data.nav_track)
         if (std::isfinite(point.x()))
             CHECK(point.x() > 179.0 && point.x() < 181.0);
@@ -684,6 +720,44 @@ void testCoverageAndRasterShareNadirPolicy()
     verify(true, false);  // UI-only close; sample ranges are still raw slant.
     verify(true, true);   // SlantRangeNode-baked ground ranges.
 
+    // The optimized dual-footprint pass must be identical to two independent
+    // builds while resolving navigation and continuity only once.
+    {
+        ui::SssGeorefParams shown_params;
+        shown_params.heading_source = ui::SssHeadingSource::FishSensor;
+        shown_params.show_nadir = true;
+        ui::LayerMapData combined;
+        ui::buildSwathCoverage(
+            pings, combined, shown_params, &combined.coverage_nadir_hidden);
+
+        auto hidden_params = shown_params;
+        hidden_params.show_nadir = false;
+        ui::LayerMapData separate_hidden;
+        ui::buildSwathCoverage(pings, separate_hidden, hidden_params);
+
+        CHECK(combined.coverage_nadir_hidden.size()
+              == separate_hidden.coverage.size());
+        if (!combined.coverage_nadir_hidden.empty()
+                && !separate_hidden.coverage.empty()) {
+            const auto& combined_ribbons =
+                combined.coverage_nadir_hidden.front().ribbons;
+            const auto& separate_ribbons = separate_hidden.coverage.front().ribbons;
+            CHECK(combined_ribbons.size() == separate_ribbons.size());
+            if (!combined_ribbons.empty() && !separate_ribbons.empty()) {
+                CHECK(combined_ribbons.front().size()
+                      == separate_ribbons.front().size());
+                for (size_t i = 0; i < std::min(
+                        combined_ribbons.front().size(),
+                        separate_ribbons.front().size()); ++i) {
+                    CHECK(std::abs(combined_ribbons.front()[i].x()
+                                   - separate_ribbons.front()[i].x()) < 1e-9);
+                    CHECK(std::abs(combined_ribbons.front()[i].y()
+                                   - separate_ribbons.front()[i].y()) < 1e-9);
+                }
+            }
+        }
+    }
+
     // Showing the nadir band must not make raw and corrected map geometry
     // identical. Raw samples retain their slant-distance footprint; corrected
     // samples are compressed to ground range.
@@ -730,6 +804,26 @@ void testCoverageAndRasterShareNadirPolicy()
     if (zero_result.strips.size() == 1) {
         CHECK(zero_result.strips[0].points.size() == 2);
         CHECK(!zero_result.strips[0].points.front().renderable);
+        CHECK(zero_result.strips[0].points.back().renderable);
+    }
+
+    auto baked_bottom_band = pings.front();
+    baked_bottom_band.samples = {
+        {4'000, 0.0f}, {4'000, 1.0f}, {2'000, 2.0f},
+        {1'500, 3.0f}, {1'000, 4.0f}};
+    baked_bottom_band.correction_flags |= core::CorrectionFlag::SlantRange;
+    const auto band_result = ui::georeferenceSidescanPings(
+        {baked_bottom_band}, baked_params);
+    CHECK(band_result.strips.size() == 1);
+    if (band_result.strips.size() == 1) {
+        const auto& points = band_result.strips[0].points;
+        CHECK(points.size() == 5);
+        if (points.size() == 5) {
+            CHECK(!points[0].renderable); // geometry-only track anchor
+            CHECK(!points[1].renderable); // collapsed specular guard bin
+            CHECK(points[2].renderable);  // measured seabed texture retained
+            CHECK(points[4].renderable);
+        }
     }
 
     // Durable caches can carry authoritative per-ping correction flags even
@@ -1186,6 +1280,7 @@ int main()
 {
     testQualityLoadPlanning();
     testSidescanInvalidationContract();
+    testStagedRefreshGenerationContract();
     testHeldFixesInterpolateByCycleTimestamp();
     testValidHeldFixesAtPointOneHertzGpsAreInterpolated();
     testRepairHardBoundsRejectTenKilometreLineBreak();

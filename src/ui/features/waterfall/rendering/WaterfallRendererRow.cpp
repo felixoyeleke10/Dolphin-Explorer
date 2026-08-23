@@ -5,6 +5,7 @@
 // xToRange()          — widget pixel x → (SidescanChannel, slant range m)
 
 #include "ui/features/waterfall/rendering/WaterfallRenderer.h"
+#include "ui/features/waterfall/rendering/WaterfallRangeGeometry.h"
 
 #include <QtGlobal>  // qBound, qMax
 #include <algorithm>
@@ -36,10 +37,6 @@ void WaterfallRenderer::rebuildRow(const PingRow& pr, QRgb* line0,
     // Altitude priority: seabed-detected range (most accurate) → ping nav altitude_m
     // (from sensor, always populated when the towfish has an altimeter).
     const float max_r  = pr.slant_range_m;
-    const float h_alt  = (pr.seabed.range_m > 0.f) ? pr.seabed.range_m : pr.altitude_m;
-    const bool src    = m_params.slant_range_correction && h_alt > 0.f && max_r > h_alt;
-    const float max_g  = src ? std::sqrt(std::max(0.f, max_r * max_r - h_alt * h_alt))
-                             : 0.f;
 
     const bool show_port = m_params.display_channel != DisplayChannel::Starboard;
     const bool show_stbd = m_params.display_channel != DisplayChannel::Port;
@@ -51,13 +48,19 @@ void WaterfallRenderer::rebuildRow(const PingRow& pr, QRgb* line0,
 
     // Port: pixel at x=nadir-1 is sample h_pan; further left = farther range.
     if (!pr.port.empty() && show_port) {
+        const float h_alt = waterfallSideAltitude(pr, core::SidescanChannel::Port);
+        const bool src = m_params.slant_range_correction
+                      && h_alt > 0.f && max_r > h_alt;
+        const float max_g = src
+            ? std::sqrt(std::max(0.f, max_r * max_r - h_alt * h_alt)) : 0.f;
         for (int x = kWfRulerW; x < nadir; ++x) {
             float si_f;
             if (src && max_g > 0.f && src_port_w > 0.f) {
                 const float frac = std::clamp(static_cast<float>(nadir - 1 - x) / src_port_w, 0.f, 1.f);
                 const float g    = frac * max_g;
                 const float r    = std::sqrt(g * g + h_alt * h_alt);
-                si_f = r / max_r * static_cast<float>(ns_port) + static_cast<float>(h_pan);
+                si_f = waterfallSampleForRange(
+                    pr.port_ranges, ns_port, r, max_r) + static_cast<float>(h_pan);
             } else {
                 si_f = static_cast<float>(nadir - 1 - x) / z_port + static_cast<float>(h_pan);
             }
@@ -75,6 +78,11 @@ void WaterfallRenderer::rebuildRow(const PingRow& pr, QRgb* line0,
 
     // Starboard: pixel at x=nadir is sample h_pan; further right = farther range.
     if (!pr.stbd.empty() && show_stbd) {
+        const float h_alt = waterfallSideAltitude(pr, core::SidescanChannel::Starboard);
+        const bool src = m_params.slant_range_correction
+                      && h_alt > 0.f && max_r > h_alt;
+        const float max_g = src
+            ? std::sqrt(std::max(0.f, max_r * max_r - h_alt * h_alt)) : 0.f;
         const int w = m_layout.widget_w;
         for (int x = nadir; x < w; ++x) {
             float si_f;
@@ -82,7 +90,8 @@ void WaterfallRenderer::rebuildRow(const PingRow& pr, QRgb* line0,
                 const float frac = std::clamp(static_cast<float>(x - nadir) / src_stbd_w, 0.f, 1.f);
                 const float g    = frac * max_g;
                 const float r    = std::sqrt(g * g + h_alt * h_alt);
-                si_f = r / max_r * static_cast<float>(ns_stbd) + static_cast<float>(h_pan);
+                si_f = waterfallSampleForRange(
+                    pr.stbd_ranges, ns_stbd, r, max_r) + static_cast<float>(h_pan);
             } else {
                 si_f = static_cast<float>(x - nadir) / z_stbd + static_cast<float>(h_pan);
             }
@@ -174,44 +183,58 @@ bool WaterfallRenderer::xToRange(int x, int row_idx,
     }
 
     // SRC geometry — mirrors rebuildRow() when SRC is active for this row.
-    const float h_alt_raw = (row_idx >= 0 && row_idx < total) ? rows[row_idx].seabed.range_m : 0.f;
-    const float h_alt = (h_alt_raw > 0.f && std::isfinite(h_alt_raw)) ? h_alt_raw : 0.f;
-    const bool  src   = m_params.slant_range_correction && h_alt > 0.f && max_r > 0.f;
-    const float max_g = src ? std::sqrt(std::max(0.f, max_r * max_r - h_alt * h_alt)) : 0.f;
+    const PingRow& selected_row = rows[static_cast<size_t>(
+        std::clamp(row_idx, 0, total - 1))];
 
     if (x < nx) {
         ch = core::SidescanChannel::Port;
+        const float h_alt = waterfallSideAltitude(selected_row, ch);
+        const bool src = m_params.slant_range_correction
+                      && h_alt > 0.f && max_r > h_alt;
+        const float max_g = src
+            ? std::sqrt(max_r * max_r - h_alt * h_alt) : 0.f;
         if (src && max_g > 0.f && ns_port > 1) {
             const float z    = (h_zoom > 0.f) ? h_zoom : (port_w > 0 ? float(port_w) / ns_port : 1.f);
             const float sw   = float(ns_port) * z;
             const float frac = std::clamp(static_cast<float>(nx - 1 - x) / sw, 0.f, 1.f);
             const float g    = frac * max_g;
             const float r    = std::sqrt(g * g + h_alt * h_alt);
-            const int   si   = qBound(0, static_cast<int>(r / max_r * ns_port) + h_pan, ns_port - 1);
-            range_m          = float(si) / float(ns_port - 1) * max_r;
+            const float si = waterfallSampleForRange(
+                selected_row.port_ranges, ns_port, r, max_r) + h_pan;
+            range_m = waterfallRangeAtSample(
+                selected_row.port_ranges, ns_port, si, max_r);
         } else {
             const int   ns = qMax(1, ns_port);
             const float z  = (h_zoom > 0.f) ? h_zoom
                            : (port_w > 0 ? float(port_w) / ns : 1.f);
             const int   si = qBound(0, static_cast<int>((nx - 1 - x) / z) + h_pan, ns - 1);
-            range_m = (ns > 1) ? float(si) / float(ns - 1) * max_r : 0.f;
+            range_m = waterfallRangeAtSample(
+                selected_row.port_ranges, ns, static_cast<float>(si), max_r);
         }
     } else {
         ch = core::SidescanChannel::Starboard;
+        const float h_alt = waterfallSideAltitude(selected_row, ch);
+        const bool src = m_params.slant_range_correction
+                      && h_alt > 0.f && max_r > h_alt;
+        const float max_g = src
+            ? std::sqrt(max_r * max_r - h_alt * h_alt) : 0.f;
         if (src && max_g > 0.f && ns_stbd > 1) {
             const float z    = (h_zoom > 0.f) ? h_zoom : (stbd_w > 0 ? float(stbd_w) / ns_stbd : 1.f);
             const float sw   = float(ns_stbd) * z;
             const float frac = std::clamp(static_cast<float>(x - nx) / sw, 0.f, 1.f);
             const float g    = frac * max_g;
             const float r    = std::sqrt(g * g + h_alt * h_alt);
-            const int   si   = qBound(0, static_cast<int>(r / max_r * ns_stbd) + h_pan, ns_stbd - 1);
-            range_m          = float(si) / float(ns_stbd - 1) * max_r;
+            const float si = waterfallSampleForRange(
+                selected_row.stbd_ranges, ns_stbd, r, max_r) + h_pan;
+            range_m = waterfallRangeAtSample(
+                selected_row.stbd_ranges, ns_stbd, si, max_r);
         } else {
             const int   ns = qMax(1, ns_stbd);
             const float z  = (h_zoom > 0.f) ? h_zoom
                            : (stbd_w > 0 ? float(stbd_w) / ns : 1.f);
             const int   si = qBound(0, static_cast<int>((x - nx) / z) + h_pan, ns - 1);
-            range_m = (ns > 1) ? float(si) / float(ns - 1) * max_r : 0.f;
+            range_m = waterfallRangeAtSample(
+                selected_row.stbd_ranges, ns, static_cast<float>(si), max_r);
         }
     }
     return range_m >= 0.f;

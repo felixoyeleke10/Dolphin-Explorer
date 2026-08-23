@@ -34,7 +34,7 @@ void SidescanViewController::setMapSonarQuality(MapSonarQuality quality)
         m_op_mgr->cancelByPrefix("sss:prebuild:");
     }
     m_quality_tier_cache.clear();
-    m_geometry_preview_upgrades.clear();
+    m_staged_refreshes.clear();
     m_resident_quality.clear();
     m_quality = quality;
 
@@ -99,6 +99,9 @@ bool SidescanViewController::applyCachedTier(const std::string& layer_id,
     PrebuiltTier tier = std::move(q_it->second);
     tier_map_it->second.erase(q_it);
     if (tier_map_it->second.empty()) m_quality_tier_cache.erase(tier_map_it);
+    if (static_cast<int>(quality) >= static_cast<int>(MapSonarQuality::Low)
+            && !tier.intensity.valid())
+        return false;
     LayerMapData ld;
     ld.coverage        = std::move(tier.coverage);
     ld.coverage_nadir_hidden = std::move(tier.coverage_nadir_hidden);
@@ -133,7 +136,10 @@ namespace {
 struct PrebuildResult {
     std::string     layer_id;
     MapSonarQuality quality;
+    uint64_t        refresh_generation = 0;
     PrebuiltTier    tier;
+    std::shared_ptr<detail::SidescanLoadResult::DeferredCacheWrite>
+        deferred_cache_write;
     bool            ok = false;
 };
 
@@ -187,10 +193,12 @@ rastercache::Summary buildTierSummary(
 void SidescanViewController::prebuildTier(const std::string& layer_id,
                                           MapSonarQuality    quality,
                                           app::Project*      project,
-                                          const std::string& lane)
+                                          const std::string& lane,
+                                          uint64_t           refresh_generation)
 {
     auto* layer = project ? project->findLayer(layer_id) : nullptr;
     if (!layer || !layer->index_built || layer->sidescanCount() == 0) {
+        handleRefreshTierFinished(layer_id, quality, refresh_generation);
         emit prebuildTierFinished(layer_id, quality);  // nothing to build — let UIs close
         return;
     }
@@ -224,7 +232,11 @@ void SidescanViewController::prebuildTier(const std::string& layer_id,
     const std::string cache_path =
         rastercache::cachePath(store_path, layer_id, quality);
 
-    if (!m_op_mgr) { emit prebuildTierFinished(layer_id, quality); return; }
+    if (!m_op_mgr) {
+        handleRefreshTierFinished(layer_id, quality, refresh_generation);
+        emit prebuildTierFinished(layer_id, quality);
+        return;
+    }
 
     // Keyed per layer+tier so a re-request supersedes; runs in the "map" lane
     // (cap 2) below; tracked in DiagnosticsHub via the OperationManager signals.
@@ -234,7 +246,7 @@ void SidescanViewController::prebuildTier(const std::string& layer_id,
         [progress_owner, store_path, store_format, idx, source_path,
          layer_src_ref, apply_layer_crs, display_ref, layer_id,
          layer_freq_hz, layer_low_freq_hz, qp, quality, georef, nav_params,
-         sss_params, cache_path, cache_meta]
+         sss_params, cache_path, cache_meta, refresh_generation]
         (app::CancellationToken cancel) -> PrebuildResult
         {
             // Coarse 0–100 progress, marshalled to the main thread. loadingProgress
@@ -254,6 +266,7 @@ void SidescanViewController::prebuildTier(const std::string& layer_id,
             PrebuildResult res;
             res.layer_id = layer_id;
             res.quality  = quality;
+            res.refresh_generation = refresh_generation;
 
             // Raster fast path: reconstruct this tier from the persisted raster.
             {
@@ -352,33 +365,18 @@ void SidescanViewController::prebuildTier(const std::string& layer_id,
             if (cancel.isCancelled()) return PrebuildResult{};
 
             LayerMapData ld;
-            for (const auto& p : map_pings)
-                if (p.nav.valid) { ld.is_projected = p.nav.is_projected; break; }
-
-            buildSwathNavTrack(map_pings, ld, georef);
-            SssGeorefParams shown_geometry = georef;
-            shown_geometry.show_nadir = true;
-            buildSwathCoverage(map_pings, ld, shown_geometry);
-            LayerMapData hidden_footprint;
-            hidden_footprint.is_projected = ld.is_projected;
-            SssGeorefParams hidden_geometry = georef;
-            hidden_geometry.show_nadir = false;
-            buildSwathCoverage(map_pings, hidden_footprint, hidden_geometry);
-            ld.coverage_nadir_hidden = std::move(hidden_footprint.coverage);
-            ld.show_nadir = georef.show_nadir;
             report(82);   // coverage built; rasterizing next
 
             if (cancel.isCancelled()) return PrebuildResult{};
-            if (qp.max_image_dim > 0)
-                buildSwathPreviewImage(map_pings, ld, qp.max_image_dim,
-                    0 /* palette 0 = unused — intensity_cache is palette-free */,
-                    *cancel.flag(), shown_geometry, qp.min_strip_cos, qp.cell_budget_div,
-                    /*ping_lines_only=*/false,
-                    // Map the rasterizer's 0–1 onto the card's 82–98 band so the
-                    // longest phase shows live sub-progress instead of freezing at 82.
-                    [&report](float f) { report(82 + static_cast<int>(f * 16.f)); },
-                    amplitude_context ? amplitude_context->stretch_low : -1.f,
-                    amplitude_context ? amplitude_context->stretch_high : -1.f);
+            const bool products_built = buildSidescanMapProducts(
+                map_pings, ld, georef, qp, 0, *cancel.flag(),
+                [&report](float f) { report(82 + static_cast<int>(f * 16.f)); },
+                amplitude_context ? amplitude_context->stretch_low : -1.f,
+                amplitude_context ? amplitude_context->stretch_high : -1.f,
+                false);
+            if (!products_built || (qp.max_image_dim > 0
+                    && ld.intensity_cache.empty()))
+                return res;
             report(98);   // raster done
 
             ld.nav_stats.quality_used = quality;
@@ -389,7 +387,15 @@ void SidescanViewController::prebuildTier(const std::string& layer_id,
             if (!cancel.isCancelled()) {
                 const rastercache::Summary sum =
                     buildTierSummary(map_pings, ld, total_ssc_entries);
-                rastercache::save(cache_path, cache_meta, sum, ld);
+                auto write = std::make_shared<
+                    detail::SidescanLoadResult::DeferredCacheWrite>();
+                write->path = cache_path;
+                write->meta = cache_meta;
+                write->summary = sum;
+                write->data = ld;
+                write->data.preview_image = {};
+                write->data.gpu_intensity_image = {};
+                res.deferred_cache_write = std::move(write);
             }
 
             res.tier.coverage        = std::move(ld.coverage);
@@ -417,8 +423,25 @@ void SidescanViewController::prebuildTier(const std::string& layer_id,
         },
         [this](PrebuildResult res) {
             if (!res.ok) return;
+            if (res.deferred_cache_write && m_op_mgr) {
+                auto write = std::move(res.deferred_cache_write);
+                m_op_mgr->setLaneCap("sss:raster-cache", 1);
+                m_op_mgr->run<bool>(
+                    tr("Caching sidescan map — %1")
+                        .arg(QString::fromStdString(res.layer_id)),
+                    [write](app::CancellationToken cancel) {
+                        if (cancel.isCancelled()) return false;
+                        return rastercache::save(
+                            write->path, write->meta, write->summary, write->data);
+                    },
+                    [](bool) {},
+                    "sss:raster-cache:" + write->path,
+                    /*heavy=*/false, {}, "sss:raster-cache");
+            }
             m_quality_tier_cache[res.layer_id][static_cast<int>(res.quality)] =
                 std::move(res.tier);
+            handleRefreshTierComplete(
+                res.layer_id, res.quality, res.refresh_generation);
             emit prebuildTierComplete(res.layer_id, res.quality);
 
             // applyCachedTier consumes a live/current handoff synchronously. If
@@ -438,7 +461,10 @@ void SidescanViewController::prebuildTier(const std::string& layer_id,
         /*heavy=*/false,
         // on_finally (every outcome) — let a progress UI close reliably even on
         // failure/cancel, where prebuildTierComplete (success-only) never fires.
-        [this, layer_id, quality]() { emit prebuildTierFinished(layer_id, quality); },
+        [this, layer_id, quality, refresh_generation]() {
+            handleRefreshTierFinished(layer_id, quality, refresh_generation);
+            emit prebuildTierFinished(layer_id, quality);
+        },
         lane);
 }
 

@@ -5,6 +5,7 @@
 
 #include "ui/features/waterfall/processing/WaterfallPingAssembler.h"
 #include "render/sonar/SSSAmplitudeProcessor.h"
+#include "core/SidescanGeometry.h"
 
 #include <algorithm>
 #include <cmath>
@@ -97,8 +98,11 @@ PingRow WaterfallPingAssembler::buildRow(const core::SidescanPing* pp,
     bool  nav_set   = false;
 
     auto fill = [&](const core::SidescanPing* ping,
-                    std::vector<uint16_t>& out, std::vector<float>& out_ranges) {
+                    std::vector<uint16_t>& out, std::vector<float>& out_ranges,
+                    float& side_altitude) {
         if (!ping) return;
+        side_altitude = static_cast<float>(
+            core::sidescanCorrectionAltitudeMetres(*ping).value_or(0.0));
         if (std::isfinite(ping->slant_range_m))
             max_range = std::max(max_range, ping->slant_range_m);
         if (!row.timestamp_us) row.timestamp_us = ping->timestamp_us;
@@ -144,8 +148,8 @@ PingRow WaterfallPingAssembler::buildRow(const core::SidescanPing* pp,
         }
     };
 
-    fill(pp, row.port, row.port_ranges);
-    fill(sp, row.stbd, row.stbd_ranges);
+    fill(pp, row.port, row.port_ranges, row.port_altitude_m);
+    fill(sp, row.stbd, row.stbd_ranges, row.stbd_altitude_m);
     row.slant_range_m = max_range;
     return row;
 }

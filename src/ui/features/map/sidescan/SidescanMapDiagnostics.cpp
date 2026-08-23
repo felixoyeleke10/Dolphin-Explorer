@@ -61,7 +61,7 @@ void SidescanViewController::reloadCurrentLayer()
     m_resident_quality.clear();
     m_layer_intensity_cache.clear();  // stale at old CRS / georef
     m_quality_tier_cache.clear();     // stale at old CRS / georef
-    m_geometry_preview_upgrades.clear();
+    m_staged_refreshes.clear();
     for (const auto& id : to_reload)
         activateLayer(id, m_project, id == saved_active);
     // Restore active-layer selection (activateLayer overwrites m_active_layer_id).
@@ -81,7 +81,7 @@ void SidescanViewController::reloadLayer(const std::string& layer_id)
     m_resident_quality.erase(layer_id);
     m_layer_intensity_cache.erase(layer_id);
     m_quality_tier_cache.erase(layer_id);
-    m_geometry_preview_upgrades.erase(layer_id);
+    m_staged_refreshes.erase(layer_id);
     activateLayer(layer_id, m_project, layer_id == m_active_layer_id);
 }
 
@@ -116,14 +116,67 @@ void SidescanViewController::applyGeometryCorrections(
 
     for (const auto& layer_id : layer_ids) {
         if (!m_loaded_layers.count(layer_id)) continue;
+        if (m_op_mgr)
+            m_op_mgr->cancelByPrefix("sss:prebuild:" + layer_id + ":");
+        const uint64_t generation = m_next_refresh_generation++;
         if (static_cast<int>(m_quality) > static_cast<int>(MapSonarQuality::Low)) {
-            m_geometry_preview_upgrades[layer_id] = m_quality;
-            prebuildTier(layer_id, MapSonarQuality::Low, m_project, "sss:apply");
+            m_staged_refreshes[layer_id] = {
+                generation, m_quality, MapSonarQuality::Low, true};
+            prebuildTier(layer_id, MapSonarQuality::Low,
+                         m_project, "sss:apply", generation);
         } else {
-            m_geometry_preview_upgrades.erase(layer_id);
-            prebuildTier(layer_id, m_quality, m_project, "sss:apply");
+            m_staged_refreshes[layer_id] = {
+                generation, m_quality, m_quality, false};
+            prebuildTier(layer_id, m_quality, m_project, "sss:apply", generation);
         }
     }
+}
+
+void SidescanViewController::handleRefreshTierComplete(
+    const std::string& layer_id, MapSonarQuality quality, uint64_t generation)
+{
+    const auto it = m_staged_refreshes.find(layer_id);
+    if (it == m_staged_refreshes.end() || it->second.generation != generation)
+        return;
+
+    const StagedRefreshStep step = acceptCompletedTier(
+        it->second, generation, quality);
+    if (step == StagedRefreshStep::ShowPreviewThenBuildTarget) {
+        const MapSonarQuality target = it->second.target;
+        if (!m_loaded_layers.count(layer_id)) {
+            m_staged_refreshes.erase(it);
+            return;
+        }
+        applyCachedTier(layer_id, quality);
+        prebuildTier(layer_id, target, m_project, "sss:apply", generation);
+        return;
+    }
+
+    if (step == StagedRefreshStep::ShowFinal) {
+        if (m_loaded_layers.count(layer_id)) applyCachedTier(layer_id, quality);
+        m_staged_refreshes.erase(it);
+    }
+}
+
+void SidescanViewController::handleRefreshTierFinished(
+    const std::string& layer_id, MapSonarQuality quality, uint64_t generation)
+{
+    const auto it = m_staged_refreshes.find(layer_id);
+    if (it == m_staged_refreshes.end() || it->second.generation != generation)
+        return;
+    const StagedRefreshStep step = acceptFailedTier(
+        it->second, generation, quality);
+    if (step == StagedRefreshStep::FinalFailed) {
+        m_staged_refreshes.erase(it);
+        return;
+    }
+    if (step != StagedRefreshStep::BuildTargetAfterPreviewFailure) return;
+
+    const MapSonarQuality target = it->second.target;
+    if (m_project && m_loaded_layers.count(layer_id))
+        prebuildTier(layer_id, target, m_project, "sss:apply", generation);
+    else
+        m_staged_refreshes.erase(it);
 }
 
 void SidescanViewController::applyLiveCorrections(const std::vector<std::string>& layer_ids)
@@ -321,7 +374,7 @@ void SidescanViewController::unloadLayer(const std::string& layer_id)
     m_resident_quality.erase(layer_id);
     m_layer_intensity_cache.erase(layer_id);
     m_quality_tier_cache.erase(layer_id);
-    m_geometry_preview_upgrades.erase(layer_id);
+    m_staged_refreshes.erase(layer_id);
     // Cancel any in-flight build/recolour for this layer; its on_done is then
     // skipped (cancelled) so it can't write map data after removeLayerData.
     if (m_active_layer_id == layer_id)
@@ -338,7 +391,7 @@ void SidescanViewController::deactivate(bool clear_map)
     }
     m_layer_intensity_cache.clear();
     m_quality_tier_cache.clear();
-    m_geometry_preview_upgrades.clear();
+    m_staged_refreshes.clear();
     m_resident_quality.clear();
 
     m_active_builds = 0;

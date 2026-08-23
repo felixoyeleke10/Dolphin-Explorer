@@ -9,10 +9,30 @@
 
 namespace dolphin::core {
 
+inline constexpr float kMinimumAutomaticBottomConfidence = 0.5f;
+
 inline std::optional<double> sidescanAltitudeMetres(const SidescanPing& ping)
 {
     if (ping.bottom_pick.source > 0 && ping.bottom_pick.valid()
         && ping.bottom_pick.range_m > 0.0f)
+        return static_cast<double>(ping.bottom_pick.range_m);
+    if (std::isfinite(ping.nav.altitude_m) && ping.nav.altitude_m > 0.0f)
+        return static_cast<double>(ping.nav.altitude_m);
+    return std::nullopt;
+}
+
+// Geometry correction is deliberately stricter than QC/radiometry consumers:
+// a weak automatic pick may still be useful for review but must not compress an
+// entire swath. Manual picks remain authoritative.
+inline std::optional<double> sidescanCorrectionAltitudeMetres(
+    const SidescanPing& ping)
+{
+    const bool trusted_pick = ping.bottom_pick.source == 2
+        || (ping.bottom_pick.source == 1
+            && std::isfinite(ping.bottom_pick.confidence)
+            && ping.bottom_pick.confidence >= kMinimumAutomaticBottomConfidence);
+    if (trusted_pick && ping.bottom_pick.valid()
+            && ping.bottom_pick.range_m > 0.0f)
         return static_cast<double>(ping.bottom_pick.range_m);
     if (std::isfinite(ping.nav.altitude_m) && ping.nav.altitude_m > 0.0f)
         return static_cast<double>(ping.nav.altitude_m);

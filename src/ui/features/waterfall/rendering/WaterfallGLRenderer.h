@@ -16,7 +16,7 @@ namespace dolphin::ui {
 //   u_port - 2D GL_R16,   width=max_ns_port, height=n_rows
 //   u_stbd - 2D GL_R16,   width=max_ns_stbd, height=n_rows
 //   u_lut  - 2D GL_RGBA8, width=256, height=1
-//   u_src  - 2D GL_RG32F, width=n_rows, height=1
+//   u_src  - 2D GL_RGBA32F: port altitude, starboard altitude, max range
 class WaterfallGLRenderer : protected QOpenGLFunctions_3_3_Core {
 public:
     WaterfallGLRenderer() = default;
@@ -54,7 +54,9 @@ private:
     GLuint m_tex_port = 0;   // 2D R16
     GLuint m_tex_stbd = 0;   // 2D R16
     GLuint m_tex_lut  = 0;   // 2D RGBA8
-    GLuint m_tex_src  = 0;   // 2D RG32F
+    GLuint m_tex_src  = 0;   // 2D RGBA32F
+    GLuint m_tex_port_range = 0; // 2D R32F authoritative slant ranges
+    GLuint m_tex_stbd_range = 0;
 
     int m_tex_ns_port = 0;
     int m_tex_ns_stbd = 0;

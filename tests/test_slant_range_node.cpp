@@ -1,6 +1,7 @@
 #include "pipeline/nodes/correction/SlantRangeNode.h"
 
 #include "core/SidescanPing.h"
+#include "ui/features/waterfall/rendering/WaterfallRangeGeometry.h"
 
 #include <cassert>
 #include <cmath>
@@ -97,6 +98,9 @@ int main()
         {20, 6.0f}, {20, 7.0f}, {20, 8.0f}};
     const auto low_confidence = run(noisy_background);
     assert(low_confidence.bottom_pick.confidence < 0.5f);
+    assert(!core::hasCorrectionFlag(low_confidence.correction_flags,
+                                    core::CorrectionFlag::SlantRange));
+    assert(low_confidence.samples[0].range_m == 1.0f);
 
     core::SidescanPing clean_background;
     clean_background.slant_range_m = 20.0f;
@@ -105,6 +109,34 @@ int main()
         {20, 6.0f}, {20, 7.0f}, {20, 8.0f}};
     const auto high_confidence = run(clean_background);
     assert(high_confidence.bottom_pick.confidence > 0.9f);
+    assert(core::hasCorrectionFlag(high_confidence.correction_flags,
+                                   core::CorrectionFlag::SlantRange));
+
+    // A ping with no sample beyond the altitude has no ground-range imagery
+    // and must not claim successful SRC provenance.
+    core::SidescanPing no_seabed_samples;
+    no_seabed_samples.nav.altitude_m = 5.0f;
+    no_seabed_samples.samples = {{1, 1.0f}, {1, 5.0f}};
+    const auto no_seabed = run(no_seabed_samples);
+    assert(no_seabed.samples[0].range_m == 1.0f);
+    assert(no_seabed.samples[1].range_m == 5.0f);
+    assert(!core::hasCorrectionFlag(no_seabed.correction_flags,
+                                    core::CorrectionFlag::SlantRange));
+
+    // Shared waterfall geometry must preserve nonlinear vendor range tables
+    // and independent port/starboard altitude references.
+    ui::PingRow row;
+    row.slant_range_m = 100.f;
+    row.port_altitude_m = 10.f;
+    row.stbd_altitude_m = 20.f;
+    row.port_ranges = {2.f, 7.f, 25.f, 60.f, 100.f};
+    assert(ui::waterfallSideAltitude(row, core::SidescanChannel::Port) == 10.f);
+    assert(ui::waterfallSideAltitude(row, core::SidescanChannel::Starboard) == 20.f);
+    const float sample = ui::waterfallSampleForRange(
+        row.port_ranges, 5, 16.f, row.slant_range_m);
+    assert(std::abs(sample - 1.5f) < 1e-6f);
+    assert(std::abs(ui::waterfallRangeAtSample(
+        row.port_ranges, 5, sample, row.slant_range_m) - 16.f) < 1e-6f);
 
     core::SidescanPing invalid;
     invalid.nav.altitude_m = 3.0f;
