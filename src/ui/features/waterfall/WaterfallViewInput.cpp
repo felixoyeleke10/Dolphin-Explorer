@@ -104,18 +104,25 @@ void WaterfallView::mousePressEvent(QMouseEvent* ev)
             float altitude_m      = std::isfinite(m_rows[row].altitude_m)
                                   ? m_rows[row].altitude_m : 0.f;
             {
-                const QImage fb = grabFramebuffer();
-                if (!fb.isNull()) {
-                    const qreal dpr  = devicePixelRatioF();
-                    const int   side = std::max(1, static_cast<int>(160 * dpr));
-                    const int   cx   = static_cast<int>(ev->pos().x() * dpr);
-                    const int   cy   = static_cast<int>(ev->pos().y() * dpr);
-                    const int   w    = std::min(side, fb.width());
-                    const int   h    = std::min(side, fb.height());
-                    const int   x    = std::clamp(cx - w / 2, 0, fb.width()  - w);
-                    const int   y    = std::clamp(cy - h / 2, 0, fb.height() - h);
-                    snapshot = QPixmap::fromImage(fb.copy(QRect(x, y, w, h)));
-                    snapshot.setDevicePixelRatio(dpr);
+                // Crop the exact raster painted by WaterfallView. Reading back
+                // the OpenGL framebuffer can apply a second sRGB/gamma transfer
+                // on some drivers, producing contact PNGs darker than the source.
+                // The renderer image already contains the active palette, gain,
+                // contrast, threshold and stretch, so it is the authoritative
+                // screenshot source (its origin is below the scale-bar header).
+                syncCpuRendererParams();
+                m_renderer.rebuild(m_rows, m_scroll.scrollRow(),
+                                   m_scroll.hZoom(), m_scroll.hPan());
+                const QImage& rendered = m_renderer.image();
+                if (!rendered.isNull()) {
+                    constexpr int side = 160;
+                    const int w = std::min(side, rendered.width());
+                    const int h = std::min(side, rendered.height());
+                    const int cx = ev->pos().x();
+                    const int cy = ev->pos().y() - kWfScaleBarH;
+                    const int x = std::clamp(cx - w / 2, 0, rendered.width() - w);
+                    const int y = std::clamp(cy - h / 2, 0, rendered.height() - h);
+                    snapshot = QPixmap::fromImage(rendered.copy(QRect(x, y, w, h)));
 
                     // Preserve physical scale in the captured image. X is
                     // across-track range; Y is along-track vessel motion.
@@ -130,7 +137,7 @@ void WaterfallView::mousePressEvent(QMouseEvent* ev)
                                                    m_scroll.hZoom(), m_scroll.hPan(), c1, r1)
                             && c0 == ch && c1 == ch) {
                         across_m_per_px = std::abs(r1 - r0)
-                            / static_cast<float>(kProbePx * dpr);
+                            / static_cast<float>(kProbePx);
                     }
                     const int r_prev = std::max(0, row - 1);
                     const int r_next = std::min(rowCount() - 1, row + 1);
@@ -141,7 +148,7 @@ void WaterfallView::mousePressEvent(QMouseEvent* ev)
                             const double metres = geo::haversineMetres(a.lat, a.lon, b.lat, b.lon);
                             const int logical_px = (r_next - r_prev) * m_renderer.layout().row_height;
                             if (metres > 0.0 && logical_px > 0)
-                                along_m_per_px = static_cast<float>(metres / (logical_px * dpr));
+                                along_m_per_px = static_cast<float>(metres / logical_px);
                         }
                     }
                 }

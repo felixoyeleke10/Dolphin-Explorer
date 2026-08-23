@@ -291,11 +291,17 @@ private:
     std::unordered_map<std::string,
         std::unordered_map<int, PrebuiltTier>> m_quality_tier_cache;
 
+    // Layers showing a freshly rebuilt Low geometry preview while the requested
+    // Medium/High tier is queued immediately afterwards.
+    std::unordered_map<std::string, MapSonarQuality> m_geometry_preview_upgrades;
+
     // Apply a pre-built quality tier (from m_quality_tier_cache) to the map with no
     // background work — O(pixels) recolour only. Returns false if no tier is cached
     // for this layer+quality. Shared by setMapSonarQuality() (instant switch) and
     // the staged-upgrade swap (prebuildTierComplete).
     bool applyCachedTier(const std::string& layer_id, MapSonarQuality quality);
+
+    void applyGeometryCorrections(const std::vector<std::string>& layer_ids);
 
     void repaletteAllLayers();
 };

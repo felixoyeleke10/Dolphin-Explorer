@@ -83,6 +83,10 @@ void testSidescanInvalidationContract()
     CHECK(plan.size() == 2);
     CHECK(plan.at("line-a") == SidescanRefreshAction::Reload);
     CHECK(plan.at("line-b") == SidescanRefreshAction::Recolour);
+    CHECK(refreshActionFor(SidescanInvalidation::Amplitude)
+          == SidescanRefreshAction::Reraster);
+    CHECK(refreshActionFor(SidescanInvalidation::Geometry)
+          == SidescanRefreshAction::ProgressiveReraster);
 }
 
 core::SidescanPing makePing(double lat_m,

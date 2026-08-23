@@ -20,6 +20,7 @@ enum class SidescanInvalidation : std::uint8_t {
 enum class SidescanRefreshAction : std::uint8_t {
     Recolour,
     Reraster,
+    ProgressiveReraster,
     Reload
 };
 
@@ -32,8 +33,8 @@ inline SidescanRefreshAction refreshActionFor(SidescanInvalidation change) noexc
 {
     switch (change) {
     case SidescanInvalidation::Appearance: return SidescanRefreshAction::Recolour;
-    case SidescanInvalidation::Amplitude:
-    case SidescanInvalidation::Geometry:   return SidescanRefreshAction::Reraster;
+    case SidescanInvalidation::Amplitude:  return SidescanRefreshAction::Reraster;
+    case SidescanInvalidation::Geometry:   return SidescanRefreshAction::ProgressiveReraster;
     case SidescanInvalidation::SourceData: return SidescanRefreshAction::Reload;
     }
     return SidescanRefreshAction::Reload;

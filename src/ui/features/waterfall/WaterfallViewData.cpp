@@ -18,6 +18,23 @@
 
 namespace dolphin::ui {
 
+void WaterfallView::updateCpuRendererParams()
+{
+    if (m_gl_initialized) {
+        m_cpu_renderer_params_dirty = true;
+        return;
+    }
+    m_renderer.setParams(m_params);
+    m_cpu_renderer_params_dirty = false;
+}
+
+void WaterfallView::syncCpuRendererParams()
+{
+    if (!m_cpu_renderer_params_dirty) return;
+    m_renderer.setParams(m_params);
+    m_cpu_renderer_params_dirty = false;
+}
+
 // -----------------------------------------------------------------------------
 //  Data API
 // -----------------------------------------------------------------------------
@@ -66,7 +83,7 @@ void WaterfallView::setPreassembledRows(std::vector<core::SidescanPing> raw_ping
     }
     m_params.display_low   = m_stretch_low;
     m_params.display_high  = m_stretch_high;
-    m_renderer.setParams(m_params);
+    updateCpuRendererParams();
 
     m_dirty             = true;
     m_gl_data_dirty     = true;
@@ -423,7 +440,7 @@ void WaterfallView::setParams(const WaterfallParams& p)
     m_params = p;
     m_params.display_low  = m_stretch_low;    // restore data-derived stretch
     m_params.display_high = m_stretch_high;
-    m_renderer.setParams(m_params);
+    updateCpuRendererParams();
 
     const auto context = m_amplitude_context;
     const bool context_matches = context
@@ -463,7 +480,7 @@ void WaterfallView::setParamsNoRebuild(const WaterfallParams& p)
     m_params = p;
     m_params.display_low  = m_stretch_low;
     m_params.display_high = m_stretch_high;
-    m_renderer.setParams(m_params);
+    updateCpuRendererParams();
     m_dirty = true;
     update();
 }
@@ -607,7 +624,7 @@ void WaterfallView::computeAutoStretch()
 
     m_params.display_low  = m_stretch_low;
     m_params.display_high = m_stretch_high;
-    m_renderer.setParams(m_params);
+    updateCpuRendererParams();
 }
 
 } // namespace dolphin::ui

@@ -127,6 +127,7 @@ void WaterfallView::paintGL()
     }
 
     // -- CPU fallback path ----------------------------------------------------
+    syncCpuRendererParams();
     if (m_dirty) {
         m_renderer.rebuild(m_rows,
                            m_scroll.scrollRow(),

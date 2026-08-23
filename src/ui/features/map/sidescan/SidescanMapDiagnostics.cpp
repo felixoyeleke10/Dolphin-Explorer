@@ -61,6 +61,7 @@ void SidescanViewController::reloadCurrentLayer()
     m_resident_quality.clear();
     m_layer_intensity_cache.clear();  // stale at old CRS / georef
     m_quality_tier_cache.clear();     // stale at old CRS / georef
+    m_geometry_preview_upgrades.clear();
     for (const auto& id : to_reload)
         activateLayer(id, m_project, id == saved_active);
     // Restore active-layer selection (activateLayer overwrites m_active_layer_id).
@@ -80,6 +81,7 @@ void SidescanViewController::reloadLayer(const std::string& layer_id)
     m_resident_quality.erase(layer_id);
     m_layer_intensity_cache.erase(layer_id);
     m_quality_tier_cache.erase(layer_id);
+    m_geometry_preview_upgrades.erase(layer_id);
     activateLayer(layer_id, m_project, layer_id == m_active_layer_id);
 }
 
@@ -89,6 +91,7 @@ void SidescanViewController::applyInvalidations(
     const auto plan = coalesceSidescanInvalidations(requests);
     std::vector<std::string> recolour;
     std::vector<std::string> reraster;
+    std::vector<std::string> geometry;
     for (const auto& [id, action] : plan) {
         // Non-resident lines consume current model state when selected; doing
         // background work for them violates the visible-first loading contract.
@@ -96,11 +99,31 @@ void SidescanViewController::applyInvalidations(
         switch (action) {
         case SidescanRefreshAction::Recolour: recolour.push_back(id); break;
         case SidescanRefreshAction::Reraster: reraster.push_back(id); break;
+        case SidescanRefreshAction::ProgressiveReraster: geometry.push_back(id); break;
         case SidescanRefreshAction::Reload:   reloadLayer(id); break;
         }
     }
     applyDisplayParams(recolour);
     applyLiveCorrections(reraster);
+    applyGeometryCorrections(geometry);
+}
+
+void SidescanViewController::applyGeometryCorrections(
+    const std::vector<std::string>& layer_ids)
+{
+    if (!m_project) return;
+    if (m_op_mgr) m_op_mgr->setLaneCap("sss:apply", 2);
+
+    for (const auto& layer_id : layer_ids) {
+        if (!m_loaded_layers.count(layer_id)) continue;
+        if (static_cast<int>(m_quality) > static_cast<int>(MapSonarQuality::Low)) {
+            m_geometry_preview_upgrades[layer_id] = m_quality;
+            prebuildTier(layer_id, MapSonarQuality::Low, m_project, "sss:apply");
+        } else {
+            m_geometry_preview_upgrades.erase(layer_id);
+            prebuildTier(layer_id, m_quality, m_project, "sss:apply");
+        }
+    }
 }
 
 void SidescanViewController::applyLiveCorrections(const std::vector<std::string>& layer_ids)
@@ -298,6 +321,7 @@ void SidescanViewController::unloadLayer(const std::string& layer_id)
     m_resident_quality.erase(layer_id);
     m_layer_intensity_cache.erase(layer_id);
     m_quality_tier_cache.erase(layer_id);
+    m_geometry_preview_upgrades.erase(layer_id);
     // Cancel any in-flight build/recolour for this layer; its on_done is then
     // skipped (cancelled) so it can't write map data after removeLayerData.
     if (m_active_layer_id == layer_id)
@@ -314,6 +338,7 @@ void SidescanViewController::deactivate(bool clear_map)
     }
     m_layer_intensity_cache.clear();
     m_quality_tier_cache.clear();
+    m_geometry_preview_upgrades.clear();
     m_resident_quality.clear();
 
     m_active_builds = 0;

@@ -49,11 +49,35 @@ SidescanViewController::SidescanViewController(MapView*            map_view,
     // and the layer is still on the map.
     connect(this, &SidescanViewController::prebuildTierComplete, this,
             [this](const std::string& layer_id, MapSonarQuality quality) {
+                const auto upgrade = m_geometry_preview_upgrades.find(layer_id);
+                if (upgrade != m_geometry_preview_upgrades.end()
+                        && quality == MapSonarQuality::Low) {
+                    const MapSonarQuality target = upgrade->second;
+                    m_geometry_preview_upgrades.erase(upgrade);
+                    if (m_loaded_layers.count(layer_id)) {
+                        applyCachedTier(layer_id, quality);
+                        prebuildTier(layer_id, target, m_project, "sss:apply");
+                    }
+                    return;
+                }
                 if (quality != m_quality) return;
                 if (!m_loaded_layers.count(layer_id)) return;
                 if (applyCachedTier(layer_id, quality) && m_map_view
                         && layer_id == m_active_layer_id)
                     m_map_view->setActiveLayer(layer_id);
+            });
+
+    // A failed/cancelled preview must not leave the old geometry indefinitely.
+    // Successful previews erase their entry synchronously in the handler above.
+    connect(this, &SidescanViewController::prebuildTierFinished, this,
+            [this](const std::string& layer_id, MapSonarQuality quality) {
+                const auto upgrade = m_geometry_preview_upgrades.find(layer_id);
+                if (upgrade == m_geometry_preview_upgrades.end()
+                        || quality != MapSonarQuality::Low) return;
+                const MapSonarQuality target = upgrade->second;
+                m_geometry_preview_upgrades.erase(upgrade);
+                if (m_project && m_loaded_layers.count(layer_id))
+                    prebuildTier(layer_id, target, m_project, "sss:apply");
             });
 }
 

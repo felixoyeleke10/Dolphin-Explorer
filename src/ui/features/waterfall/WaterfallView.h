@@ -282,6 +282,12 @@ private:
     // Overlay painting shared between GPU and CPU paths.
     void paintOverlays(QPainter& p, const WfLayout& lay);
 
+    // The GL shader applies display tone and palette from uniforms. Avoid
+    // rebuilding the CPU's 65k colour table on every display-only adjustment
+    // while GL is active; synchronize it lazily for fallback/screenshot use.
+    void updateCpuRendererParams();
+    void syncCpuRendererParams();
+
     // Scan m_rows, compute the 1st/99th percentile of assembled uint16 amplitudes,
     // and store the result in m_stretch_low/high so the viewer maps the data's
     // actual dynamic range to the full palette range.
@@ -302,6 +308,7 @@ private:
     bool  m_gl_initialized    = false;
     bool  m_gl_data_dirty     = false;  // amplitude texture needs re-upload
     bool  m_gl_src_dirty      = false;  // SRC params need re-upload (seabed edit)
+    bool  m_cpu_renderer_params_dirty = false;
 
     bool  m_dirty            = true;
     bool  m_layout_dirty     = false;  // force updateLayout even when dimensions unchanged

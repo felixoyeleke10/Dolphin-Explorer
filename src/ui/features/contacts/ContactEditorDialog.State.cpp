@@ -235,21 +235,20 @@ void ContactEditorDialog::loadContactIntoForm(const core::Contact& c)
     m_desc->setPlainText(QString::fromStdString(c.notes));
     m_use_report->setChecked(c.use_for_report);
 
-    // Source caption: the source FILE name (never the internal layer id).
-    QString source_name;
+    // Source caption: keep this to the operator-facing line name. Channel and
+    // pick metadata belong to the image itself, not this compact selector.
+    QString line_name;
     if (m_project && !c.line_id.empty()) {
         if (auto* layer = m_project->findLayer(c.line_id)) {
-            if (const auto* src = m_project->findSource(layer->source_id))
-                source_name = QFileInfo(QString::fromStdString(src->path)).fileName();
-            if (source_name.isEmpty())
-                source_name = QString::fromStdString(layer->label);
+            line_name = QString::fromStdString(layer->label).trimmed();
+            if (line_name.isEmpty()) {
+                if (const auto* src = m_project->findSource(layer->source_id))
+                    line_name = QFileInfo(QString::fromStdString(src->path)).completeBaseName();
+            }
         }
     }
-    QString cap = !source_name.isEmpty() ? source_name : tr("Source image");
-    if (c.range_m > 0.f)   // waterfall pick: annotate the picked channel
-        cap += (c.sample_idx == 0) ? tr("  ·  Port") : tr("  ·  Starboard");
     m_source_combo->clear();
-    m_source_combo->addItem(cap);
+    m_source_combo->addItem(!line_name.isEmpty() ? line_name : tr("Source image"));
 
     // Snapshot: persisted PNG first; otherwise fetch from the source pings.
     QPixmap pm;

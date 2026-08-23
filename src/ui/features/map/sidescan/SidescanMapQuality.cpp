@@ -34,6 +34,7 @@ void SidescanViewController::setMapSonarQuality(MapSonarQuality quality)
         m_op_mgr->cancelByPrefix("sss:prebuild:");
     }
     m_quality_tier_cache.clear();
+    m_geometry_preview_upgrades.clear();
     m_resident_quality.clear();
     m_quality = quality;
 

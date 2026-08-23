@@ -257,11 +257,25 @@ void ContactSnapshotView::paintEvent(QPaintEvent*)
                               QColor(220, 105, 255), QColor(255, 190, 45) };
     auto drawMeasurement = [&](const QPointF& a, const QPointF& b, const QColor& color) {
         p.setPen(QPen(color, 2.0 / s));
-        p.setBrush(color);
         p.drawLine(a, b);
-        const double r = 3.5 / s;
-        p.drawEllipse(a, r, r);
-        p.drawEllipse(b, r, r);
+
+        // Render a conventional dimension line. Circular endpoint handles made
+        // a completed measurement look like editable point geometry and obscured
+        // the exact pick positions; open arrowheads preserve precise endpoints.
+        const QPointF delta = b - a;
+        const double length = std::hypot(delta.x(), delta.y());
+        if (length <= 0.001) return;
+        const QPointF unit(delta.x() / length, delta.y() / length);
+        const QPointF normal(-unit.y(), unit.x());
+        const double arrow_length = 9.0 / s;
+        const double arrow_width = 4.5 / s;
+        const auto drawHead = [&](const QPointF& tip, const QPointF& inward) {
+            const QPointF base = tip + inward * arrow_length;
+            p.drawLine(tip, base + normal * arrow_width);
+            p.drawLine(tip, base - normal * arrow_width);
+        };
+        drawHead(a, unit);
+        drawHead(b, -unit);
     };
     for (size_t i = 0; i < m_measurements.size(); ++i)
         if (m_measurements[i].valid)
