@@ -52,7 +52,6 @@ MapView3D::~MapView3D()
             delete D.texture;
             D.quad_vbo.destroy();
             D.outline_vbo.destroy();
-            D.footprint_vbo.destroy();
         }
         delete m_drape_palette_texture;
         m_drape_palette_texture = nullptr;
@@ -213,7 +212,6 @@ void MapView3D::removeSonarDrape(const std::string& layer_id)
         it->texture = nullptr;
         it->quad_vbo.destroy();
         it->outline_vbo.destroy();
-        it->footprint_vbo.destroy();
         doneCurrent();
     } else {
         delete it->texture;
@@ -359,7 +357,6 @@ void MapView3D::clearScene()
             delete D.texture;
             D.quad_vbo.destroy();
             D.outline_vbo.destroy();
-            D.footprint_vbo.destroy();
         }
         doneCurrent();
     }

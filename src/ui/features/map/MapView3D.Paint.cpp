@@ -319,17 +319,7 @@ void MapView3D::drawDrapes()
                 glDrawArrays(GL_TRIANGLES, 0, tcnt);
                 tvbo.release();
             }
-        } else if (D.footprint_vert_count > 0 && D.footprint_vbo.isCreated()) {
-            // Flat drapes are clipped by the authoritative vector footprint.
-            // The old bbox quad exposed magnified transparent-pixel stairs
-            // outside the surveyed swath when operators zoomed in.
-            D.footprint_vbo.bind();
-            glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, nullptr);
-            glEnableVertexAttribArray(0);
-            glDrawArrays(GL_TRIANGLES, 0, D.footprint_vert_count);
-            D.footprint_vbo.release();
         } else if (D.quad_vert_count > 0 && D.quad_vbo.isCreated()) {
-            // Defensive fallback for legacy/corrupt caches without coverage.
             D.quad_vbo.bind();
             glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, nullptr);
             glEnableVertexAttribArray(0);

@@ -266,8 +266,6 @@ private:
         // Swath hull outline VBO for selection rendering
         QOpenGLBuffer     outline_vbo { QOpenGLBuffer::VertexBuffer };
         int               outline_vert_count = 0;
-        QOpenGLBuffer     footprint_vbo { QOpenGLBuffer::VertexBuffer };
-        int               footprint_vert_count = 0;
     };
 
     // -- Geometry builders -------------------------------------------------

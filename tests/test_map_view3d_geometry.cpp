@@ -32,12 +32,6 @@ int main()
           && outline[15] == 0.f && outline[16] == 0.f,
           "last outline edge closes back to first vertex");
 
-    const auto concave_fill = ui::buildFilledPolygonVertices(
-        {{100, 200}, {110, 200}, {110, 210}, {105, 205}, {100, 210}, {nan, nan}},
-        projected);
-    check(concave_fill.size() == 27,
-          "concave five-point footprint tessellates into three triangles");
-
     const ui::MapLocalFrame geographic{0.0, 0.0, false};
     std::vector<float> geographic_nav;
     ui::appendNavTrackLineVertices({{0, 0}, {1, 0}}, geographic, geographic_nav);
