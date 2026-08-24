@@ -9,6 +9,7 @@
 #include "ui/features/map/sidescan/SidescanEntryFilter.h"
 #include "ui/features/map/sidescan/SidescanRasterCache.h"
 #include "ui/features/map/sidescan/SssMapBuild.h"
+#include "ui/features/map/MapDrapeHull.h"
 #include "app/services/ImportService.h"
 #include "app/layers/DataLayer.h"
 #include "app/display/NavCorrection.h"
@@ -295,6 +296,14 @@ SidescanLoadResult buildSidescanLoadResult(const SssLoadInputs&            in,
             prev_nav  = ping.nav;
             have_prev = true;
         }
+    }
+
+    if (result.layer_data.raster_boundary.empty()
+            && !result.layer_data.intensity_cache.empty()) {
+        auto& ld = result.layer_data;
+        ld.raster_boundary = buildSonarRasterBoundary(
+            ld.intensity_cache, ld.intensity_w, ld.intensity_h,
+            ld.lon_min, ld.lat_min, ld.lon_max, ld.lat_max);
     }
 
     // -- Persist the built raster (parse once, reuse forever) ----------

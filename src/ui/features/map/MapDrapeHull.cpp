@@ -7,19 +7,15 @@
 
 namespace dolphin::ui {
 
-std::vector<QLineF> buildSonarRasterBoundary(const QImage& image,
-                                             double x_min, double y_min,
-                                             double x_max, double y_max)
+namespace {
+std::vector<QLineF> boundaryFromMask(const std::vector<uint8_t>& valid_mask,
+                                    int w, int h, double x_min, double y_min,
+                                    double x_max, double y_max)
 {
-    const int w = image.width(), h = image.height();
-    if (image.isNull() || w <= 0 || h <= 0
+    if (w <= 0 || h <= 0 || valid_mask.size() != static_cast<size_t>(w) * h
             || !(x_min < x_max) || !(y_min < y_max)) return {};
     const auto index = [w](int x, int y) { return static_cast<size_t>(y) * w + x; };
-    std::vector<uint8_t> valid_mask(static_cast<size_t>(w) * h, 0);
-    for (int y = 0; y < h; ++y)
-        for (int x = 0; x < w; ++x)
-            valid_mask[index(x, y)] = image.pixelColor(x, y).alpha() > 0 ? 1 : 0;
-    std::vector<uint8_t> exterior(static_cast<size_t>(w) * h, 0);
+    std::vector<uint8_t> exterior(valid_mask.size(), 0);
     std::deque<QPoint> queue;
     const auto valid = [&](int x, int y) { return valid_mask[index(x, y)] != 0; };
     const auto seed = [&](int x, int y) {
@@ -41,9 +37,7 @@ std::vector<QLineF> buildSonarRasterBoundary(const QImage& image,
             }
         }
     }
-
-    const double sx = (x_max - x_min) / w;
-    const double sy = (y_max - y_min) / h;
+    const double sx = (x_max - x_min) / w, sy = (y_max - y_min) / h;
     const auto geo = [&](double px, double py) {
         return QPointF(x_min + px * sx, y_max - py * sy);
     };
@@ -59,6 +53,34 @@ std::vector<QLineF> buildSonarRasterBoundary(const QImage& image,
         if (outside(x - 1, y)) edges.emplace_back(geo(x, y + 1), geo(x, y));
     }
     return edges;
+}
+} // namespace
+
+std::vector<QLineF> buildSonarRasterBoundary(const QImage& image,
+                                             double x_min, double y_min,
+                                             double x_max, double y_max)
+{
+    const int w = image.width(), h = image.height();
+    if (image.isNull() || w <= 0 || h <= 0
+            || !(x_min < x_max) || !(y_min < y_max)) return {};
+    const auto index = [w](int x, int y) { return static_cast<size_t>(y) * w + x; };
+    std::vector<uint8_t> valid_mask(static_cast<size_t>(w) * h, 0);
+    for (int y = 0; y < h; ++y)
+        for (int x = 0; x < w; ++x)
+            valid_mask[index(x, y)] = image.pixelColor(x, y).alpha() > 0 ? 1 : 0;
+    return boundaryFromMask(valid_mask, w, h, x_min, y_min, x_max, y_max);
+}
+
+std::vector<QLineF> buildSonarRasterBoundary(
+    const std::vector<uint16_t>& intensity, int width, int height,
+    double x_min, double y_min, double x_max, double y_max)
+{
+    if (width <= 0 || height <= 0
+            || intensity.size() != static_cast<size_t>(width) * height) return {};
+    std::vector<uint8_t> valid(intensity.size());
+    std::transform(intensity.begin(), intensity.end(), valid.begin(),
+                   [](uint16_t value) { return value != 0 ? 1 : 0; });
+    return boundaryFromMask(valid, width, height, x_min, y_min, x_max, y_max);
 }
 
 std::vector<QPointF> buildSonarDrapeHull(const LayerMapData& data)

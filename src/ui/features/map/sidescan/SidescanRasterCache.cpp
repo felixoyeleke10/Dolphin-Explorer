@@ -28,6 +28,7 @@ constexpr quint64 kMaxCoverageCollections = 64;
 constexpr quint64 kMaxRibbonsPerCoverage  = 1024ULL * 1024ULL;
 constexpr quint64 kMaxTotalRibbons         = 2ULL * 1024ULL * 1024ULL;
 constexpr quint64 kMaxBeamRays             = 4ULL * 1024ULL * 1024ULL;
+constexpr quint64 kMaxBoundarySegments     = 8ULL * 1024ULL * 1024ULL;
 constexpr qint32  kMaxRasterDimension      = 16384;
 constexpr quint64 kMaxRasterPixels         = 64ULL * 1024ULL * 1024ULL;
 constexpr quint32 kMaxDiagnosticStringBytes = 64U * 1024U;
@@ -491,6 +492,10 @@ bool save(const std::string&  path,
         ds.writeRawData(reinterpret_cast<const char*>(data.intensity_cache.data()),
                         static_cast<int>(data.intensity_cache.size() * sizeof(uint16_t)));
 
+    ds << static_cast<quint64>(data.raster_boundary.size());
+    for (const QLineF& edge : data.raster_boundary)
+        ds << edge.p1() << edge.p2();
+
     writeNavStats(ds, data.nav_stats);
 
     if (ds.status() != QDataStream::Ok) return false;
@@ -669,6 +674,28 @@ bool load(const std::string& path,
                     reinterpret_cast<char*>(decoded.intensity_cache.data()),
                     bytes_to_read) != bytes_to_read)
                 return false;
+        }
+
+        quint64 boundary_count = 0;
+        ds >> boundary_count;
+        quint64 boundary_bytes = 0;
+        if (ds.status() != QDataStream::Ok
+                || boundary_count > kMaxBoundarySegments
+                || !fitsSizeT(boundary_count)
+                || !checkedMultiply(boundary_count,
+                                    2ULL * kSerializedPointBytes,
+                                    boundary_bytes)
+                || !hasRemainingBytes(ds, boundary_bytes))
+            return false;
+        decoded.raster_boundary.reserve(static_cast<size_t>(boundary_count));
+        for (quint64 i = 0; i < boundary_count; ++i) {
+            QPointF p1, p2;
+            ds >> p1 >> p2;
+            if (ds.status() != QDataStream::Ok
+                    || !std::isfinite(p1.x()) || !std::isfinite(p1.y())
+                    || !std::isfinite(p2.x()) || !std::isfinite(p2.y()))
+                return false;
+            decoded.raster_boundary.emplace_back(p1, p2);
         }
 
         if (!readNavStats(ds, decoded.nav_stats) ||

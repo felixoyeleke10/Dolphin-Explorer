@@ -2,6 +2,7 @@
 #include "ui/features/map/sidescan/SidescanViewController.h"
 #include "ui/features/map/sidescan/SidescanMapLoadParams.h"
 #include "ui/features/map/MapView.h"
+#include "ui/features/map/MapDrapeHull.h"
 #include "ui/features/map/sidescan/SssMapBuild.h"
 #include "app/layers/DataLayer.h"
 #include "app/project/Project.h"
@@ -108,6 +109,7 @@ bool SidescanViewController::applyCachedTier(const std::string& layer_id,
     ld.show_nadir      = m_georef_params.show_nadir;
     ld.beam_rays       = std::move(tier.beam_rays);
     ld.nav_track       = std::move(tier.nav_track);
+    ld.raster_boundary = std::move(tier.raster_boundary);
     ld.lon_min         = tier.lon_min;
     ld.lon_max         = tier.lon_max;
     ld.lat_min         = tier.lat_min;
@@ -280,6 +282,7 @@ void SidescanViewController::prebuildTier(const std::string& layer_id,
                         std::move(cached.coverage_nadir_hidden);
                     res.tier.beam_rays       = std::move(cached.beam_rays);
                     res.tier.nav_track       = std::move(cached.nav_track);
+                    res.tier.raster_boundary = std::move(cached.raster_boundary);
                     res.tier.lon_min         = cached.lon_min;
                     res.tier.lon_max         = cached.lon_max;
                     res.tier.lat_min         = cached.lat_min;
@@ -384,6 +387,9 @@ void SidescanViewController::prebuildTier(const std::string& layer_id,
             ld.nav_stats.quality_used = quality;
             ld.nav_stats.pings_available = total_ssc_entries / 2;
             ld.nav_stats.memory_reduced = ld.preview_reduced;
+            ld.raster_boundary = buildSonarRasterBoundary(
+                ld.intensity_cache, ld.intensity_w, ld.intensity_h,
+                ld.lon_min, ld.lat_min, ld.lon_max, ld.lat_max);
 
             // Persist this tier's raster so the next open loads it instantly.
             if (!cancel.isCancelled()) {
@@ -405,6 +411,7 @@ void SidescanViewController::prebuildTier(const std::string& layer_id,
                 std::move(ld.coverage_nadir_hidden);
             res.tier.beam_rays       = std::move(ld.beam_rays);
             res.tier.nav_track       = std::move(ld.nav_track);
+            res.tier.raster_boundary = std::move(ld.raster_boundary);
             res.tier.lon_min         = ld.lon_min;
             res.tier.lon_max         = ld.lon_max;
             res.tier.lat_min         = ld.lat_min;

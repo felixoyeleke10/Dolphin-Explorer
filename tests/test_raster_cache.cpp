@@ -58,6 +58,9 @@ static LayerMapData makeSample()
     d.intensity_w = 4; d.intensity_h = 3;
     d.intensity_disp_low = 0.10f; d.intensity_disp_high = 0.90f;
     d.intensity_cache = { 1,2,3,4, 5,6,7,8, 9,10,11,12 };  // 4*3
+    d.raster_boundary = {
+        QLineF(QPointF(-16.3, 57.2), QPointF(-16.1, 57.2)),
+        QLineF(QPointF(-16.1, 57.2), QPointF(-16.1, 57.4))};
 
     d.nav_stats.total_pings   = 1234;
     d.nav_stats.invalid_nav   = 7;
@@ -305,6 +308,8 @@ int main()
         CHECK(out.intensity_disp_low == src.intensity_disp_low, "disp_low mismatch");
         CHECK(out.intensity_disp_high == src.intensity_disp_high, "disp_high mismatch");
         CHECK(out.intensity_cache == src.intensity_cache, "intensity pixels mismatch");
+        CHECK(out.raster_boundary == src.raster_boundary,
+              "cached raster boundary mismatch");
 
         CHECK(out.nav_stats.total_pings == 1234, "nav_stats.total_pings mismatch");
         CHECK(out.nav_stats.interpolated_nav == 6,

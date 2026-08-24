@@ -77,6 +77,7 @@ struct PrebuiltTier {
     std::vector<SwathCoverage> coverage_nadir_hidden;
     std::vector<SidescanBeamRay> beam_rays;
     std::vector<QPointF>       nav_track;
+    std::vector<QLineF>        raster_boundary;
     double lon_min =  1e18, lon_max = -1e18;
     double lat_min =  1e18, lat_max = -1e18;
     bool   is_projected   = false;

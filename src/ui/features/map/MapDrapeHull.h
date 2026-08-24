@@ -15,5 +15,8 @@ std::vector<QPointF> buildSonarDrapeHull(const LayerMapData& data);
 std::vector<QLineF> buildSonarRasterBoundary(const QImage& image,
                                              double x_min, double y_min,
                                              double x_max, double y_max);
+std::vector<QLineF> buildSonarRasterBoundary(
+    const std::vector<uint16_t>& intensity, int width, int height,
+    double x_min, double y_min, double x_max, double y_max);
 
 } // namespace dolphin::ui
