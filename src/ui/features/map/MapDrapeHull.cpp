@@ -6,6 +6,23 @@
 
 namespace dolphin::ui {
 
+std::vector<QPointF> buildSonarFootprint(const LayerMapData& data)
+{
+    const auto& coverage = (!data.show_nadir && !data.coverage_nadir_hidden.empty())
+        ? data.coverage_nadir_hidden : data.coverage;
+    const QPointF separator{std::numeric_limits<double>::quiet_NaN(),
+                            std::numeric_limits<double>::quiet_NaN()};
+    std::vector<QPointF> footprint;
+    for (const auto& channel : coverage) {
+        for (const auto& ribbon : channel.ribbons) {
+            if (ribbon.size() < 3) continue;
+            footprint.insert(footprint.end(), ribbon.begin(), ribbon.end());
+            footprint.push_back(separator);
+        }
+    }
+    return footprint;
+}
+
 std::vector<QPointF> buildSonarDrapeHull(const LayerMapData& data)
 {
     const auto& coverage = (!data.show_nadir && !data.coverage_nadir_hidden.empty())

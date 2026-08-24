@@ -33,7 +33,9 @@ MapView3D::MapView3D(QWindow* parent)
     fmt.setProfile(QSurfaceFormat::CoreProfile);
     fmt.setDepthBufferSize(24);
     fmt.setAlphaBufferSize(0);
-    fmt.setStencilBufferSize(0);
+    // Terrain drapes use the authoritative sonar footprint as a stencil mask,
+    // so bbox texture quads can never leak beyond coverage geometry.
+    fmt.setStencilBufferSize(8);
     fmt.setSwapBehavior(QSurfaceFormat::DoubleBuffer);
     fmt.setSamples(0);
     setFormat(fmt);
@@ -143,6 +145,7 @@ void MapView3D::setSonarDrape(const std::string& layer_id,
                                double lon_min, double lat_min,
                                double lon_max, double lat_max,
                                std::vector<QPointF> hull_geo,
+                               std::vector<QPointF> footprint_geo,
                                float opacity)
 {
     if (!m_has_origin) return;
@@ -182,6 +185,7 @@ void MapView3D::setSonarDrape(const std::string& layer_id,
         || it->bbox_w != ne.x() - sw.x() || it->bbox_h != ne.y() - sw.y();
     if (geometry_changed || it->outline_vert_count == 0) {
         it->pending_hull = std::move(hull_geo);
+        it->pending_footprint = std::move(footprint_geo);
         it->dirty = true;
         m_drapes_dirty = true;
     }

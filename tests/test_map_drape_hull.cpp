@@ -29,6 +29,9 @@ int main()
     data.coverage = {port, starboard};
 
     const auto merged = ui::buildSonarDrapeHull(data);
+    const auto footprint = ui::buildSonarFootprint(data);
+    check(footprint.size() == 10,
+          "fill footprint retains port and starboard as independent polygons");
     check(merged.size() == 5, "paired sides produce one hull and separator");
     check(merged.size() > 3 && merged[0].x() == 2 && merged[1].x() == 3,
           "port outer edge is chronological");

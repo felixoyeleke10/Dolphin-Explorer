@@ -535,9 +535,10 @@ void MapView3D::buildDrapeHullVbo(SonarDrape3D& D)
 {
     const MapLocalFrame frame{m_origin_x, m_origin_y, m_is_projected};
     auto verts = buildClosedOutlineVertices(D.pending_hull, frame);
-    auto filled = buildFilledPolygonVertices(D.pending_hull, frame);
+    auto filled = buildFilledPolygonVertices(D.pending_footprint, frame);
 
     D.pending_hull.clear();
+    D.pending_footprint.clear();
     D.outline_vert_count = 0;
     if (verts.size() < 6) return;
 

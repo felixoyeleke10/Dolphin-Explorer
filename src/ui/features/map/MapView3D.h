@@ -113,6 +113,7 @@ public:
                        double lon_min, double lat_min,
                        double lon_max, double lat_max,
                        std::vector<QPointF> hull_geo = {},
+                       std::vector<QPointF> footprint_geo = {},
                        float opacity = 1.f);
     void removeSonarDrape(const std::string& layer_id);
     int  drapeLayerCount() const { return static_cast<int>(m_drape_layers.size()); }
@@ -249,6 +250,7 @@ private:
         QImage            pending_image;     // RGBA8888 flipped (row0=south)
         QImage            pending_fallback_image; // coloured fallback for raw upload failure
         std::vector<QPointF> pending_hull;   // geo coords of swath outline polygon
+        std::vector<QPointF> pending_footprint; // independent fill/clip ribbons
         bool              dirty   = true;
         bool              visible = true;
         float             opacity = 1.f;     // user transparency [0,1] (Views ▸ SSS)
