@@ -2,6 +2,7 @@
 #include <string>
 #include <vector>
 #include <QImage>
+#include <QLineF>
 #include "render/sonar/SonarDisplayParams.h"
 #include <QPointF>
 #include <QRect>
@@ -271,6 +272,10 @@ struct LayerMapData {
     QImage   gpu_intensity_image;
     SonarDisplayParams gpu_display_params;
     bool     preview_reduced = false;  // true: image downgraded due to memory cap
+    // Cached outer boundary of the raster's valid-pixel footprint in map
+    // coordinates. Segment pairs are generated once when the layer is installed
+    // and shared by 2D/3D selection rendering; never used to crop sonar data.
+    std::vector<QLineF> raster_boundary;
 
     // Greyscale intensity cache for zero-cost palette recoloring.
     // Same pixel layout as preview_image (row-major, intensity_w × intensity_h).

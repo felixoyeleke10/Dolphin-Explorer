@@ -25,12 +25,15 @@ int main()
           "projected points are made origin-relative");
 
     const auto outline = ui::buildClosedOutlineVertices(
-        {{100, 200}, {110, 200}, {110, 210}, {nan, nan},
-         {120, 220}, {130, 220}}, projected);
+        {{100, 200}, {110, 200}, {110, 210}, {nan, nan}}, projected);
     check(outline.size() == 18, "triangle creates three closed GL line segments");
     check(outline[12] == 10.f && outline[13] == 10.f
           && outline[15] == 0.f && outline[16] == 0.f,
           "last outline edge closes back to first vertex");
+    const auto independent_edge = ui::buildClosedOutlineVertices(
+        {{100, 200}, {110, 205}, {nan, nan}}, projected);
+    check(independent_edge.size() == 6,
+          "cached raster-boundary edge remains one GL line segment");
 
     const ui::MapLocalFrame geographic{0.0, 0.0, false};
     std::vector<float> geographic_nav;

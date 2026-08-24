@@ -10,6 +10,7 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QPolygonF>
+#include <QVarLengthArray>
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -274,7 +275,14 @@ void MapView::paintSonarLayers(QPainter& p) const
         }
     };
     auto drawLayerOutline = [&](const LayerMapData& ld) {
-        if (!ld.coverage.empty()) {
+        if (!ld.raster_boundary.empty()) {
+            QVarLengthArray<QLineF, 512> lines;
+            lines.reserve(static_cast<int>(ld.raster_boundary.size()));
+            for (const QLineF& edge : ld.raster_boundary)
+                lines.append(QLineF(geoToPixel(edge.p1().x(), edge.p1().y()),
+                                    geoToPixel(edge.p2().x(), edge.p2().y())));
+            p.drawLines(lines.constData(), lines.size());
+        } else if (!ld.coverage.empty()) {
             const auto hull = buildSonarDrapeHull(ld);
             QPolygonF segment;
             for (const QPointF& point : hull) {

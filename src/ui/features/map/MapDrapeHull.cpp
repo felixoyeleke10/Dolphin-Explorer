@@ -3,8 +3,63 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <deque>
 
 namespace dolphin::ui {
+
+std::vector<QLineF> buildSonarRasterBoundary(const QImage& image,
+                                             double x_min, double y_min,
+                                             double x_max, double y_max)
+{
+    const int w = image.width(), h = image.height();
+    if (image.isNull() || w <= 0 || h <= 0
+            || !(x_min < x_max) || !(y_min < y_max)) return {};
+    const auto index = [w](int x, int y) { return static_cast<size_t>(y) * w + x; };
+    std::vector<uint8_t> valid_mask(static_cast<size_t>(w) * h, 0);
+    for (int y = 0; y < h; ++y)
+        for (int x = 0; x < w; ++x)
+            valid_mask[index(x, y)] = image.pixelColor(x, y).alpha() > 0 ? 1 : 0;
+    std::vector<uint8_t> exterior(static_cast<size_t>(w) * h, 0);
+    std::deque<QPoint> queue;
+    const auto valid = [&](int x, int y) { return valid_mask[index(x, y)] != 0; };
+    const auto seed = [&](int x, int y) {
+        const size_t i = index(x, y);
+        if (!valid(x, y) && !exterior[i]) { exterior[i] = 1; queue.emplace_back(x, y); }
+    };
+    for (int x = 0; x < w; ++x) { seed(x, 0); if (h > 1) seed(x, h - 1); }
+    for (int y = 1; y + 1 < h; ++y) { seed(0, y); if (w > 1) seed(w - 1, y); }
+    constexpr int dx[4] = {-1, 1, 0, 0};
+    constexpr int dy[4] = {0, 0, -1, 1};
+    while (!queue.empty()) {
+        const QPoint p = queue.front(); queue.pop_front();
+        for (int d = 0; d < 4; ++d) {
+            const int nx = p.x() + dx[d], ny = p.y() + dy[d];
+            if (nx < 0 || nx >= w || ny < 0 || ny >= h) continue;
+            const size_t i = index(nx, ny);
+            if (!exterior[i] && !valid(nx, ny)) {
+                exterior[i] = 1; queue.emplace_back(nx, ny);
+            }
+        }
+    }
+
+    const double sx = (x_max - x_min) / w;
+    const double sy = (y_max - y_min) / h;
+    const auto geo = [&](double px, double py) {
+        return QPointF(x_min + px * sx, y_max - py * sy);
+    };
+    const auto outside = [&](int x, int y) {
+        return x < 0 || x >= w || y < 0 || y >= h || exterior[index(x, y)] != 0;
+    };
+    std::vector<QLineF> edges;
+    for (int y = 0; y < h; ++y) for (int x = 0; x < w; ++x) {
+        if (!valid(x, y)) continue;
+        if (outside(x, y - 1)) edges.emplace_back(geo(x, y), geo(x + 1, y));
+        if (outside(x + 1, y)) edges.emplace_back(geo(x + 1, y), geo(x + 1, y + 1));
+        if (outside(x, y + 1)) edges.emplace_back(geo(x + 1, y + 1), geo(x, y + 1));
+        if (outside(x - 1, y)) edges.emplace_back(geo(x, y + 1), geo(x, y));
+    }
+    return edges;
+}
 
 std::vector<QPointF> buildSonarDrapeHull(const LayerMapData& data)
 {

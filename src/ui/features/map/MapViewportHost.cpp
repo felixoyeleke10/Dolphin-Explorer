@@ -27,6 +27,7 @@
 
 #include <algorithm>
 #include <functional>  // std::hash
+#include <limits>
 #include <vector>
 
 namespace dolphin::ui {
@@ -444,7 +445,20 @@ void MapViewportHost::onLayerDataLoaded(const std::string& layer_id,
             //   port outer: j from pn-1 DOWN to ph  → oldest→newest (time forward)
             //   stbd outer: j from sh   UP  to sn-1 → newest→oldest (time backward)
             // Segments are separated by NaN sentinels; buildDrapeHullVbo closes each one.
-            auto hull_geo = buildSonarDrapeHull(data);
+            std::vector<QPointF> hull_geo;
+            if (!data.raster_boundary.empty()) {
+                const QPointF separator{
+                    std::numeric_limits<double>::quiet_NaN(),
+                    std::numeric_limits<double>::quiet_NaN()};
+                hull_geo.reserve(data.raster_boundary.size() * 3);
+                for (const QLineF& edge : data.raster_boundary) {
+                    hull_geo.push_back(edge.p1());
+                    hull_geo.push_back(edge.p2());
+                    hull_geo.push_back(separator);
+                }
+            } else {
+                hull_geo = buildSonarDrapeHull(data);
+            }
 
             m_view3d->setSonarDrape(layer_id, data.preview_image,
                                     data.gpu_intensity_image,

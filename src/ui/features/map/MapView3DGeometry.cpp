@@ -90,7 +90,9 @@ std::vector<float> buildClosedOutlineVertices(const std::vector<QPointF>& polygo
     std::vector<float> vertices;
     std::vector<LocalPoint> segment;
     const auto flush = [&]() {
-        if (segment.size() >= 3) {
+        if (segment.size() == 2) {
+            appendSegment(vertices, segment[0], segment[1]);
+        } else if (segment.size() >= 3) {
             for (size_t i = 0; i < segment.size(); ++i)
                 appendSegment(vertices, segment[i], segment[(i + 1) % segment.size()]);
         }

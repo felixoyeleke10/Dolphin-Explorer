@@ -66,6 +66,13 @@ int main()
     data.show_nadir = true;
     check(ui::buildSonarDrapeHull(data).empty(), "undersized ribbons are ignored");
 
+    QImage mask(3, 3, QImage::Format_RGBA8888);
+    mask.fill(Qt::white);
+    mask.setPixelColor(1, 1, Qt::transparent); // internal hole: not exterior
+    const auto boundary = ui::buildSonarRasterBoundary(mask, 0, 0, 3, 3);
+    check(boundary.size() == 12,
+          "raster boundary follows only the exterior pixel-cell perimeter");
+
     if (failed == 0) std::cout << "test_map_drape_hull: ALL PASS\n";
     return failed == 0 ? 0 : 1;
 }

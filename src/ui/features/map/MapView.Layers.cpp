@@ -1,6 +1,7 @@
 // MapView.Layers.cpp — map-layer data and display-state management.
 
 #include "ui/features/map/MapView.h"
+#include "ui/features/map/MapDrapeHull.h"
 #include "app/layers/DataLayer.h"
 #include "app/project/Project.h"
 
@@ -24,6 +25,10 @@ void MapView::setLayerMapData(const std::string& layer_id, LayerMapData data)
         }
     }
     alignLayerLongitudeBranch(layer_id, data);
+    if (!data.preview_image.isNull() && data.raster_boundary.empty())
+        data.raster_boundary = buildSonarRasterBoundary(
+            data.preview_image, data.lon_min, data.lat_min,
+            data.lon_max, data.lat_max);
     auto it = m_layer_data.find(layer_id);
     if (it != m_layer_data.end()) {
         data.visible        = it->second.visible;
