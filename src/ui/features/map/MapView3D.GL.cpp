@@ -533,8 +533,9 @@ void MapView3D::buildDrapeQuad(SonarDrape3D& D)
 
 void MapView3D::buildDrapeHullVbo(SonarDrape3D& D)
 {
-    auto verts = buildClosedOutlineVertices(
-        D.pending_hull, {m_origin_x, m_origin_y, m_is_projected});
+    const MapLocalFrame frame{m_origin_x, m_origin_y, m_is_projected};
+    auto verts = buildClosedOutlineVertices(D.pending_hull, frame);
+    auto filled = buildFilledPolygonVertices(D.pending_hull, frame);
 
     D.pending_hull.clear();
     D.outline_vert_count = 0;
@@ -548,6 +549,19 @@ void MapView3D::buildDrapeHullVbo(SonarDrape3D& D)
     D.outline_vbo.allocate(verts.data(), static_cast<int>(verts.size() * sizeof(float)));
     D.outline_vbo.release();
     D.outline_vert_count = static_cast<int>(verts.size()) / 3;
+
+    D.footprint_vert_count = 0;
+    if (!filled.empty()) {
+        if (!D.footprint_vbo.isCreated()) {
+            D.footprint_vbo.create();
+            D.footprint_vbo.setUsagePattern(QOpenGLBuffer::StaticDraw);
+        }
+        D.footprint_vbo.bind();
+        D.footprint_vbo.allocate(
+            filled.data(), static_cast<int>(filled.size() * sizeof(float)));
+        D.footprint_vbo.release();
+        D.footprint_vert_count = static_cast<int>(filled.size()) / 3;
+    }
 }
 
 void MapView3D::buildCurtainVbo(CurtainLayer3D& C)

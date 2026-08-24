@@ -32,4 +32,8 @@ int appendNavTrackLineVertices(const std::vector<QPointF>& track,
 std::vector<float> buildClosedOutlineVertices(const std::vector<QPointF>& polygons,
                                               const MapLocalFrame& frame);
 
+// Tessellates simple polygons separated by NaN sentinels into xyz GL_TRIANGLES.
+std::vector<float> buildFilledPolygonVertices(const std::vector<QPointF>& polygons,
+                                              const MapLocalFrame& frame);
+
 } // namespace dolphin::ui

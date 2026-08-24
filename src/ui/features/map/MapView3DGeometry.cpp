@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <numeric>
 #include <numbers>
 
 namespace dolphin::ui {
@@ -102,6 +103,78 @@ std::vector<float> buildClosedOutlineVertices(const std::vector<QPointF>& polygo
             continue;
         }
         segment.push_back(toLocal(point, frame));
+    }
+    flush();
+    return vertices;
+}
+
+std::vector<float> buildFilledPolygonVertices(const std::vector<QPointF>& polygons,
+                                              const MapLocalFrame& frame)
+{
+    std::vector<float> vertices;
+    std::vector<LocalPoint> polygon;
+    const auto cross = [](const LocalPoint& a, const LocalPoint& b,
+                          const LocalPoint& c) {
+        return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+    };
+    const auto appendTriangle = [&](const LocalPoint& a, const LocalPoint& b,
+                                    const LocalPoint& c) {
+        vertices.insert(vertices.end(), {a.x, a.y, 0.f, b.x, b.y, 0.f,
+                                         c.x, c.y, 0.f});
+    };
+    const auto flush = [&]() {
+        if (polygon.size() < 3) { polygon.clear(); return; }
+        if (polygon.front().x == polygon.back().x
+                && polygon.front().y == polygon.back().y)
+            polygon.pop_back();
+        if (polygon.size() < 3) { polygon.clear(); return; }
+
+        double area = 0.0;
+        for (size_t i = 0; i < polygon.size(); ++i) {
+            const auto& a = polygon[i];
+            const auto& b = polygon[(i + 1) % polygon.size()];
+            area += static_cast<double>(a.x) * b.y
+                  - static_cast<double>(b.x) * a.y;
+        }
+        if (std::abs(area) < 1e-8) { polygon.clear(); return; }
+        const bool ccw = area > 0.0;
+        std::vector<size_t> indices(polygon.size());
+        std::iota(indices.begin(), indices.end(), 0);
+        size_t guard = indices.size() * indices.size();
+        while (indices.size() > 3 && guard-- > 0) {
+            bool clipped = false;
+            for (size_t k = 0; k < indices.size(); ++k) {
+                const size_t ia = indices[(k + indices.size() - 1) % indices.size()];
+                const size_t ib = indices[k];
+                const size_t ic = indices[(k + 1) % indices.size()];
+                const double turn = cross(polygon[ia], polygon[ib], polygon[ic]);
+                if ((ccw && turn <= 1e-7) || (!ccw && turn >= -1e-7)) continue;
+                bool contains = false;
+                for (const size_t ip : indices) {
+                    if (ip == ia || ip == ib || ip == ic) continue;
+                    const double c1 = cross(polygon[ia], polygon[ib], polygon[ip]);
+                    const double c2 = cross(polygon[ib], polygon[ic], polygon[ip]);
+                    const double c3 = cross(polygon[ic], polygon[ia], polygon[ip]);
+                    if (ccw ? (c1 >= 0 && c2 >= 0 && c3 >= 0)
+                            : (c1 <= 0 && c2 <= 0 && c3 <= 0)) {
+                        contains = true; break;
+                    }
+                }
+                if (contains) continue;
+                appendTriangle(polygon[ia], polygon[ib], polygon[ic]);
+                indices.erase(indices.begin() + static_cast<std::ptrdiff_t>(k));
+                clipped = true;
+                break;
+            }
+            if (!clipped) break;
+        }
+        if (indices.size() == 3)
+            appendTriangle(polygon[indices[0]], polygon[indices[1]], polygon[indices[2]]);
+        polygon.clear();
+    };
+    for (const QPointF& point : polygons) {
+        if (!std::isfinite(point.x()) || !std::isfinite(point.y())) flush();
+        else polygon.push_back(toLocal(point, frame));
     }
     flush();
     return vertices;
