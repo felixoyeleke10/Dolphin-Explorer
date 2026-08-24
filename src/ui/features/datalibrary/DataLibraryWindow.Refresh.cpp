@@ -365,10 +365,11 @@ void DataLibraryWindow::refreshContacts()
         m_contacts_table->setItem(row, 1,
             new QTableWidgetItem(QString::fromStdString(c.label)));
         const bool proj = core::spatialRefIsProjected(c.spatial_ref);
+        const auto position = formatPositionComponents(c.lat, c.lon, proj);
         m_contacts_table->setItem(row, 2,
-            new QTableWidgetItem(formatCoord(c.lat, proj, 'N', 'S')));
+            new QTableWidgetItem(position.first));
         m_contacts_table->setItem(row, 3,
-            new QTableWidgetItem(formatCoord(c.lon, proj, 'E', 'W')));
+            new QTableWidgetItem(position.second));
         m_contacts_table->setItem(row, 4,
             new QTableWidgetItem(QString::fromStdString(c.classification)));
         m_contacts_table->setItem(row, 5,

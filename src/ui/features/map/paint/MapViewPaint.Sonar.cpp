@@ -1,5 +1,6 @@
 // MapViewPaint.Sonar.cpp — empty state, sonar images, coverage ribbons.
 #include "ui/features/map/MapView.h"
+#include "ui/features/map/MapDrapeHull.h"
 #include "app/project/Project.h"
 #include "core/Feature.h"
 #include "core/SpatialRef.h"
@@ -273,8 +274,19 @@ void MapView::paintSonarLayers(QPainter& p) const
         }
     };
     auto drawLayerOutline = [&](const LayerMapData& ld) {
-        if (!ld.coverage.empty()) drawMergedSwath(ld, false);
-        else if (!ld.nav_track.empty()) drawTrackLine(ld);
+        if (!ld.coverage.empty()) {
+            const auto hull = buildSonarDrapeHull(ld);
+            QPolygonF segment;
+            for (const QPointF& point : hull) {
+                if (std::isnan(point.x()) || std::isnan(point.y())) {
+                    if (segment.size() >= 3) p.drawPolygon(segment);
+                    segment.clear();
+                } else {
+                    segment.append(geoToPixel(point.x(), point.y()));
+                }
+            }
+            if (segment.size() >= 3) p.drawPolygon(segment);
+        } else if (!ld.nav_track.empty()) drawTrackLine(ld);
     };
 
     // Selected layers — unified outer hull outline (or the track line itself).

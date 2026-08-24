@@ -1,9 +1,46 @@
 #include "MapView3DGeometry.h"
 
+#include <algorithm>
 #include <cmath>
 #include <numbers>
 
 namespace dolphin::ui {
+
+float normalizeCameraYaw(float degrees) noexcept
+{
+    if (!std::isfinite(degrees)) return 0.f;
+    float normalized = std::fmod(degrees, 360.f);
+    if (normalized < 0.f) normalized += 360.f;
+    return normalized;
+}
+
+double cameraMetresPerPixel(float distance, float vertical_fov_degrees,
+                            int viewport_height) noexcept
+{
+    if (!(distance > 0.f) || !(vertical_fov_degrees > 0.f)
+            || vertical_fov_degrees >= 180.f || viewport_height <= 0)
+        return 0.0;
+    const double half_fov = static_cast<double>(vertical_fov_degrees)
+        * std::numbers::pi / 360.0;
+    return 2.0 * static_cast<double>(distance) * std::tan(half_fov)
+        / static_cast<double>(viewport_height);
+}
+
+float cameraWheelScale(int angle_delta_y) noexcept
+{
+    return angle_delta_y == 0 ? 1.f
+        : std::pow(0.85f, static_cast<float>(angle_delta_y) / 120.f);
+}
+
+CameraClipRange cameraClipRange(float distance, float scene_radius) noexcept
+{
+    distance = std::max(distance, 1.f);
+    scene_radius = std::max(scene_radius, 1.f);
+    const float near_plane = std::max(0.1f, distance * 0.001f);
+    const float far_plane = std::max({100.f, distance * 8.f, scene_radius * 8.f});
+    return {near_plane, std::max(far_plane, near_plane * 100.f)};
+}
+
 namespace {
 
 struct LocalPoint { float x; float y; };

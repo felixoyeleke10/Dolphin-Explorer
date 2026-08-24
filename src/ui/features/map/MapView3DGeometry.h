@@ -12,6 +12,17 @@ struct MapLocalFrame {
     bool is_projected = false;
 };
 
+struct CameraClipRange {
+    float near_plane = 0.1f;
+    float far_plane = 1000.f;
+};
+
+float normalizeCameraYaw(float degrees) noexcept;
+double cameraMetresPerPixel(float distance, float vertical_fov_degrees,
+                            int viewport_height) noexcept;
+float cameraWheelScale(int angle_delta_y) noexcept;
+CameraClipRange cameraClipRange(float distance, float scene_radius) noexcept;
+
 // Appends xyz GL_LINES vertices for each continuous part of a navigation track.
 int appendNavTrackLineVertices(const std::vector<QPointF>& track,
                                const MapLocalFrame& frame,

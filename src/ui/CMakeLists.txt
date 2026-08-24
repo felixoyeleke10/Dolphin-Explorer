@@ -417,6 +417,7 @@ add_library(dolphin-ui-mainwindow STATIC
     mainwindow/MainWindow.Menus.cpp
     mainwindow/MainWindow.Geodesy.cpp
     mainwindow/ProjectSessionController.cpp
+    mainwindow/ProjectSessionController.Imports.cpp
     mainwindow/ProjectSessionController.Recent.cpp
     mainwindow/LayerDisplayCoordinator.cpp
     mainwindow/MainWindow.Project.cpp

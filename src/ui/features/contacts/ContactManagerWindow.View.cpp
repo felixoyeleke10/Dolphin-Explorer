@@ -372,8 +372,9 @@ void ContactManagerWindow::populateForCurrentNode()
             m_table->setItem(row, ColClass,  new QTableWidgetItem(QString::fromStdString(c.classification)));
             m_table->setItem(row, ColConf,   new QTableWidgetItem(confidenceLabel(c.confidence)));
             const bool proj = core::spatialRefIsProjected(c.spatial_ref);
-            m_table->setItem(row, ColLat, new QTableWidgetItem(formatCoord(c.lat, proj, 'N', 'S')));
-            m_table->setItem(row, ColLon, new QTableWidgetItem(formatCoord(c.lon, proj, 'E', 'W')));
+            const auto position = formatPositionComponents(c.lat, c.lon, proj);
+            m_table->setItem(row, ColLat, new QTableWidgetItem(position.first));
+            m_table->setItem(row, ColLon, new QTableWidgetItem(position.second));
             auto* depth = new QTableWidgetItem(
                 c.depth_m > 0.f ? QString::number(c.depth_m, 'f', 1) : QStringLiteral("—"));
             depth->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);

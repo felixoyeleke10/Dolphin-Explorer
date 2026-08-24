@@ -203,16 +203,6 @@ SwathGeorefResult georeferenceSidescanPings(
             }
             strip.points = std::move(coalesced);
 
-            // The bottom return maps to ground range zero after SRC. Retain the
-            // geometry anchor but make it transparent: otherwise its strong
-            // amplitude becomes a synthetic seabed line along the navigation
-            // track in both the 2D mosaic and the 3D drape.
-            if (correction_presented
-                    && !strip.points.empty()
-                    && strip.points.front().ground_range_m <= kRangeEpsilonM) {
-                strip.points.front().renderable = false;
-            }
-
             // Add the canonical inner sample-bin edge. For corrected geometry it
             // is the track centre; for raw-slant display it is the same open
             // water-column edge used by coverage ribbons.
@@ -239,15 +229,14 @@ SwathGeorefResult georeferenceSidescanPings(
                      !correction_presented});
             }
 
-            // The bottom pick maps to ground range zero by definition. The
-            // immediately following pulse-length bin normally belongs to the
-            // same specular return; painting it makes a false straight seam
-            // along the navigation track. Run this after canonical-anchor
-            // insertion because blanking may have removed the source zero bin.
-            // Keep at least two later seabed cells so sparse records survive.
+            // The bottom pick maps to ground range zero by definition. Its
+            // specular return must not become a bright artificial track line,
+            // but making the anchor non-renderable drops the entire first cell
+            // between adjacent pings and opens a visible corridor. Keep the
+            // geometry closed and replace the bottom-band amplitude with the
+            // first trustworthy seabed bin instead.
             if (correction_presented && strip.points.size() >= 4
                     && strip.points.front().ground_range_m <= kRangeEpsilonM) {
-                strip.points.front().renderable = false;
                 const double first_positive = strip.points[1].ground_range_m;
                 const double second_positive = strip.points[2].ground_range_m;
                 if (std::isfinite(first_positive)
@@ -256,14 +245,23 @@ SwathGeorefResult georeferenceSidescanPings(
                         && second_positive > first_positive) {
                     const double bottom_band_limit = first_positive
                         + 0.5 * (second_positive - first_positive);
-                    for (size_t point_i = 1;
-                         point_i + 2 < strip.points.size(); ++point_i) {
-                        if (strip.points[point_i].ground_range_m
-                                > bottom_band_limit)
-                            break;
-                        strip.points[point_i].renderable = false;
+                    size_t trusted_i = 1;
+                    while (trusted_i + 2 < strip.points.size()
+                           && strip.points[trusted_i].ground_range_m
+                                <= bottom_band_limit)
+                        ++trusted_i;
+                    const uint16_t seabed_amplitude =
+                        strip.points[trusted_i].amplitude;
+                    for (size_t point_i = 0; point_i < trusted_i; ++point_i) {
+                        strip.points[point_i].amplitude = seabed_amplitude;
+                        strip.points[point_i].renderable = true;
                     }
                 }
+            } else if (correction_presented && strip.points.size() >= 2
+                       && strip.points.front().ground_range_m
+                            <= kRangeEpsilonM) {
+                strip.points.front().amplitude = strip.points[1].amplitude;
+                strip.points.front().renderable = true;
             }
             result.strips.push_back(std::move(strip));
         } else {

@@ -25,17 +25,31 @@ int main()
     port.ribbons.push_back(ribbon(0));
     ui::SwathCoverage starboard;
     starboard.channel = core::SidescanChannel::Starboard;
-    starboard.ribbons.push_back(ribbon(10));
+    starboard.ribbons.push_back(ribbon(0));
     data.coverage = {port, starboard};
 
     const auto merged = ui::buildSonarDrapeHull(data);
     check(merged.size() == 5, "paired sides produce one hull and separator");
     check(merged.size() > 3 && merged[0].x() == 2 && merged[1].x() == 3,
           "port outer edge is chronological");
-    check(merged.size() > 3 && merged[2].x() == 13 && merged[3].x() == 12,
+    check(merged.size() > 3 && merged[2].x() == 3 && merged[3].x() == 2,
           "starboard outer edge closes the pair");
     check(!merged.empty() && std::isnan(merged.back().x()), "hull ends with separator");
 
+    // A continuity break on only one channel shifts vector indices. Spatial
+    // matching must not bridge the first port segment to a distant starboard one.
+    ui::SwathCoverage broken_starboard;
+    broken_starboard.channel = core::SidescanChannel::Starboard;
+    broken_starboard.ribbons.push_back(ribbon(1000));
+    broken_starboard.ribbons.push_back(ribbon(0));
+    data.coverage = {port, broken_starboard};
+    const auto spatially_matched = ui::buildSonarDrapeHull(data);
+    check(spatially_matched.size() == 10,
+          "unrelated channel segment remains a separate truthful outline");
+    check(spatially_matched.size() > 3 && spatially_matched[2].x() == 3,
+          "outer hull uses the spatially corresponding starboard segment");
+
+    data.coverage = {port, starboard};
     data.show_nadir = false;
     data.coverage_nadir_hidden = data.coverage;
     const auto split = ui::buildSonarDrapeHull(data);

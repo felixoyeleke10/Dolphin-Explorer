@@ -6,6 +6,7 @@
 // Mouse / wheel input:           MapView3D.Input.cpp
 
 #include "ui/features/map/MapView3D.h"
+#include "ui/features/map/MapView3DGeometry.h"
 
 #include <QOpenGLTexture>
 
@@ -97,6 +98,7 @@ void MapView3D::updateNavTrack(const std::string& layer_id,
     }
     it->color     = color;
     it->raw_track = data.nav_track;
+    it->sonar_drape = data.kind == LayerMapKind::Swath;
     it->dirty     = true;
     m_layers_dirty = true;
 
@@ -496,6 +498,7 @@ void MapView3D::resetCamera()
     m_camera.yaw         = 0.f;
     m_camera.pitch       = 45.f;
     m_camera_user_moved  = false;
+    updateCameraProjection();
     update();
 }
 
@@ -505,7 +508,15 @@ void MapView3D::fitToScene()
     m_camera.distance    = m_scene_radius / std::tan(m_camera.fov * float(M_PI) / 360.f) * 1.3f;
     m_camera.distance    = qMax(m_camera.distance, 10.f);
     m_camera_user_moved  = false;
+    updateCameraProjection();
     update();
+}
+
+void MapView3D::updateCameraProjection()
+{
+    const auto clip = cameraClipRange(m_camera.distance, m_scene_radius);
+    m_camera.near_z = clip.near_plane;
+    m_camera.far_z = clip.far_plane;
 }
 
 // -----------------------------------------------------------------------------

@@ -2,6 +2,7 @@
 
 #include "ui/features/map/MapView3D.h"
 #include "ui/features/map/MapLongitude.h"
+#include "ui/features/map/MapView3DGeometry.h"
 
 #include <QContextMenuEvent>
 #include <QEvent>
@@ -17,12 +18,10 @@ namespace dolphin::ui {
 
 // -- Viewport signal helper ----------------------------------------------------
 
-static void emitCameraViewport(MapView3D* self,
-                                float yaw_deg, float distance_m, int viewport_h)
+static void emitCameraViewport(MapView3D* self, float yaw_deg, float distance_m,
+                               float fov_deg, int viewport_h)
 {
-    const double mpp = (viewport_h > 0)
-        ? double(distance_m) * 2.0 / double(viewport_h)
-        : 0.0;
+    const double mpp = cameraMetresPerPixel(distance_m, fov_deg, viewport_h);
     emit self->viewportChanged(mpp, double(yaw_deg));
 }
 
@@ -213,8 +212,7 @@ void MapView3D::mousePressEvent(QMouseEvent* ev)
             if (new_dist > 1.f && new_dist < m_scene_radius * 10.f) {
                 m_camera.target   = new_target;
                 m_camera.distance = new_dist;
-                m_camera.near_z   = m_camera.distance * 0.0002f;
-                m_camera.far_z    = m_camera.distance * 200.f;
+                updateCameraProjection();
             }
         }
         m_orbiting    = true;
@@ -252,7 +250,8 @@ void MapView3D::mouseMoveEvent(QMouseEvent* ev)
         }
         m_camera.yaw   = std::fmod(m_drag_yaw0   - d.x() * 0.4f + 360.f, 360.f);
         m_camera.pitch = std::clamp(m_drag_pitch0 + d.y() * 0.25f, 5.f, 89.f);
-        emitCameraViewport(this, m_camera.yaw, m_camera.distance, height());
+        emitCameraViewport(this, m_camera.yaw, m_camera.distance,
+                           m_camera.fov, height());
         update();
     }
 
@@ -330,12 +329,16 @@ void MapView3D::mouseReleaseEvent(QMouseEvent* ev)
 
 void MapView3D::wheelEvent(QWheelEvent* ev)
 {
-    const float factor = (ev->angleDelta().y() > 0) ? 0.85f : 1.18f;
+    const float factor = cameraWheelScale(ev->angleDelta().y());
+    if (factor == 1.f) {
+        ev->ignore();
+        return;
+    }
     m_camera.distance  = std::clamp(m_camera.distance * factor,
                                     1.f, m_scene_radius * 20.f);
-    m_camera.near_z    = m_camera.distance * 0.0002f;
-    m_camera.far_z     = m_camera.distance * 200.f;
-    emitCameraViewport(this, m_camera.yaw, m_camera.distance, height());
+    updateCameraProjection();
+    emitCameraViewport(this, m_camera.yaw, m_camera.distance,
+                       m_camera.fov, height());
     update();
 }
 
@@ -343,17 +346,18 @@ void MapView3D::wheelEvent(QWheelEvent* ev)
 
 void MapView3D::setYaw(double deg)
 {
-    m_camera.yaw = static_cast<float>(std::fmod(deg + 360.0, 360.0));
-    emitCameraViewport(this, m_camera.yaw, m_camera.distance, height());
+    m_camera.yaw = normalizeCameraYaw(static_cast<float>(deg));
+    emitCameraViewport(this, m_camera.yaw, m_camera.distance,
+                       m_camera.fov, height());
     update();
 }
 
 void MapView3D::setDistance(float metres)
 {
     m_camera.distance = std::clamp(metres, 1.f, m_scene_radius * 20.f);
-    m_camera.near_z   = m_camera.distance * 0.0002f;
-    m_camera.far_z    = m_camera.distance * 200.f;
-    emitCameraViewport(this, m_camera.yaw, m_camera.distance, height());
+    updateCameraProjection();
+    emitCameraViewport(this, m_camera.yaw, m_camera.distance,
+                       m_camera.fov, height());
     update();
 }
 

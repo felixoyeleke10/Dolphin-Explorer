@@ -805,7 +805,9 @@ void testCoverageAndRasterShareNadirPolicy()
     CHECK(zero_result.strips.size() == 1);
     if (zero_result.strips.size() == 1) {
         CHECK(zero_result.strips[0].points.size() == 2);
-        CHECK(!zero_result.strips[0].points.front().renderable);
+        CHECK(zero_result.strips[0].points.front().renderable);
+        CHECK(zero_result.strips[0].points.front().amplitude
+              == zero_result.strips[0].points.back().amplitude);
         CHECK(zero_result.strips[0].points.back().renderable);
     }
 
@@ -821,8 +823,10 @@ void testCoverageAndRasterShareNadirPolicy()
         const auto& points = band_result.strips[0].points;
         CHECK(points.size() == 5);
         if (points.size() == 5) {
-            CHECK(!points[0].renderable); // geometry-only track anchor
-            CHECK(!points[1].renderable); // collapsed specular guard bin
+            CHECK(points[0].renderable);  // closed, amplitude-sanitized track anchor
+            CHECK(points[1].renderable);  // closed, amplitude-sanitized guard bin
+            CHECK(points[0].amplitude == points[2].amplitude);
+            CHECK(points[1].amplitude == points[2].amplitude);
             CHECK(points[2].renderable);  // measured seabed texture retained
             CHECK(points[4].renderable);
         }
@@ -838,7 +842,7 @@ void testCoverageAndRasterShareNadirPolicy()
     if (flagged_result.strips.size() == 1) {
         CHECK(flagged_result.strips[0].points.size() == 2);
         CHECK(flagged_result.strips[0].points.front().ground_range_m == 0.0f);
-        CHECK(!flagged_result.strips[0].points.front().renderable);
+        CHECK(flagged_result.strips[0].points.front().renderable);
     }
 
     // A UI/layer request is not the same as an applied correction. With no
@@ -1097,15 +1101,16 @@ void testUnequalStripSampleCountsUseFullSwath()
     const std::atomic_bool cancelled{false};
     CHECK(ui::buildSwathPreviewImage(
         pings, data, 128, 0, cancelled, params, 0.0, 0));
-    // The geometry-only nadir anchor is not rasterized; the remaining three
-    // real seabed cells still retain the full unequal-sample outer swath. The
-    // old min-size zip emitted only two and discarded the far-range wedge.
-    CHECK(data.nav_stats.cells_attempted == 3);
-    CHECK(data.nav_stats.cells_rasterized == 3);
+    // SLR keeps the nadir cell closed and the remaining three seabed cells
+    // retain the full unequal-sample outer swath. The old min-size zip emitted
+    // only two and discarded the far-range wedge.
+    CHECK(data.nav_stats.cells_attempted == 4);
+    CHECK(data.nav_stats.cells_rasterized == 4);
 
     // Verify the presentation result, not merely the geometry marker: the
-    // midpoint of the navigation centerline must remain transparent rather
-    // than becoming either a bright or palette-black seabed stripe.
+    // midpoint of the navigation centerline must be covered. Its amplitude is
+    // sanitized from the first trusted seabed bin, so closure does not restore
+    // the original specular bottom-return spike.
     CHECK(!data.preview_image.isNull());
     if (!data.preview_image.isNull()) {
         const double mid_lon = 0.5 * (first.nav.lon + second.nav.lon);
@@ -1116,7 +1121,7 @@ void testUnequalStripSampleCountsUseFullSwath()
         const int y = std::clamp(static_cast<int>(
             (data.lat_max - mid_lat) / (data.lat_max - data.lat_min)
                 * data.preview_image.height()), 0, data.preview_image.height() - 1);
-        CHECK(qAlpha(data.preview_image.pixel(x, y)) == 0);
+        CHECK(qAlpha(data.preview_image.pixel(x, y)) != 0);
     }
 }
 

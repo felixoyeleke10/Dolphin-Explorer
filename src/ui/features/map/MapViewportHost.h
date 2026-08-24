@@ -85,6 +85,7 @@ public slots:
     // Keep the 3D SBP curtains on the same SbpPalette as the SBP viewer.
     void setSbpCurtainPalette(int palette_index);
     void setSonarPalette(int palette_index);
+    int sonarPalette() const { return m_sonar_palette; }
 
     // Load / remove a bathymetry file as 3D terrain directly (no dialog).
     // Used by the Views panel's "Draping surface" setting; the file path is
@@ -158,6 +159,9 @@ private:
     ToolMode m_tool_mode        = ToolMode::Pan;
     bool   m_hover_tooltips     = false;
     bool   m_hover_highlight    = false;
+    // Canonical SSS palette for this viewport.  The 3D renderer must not fall
+    // back to its own default when pages are switched or recreated.
+    int    m_sonar_palette      = 1; // PaletteIndex::Greyscale
     std::unordered_map<std::string, bool> m_layer_visibility;
     std::unordered_map<std::string, bool> m_nav_track_visibility;
 };

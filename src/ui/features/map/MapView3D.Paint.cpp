@@ -189,7 +189,8 @@ void MapView3D::drawNavLayers()
     glEnableVertexAttribArray(0);
 
     for (const auto& L : m_layers) {
-        if (L.vertex_count <= 0 || !L.layer_visible || !L.nav_visible) continue;
+        if (L.vertex_count <= 0 || !L.layer_visible || !L.nav_visible
+                || L.sonar_drape) continue;
         const bool hi = isHighlighted(L.id);
         QColor col = L.color.isValid() ? L.color : kNavLayerDefault;
         if (any_highlight && !hi) col.setAlphaF(col.alphaF() * 0.35f);

@@ -1,5 +1,6 @@
 #include "ui/systems/AppState.h"
 #include "ui/mainwindow/AppSettingsDialog.h"
+#include "ui/shared/CoordFormat.h"
 
 namespace dolphin::ui {
 
@@ -12,12 +13,14 @@ AppState::AppState(QObject* parent)
 void AppState::load()
 {
     m_current = AppSettingsDialog::loadDefaults();
+    setCoordinateDisplayFormat(m_current.coord_format);
 }
 
 void AppState::apply(const AppSettings& s)
 {
     const AppSettings prev = m_current;
     m_current = s;
+    setCoordinateDisplayFormat(s.coord_format);
 
     if (s.sound_velocity  != prev.sound_velocity)  emit soundVelocityChanged(s.sound_velocity);
     if (s.default_palette != prev.default_palette) emit defaultPaletteChanged(s.default_palette);

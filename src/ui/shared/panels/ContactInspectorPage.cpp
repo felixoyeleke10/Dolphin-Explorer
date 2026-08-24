@@ -96,8 +96,9 @@ void ContactInspectorPage::refresh(const core::Contact* c)
     m_class->setText(c->classification.empty() ? tr("—")
                                                : QString::fromStdString(c->classification));
     m_conf->setText(confidenceText(c->confidence));
-    m_lat->setText(formatCoord(c->lat, proj, 'N', 'S'));
-    m_lon->setText(formatCoord(c->lon, proj, 'E', 'W'));
+    const auto position = formatPositionComponents(c->lat, c->lon, proj);
+    m_lat->setText(position.first);
+    m_lon->setText(position.second);
 
     setOptionalRow(m_depth_row, m_depth,
                    c->depth_m > 0.f ? tr("%1 m").arg(c->depth_m, 0, 'f', 2) : QString());

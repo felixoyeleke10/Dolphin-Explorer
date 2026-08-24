@@ -148,10 +148,11 @@ void ContactManagerWindow::copySelection(bool cut)
         const QString src = layer ? QString::fromStdString(layer->label)
                                   : QString::fromStdString(c->line_id);
         const bool proj = core::spatialRefIsProjected(c->spatial_ref);
+        const auto position = formatPositionComponents(c->lat, c->lon, proj);
         lines << QStringList{
             QString::fromStdString(c->label), tag, src,
             QString::fromStdString(c->classification), confidenceLabel(c->confidence),
-            formatCoord(c->lat, proj, 'N', 'S'), formatCoord(c->lon, proj, 'E', 'W'),
+            position.first, position.second,
             QString::number(c->depth_m, 'f', 1), QString::number(c->range_m, 'f', 1)
         }.join(QLatin1Char('\t'));
     }

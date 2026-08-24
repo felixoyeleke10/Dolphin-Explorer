@@ -38,6 +38,20 @@ int main()
     check(geographic_nav.size() == 6 && std::abs(geographic_nav[3] - 111319.49f) < 0.1f,
           "geographic longitude converts to local metres");
 
+    check(std::abs(ui::normalizeCameraYaw(-450.f) - 270.f) < 1e-6f,
+          "camera yaw normalizes arbitrary negative rotations");
+    check(ui::cameraWheelScale(0) == 1.f,
+          "zero-delta wheel does not change zoom");
+    check(ui::cameraWheelScale(120) < 1.f && ui::cameraWheelScale(-120) > 1.f,
+          "wheel zoom direction is symmetric");
+    check(std::abs(ui::cameraMetresPerPixel(1000.f, 45.f, 1000)
+                   - 0.828427) < 1e-5,
+          "metres per pixel honors field of view");
+    const auto clip = ui::cameraClipRange(1000.f, 5000.f);
+    check(clip.near_plane >= 1.f && clip.far_plane >= 40000.f
+              && clip.far_plane / clip.near_plane <= 40000.f,
+          "clip planes preserve depth precision");
+
     if (failed == 0) std::cout << "test_map_view3d_geometry: ALL PASS\n";
     return failed == 0 ? 0 : 1;
 }

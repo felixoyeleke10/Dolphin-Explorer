@@ -8,6 +8,7 @@
 #include "ui/shell/ViewerWindow.h"
 #include "core/Contact.h"
 #include "core/SidescanPing.h"
+#include "core/SpatialRef.h"
 #include <QCloseEvent>
 #include <QPointF>
 #include <QWidget>
@@ -60,6 +61,12 @@ public:
                   const std::string&   source_path,
                   uint64_t             source_size_bytes = 0);
     void clearLayer();
+
+    // Coordinate system used by every hover readout. MainWindow supplies the
+    // project working CRS so the viewer footer and application status bar never
+    // present different coordinates for the same cursor position.
+    void setHoverSpatialRef(const core::SpatialRef& ref)
+        { m_hover_spatial_ref = ref; }
 
     // IViewerWindow
     void onViewerRefresh(ViewerRefreshReason reason,
@@ -309,6 +316,7 @@ private:
     app::DataLayer*     m_layer             = nullptr;
     std::string         m_source_path;
     uint64_t            m_source_size_bytes = 0;
+    core::SpatialRef    m_hover_spatial_ref;
     int                 m_active_mode       = ModeNavigate;
 
     app::OperationManager*        m_op_mgr      = nullptr;  // owns pipeline ops (keyed)

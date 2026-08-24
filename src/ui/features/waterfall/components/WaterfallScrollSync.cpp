@@ -6,6 +6,7 @@
 #include "app/layers/DataLayer.h"
 #include "ui/shared/CoordFormat.h"
 #include "ui/shared/widgets/CommandBar.h"
+#include "geo/GeoUtils.h"
 
 #include <algorithm>
 #include <cmath>
@@ -193,13 +194,29 @@ void WaterfallWindow::onCursorMoved(int /*ping_idx*/,
     if (depth > 0.f)
         text += QString("  ·  depth %1 m").arg(depth, 0, 'f', 1);
 
-    const bool has_nav = (lat != 0.0 || lon != 0.0);
+    bool display_projected = is_projected;
+    double display_lat = lat;
+    double display_lon = lon;
+    if (!is_projected && core::spatialRefIsProjected(m_hover_spatial_ref)) {
+        double northing = 0.0;
+        double easting = 0.0;
+        if (geo::latLonToProjected(
+                lat, lon, m_hover_spatial_ref, northing, easting)) {
+            display_lat = northing;
+            display_lon = easting;
+            display_projected = true;
+        }
+    }
+
+    const bool has_nav = (display_lat != 0.0 || display_lon != 0.0);
     if (has_nav)
-        text += QStringLiteral("  ·  ") + formatPosition(lat, lon, is_projected);
+        text += QStringLiteral("  ·  ")
+            + formatPosition(display_lat, display_lon, display_projected);
 
     m_status_right->setText(text);
 
-    emit cursorUpdated(range, side, lat, lon, is_projected);
+    emit cursorUpdated(
+        range, side, display_lat, display_lon, display_projected);
 }
 
 } // namespace dolphin::ui

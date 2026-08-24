@@ -144,6 +144,7 @@ MapView3D* MapViewportHost::ensureView3D()
     m_view3d->setToolMode(static_cast<int>(m_tool_mode));
     m_view3d->setHoverTooltipsEnabled(m_hover_tooltips);
     m_view3d->setHoverHighlightEnabled(m_hover_highlight);
+    m_view3d->setSonarPalette(m_sonar_palette);
 
     connect(m_view3d, &MapView3D::terrainLoadFinished, this,
             [this](const std::string& id, bool ok, const QString& err) {
@@ -335,6 +336,9 @@ void MapViewportHost::setMode3D(bool on)
     m_is_3d = on;
     if (on) {
         auto* view3d = ensureView3D();
+        // Reassert the host-owned palette at the mode boundary.  This also
+        // protects against future GL/context recreation resetting renderer state.
+        view3d->setSonarPalette(m_sonar_palette);
 
         if (!view3d->isGLReady()) {
             // First switch: the QOpenGLWidget paints a black zero-frame before
@@ -466,7 +470,8 @@ void MapViewportHost::onLayerDataLoaded(const std::string& layer_id,
 
 void MapViewportHost::setSonarPalette(int palette_index)
 {
-    if (m_view3d) m_view3d->setSonarPalette(palette_index);
+    m_sonar_palette = std::clamp(palette_index, 0, PaletteIndex::Count - 1);
+    if (m_view3d) m_view3d->setSonarPalette(m_sonar_palette);
 }
 
 void MapViewportHost::loadRasterTerrain(const std::string& layer_id,

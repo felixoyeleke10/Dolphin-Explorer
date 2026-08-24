@@ -130,7 +130,13 @@ int main(int argc, char* argv[])
         CHECK(!host.view2D()->layerData("line-a")->show_nadir);
         CHECK(host.view3D()->drapeLayerCount() == 2);
         host.setSonarPalette(dolphin::ui::PaletteIndex::Viridis);
+        CHECK(host.sonarPalette() == dolphin::ui::PaletteIndex::Viridis);
+        CHECK(host.view3D()->sonarPalette() == dolphin::ui::PaletteIndex::Viridis);
         host.setMode3D(true);
+        CHECK(host.view3D()->sonarPalette() == dolphin::ui::PaletteIndex::Viridis);
+        host.setMode3D(false);
+        host.setMode3D(true);
+        CHECK(host.view3D()->sonarPalette() == dolphin::ui::PaletteIndex::Viridis);
         host.view3D()->update();
         QApplication::processEvents();
         CHECK(host_gl_errors == 0);

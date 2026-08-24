@@ -114,7 +114,7 @@ QWidget* AppSettingsDialog::buildGeneralPage()
     m_coord_format_combo->addItems({
         tr("Decimal Degrees  (DD.ddddd\xC2\xB0)"),
         tr("Degrees, Minutes, Seconds  (DMS)"),
-        tr("UTM / MGRS"),
+        tr("UTM  (automatic zone)"),
     });
     cfl->addRow(tr("Format:"), m_coord_format_combo);
 

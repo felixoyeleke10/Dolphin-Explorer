@@ -149,6 +149,11 @@ void MainWindow::setupFeatureControllers()
         // (the controller keeps the app-default-name fallback for a fresh install); the
         // manager owns it from here on.
         m_display_state->initMapPalette(m_sss_ctrl->paletteIndex());
+        // The persisted palette was loaded before the viewport and its signal
+        // listener existed.  Seed 3D explicitly so the first 2D/3D switch uses
+        // exactly the same colour map as the already-colourised 2D mosaics.
+        if (m_viewport_host)
+            m_viewport_host->setSonarPalette(m_display_state->mapPalette());
     }
     if constexpr (Features::kImport) {
         m_import_job_mgr = new app::ImportJobManager(m_import_service, this);

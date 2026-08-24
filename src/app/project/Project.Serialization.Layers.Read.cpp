@@ -5,6 +5,7 @@
 
 #include "app/project/Project.h"
 #include "app/project/Project_p.h"
+#include "app/project/ProjectLayerDecode.h"
 #include "app/contracts/ProcessingSettingsContract.h"
 #include "app/layers/LayerUtils.h"
 #include "geo/GeoUtils.h"
@@ -26,68 +27,10 @@ namespace {
 using detail::normaliseFormat;
 using detail::resolveStoredPath;
 using detail::spatialRefFromJson;
-
-// -- Decode helpers ------------------------------------------------------------
-
-static Modality modalityFromString(const std::string& s) {
-    if (s == "sidescan")     return Modality::Sidescan;
-    if (s == "subbottom")    return Modality::SubBottom;
-    if (s == "magnetometer") return Modality::Magnetometer;
-    if (s == "multibeam")    return Modality::Multibeam;
-    if (s == "raster")       return Modality::Raster;
-    if (s == "mixed")        return Modality::Mixed;
-    return Modality::Unknown;
-}
-
-// -- Validation helpers --------------------------------------------------------
-
-static const ProjectSource* findSourceById(const std::vector<ProjectSource>& sources,
-                                           const std::string& source_id)
-{
-    auto it = std::find_if(sources.begin(), sources.end(),
-        [&](const ProjectSource& src) { return src.id == source_id; });
-    return (it != sources.end()) ? &(*it) : nullptr;
-}
-
-template <typename UInt>
-static bool readExactUnsigned(const util::JsonValue& node,
-                              UInt& result,
-                              bool require_nonzero = false)
-{
-    static_assert(std::is_unsigned_v<UInt>);
-    if (!node.isNumber())
-        return false;
-
-    const double value = node.asDouble();
-    const double upper_exclusive = std::ldexp(
-        1.0, std::numeric_limits<UInt>::digits);
-    if (!std::isfinite(value) || value < 0.0
-            || value >= upper_exclusive || std::trunc(value) != value
-            || (require_nonzero && value == 0.0)) {
-        return false;
-    }
-
-    result = static_cast<UInt>(value);
-    return true;
-}
-
-static bool readExactInt64(const util::JsonValue& node, int64_t& result)
-{
-    if (!node.isNumber())
-        return false;
-
-    const double value = node.asDouble();
-    const double upper_exclusive = std::ldexp(
-        1.0, std::numeric_limits<int64_t>::digits);
-    const double lower_inclusive = -upper_exclusive;
-    if (!std::isfinite(value) || value < lower_inclusive
-            || value >= upper_exclusive || std::trunc(value) != value) {
-        return false;
-    }
-
-    result = static_cast<int64_t>(value);
-    return true;
-}
+using detail::findSourceById;
+using detail::modalityFromString;
+using detail::readExactInt64;
+using detail::readExactUnsigned;
 
 } // namespace
 

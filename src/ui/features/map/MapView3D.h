@@ -117,6 +117,7 @@ public:
     void removeSonarDrape(const std::string& layer_id);
     int  drapeLayerCount() const { return static_cast<int>(m_drape_layers.size()); }
     void setSonarPalette(int palette_index);
+    int  sonarPalette() const { return m_sonar_palette; }
 
     // -- Scene -------------------------------------------------------------
     void clearScene();
@@ -200,6 +201,10 @@ private:
         bool                 dirty         = true;
         bool                 layer_visible = true;
         bool                 nav_visible   = true;
+        // SSS already communicates its position through the draped footprint.
+        // Drawing the generated-colour centreline over it visually cuts the
+        // port and starboard imagery into two separate strips.
+        bool                 sonar_drape   = false;
         float bbox_xmin = 0.f, bbox_ymin = 0.f;
         float bbox_xmax = 0.f, bbox_ymax = 0.f;
         bool  has_bbox  = false;
@@ -295,6 +300,7 @@ private:
     void drawLines(QOpenGLBuffer& vbo, int count,
                    const QColor& color, float line_width = 1.f);
     void drawGridLabels(QPainter& painter);
+    void updateCameraProjection();
 
     QVector3D toLocal(double x, double y, double z = 0.0) const;
     // Unproject pixel pos onto z=0 ground plane; returns false when the ray is

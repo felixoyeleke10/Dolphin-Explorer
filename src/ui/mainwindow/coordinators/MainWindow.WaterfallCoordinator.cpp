@@ -269,6 +269,7 @@ void MainWindow::onWaterfallOpen()
         if (sss_id != activeLayerId()) onLayerSelected(sss_id);  // sync app/map/inspector
         auto* layer = currentProject()->findLayer(sss_id);
         if (layer && layer->modality == app::Modality::Sidescan) {
+            m_waterfall_win->setHoverSpatialRef(currentProject()->workingCrs());
             const auto* src    = currentProject()->findSource(layer->source_id);
             const std::string path = src ? src->path : std::string{};
             const uint64_t    sz   = src ? src->size_bytes : 0;
