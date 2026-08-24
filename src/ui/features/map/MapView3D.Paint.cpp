@@ -307,34 +307,6 @@ void MapView3D::drawDrapes()
         m_drape_shader->setUniformValue(m_loc_drape_alpha, D.opacity);
 
         if (!m_terrain_layers.empty()) {
-            // First write the exact SSS footprint into stencil without touching
-            // colour/depth. The currently-bound drape shader also discards true
-            // no-data texels, preserving internal gaps while the vector mesh
-            // removes rectangular/pixel overhang at the outer boundary.
-            const bool have_footprint = D.footprint_vert_count > 0
-                && D.footprint_vbo.isCreated();
-            if (have_footprint) {
-                glEnable(GL_STENCIL_TEST);
-                glClearStencil(0);
-                glClear(GL_STENCIL_BUFFER_BIT);
-                glStencilMask(0xFF);
-                glStencilFunc(GL_ALWAYS, 1, 0xFF);
-                glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
-                glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
-                glDepthMask(GL_FALSE);
-                glDisable(GL_DEPTH_TEST);
-                D.footprint_vbo.bind();
-                glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, nullptr);
-                glEnableVertexAttribArray(0);
-                glDrawArrays(GL_TRIANGLES, 0, D.footprint_vert_count);
-                D.footprint_vbo.release();
-                glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-                glDepthMask(GL_TRUE);
-                glEnable(GL_DEPTH_TEST);
-                glStencilMask(0x00);
-                glStencilFunc(GL_EQUAL, 1, 0xFF);
-                glStencilOp(GL_KEEP, GL_KEEP, GL_KEEP);
-            }
             const bool use_lod = m_camera.distance > m_scene_radius * 3.5f;
             for (auto& T : m_terrain_layers) {
                 QOpenGLBuffer& tvbo = (use_lod && T.lod_vertex_count > 0) ? T.vbo_lod : T.vbo;
@@ -346,10 +318,6 @@ void MapView3D::drawDrapes()
                 glEnableVertexAttribArray(0);
                 glDrawArrays(GL_TRIANGLES, 0, tcnt);
                 tvbo.release();
-            }
-            if (have_footprint) {
-                glStencilMask(0xFF);
-                glDisable(GL_STENCIL_TEST);
             }
         } else if (D.footprint_vert_count > 0 && D.footprint_vbo.isCreated()) {
             // Flat drapes are clipped by the authoritative vector footprint.

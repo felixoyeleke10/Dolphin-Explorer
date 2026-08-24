@@ -445,15 +445,13 @@ void MapViewportHost::onLayerDataLoaded(const std::string& layer_id,
             //   stbd outer: j from sh   UP  to sn-1 → newest→oldest (time backward)
             // Segments are separated by NaN sentinels; buildDrapeHullVbo closes each one.
             auto hull_geo = buildSonarDrapeHull(data);
-            auto footprint_geo = buildSonarFootprint(data);
 
             m_view3d->setSonarDrape(layer_id, data.preview_image,
                                     data.gpu_intensity_image,
                                     data.gpu_display_params,
                                     data.lon_min, data.lat_min,
                                     data.lon_max, data.lat_max,
-                                    std::move(hull_geo),
-                                    std::move(footprint_geo), data.opacity);
+                                    std::move(hull_geo), data.opacity);
         }
 
         // Replay visibility after every representation exists. Whole-layer

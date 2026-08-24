@@ -174,25 +174,21 @@ void MapView::paintSonarLayers(QPainter& p) const
             p.save();
             const QPointF tl = geoToPixel(ld.lon_min, ld.lat_max);
             const QPointF br = geoToPixel(ld.lon_max, ld.lat_min);
-            // Coverage is the authoritative SSS footprint in every renderer.
-            // Always clip the rectangular preview raster to its independent
-            // source ribbons; this removes bbox/pixel overhang in both normal
-            // and nadir-hidden modes without reconstructing channel pairing.
-            QPainterPath footprint_path;
-            footprint_path.setFillRule(Qt::WindingFill);
-            QPolygonF footprint_polygon;
-            for (const QPointF& point : buildSonarFootprint(ld)) {
-                if (std::isnan(point.x()) || std::isnan(point.y())) {
-                    if (footprint_polygon.size() >= 3)
-                        footprint_path.addPolygon(footprint_polygon);
-                    footprint_polygon.clear();
-                } else {
-                    footprint_polygon.append(geoToPixel(point.x(), point.y()));
+            if (!ld.show_nadir && !ld.coverage_nadir_hidden.empty()) {
+                QPainterPath footprint;
+                footprint.setFillRule(Qt::WindingFill);
+                for (const auto& coverage : ld.coverage_nadir_hidden) {
+                    for (const auto& ribbon : coverage.ribbons) {
+                        if (ribbon.size() < 3) continue;
+                        QPolygonF polygon;
+                        polygon.reserve(static_cast<int>(ribbon.size()));
+                        for (const auto& point : ribbon)
+                            polygon.append(geoToPixel(point.x(), point.y()));
+                        footprint.addPolygon(polygon);
+                    }
                 }
+                if (!footprint.isEmpty()) p.setClipPath(footprint);
             }
-            if (footprint_polygon.size() >= 3)
-                footprint_path.addPolygon(footprint_polygon);
-            if (!footprint_path.isEmpty()) p.setClipPath(footprint_path);
             // Clip this layer's mosaic to the drawn polygons (show inside) when
             // enabled and at least one polygon exists.
             if (ld.clip_polygons) {
