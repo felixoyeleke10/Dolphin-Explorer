@@ -23,7 +23,7 @@ inline bool sssCorrectionPresented(const core::SidescanPing& ping,
 {
     if (sssHasBakedGroundRanges(ping))
         return true;
-    return params.slant_range_corrected
+    return params.presentation_domain == core::SidescanRangeDomain::Ground
         && core::sidescanCorrectionAltitudeMetres(ping).has_value();
 }
 

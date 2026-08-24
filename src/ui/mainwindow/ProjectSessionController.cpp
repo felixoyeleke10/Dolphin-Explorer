@@ -101,12 +101,6 @@ void ProjectSessionController::markClean()
     emitWindowTitle();
 }
 
-QStringList ProjectSessionController::recentProjects() const
-{
-    QSettings s(AppInfo::kOrgName, AppInfo::kSettingsApp);
-    return s.value(kRecentKey).toStringList();
-}
-
 // -- Project CRUD slots ------------------------------------------------------
 
 void ProjectSessionController::newProject()
@@ -617,34 +611,6 @@ void ProjectSessionController::renameProject(const QString& new_name)
     if (!file_renamed) m_project_dirty = true;   // name-only change is unsaved
     emitWindowTitle();
     emit jobMessage(tr("Project renamed to %1").arg(trimmed));
-}
-
-void ProjectSessionController::addToRecentProjects(const QString& path)
-{
-    if (path.isEmpty()) return;
-    QSettings s(AppInfo::kOrgName, AppInfo::kSettingsApp);
-    QStringList list = s.value(kRecentKey).toStringList();
-    list.removeAll(path);
-    list.prepend(path);
-    if (list.size() > kMaxRecent) list.resize(kMaxRecent);
-    s.setValue(kRecentKey, list);
-    emit recentProjectsChanged(list);
-}
-
-void ProjectSessionController::emitWindowTitle()
-{
-    emit windowTitleChanged(buildWindowTitle());
-}
-
-QString ProjectSessionController::buildWindowTitle() const
-{
-    if (!m_project) return tr("Dolphin Explorer");
-    QString title;
-    if (m_project_dirty) title += QStringLiteral("• "); // • prefix for unsaved
-    title += QString::fromStdString(m_project->name());
-    if (m_project->isTempProject()) title += tr(" (unsaved)");
-    title += " — Dolphin Explorer"; // em dash
-    return title;
 }
 
 } // namespace dolphin::ui

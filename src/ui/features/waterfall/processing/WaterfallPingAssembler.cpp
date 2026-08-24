@@ -99,8 +99,16 @@ PingRow WaterfallPingAssembler::buildRow(const core::SidescanPing* pp,
 
     auto fill = [&](const core::SidescanPing* ping,
                     std::vector<uint16_t>& out, std::vector<float>& out_ranges,
-                    float& side_altitude) {
+                    float& side_altitude, core::SidescanRangeDomain& range_domain,
+                    SeabedDetectionResult& side_seabed,
+                    int64_t& side_timestamp, std::uint64_t& side_artifact_id) {
         if (!ping) return;
+        side_timestamp = ping->timestamp_us;
+        side_artifact_id = ping->id;
+        range_domain = core::hasCorrectionFlag(
+            ping->correction_flags, core::CorrectionFlag::SlantRange)
+            ? core::SidescanRangeDomain::Ground
+            : core::SidescanRangeDomain::Slant;
         side_altitude = static_cast<float>(
             core::sidescanCorrectionAltitudeMetres(*ping).value_or(0.0));
         if (std::isfinite(ping->slant_range_m))
@@ -136,6 +144,8 @@ PingRow WaterfallPingAssembler::buildRow(const core::SidescanPing* pp,
         // by the UI detector, but a manual pick from either channel always wins.
         if (ping->bottom_pick.valid()) {
             const bool manual  = (ping->bottom_pick.source == 2);
+            side_seabed = {ping->bottom_pick.range_m,
+                           ping->bottom_pick.confidence, true, manual};
             const bool replace = !row.seabed.detected
                               || ping->bottom_pick.confidence > row.seabed.confidence
                               || (manual && !row.seabed.is_manual);
@@ -144,12 +154,17 @@ PingRow WaterfallPingAssembler::buildRow(const core::SidescanPing* pp,
                 row.seabed.confidence = ping->bottom_pick.confidence;
                 row.seabed.detected   = true;
                 row.seabed.is_manual  = manual;
+                row.seabed_domain = range_domain;
             }
         }
     };
 
-    fill(pp, row.port, row.port_ranges, row.port_altitude_m);
-    fill(sp, row.stbd, row.stbd_ranges, row.stbd_altitude_m);
+    fill(pp, row.port, row.port_ranges, row.port_altitude_m,
+         row.port_range_domain, row.port_seabed, row.port_timestamp_us,
+         row.port_artifact_id);
+    fill(sp, row.stbd, row.stbd_ranges, row.stbd_altitude_m,
+         row.stbd_range_domain, row.stbd_seabed, row.stbd_timestamp_us,
+         row.stbd_artifact_id);
     row.slant_range_m = max_range;
     return row;
 }

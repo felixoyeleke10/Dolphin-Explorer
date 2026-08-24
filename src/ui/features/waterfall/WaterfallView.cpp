@@ -7,6 +7,7 @@
 // Mouse / wheel / resize events                    → WaterfallViewInput.cpp
 
 #include "ui/features/waterfall/WaterfallView.h"
+#include "ui/features/waterfall/processing/WaterfallPipelineRunner.h"
 #include "render/sonar/SSSPalette.h"
 
 #include <QOpenGLContext>
@@ -30,6 +31,7 @@ const char* WaterfallView::paletteName(int idx)
 WaterfallView::WaterfallView(QWidget* parent)
     : QOpenGLWidget(parent)
 {
+    m_pipeline_runner = new WaterfallPipelineRunner(this);
     setMouseTracking(true);
     setMinimumSize(200, 100);
     // ClickFocus lets the feature-draw tool receive Enter/Esc/Backspace keys.

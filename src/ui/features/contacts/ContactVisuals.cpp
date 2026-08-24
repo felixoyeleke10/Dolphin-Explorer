@@ -1,4 +1,5 @@
 #include "ui/features/contacts/ContactVisuals.h"
+#include "ui/shared/contacts/ContactSymbols.h"
 #include "ui/shell/Theme.h"
 #include "app/project/Project.h"
 #include "app/layers/DataLayer.h"
@@ -169,17 +170,17 @@ QPixmap makeContactThumb(const QString& sensorTag, const QString& confLabel, boo
 
     const QPointF ctr(card.center().x(), card.center().y() - px * 0.07);
     const qreal   r = px * 0.17;
-    QPainterPath pin;
-    pin.addEllipse(ctr, r, r);
-    pin.moveTo(ctr.x() - r * 0.72, ctr.y() + r * 0.62);
-    pin.lineTo(ctr.x(), ctr.y() + r * 1.95);
-    pin.lineTo(ctr.x() + r * 0.72, ctr.y() + r * 0.62);
+    QPainterPath pin = contactSymbolPath(QStringLiteral("pin"), r);
+    const QRectF pin_bounds = pin.boundingRect();
+    pin.translate(ctr - pin_bounds.center());
     p.setPen(Qt::NoPen);
     QColor pinc = c.lighter(125); pinc.setAlpha(240);
     p.setBrush(pinc);
     p.drawPath(pin);
     p.setBrush(QColor(0, 0, 0, 90));
-    p.drawEllipse(ctr, r * 0.42, r * 0.42);
+    const QPointF head_center(
+        ctr.x(), ctr.y() - r * 2.15 - pin_bounds.center().y());
+    p.drawEllipse(head_center, r * 0.36, r * 0.36);
 
     QFont tf("Segoe UI"); tf.setBold(true); tf.setPixelSize(std::max(7, int(px * 0.14)));
     p.setFont(tf);

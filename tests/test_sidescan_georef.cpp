@@ -679,7 +679,9 @@ void testCoverageAndRasterShareNadirPolicy()
         }
         ui::SssGeorefParams params;
         params.heading_source = ui::SssHeadingSource::FishSensor;
-        params.slant_range_corrected = close_nadir;
+        params.presentation_domain = close_nadir
+            ? core::SidescanRangeDomain::Ground
+            : core::SidescanRangeDomain::Slant;
         // This case exercises the open QC gap, so opt out of the default
         // "show nadir band" display preference (which sets the gap to zero).
         params.show_nadir = false;
@@ -765,9 +767,9 @@ void testCoverageAndRasterShareNadirPolicy()
         ui::SssGeorefParams raw_params;
         raw_params.heading_source = ui::SssHeadingSource::FishSensor;
         raw_params.show_nadir = true;
-        raw_params.slant_range_corrected = false;
+        raw_params.presentation_domain = core::SidescanRangeDomain::Slant;
         auto corrected_params = raw_params;
-        corrected_params.slant_range_corrected = true;
+        corrected_params.presentation_domain = core::SidescanRangeDomain::Ground;
         const auto raw = ui::georeferenceSidescanPings(pings, raw_params);
         const auto corrected = ui::georeferenceSidescanPings(pings, corrected_params);
         CHECK(raw.strips.size() == corrected.strips.size());
@@ -798,7 +800,7 @@ void testCoverageAndRasterShareNadirPolicy()
     baked_zero.correction_flags |= core::CorrectionFlag::SlantRange;
     ui::SssGeorefParams baked_params;
     baked_params.heading_source = ui::SssHeadingSource::FishSensor;
-    baked_params.slant_range_corrected = true;
+    baked_params.presentation_domain = core::SidescanRangeDomain::Ground;
     const auto zero_result = ui::georeferenceSidescanPings({baked_zero}, baked_params);
     CHECK(zero_result.strips.size() == 1);
     if (zero_result.strips.size() == 1) {
@@ -829,7 +831,7 @@ void testCoverageAndRasterShareNadirPolicy()
     // Durable caches can carry authoritative per-ping correction flags even
     // when old/migrated layer metadata is absent. That mismatch must neither
     // reopen the nadir nor restore the bottom-return centerline.
-    baked_params.slant_range_corrected = false;
+    baked_params.presentation_domain = core::SidescanRangeDomain::Slant;
     baked_params.show_nadir = false;
     const auto flagged_result = ui::georeferenceSidescanPings({baked_zero}, baked_params);
     CHECK(flagged_result.strips.size() == 1);
@@ -845,7 +847,7 @@ void testCoverageAndRasterShareNadirPolicy()
     no_altitude.bottom_pick = {};
     no_altitude.nav.altitude_m = 0.0f;
     no_altitude.correction_flags = 0;
-    baked_params.slant_range_corrected = true;
+    baked_params.presentation_domain = core::SidescanRangeDomain::Ground;
     CHECK(!ui::sssCorrectionPresented(no_altitude, baked_params));
 }
 
@@ -1089,7 +1091,7 @@ void testUnequalStripSampleCountsUseFullSwath()
 
     ui::SssGeorefParams params;
     params.heading_source = ui::SssHeadingSource::FishSensor;
-    params.slant_range_corrected = true;
+    params.presentation_domain = core::SidescanRangeDomain::Ground;
     ui::LayerMapData data;
     CHECK(ui::buildSwathNavTrack(pings, data, params) == 2);
     const std::atomic_bool cancelled{false};

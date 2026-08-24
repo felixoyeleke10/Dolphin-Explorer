@@ -101,7 +101,7 @@ void WaterfallWindow::onRepipeDebounce()
     context_request.params = params;
 
     struct Repipe { std::vector<core::SidescanPing> raw_pings;
-                    WaterfallView::WfPipelineResult  pipeline;
+                    WaterfallPipelineResult           pipeline;
                     std::shared_ptr<const imaging::SssAmplitudeContext> amplitude_context;
                     bool ok = false; };
     m_op_mgr->run<Repipe>(
@@ -115,7 +115,7 @@ void WaterfallWindow::onRepipeDebounce()
                 out.amplitude_context = imaging::getOrBuildSssAmplitudeContext(
                     context_request, cancel);
                 if (cancel.isCancelled()) return out;
-                out.pipeline  = WaterfallView::runPipeline(
+                out.pipeline  = runWaterfallPipeline(
                     r, params, seabed_params, seabed_enabled,
                     out.amplitude_context.get());
                 out.raw_pings = std::move(r);

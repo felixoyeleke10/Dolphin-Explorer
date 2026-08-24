@@ -1,7 +1,6 @@
 // SidescanRasterCache.cpp — binary (de)serialization of a built map raster.
 #include "ui/features/map/sidescan/SidescanRasterCache.h"
-#include "pipeline/SidescanEnhancementAlgorithms.h"
-#include "pipeline/SidescanRadiometryAlgorithms.h"
+#include "ui/features/map/sidescan/SidescanRasterFingerprint.h"
 
 #include <QDataStream>
 #include <QFile>
@@ -33,24 +32,6 @@ constexpr qint32  kMaxRasterDimension      = 16384;
 constexpr quint64 kMaxRasterPixels         = 64ULL * 1024ULL * 1024ULL;
 constexpr quint32 kMaxDiagnosticStringBytes = 64U * 1024U;
 constexpr quint64 kSerializedPointBytes     = 2ULL * sizeof(double);
-
-constexpr unsigned long long kFnvOffset = 1469598103934665603ULL;
-constexpr unsigned long long kFnvPrime  = 1099511628211ULL;
-
-template <typename T>
-unsigned long long fnvMix(unsigned long long h, const T& v) {
-    const auto* p = reinterpret_cast<const unsigned char*>(&v);
-    for (size_t i = 0; i < sizeof(T); ++i) { h ^= p[i]; h *= kFnvPrime; }
-    return h;
-}
-
-// Tolerance-based mix for floating-point parameters. Quantizes to 1e-4 before
-// hashing so the float→double→JSON→double→float round-trip on project save/reload
-// can't shift the fingerprint and cause a spurious cache miss (which would force a
-// full ping re-decode on every reopen). 1e-4 resolution is well below any UI step.
-unsigned long long fnvMixF(unsigned long long h, double v) {
-    return fnvMix(h, static_cast<long long>(std::llround(v * 10000.0)));
-}
 
 bool fitsSizeT(quint64 value) {
     return value <= static_cast<quint64>((std::numeric_limits<size_t>::max)());
@@ -427,58 +408,8 @@ Meta makeMeta(const std::string&         store_path,
         m.src_size  = static_cast<unsigned long long>(fi.size());
         m.src_mtime = fi.lastModified().toMSecsSinceEpoch();
     }
-    unsigned long long h = kFnvOffset;
-    h = fnvMix (h, nav.smooth_enabled);
-    h = fnvMix (h, nav.smooth_window);
-    h = fnvMix (h, nav.layback_enabled);
-    h = fnvMixF(h, nav.layback_m);
-    h = fnvMixF(h, nav.heading_offset_deg);
-    h = fnvMixF(h, nav.pitch_offset_deg);
-    h = fnvMixF(h, nav.roll_offset_deg);
-
-    // SSS georeferencing changes the world-space cells, coverage, and sometimes
-    // which pings can be written. Every field participates in freshness so a
-    // changed source/offset/smoothing policy can never reuse old geometry.
-    h = fnvMix (h, static_cast<int>(georef.nav_source));
-    h = fnvMix (h, static_cast<int>(georef.heading_source));
-    h = fnvMix (h, georef.enable_layback);
-    h = fnvMix (h, georef.use_file_layback);
-    h = fnvMixF(h, georef.manual_layback_m);
-    h = fnvMixF(h, georef.x_offset_m);
-    h = fnvMixF(h, georef.y_offset_m);
-    h = fnvMixF(h, georef.heading_offset_deg);
-    h = fnvMix (h, georef.swap_port_starboard);
-    h = fnvMix (h, static_cast<int>(georef.smoothing_mode));
-    h = fnvMix (h, georef.smoothing_window);
-    h = fnvMix (h, georef.debug_ping_lines_only);
-    h = fnvMix (h, georef.slant_range_corrected);
-    // show_nadir is display state. Each cache contains both footprints, so a
-    // checkbox toggle must not invalidate the expensive amplitude raster.
-    for (char c : display_crs_id) h = fnvMix(h, c);
-
-    // Gain/imaging corrections — changing any re-rasterizes the mosaic. Floats are
-    // quantized (fnvMixF) so a save/reload round-trip keeps the same fingerprint.
-    h = fnvMix(h, pipeline::enhancement::kAlgorithmRevision);
-    h = fnvMix(h, pipeline::radiometry::kAlgorithmRevision);
-    h = fnvMix (h, sss.tvg.enabled);    h = fnvMixF(h, sss.tvg.spreading);   h = fnvMixF(h, sss.tvg.absorption);
-    h = fnvMixF(h, sss.tvg.fallback_blanking_m);
-    h = fnvMix (h, sss.arc.enabled);    h = fnvMixF(h, sss.arc.exponent);    h = fnvMixF(h, sss.arc.gain_cap_db);
-    h = fnvMix (h, sss.agc.enabled);    h = fnvMix(h, static_cast<int>(sss.agc.mode));
-    h = fnvMixF(h, sss.agc.strength);   h = fnvMix(h, sss.agc.along_track_win);
-    h = fnvMix(h, static_cast<int>(sss.agc.smoothing_type));
-    h = fnvMix(h, sss.agc.smoothing_win); h = fnvMix(h, sss.agc.edge_skip_samples);
-    h = fnvMixF(h, sss.agc.noise_floor_pct); h = fnvMixF(h, sss.agc.gain_cap_db);
-    h = fnvMixF(h, sss.agc.target_mean);
-    h = fnvMix (h, sss.arn.enabled);    h = fnvMixF(h, sss.arn.strength);    h = fnvMixF(h, sss.arn.gain_cap_db);
-    h = fnvMix (h, sss.arn.column_smooth);
-    h = fnvMix (h, sss.destripe.enabled);     h = fnvMix (h, sss.destripe.window);
-    h = fnvMix (h, sss.destripe.subdivision); h = fnvMixF(h, sss.destripe.capping);
-    h = fnvMixF(h, sss.destripe.threshold_db);
-    h = fnvMix (h, sss.beam_pattern.enabled); h = fnvMixF(h, sss.beam_pattern.strength);
-    h = fnvMix (h, sss.beam_pattern.smooth_radius);
-    h = fnvMixF(h, sss.beam_pattern.gain_cap_db);
-    h = fnvMix (h, sss.ml_enhance.enabled);   h = fnvMix (h, sss.ml_enhance.tile_pings);
-    h = fnvMix (h, sss.ml_enhance.tile_samps); h = fnvMixF(h, sss.ml_enhance.clip_limit);
+    unsigned long long h = detail::makeRasterFingerprint(
+        nav, georef, display_crs_id, sss);
     m.nav_hash = h;
     m.quality  = static_cast<int>(quality);
     return m;

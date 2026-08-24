@@ -2,6 +2,8 @@
 #include "ui/features/map/MapViewportHost.h"
 #include "ui/features/map/MapView.h"
 #include "ui/features/map/MapView3D.h"
+#include "ui/features/map/MapDrapeHull.h"
+#include "ui/features/map/MapEmptyStateLauncher.h"
 #include "ui/shared/UiUtils.h"
 #include "ui/shell/Theme.h"
 
@@ -25,7 +27,6 @@
 
 #include <algorithm>
 #include <functional>  // std::hash
-#include <limits>
 #include <vector>
 
 namespace dolphin::ui {
@@ -62,72 +63,19 @@ MapViewportHost::MapViewportHost(QWidget* parent)
     // identity, primary/secondary actions, and the recent-projects list. The
     // card is a theme surface, so text contrast never depends on the canvas
     // colour (user-configurable, and often dark even in the light theme).
-    m_empty_state      = new QWidget(this);
-    auto* empty_layout = makeCompactLayout<QVBoxLayout>(m_empty_state);
-    empty_layout->addStretch(40);
-
-    auto* card = new QFrame(m_empty_state);
-    card->setObjectName("launcherCard");
-    card->setAttribute(Qt::WA_StyledBackground, true);
-    card->setFixedWidth(420);
-    auto* cl = new QVBoxLayout(card);
-    cl->setContentsMargins(24, 30, 24, 14);
-    cl->setSpacing(0);
+    m_empty_state = new MapEmptyStateLauncher(this);
+    connect(m_empty_state, &MapEmptyStateLauncher::importFilesRequested,
+            this, &MapViewportHost::importFilesRequested);
+    connect(m_empty_state, &MapEmptyStateLauncher::newProjectRequested,
+            this, &MapViewportHost::newProjectRequested);
+    connect(m_empty_state, &MapEmptyStateLauncher::openProjectRequested,
+            this, &MapViewportHost::openProjectRequested);
 
     // Hero — logo + name + one-line identity.
-    auto* logo = new QLabel(card);
-    logo->setPixmap(QIcon(QStringLiteral(":/icons/dolphin_logo.svg")).pixmap(48, 48));
-    logo->setAlignment(Qt::AlignCenter);
-    cl->addWidget(logo, 0, Qt::AlignHCenter);
-    cl->addSpacing(10);
-
-    auto* title = new QLabel(tr("Dolphin Explorer"), card);
-    title->setObjectName("launcherTitle");
-    cl->addWidget(title, 0, Qt::AlignHCenter);
-    cl->addSpacing(2);
-
-    auto* subtitle = new QLabel(tr("Marine survey workstation"), card);
-    subtitle->setObjectName("launcherSub");
-    cl->addWidget(subtitle, 0, Qt::AlignHCenter);
-    cl->addSpacing(22);
 
     // Actions — filled accent primary + quiet secondary.
-    auto* actions = new QWidget(card);
-    auto* al = makeCompactLayout<QHBoxLayout>(actions);
-    al->setSpacing(Theme::kSpacing3);
-    m_import_hint_btn = new QPushButton(tr("Import Files…"), actions);
-    m_import_hint_btn->setObjectName("mapImportHintBtn");
-    m_import_hint_btn->setCursor(Qt::PointingHandCursor);
-    connect(m_import_hint_btn, &QPushButton::clicked,
-            this, &MapViewportHost::importFilesRequested);
-    auto* new_proj_btn = new QPushButton(tr("New Project"), actions);
-    new_proj_btn->setObjectName("launcherNewBtn");
-    new_proj_btn->setCursor(Qt::PointingHandCursor);
-    connect(new_proj_btn, &QPushButton::clicked,
-            this, &MapViewportHost::newProjectRequested);
-    al->addWidget(m_import_hint_btn);
-    al->addWidget(new_proj_btn);
-    cl->addWidget(actions, 0, Qt::AlignHCenter);
-    cl->addSpacing(24);
 
     // Recent projects list — populated by setRecentProjects (hidden when empty).
-    m_recent_box = new QFrame(card);
-    m_recent_box->setObjectName("mapRecentBox");
-    auto* rb = new QVBoxLayout(m_recent_box);
-    rb->setContentsMargins(0, 0, 0, 0);
-    rb->setSpacing(2);
-    auto* recent_hdr = new QLabel(tr("RECENT"), m_recent_box);
-    recent_hdr->setObjectName("mapRecentHdr");
-    rb->addWidget(recent_hdr);
-    m_recent_items_l = new QVBoxLayout();
-    m_recent_items_l->setContentsMargins(0, 2, 0, 0);
-    m_recent_items_l->setSpacing(1);
-    rb->addLayout(m_recent_items_l);
-    m_recent_box->hide();
-    cl->addWidget(m_recent_box);
-
-    empty_layout->addWidget(card, 0, Qt::AlignHCenter);
-    empty_layout->addStretch(52);
 
     // Hide overlay once any 2D layer loads; restored by setShowImportHint on project change.
     connect(m_view2d, &MapView::layerDataUpdated, this, [this](const std::string&) {
@@ -457,65 +405,7 @@ void MapViewportHost::setSbpCurtainPalette(int palette_index)
 void MapViewportHost::setRecentProjects(const QStringList& names,
                                         const QStringList& paths)
 {
-    if (!m_recent_items_l) return;
-
-    while (auto* item = m_recent_items_l->takeAt(0)) {
-        if (auto* w = item->widget()) w->deleteLater();
-        delete item;
-    }
-
-    const int n = std::min({ int(names.size()), int(paths.size()), 5 });
-    for (int i = 0; i < n; ++i) {
-        const QString path = paths[i];
-
-        // Row = a flat button carrying its own layout (icon chip + name +
-        // last-opened date). Children are mouse-transparent so the whole row
-        // stays one click target.
-        auto* btn = new QPushButton(m_recent_box);
-        btn->setObjectName("mapRecentBtn");
-        btn->setFlat(true);   // suppress native chrome; QSS owns the look
-        btn->setFixedHeight(46);
-        btn->setToolTip(path);
-        btn->setCursor(Qt::PointingHandCursor);
-        connect(btn, &QPushButton::clicked,
-                this, [this, path]() { emit openProjectRequested(path); });
-
-        auto* rl = new QHBoxLayout(btn);
-        rl->setContentsMargins(8, 0, 10, 0);
-        rl->setSpacing(10);
-
-        auto* chip = new QLabel(btn);
-        chip->setObjectName("mapRecentChip");
-        chip->setFixedSize(28, 28);
-        chip->setAlignment(Qt::AlignCenter);
-        chip->setPixmap(Theme::icon(
-            QStringLiteral(":/icons/recent_projects.svg")).pixmap(14, 14));
-        chip->setAttribute(Qt::WA_TransparentForMouseEvents);
-
-        auto* text_col = new QWidget(btn);
-        text_col->setAttribute(Qt::WA_TransparentForMouseEvents);
-        auto* tc = makeCompactLayout<QVBoxLayout>(text_col);
-        tc->setSpacing(1);
-        auto* name_lbl = new QLabel(names[i], text_col);
-        name_lbl->setObjectName("mapRecentName");
-        const QFileInfo fi(path);
-        auto* meta_lbl = new QLabel(
-            fi.exists() ? QLocale().toString(fi.lastModified().date(),
-                                             QLocale::ShortFormat)
-                        : tr("Not found"),
-            text_col);
-        meta_lbl->setObjectName("mapRecentMeta");
-        tc->addStretch(1);
-        tc->addWidget(name_lbl);
-        tc->addWidget(meta_lbl);
-        tc->addStretch(1);
-
-        rl->addWidget(chip);
-        rl->addWidget(text_col, 1);
-
-        m_recent_items_l->addWidget(btn);
-    }
-    m_recent_box->setVisible(n > 0);
+    m_empty_state->setRecentProjects(names, paths);
 }
 
 void MapViewportHost::onLayerDataLoaded(const std::string& layer_id,
@@ -550,52 +440,7 @@ void MapViewportHost::onLayerDataLoaded(const std::string& layer_id,
             //   port outer: j from pn-1 DOWN to ph  → oldest→newest (time forward)
             //   stbd outer: j from sh   UP  to sn-1 → newest→oldest (time backward)
             // Segments are separated by NaN sentinels; buildDrapeHullVbo closes each one.
-            const SwathCoverage* port_cov = nullptr;
-            const SwathCoverage* stbd_cov = nullptr;
-            const auto& display_coverage =
-                (!data.show_nadir && !data.coverage_nadir_hidden.empty())
-                    ? data.coverage_nadir_hidden : data.coverage;
-            for (const auto& cov : display_coverage) {
-                if      (cov.channel == core::SidescanChannel::Port)      port_cov = &cov;
-                else if (cov.channel == core::SidescanChannel::Starboard) stbd_cov = &cov;
-            }
-
-            static const QPointF kNaN { std::numeric_limits<double>::quiet_NaN(),
-                                        std::numeric_limits<double>::quiet_NaN() };
-            std::vector<QPointF> hull_geo;
-            if (port_cov && stbd_cov && data.show_nadir) {
-                const int count = static_cast<int>(
-                    std::min(port_cov->ribbons.size(), stbd_cov->ribbons.size()));
-                for (int i = 0; i < count; ++i) {
-                    const auto& pr = port_cov->ribbons[static_cast<size_t>(i)];
-                    const auto& sr = stbd_cov->ribbons[static_cast<size_t>(i)];
-                    const int pn = static_cast<int>(pr.size());
-                    const int sn = static_cast<int>(sr.size());
-                    if (pn < 4 || sn < 4) continue;
-                    const int ph = pn / 2, sh = sn / 2;
-                    for (int j = pn - 1; j >= ph; --j)
-                        hull_geo.push_back(pr[static_cast<size_t>(j)]);
-                    for (int j = sh; j < sn; ++j)
-                        hull_geo.push_back(sr[static_cast<size_t>(j)]);
-                    hull_geo.push_back(kNaN);   // segment separator
-                }
-            } else {
-                const auto appendCoverage = [&](const SwathCoverage* cov) {
-                    if (!cov) return;
-                    for (const auto& ribbon : cov->ribbons) {
-                        const int n = static_cast<int>(ribbon.size());
-                        if (n < 4) continue;
-                        const int h = n / 2;
-                        for (int j = n - 1; j >= h; --j)
-                            hull_geo.push_back(ribbon[static_cast<size_t>(j)]);
-                        for (int j = 0; j < h; ++j)
-                            hull_geo.push_back(ribbon[static_cast<size_t>(j)]);
-                        hull_geo.push_back(kNaN);
-                    }
-                };
-                appendCoverage(port_cov);
-                appendCoverage(stbd_cov);
-            }
+            auto hull_geo = buildSonarDrapeHull(data);
 
             m_view3d->setSonarDrape(layer_id, data.preview_image,
                                     data.gpu_intensity_image,

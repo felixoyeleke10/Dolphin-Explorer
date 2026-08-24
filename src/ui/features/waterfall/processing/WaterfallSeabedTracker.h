@@ -24,7 +24,8 @@ public:
     bool hitTest(int click_x, int row_idx,
                  const std::vector<PingRow>& rows,
                  float h_zoom, int h_pan,
-                 const WfLayout& layout) const;
+                 const WfLayout& layout,
+                 bool src_enabled = false) const;
 
     // Start a drag on the given row (call after a successful hitTest).
     void beginDrag(int row_idx);
@@ -44,8 +45,10 @@ private:
     // Compute the rendered pixel x for the seabed on starboard (or port when
     // stbd_samples is empty) for the given row, using the same formula as the
     // seabed overlay painter in WaterfallView::paintSeabedOverlay().
-    static int seabedPixelStbd(const PingRow& pr, float h_zoom, int h_pan, const WfLayout& layout);
-    static int seabedPixelPort(const PingRow& pr, float h_zoom, int h_pan, const WfLayout& layout);
+    static int seabedPixelStbd(const PingRow& pr, float h_zoom, int h_pan,
+                               const WfLayout& layout, bool src_enabled);
+    static int seabedPixelPort(const PingRow& pr, float h_zoom, int h_pan,
+                               const WfLayout& layout, bool src_enabled);
 };
 
 } // namespace dolphin::ui

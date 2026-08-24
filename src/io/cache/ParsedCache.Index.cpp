@@ -1,5 +1,7 @@
 // ParsedCache.Index.cpp — ParsedCacheReader::buildIndex.
 #include "io/cache/ParsedCache_p.h"
+#include <filesystem>
+#include <system_error>
 #ifdef _WIN32
 #include <share.h>   // _SH_DENYNO for shared _fsopen
 #endif

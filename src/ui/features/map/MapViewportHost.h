@@ -14,12 +14,12 @@
 class QLabel;
 class QStackedWidget;
 class QPushButton;
-class QVBoxLayout;
 
 namespace dolphin::ui {
 
 class MapView;
 class MapView3D;
+class MapEmptyStateLauncher;
 
 // -----------------------------------------------------------------------------
 //  MapViewportHost — owns the 2D / 3D viewport stack.
@@ -137,10 +137,7 @@ private:
     MapView3D*      m_view3d              = nullptr;   // native QOpenGLWindow
     QWidget*        m_view3d_container    = nullptr;   // createWindowContainer host (stack page)
     QStackedWidget* m_stack               = nullptr;
-    QWidget*        m_empty_state         = nullptr;   // transparent overlay: layout-centered empty-state CTA
-    QPushButton*    m_import_hint_btn     = nullptr;   // button inside m_empty_state
-    QWidget*        m_recent_box          = nullptr;   // Recent Projects card in the launcher
-    QVBoxLayout*    m_recent_items_l      = nullptr;   // rows inside m_recent_box
+    MapEmptyStateLauncher* m_empty_state  = nullptr;
     bool            m_is_3d               = false;
     QWidget*        m_transition_cover    = nullptr;
 

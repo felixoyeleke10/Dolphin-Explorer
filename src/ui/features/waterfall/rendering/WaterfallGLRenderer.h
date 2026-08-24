@@ -57,6 +57,7 @@ private:
     GLuint m_tex_src  = 0;   // 2D RGBA32F
     GLuint m_tex_port_range = 0; // 2D R32F authoritative slant ranges
     GLuint m_tex_stbd_range = 0;
+    GLuint m_tex_counts = 0; // 2D RG32F actual port/starboard samples per row
 
     int m_tex_ns_port = 0;
     int m_tex_ns_stbd = 0;

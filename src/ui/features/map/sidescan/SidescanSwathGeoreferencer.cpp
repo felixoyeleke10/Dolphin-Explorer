@@ -157,8 +157,11 @@ SwathGeorefResult georeferenceSidescanPings(
                 // the UI may close the nadir without baking sample geometry.
                 ground_m = slant_m;
             } else if (correction_presented && altitude_m > 0.0) {
-                if (slant_m <= altitude_m) continue;
-                ground_m = std::sqrt(slant_m * slant_m - altitude_m * altitude_m);
+                const auto converted = core::convertSidescanRange(
+                    {slant_m, core::SidescanRangeDomain::Slant},
+                    core::SidescanRangeDomain::Ground, altitude_m);
+                if (!converted) continue;
+                ground_m = converted->metres;
             } else {
                 ground_m = slant_m;
             }

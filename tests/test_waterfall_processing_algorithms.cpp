@@ -1,4 +1,7 @@
 #include "ui/features/waterfall/processing/WaterfallProcessingAlgorithms.h"
+#include "ui/features/waterfall/processing/WaterfallPingAssembler.h"
+#include "ui/features/waterfall/processing/WaterfallBottomTrackStore.h"
+#include "ui/features/waterfall/rendering/WaterfallRenderGeneration.h"
 #include "ui/features/waterfall/WaterfallView.h"
 #include "ui/shared/processing/SssAmplitudeContext.h"
 #include "ui/shared/processing/SssImagingAlgorithms.h"
@@ -104,7 +107,7 @@ int main()
 
         auto canonical = raw;
         dolphin::ui::imaging::applyDisplayPipeline(canonical, params);
-        const auto result = dolphin::ui::WaterfallView::runPipeline(raw, params, {}, false);
+        const auto result = dolphin::ui::runWaterfallPipeline(raw, params, {}, false);
         assert(result.rows.size() == 6);
         for (size_t i = 0; i < result.rows.size(); ++i) {
             assert(result.rows[i].port.size() == canonical[i * 2].samples.size());
@@ -139,7 +142,7 @@ int main()
         stbd.samples[8].amplitude = 50'000;
         port.samples[9].amplitude = 30'000;
         stbd.samples[9].amplitude = 30'000;
-        const auto result = dolphin::ui::WaterfallView::runPipeline(
+        const auto result = dolphin::ui::runWaterfallPipeline(
             {port, stbd}, params, {}, false);
         assert(result.rows.size() == 1);
         assert(result.rows[0].seabed.detected);
@@ -742,6 +745,81 @@ int main()
         wf::normalizeRawAmplitudes(pings, params);
         for (const auto& sample : pings[0].samples)
             assert(sample.amplitude == 1000);
+    }
+
+    // Assembly preserves baked-range provenance and independent channel picks.
+    {
+        auto port = makePing(0.f, 100.f, 3, 1000);
+        auto stbd = port;
+        port.channel = core::SidescanChannel::Port;
+        stbd.channel = core::SidescanChannel::Starboard;
+        port.ping_number = stbd.ping_number = 7;
+        port.timestamp_us = 1'000'000;
+        stbd.timestamp_us = 1'020'000;
+        port.correction_flags |= core::CorrectionFlag::SlantRange;
+        port.samples[0].range_m = 0.f;
+        port.samples[1].range_m = 30.f;
+        port.samples[2].range_m = 80.f;
+        port.bottom_pick = {12.f, 1.f, 2};
+        stbd.bottom_pick = {24.f, 1.f, 2};
+        const auto rows = dolphin::ui::WaterfallPingAssembler::assemble(
+            {port, stbd}, WaterfallParams{});
+        assert(rows.size() == 1);
+        assert(rows[0].port_range_domain == core::SidescanRangeDomain::Ground);
+        assert(rows[0].stbd_range_domain == core::SidescanRangeDomain::Slant);
+        assert(rows[0].port_seabed.range_m == 12.f);
+        assert(rows[0].stbd_seabed.range_m == 24.f);
+        assert(rows[0].port_timestamp_us == port.timestamp_us);
+        assert(rows[0].stbd_timestamp_us == stbd.timestamp_us);
+    }
+
+    // Bottom-track edits are independently keyed per channel even when paired
+    // records share a timestamp, and erasing one side cannot remove the other.
+    {
+        dolphin::ui::WaterfallBottomTrackStore store;
+        const auto port_key = dolphin::ui::waterfallChannelRecordKey(
+            1001, 42, core::SidescanChannel::Port);
+        const auto stbd_key = dolphin::ui::waterfallChannelRecordKey(
+            1002, 42, core::SidescanChannel::Starboard);
+        store.set(port_key,
+                  {12.0, core::SidescanRangeDomain::Slant});
+        store.set(stbd_key,
+                  {9.0, core::SidescanRangeDomain::Ground});
+        assert(store.get(port_key)->metres == 12.0);
+        assert(store.get(stbd_key)->domain
+               == core::SidescanRangeDomain::Ground);
+        store.erase(port_key);
+        assert(!store.get(port_key));
+        assert(store.get(stbd_key));
+
+        // Zero/duplicate vendor timestamps remain distinct when durable record
+        // IDs exist; neither edit can overwrite the other.
+        const auto zero_a = dolphin::ui::waterfallChannelRecordKey(
+            2001, 0, core::SidescanChannel::Port);
+        const auto zero_b = dolphin::ui::waterfallChannelRecordKey(
+            2002, 0, core::SidescanChannel::Port);
+        store.set(zero_a, {4.0, core::SidescanRangeDomain::Slant});
+        store.set(zero_b, {8.0, core::SidescanRangeDomain::Slant});
+        assert(store.get(zero_a)->metres == 4.0);
+        assert(store.get(zero_b)->metres == 8.0);
+    }
+
+    // Render synchronization never loses a newer geometry edit while
+    // acknowledging data, and context reset requires a complete re-upload.
+    {
+        dolphin::ui::WaterfallRenderGeneration generation;
+        assert(generation.needsDataUpload());
+        generation.acknowledgeDataUpload();
+        assert(!generation.needsDataUpload());
+        generation.geometryChanged();
+        assert(generation.needsGeometryUpload());
+        generation.acknowledgeGeometryUpload();
+        assert(!generation.needsGeometryUpload());
+        generation.dataChanged();
+        assert(generation.needsDataUpload());
+        generation.acknowledgeDataUpload();
+        generation.gpuReset();
+        assert(generation.needsDataUpload());
     }
 
     return 0;

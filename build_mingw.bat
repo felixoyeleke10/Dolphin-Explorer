@@ -15,6 +15,13 @@ REM launch.bat deploys the GDAL DLLs + PROJ/GDAL data next to the exe.
 
 set BUILD_DIR=build_mingw
 
+tasklist /FI "IMAGENAME eq DolphinExplorer.exe" 2>nul | find /I "DolphinExplorer.exe" >nul
+if not errorlevel 1 (
+    echo DolphinExplorer.exe is running - close it before building.
+    if not defined DOLPHIN_NONINTERACTIVE pause
+    exit /b 1
+)
+
 REM ---- Visual Studio: first install that has vcvars64.bat wins --------------
 set "VSROOT="
 for %%V in (
@@ -63,7 +70,7 @@ set "VCPKG_INSTALLED=%USERPROFILE:\=/%/vcpkg/installed/x64-windows"
 if not exist %BUILD_DIR% mkdir %BUILD_DIR%
 cd %BUILD_DIR%
 
-call "%VSROOT%\VC\Auxiliary\Build\vcvars64.bat"
+call "%VSROOT%\VC\Auxiliary\Build\vcvars64.bat" >nul 2>&1
 
 REM CMAKE_CXX_COMPILER=cl resolves from the vcvars PATH - never hard-code a
 REM versioned MSVC bin path (it changes with every toolset update).

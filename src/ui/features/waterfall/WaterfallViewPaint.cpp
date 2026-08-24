@@ -60,8 +60,7 @@ void WaterfallView::initializeGL()
 
     if (!m_rows.empty())
         m_gl_renderer.uploadAmplitude(m_rows);
-    m_gl_data_dirty = false;
-    m_gl_src_dirty  = false;
+    m_render_generation.acknowledgeDataUpload();
 }
 
 // -----------------------------------------------------------------------------
@@ -92,13 +91,12 @@ void WaterfallView::paintGL()
     // -- GPU path -------------------------------------------------------------
     if (m_gl_initialized) {
         // Flush any pending texture uploads (context is guaranteed current here).
-        if (m_gl_data_dirty) {
+        if (m_render_generation.needsDataUpload()) {
             m_gl_renderer.uploadAmplitude(m_rows);
-            m_gl_data_dirty = false;
-            m_gl_src_dirty  = false;
-        } else if (m_gl_src_dirty) {
+            m_render_generation.acknowledgeDataUpload();
+        } else if (m_render_generation.needsGeometryUpload()) {
             m_gl_renderer.uploadSrcParams(m_rows);
-            m_gl_src_dirty = false;
+            m_render_generation.acknowledgeGeometryUpload();
         }
         if (m_gl_renderer.hasAmplitude()) {
             const bool show_port =
@@ -151,7 +149,8 @@ void WaterfallView::paintOverlays(QPainter& p, const WfLayout& lay)
     if (shouldPaintBottomTrack(m_show_seabed_line,
                                m_params.slant_range_correction,
                                m_seabed_tool > 0)) {
-        WaterfallOverlayPainter::paintSeabedOverlay(p, m_rows, lay, m_scroll);
+        WaterfallOverlayPainter::paintSeabedOverlay(
+            p, m_rows, lay, m_scroll, m_params.slant_range_correction);
     }
 
     if (m_seabed_tool == 2 && m_box_press_sx >= 0 && m_cursor_x >= 0) {
@@ -236,16 +235,22 @@ bool WaterfallView::isGpuRendering() const { return m_gl_initialized; }
 void WaterfallView::setGpuAccel(bool enabled)
 {
     if (!enabled) {
+        if (m_gl_initialized && isValid()) {
+            makeCurrent();
+            m_gl_renderer.cleanup();
+            doneCurrent();
+        }
         m_gl_initialized = false;
+        m_render_generation.gpuReset();
         update();
         return;
     }
     if (!m_gl_initialized && isValid()) {
         makeCurrent();
         m_gl_initialized = m_gl_renderer.initialize();
-        if (m_gl_initialized && !m_rows.empty()) {
+        if (m_gl_initialized) {
             m_gl_renderer.uploadAmplitude(m_rows);
-            m_gl_data_dirty = false;
+            m_render_generation.acknowledgeDataUpload();
         }
         doneCurrent();
     }
@@ -260,12 +265,14 @@ void WaterfallView::cleanupGL()
 {
     if (!isValid()) {
         m_gl_initialized = false;
+        m_render_generation.gpuReset();
         return;
     }
 
     makeCurrent();
     m_gl_renderer.cleanup();
     m_gl_initialized = false;
+    m_render_generation.gpuReset();
     doneCurrent();
 }
 

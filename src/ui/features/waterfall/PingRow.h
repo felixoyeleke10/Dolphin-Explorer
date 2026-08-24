@@ -1,4 +1,5 @@
 #pragma once
+#include "core/SidescanGeometry.h"
 #include <cstdint>
 #include <vector>
 
@@ -36,6 +37,17 @@ struct PingRow {
     float                 altitude_m    = 0.f;  // sensor altitude above seabed
     float                 port_altitude_m = 0.f; // trusted per-channel SRC reference
     float                 stbd_altitude_m = 0.f;
+    core::SidescanRangeDomain port_range_domain = core::SidescanRangeDomain::Slant;
+    core::SidescanRangeDomain stbd_range_domain = core::SidescanRangeDomain::Slant;
+    SeabedDetectionResult port_seabed; // imported per-channel pick
+    SeabedDetectionResult stbd_seabed;
+    int64_t               port_timestamp_us = 0;
+    int64_t               stbd_timestamp_us = 0;
+    std::uint64_t         port_artifact_id = 0;
+    std::uint64_t         stbd_artifact_id = 0;
+    core::SidescanRangeDomain port_seabed_domain = core::SidescanRangeDomain::Slant;
+    core::SidescanRangeDomain stbd_seabed_domain = core::SidescanRangeDomain::Slant;
+    core::SidescanRangeDomain seabed_domain = core::SidescanRangeDomain::Slant;
 };
 
 } // namespace dolphin::ui

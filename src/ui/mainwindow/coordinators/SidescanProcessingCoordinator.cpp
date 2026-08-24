@@ -56,6 +56,24 @@ std::vector<std::string> SidescanProcessingCoordinator::allSidescanLayerIds(
     return ids;
 }
 
+std::vector<SidescanInvalidationRequest>
+SidescanProcessingCoordinator::invalidationsFor(const Result& result)
+{
+    const std::unordered_set<std::string> reverted(
+        result.revert_layer_ids.begin(), result.revert_layer_ids.end());
+    std::vector<SidescanInvalidationRequest> invalidations;
+    const auto append = [&](const std::vector<std::string>& ids,
+                            SidescanInvalidation kind) {
+        for (const auto& id : ids)
+            if (!reverted.contains(id)) invalidations.push_back({id, kind});
+    };
+    append(result.display_changed_layer_ids, SidescanInvalidation::Appearance);
+    append(result.pipeline_changed_layer_ids, SidescanInvalidation::Amplitude);
+    append(result.geometry_changed_layer_ids, SidescanInvalidation::Geometry);
+    append(result.nav_changed_layer_ids, SidescanInvalidation::Geometry);
+    return invalidations;
+}
+
 SidescanProcessingCoordinator::Result SidescanProcessingCoordinator::commit(
     app::Project* project,
     const std::vector<std::string>& requested_ids,

@@ -86,7 +86,7 @@ void WaterfallWindow::loadWindow(int abs_row)
 
     struct LoadResult {
         std::vector<core::SidescanPing>  raw_pings;
-        WaterfallView::WfPipelineResult  pipeline;
+        WaterfallPipelineResult           pipeline;
         std::shared_ptr<const imaging::SssAmplitudeContext> amplitude_context;
         bool ok          = false;  // full success
         bool load_failed = false;  // disk/parse exception (vs. simply no valid pings)
@@ -172,7 +172,7 @@ void WaterfallWindow::loadWindow(int abs_row)
                 if (cancel.isCancelled()) return result;
 
                 result.raw_pings = std::move(normalised);
-                result.pipeline  = WaterfallView::runPipeline(result.raw_pings,
+                result.pipeline  = runWaterfallPipeline(result.raw_pings,
                                                               snap_params,
                                                               snap_seabed_params,
                                                               snap_seabed_enabled,

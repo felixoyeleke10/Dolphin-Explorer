@@ -2,6 +2,7 @@
 
 #include "app/display/NavProcessingParams.h"
 #include "app/display/WaterfallParams.h"
+#include "ui/features/map/sidescan/SidescanInvalidation.h"
 
 #include <QObject>
 #include <QStringList>
@@ -43,6 +44,8 @@ public:
                   const NavProcessingParams* nav = nullptr);
 
     static std::vector<std::string> allSidescanLayerIds(const app::Project* project);
+    static std::vector<SidescanInvalidationRequest> invalidationsFor(
+        const Result& result);
 
 signals:
     void processingCommitted(const QStringList& layer_ids,

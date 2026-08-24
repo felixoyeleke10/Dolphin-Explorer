@@ -1,7 +1,10 @@
 #pragma once
 #include "app/display/NavProcessingParams.h"
 #include "ui/features/waterfall/PingRow.h"
+#include "ui/features/waterfall/processing/WaterfallBottomTrackStore.h"
+#include "ui/features/waterfall/rendering/WaterfallRenderGeneration.h"
 #include "ui/features/waterfall/processing/SeabedAutoDetector.h"
+#include "ui/features/waterfall/processing/WaterfallPipeline.h"
 #include "ui/features/waterfall/processing/WaterfallAmpProfile.h"
 #include "ui/features/waterfall/WaterfallContact.h"
 #include "core/Contact.h"
@@ -16,13 +19,13 @@
 #include <QOpenGLWidget>
 #include <QPoint>
 #include <QPointF>
-#include <atomic>
 #include <memory>
 #include <unordered_map>
 #include <vector>
 
 namespace dolphin::ui {
 namespace imaging { struct SssAmplitudeContext; }
+class WaterfallPipelineRunner;
 
 // -----------------------------------------------------------------------------
 //  WaterfallView — scrolling sidescan waterfall canvas (thin orchestrator).
@@ -58,24 +61,6 @@ public:
     void setPings(const std::vector<core::SidescanPing>& pings,
                   bool preserve_view = false);
 
-    // Result of a full display pipeline run — background-safe, no QObject access.
-    struct WfPipelineResult {
-        std::vector<PingRow> rows;
-        float stretch_low  = 0.f;
-        float stretch_high = 1.f;
-    };
-
-    // Run the canonical SSS display pipeline off-thread. Display amplitudes use
-    // the same calibration/enhancement/stretch contract as the map; seabed
-    // detection uses a clean calibrated copy.
-    // pings are read-only; an internal working copy is made.
-    // Deliver result via setPreassembledRows.
-    static WfPipelineResult runPipeline(const std::vector<core::SidescanPing>& pings,
-                                        const WaterfallParams&                 params,
-                                        const SeabedAutoParams&                seabed_params,
-                                        bool                                   seabed_enabled,
-                                        const imaging::SssAmplitudeContext*    amplitude_context = nullptr);
-
     void setAmplitudeContext(
         std::shared_ptr<const imaging::SssAmplitudeContext> context);
     std::shared_ptr<const imaging::SssAmplitudeContext> amplitudeContext() const
@@ -84,7 +69,7 @@ public:
     // Install pre-built pipeline result on the UI thread.
     // Applies manual seabed picks, updates renderer stretch, scrolls to end.
     void setPreassembledRows(std::vector<core::SidescanPing> raw_pings,
-                             WfPipelineResult                result,
+                             WaterfallPipelineResult         result,
                              bool                            preserve_view = false);
 
     void clear();
@@ -297,7 +282,7 @@ private:
     std::vector<core::SidescanPing>   m_raw_pings;          // stored for re-assembly on Apply
     std::shared_ptr<const imaging::SssAmplitudeContext> m_amplitude_context;
     std::vector<PingRow>              m_rows;
-    std::unordered_map<int64_t,float> m_manual_seabed;     // timestamp_us → range_m; survives window changes
+    WaterfallBottomTrackStore m_manual_seabed;
     WaterfallParams                 m_params;
     SeabedAutoParams                m_seabed_auto_params;  // last-used detection params
     WaterfallRenderer               m_renderer;
@@ -306,8 +291,7 @@ private:
 
     WaterfallGLRenderer       m_gl_renderer;
     bool  m_gl_initialized    = false;
-    bool  m_gl_data_dirty     = false;  // amplitude texture needs re-upload
-    bool  m_gl_src_dirty      = false;  // SRC params need re-upload (seabed edit)
+    WaterfallRenderGeneration m_render_generation;
     bool  m_cpu_renderer_params_dirty = false;
 
     bool  m_dirty            = true;
@@ -351,10 +335,7 @@ private:
     float m_stretch_low  = 0.f;
     float m_stretch_high = 1.f;
 
-    // Generation counter: incremented whenever a new background rebuild is started
-    // or new ping data is loaded.  The finished handler discards results whose
-    // generation no longer matches, so rapid param changes don't produce flicker.
-    std::atomic<uint64_t> m_rebuild_gen{0};
+    WaterfallPipelineRunner* m_pipeline_runner = nullptr;
 
     // Cached amplitude profile — only recomputed when scroll row changes or rows are rebuilt.
     WaterfallAmpProfile m_cached_amp_profile;

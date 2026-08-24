@@ -30,10 +30,14 @@ uniform sampler2D u_stbd;
 uniform sampler2D u_src;
 uniform sampler2D u_port_range;
 uniform sampler2D u_stbd_range;
+uniform sampler2D u_counts;
 
 uniform float u_nadir_x;
 uniform float u_z_port;
 uniform float u_z_stbd;
+uniform float u_port_width;
+uniform float u_stbd_width;
+uniform bool  u_auto_zoom;
 uniform int   u_h_pan;
 uniform int   u_scroll;
 uniform int   u_n_rows;
@@ -163,26 +167,32 @@ void main() {
     if ( is_port && !u_show_port) { fragColor = kBg; return; }
     if (!is_port && !u_show_stbd) { fragColor = kBg; return; }
 
-    int   ns = is_port ? u_ns_port : u_ns_stbd;
-    float z  = is_port ? u_z_port  : u_z_stbd;
+    float count_tc = (float(row) + 0.5) / float(u_n_rows);
+    vec2 counts = texture(u_counts, vec2(count_tc, 0.5)).rg;
+    int ns = int(is_port ? counts.r : counts.g);
+    float z = u_auto_zoom
+        ? (is_port ? u_port_width : u_stbd_width) / max(float(ns), 1.0)
+        : (is_port ? u_z_port : u_z_stbd);
     if (ns == 0 || z <= 0.0) { fragColor = kBg; return; }
 
     float si_f;
     if (u_src_enabled) {
         float src_tc = (float(row) + 0.5) / float(u_n_rows);
         vec4  sd     = texture(u_src, vec2(src_tc, 0.5));
-        float alt    = is_port ? sd.r : sd.g;
-        float max_r  = sd.b;
+        float encoded_alt = is_port ? sd.r : sd.g;
+        bool baked = encoded_alt < 0.0;
+        float alt = abs(encoded_alt);
+        float max_r = is_port ? sd.b : sd.a;
 
-        if (alt > 0.0 && max_r > alt) {
-            float port_w = float(u_ns_port > 0 ? u_ns_port : u_ns_stbd) * u_z_port;
-            float stbd_w = float(u_ns_stbd > 0 ? u_ns_stbd : u_ns_port) * u_z_stbd;
+        if ((baked && max_r > 0.0) || (alt > 0.0 && max_r > alt)) {
+            float port_w = float(ns) * z;
+            float stbd_w = float(ns) * z;
             float frac   = is_port ? (u_nadir_x - 0.5 - sx) / port_w
                                    : (sx - u_nadir_x) / stbd_w;
-            frac = clamp(frac, 0.0, 1.0);
-            float max_g = sqrt(max_r * max_r - alt * alt);
+            if (frac < 0.0 || frac > 1.0) { fragColor = kBg; return; }
+            float max_g = baked ? max_r : sqrt(max_r * max_r - alt * alt);
             float g     = frac * max_g;
-            float r     = sqrt(g * g + alt * alt);
+            float r     = baked ? g : sqrt(g * g + alt * alt);
             si_f = sampleForSlantRange(r, is_port, row, ns) + float(u_h_pan);
         } else {
             float dx = is_port ? (u_nadir_x - 0.5 - sx) : (sx - u_nadir_x);
@@ -193,10 +203,11 @@ void main() {
         si_f = dx / z + float(u_h_pan);
     }
 
-    si_f = clamp(si_f, 0.0, float(ns - 1));
+    if (si_f < 0.0 || si_f > float(ns - 1)) { fragColor = kBg; return; }
 
     float row_tc  = (row_sample + 0.5) / float(u_n_rows);
-    float samp_tc = (si_f + 0.5) / float(ns);
+    int texture_ns = is_port ? u_ns_port : u_ns_stbd;
+    float samp_tc = (si_f + 0.5) / float(texture_ns);
     float amp = is_port ? texture(u_port, vec2(samp_tc, row_tc)).r
                         : texture(u_stbd, vec2(samp_tc, row_tc)).r;
 
@@ -220,9 +231,11 @@ void WaterfallGLRenderer::cleanup()
     if (!m_ready) return;
     if (m_tex_port) { glDeleteTextures(1, &m_tex_port); m_tex_port = 0; }
     if (m_tex_stbd) { glDeleteTextures(1, &m_tex_stbd); m_tex_stbd = 0; }
+    if (m_tex_lut)  { glDeleteTextures(1, &m_tex_lut);  m_tex_lut  = 0; }
     if (m_tex_src)  { glDeleteTextures(1, &m_tex_src);  m_tex_src  = 0; }
     if (m_tex_port_range) { glDeleteTextures(1, &m_tex_port_range); m_tex_port_range = 0; }
     if (m_tex_stbd_range) { glDeleteTextures(1, &m_tex_stbd_range); m_tex_stbd_range = 0; }
+    if (m_tex_counts) { glDeleteTextures(1, &m_tex_counts); m_tex_counts = 0; }
     if (m_vao)      { glDeleteVertexArrays(1, &m_vao);  m_vao      = 0; }
     delete m_program; m_program = nullptr;
     m_alloc_ns_port = 0;
@@ -247,7 +260,27 @@ bool WaterfallGLRenderer::buildShaders()
 
 void WaterfallGLRenderer::uploadAmplitude(const std::vector<PingRow>& rows)
 {
-    if (!m_ready || rows.empty()) return;
+    if (!m_ready) return;
+    if (rows.empty()) {
+        if (m_tex_port) { glDeleteTextures(1, &m_tex_port); m_tex_port = 0; }
+        if (m_tex_stbd) { glDeleteTextures(1, &m_tex_stbd); m_tex_stbd = 0; }
+        if (m_tex_src) { glDeleteTextures(1, &m_tex_src); m_tex_src = 0; }
+        if (m_tex_port_range) {
+            glDeleteTextures(1, &m_tex_port_range); m_tex_port_range = 0;
+        }
+        if (m_tex_stbd_range) {
+            glDeleteTextures(1, &m_tex_stbd_range); m_tex_stbd_range = 0;
+        }
+        if (m_tex_counts) { glDeleteTextures(1, &m_tex_counts); m_tex_counts = 0; }
+        m_tex_ns_port = 0;
+        m_tex_ns_stbd = 0;
+        m_tex_n_rows = 0;
+        m_alloc_ns_port = 0;
+        m_alloc_ns_stbd = 0;
+        m_alloc_n_rows = 0;
+        m_alloc_src_n = 0;
+        return;
+    }
 
     const int n_rows = static_cast<int>(rows.size());
     int ns_port = 0, ns_stbd = 0;
@@ -302,12 +335,21 @@ void WaterfallGLRenderer::uploadAmplitude(const std::vector<PingRow>& rows)
             const auto& ranges = is_port ? rows[ri].port_ranges : rows[ri].stbd_ranges;
             const int actual_ns = static_cast<int>(
                 is_port ? rows[ri].port.size() : rows[ri].stbd.size());
-            const float max_r = std::isfinite(rows[ri].slant_range_m)
-                ? rows[ri].slant_range_m : 0.f;
+            const auto channel = is_port ? core::SidescanChannel::Port
+                                         : core::SidescanChannel::Starboard;
+            const float max_r = waterfallSideMaxRange(rows[ri], channel);
+            const bool valid_table = ranges.size() == static_cast<size_t>(actual_ns)
+                && std::is_sorted(ranges.begin(), ranges.end())
+                && std::all_of(ranges.begin(), ranges.end(), [](float value) {
+                    return std::isfinite(value) && value >= 0.f;
+                });
             for (int si = 0; si < actual_ns && si < upload_ns; ++si) {
                 buf[static_cast<size_t>(ri) * stride + static_cast<size_t>(si)] =
-                    waterfallRangeAtSample(ranges, actual_ns,
-                                           static_cast<float>(si), max_r);
+                    valid_table ? ranges[static_cast<size_t>(si)]
+                                : (actual_ns > 1
+                                    ? max_r * static_cast<float>(si)
+                                        / static_cast<float>(actual_ns - 1)
+                                    : 0.f);
             }
             for (int si = actual_ns; si < upload_ns; ++si)
                 buf[static_cast<size_t>(ri) * stride + static_cast<size_t>(si)] = max_r;
@@ -323,6 +365,22 @@ void WaterfallGLRenderer::uploadAmplitude(const std::vector<PingRow>& rows)
     };
     uploadRanges(m_tex_port_range, true, ns_port);
     uploadRanges(m_tex_stbd_range, false, ns_stbd);
+    {
+        std::vector<float> counts(static_cast<size_t>(n_rows) * 2);
+        for (int ri = 0; ri < n_rows; ++ri) {
+            counts[static_cast<size_t>(ri) * 2] =
+                static_cast<float>(rows[ri].port.size());
+            counts[static_cast<size_t>(ri) * 2 + 1] =
+                static_cast<float>(rows[ri].stbd.size());
+        }
+        if (!m_tex_counts) glGenTextures(1, &m_tex_counts);
+        glBindTexture(GL_TEXTURE_2D, m_tex_counts);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RG32F, n_rows, 1, 0,
+                     GL_RG, GL_FLOAT, counts.data());
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    }
     glBindTexture(GL_TEXTURE_2D, 0);
     m_alloc_n_rows = n_rows;
     m_tex_ns_port = ns_port;
@@ -341,13 +399,20 @@ void WaterfallGLRenderer::uploadSrcParams(const std::vector<PingRow>& rows)
     std::vector<float> data(static_cast<size_t>(n) * 4);
     for (int i = 0; i < n; ++i) {
         const size_t base = static_cast<size_t>(i) * 4;
-        data[base] = waterfallSideAltitude(
+        const bool port_baked = waterfallSideRangesAreGround(
             rows[i], core::SidescanChannel::Port);
-        data[base + 1] = waterfallSideAltitude(
+        const bool stbd_baked = waterfallSideRangesAreGround(
             rows[i], core::SidescanChannel::Starboard);
-        data[base + 2] =
-            std::isfinite(rows[i].slant_range_m) ? rows[i].slant_range_m : 0.f;
-        data[base + 3] = 0.f;
+        const float port_alt = waterfallSideAltitude(
+            rows[i], core::SidescanChannel::Port);
+        const float stbd_alt = waterfallSideAltitude(
+            rows[i], core::SidescanChannel::Starboard);
+        data[base] = port_baked ? -std::max(port_alt, 1.f) : port_alt;
+        data[base + 1] = stbd_baked ? -std::max(stbd_alt, 1.f) : stbd_alt;
+        data[base + 2] = waterfallSideMaxRange(
+            rows[i], core::SidescanChannel::Port);
+        data[base + 3] = waterfallSideMaxRange(
+            rows[i], core::SidescanChannel::Starboard);
     }
     const bool is_new_src = !m_tex_src;
     if (is_new_src) glGenTextures(1, &m_tex_src);
@@ -404,6 +469,7 @@ void WaterfallGLRenderer::draw(const WfLayout& layout,
     glActiveTexture(GL_TEXTURE2); glBindTexture(GL_TEXTURE_2D, m_tex_src ? m_tex_src : m_tex_port);
     glActiveTexture(GL_TEXTURE3); glBindTexture(GL_TEXTURE_2D, m_tex_port_range);
     glActiveTexture(GL_TEXTURE4); glBindTexture(GL_TEXTURE_2D, m_tex_stbd_range);
+    glActiveTexture(GL_TEXTURE5); glBindTexture(GL_TEXTURE_2D, m_tex_counts);
 
     m_program->bind();
     m_program->setUniformValue("u_port",        0);
@@ -411,9 +477,13 @@ void WaterfallGLRenderer::draw(const WfLayout& layout,
     m_program->setUniformValue("u_src",         2);
     m_program->setUniformValue("u_port_range",  3);
     m_program->setUniformValue("u_stbd_range",  4);
+    m_program->setUniformValue("u_counts",      5);
     m_program->setUniformValue("u_nadir_x",     float(nadir));
     m_program->setUniformValue("u_z_port",      z_port);
     m_program->setUniformValue("u_z_stbd",      z_stbd);
+    m_program->setUniformValue("u_port_width",  float(port_w));
+    m_program->setUniformValue("u_stbd_width",  float(stbd_w));
+    m_program->setUniformValue("u_auto_zoom",   h_zoom <= 0.f);
     m_program->setUniformValue("u_h_pan",       h_pan);
     m_program->setUniformValue("u_scroll",      scroll_row);
     m_program->setUniformValue("u_n_rows",      m_tex_n_rows);
@@ -438,7 +508,7 @@ void WaterfallGLRenderer::draw(const WfLayout& layout,
     glBindVertexArray(0);
     m_program->release();
 
-    for (int i = 4; i >= 0; --i) {
+    for (int i = 5; i >= 0; --i) {
         glActiveTexture(GL_TEXTURE0 + i);
         glBindTexture(GL_TEXTURE_2D, 0);
     }

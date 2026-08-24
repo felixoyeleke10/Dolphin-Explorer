@@ -36,7 +36,8 @@ public:
     static void paintSeabedOverlay (QPainter&                          p,
                                     const std::vector<PingRow>&        rows,
                                     const WfLayout&                    lay,
-                                    const WaterfallScrollController&   scroll);
+                                    const WaterfallScrollController&   scroll,
+                                    bool src_enabled);
 
     static void paintContactOverlay(QPainter&                          p,
                                     const std::vector<WfContact>&      contacts,

@@ -6,6 +6,8 @@ add_library(dolphin-io STATIC
     cache/ParsedCache.cpp
     cache/ParsedCache.Index.cpp
     cache/ParsedCache.Read.cpp
+    cache/ParsedCache.Footer.cpp
+    cache/ParsedCache.Codec.cpp
 
     # XTF reader
     xtf/XtfReader.cpp

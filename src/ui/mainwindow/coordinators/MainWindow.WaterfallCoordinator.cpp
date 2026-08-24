@@ -220,21 +220,9 @@ void MainWindow::onWaterfallOpen()
                 result = m_sss_processing->commit(currentProject(), ids, p);
             for (const auto& id : result.revert_layer_ids)
                 onRevertProcessedLayer(id);
-            if (m_sss_ctrl) {
-                std::unordered_set<std::string> reverted(
-                    result.revert_layer_ids.begin(), result.revert_layer_ids.end());
-                std::vector<SidescanInvalidationRequest> invalidations;
-                for (const auto& id : result.display_changed_layer_ids)
-                    if (!reverted.count(id)) invalidations.push_back(
-                        {id, SidescanInvalidation::Appearance});
-                for (const auto& id : result.pipeline_changed_layer_ids)
-                    if (!reverted.count(id)) invalidations.push_back(
-                        {id, SidescanInvalidation::Amplitude});
-                for (const auto& id : result.geometry_changed_layer_ids)
-                    if (!reverted.count(id)) invalidations.push_back(
-                        {id, SidescanInvalidation::Geometry});
-                m_sss_ctrl->applyInvalidations(invalidations);
-            }
+            if (m_sss_ctrl)
+                m_sss_ctrl->applyInvalidations(
+                    SidescanProcessingCoordinator::invalidationsFor(result));
             markProjectDirty();
             m_session_ctrl->autoSave();
             // Display-state only — no .dlpd bake here. The waterfall renders the

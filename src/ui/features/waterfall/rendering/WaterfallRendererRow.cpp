@@ -48,23 +48,29 @@ void WaterfallRenderer::rebuildRow(const PingRow& pr, QRgb* line0,
 
     // Port: pixel at x=nadir-1 is sample h_pan; further left = farther range.
     if (!pr.port.empty() && show_port) {
+        const bool baked = waterfallSideRangesAreGround(
+            pr, core::SidescanChannel::Port);
+        const float side_max = waterfallSideMaxRange(
+            pr, core::SidescanChannel::Port);
         const float h_alt = waterfallSideAltitude(pr, core::SidescanChannel::Port);
         const bool src = m_params.slant_range_correction
-                      && h_alt > 0.f && max_r > h_alt;
-        const float max_g = src
-            ? std::sqrt(std::max(0.f, max_r * max_r - h_alt * h_alt)) : 0.f;
+                      && (baked || (h_alt > 0.f && side_max > h_alt));
+        const float max_g = src && !baked
+            ? std::sqrt(std::max(0.f, side_max * side_max - h_alt * h_alt)) : 0.f;
         for (int x = kWfRulerW; x < nadir; ++x) {
             float si_f;
-            if (src && max_g > 0.f && src_port_w > 0.f) {
-                const float frac = std::clamp(static_cast<float>(nadir - 1 - x) / src_port_w, 0.f, 1.f);
-                const float g    = frac * max_g;
-                const float r    = std::sqrt(g * g + h_alt * h_alt);
+            if (src && (baked ? side_max : max_g) > 0.f && src_port_w > 0.f) {
+                const float frac = static_cast<float>(nadir - 1 - x) / src_port_w;
+                if (frac < 0.f || frac > 1.f) continue;
+                const float g = frac * (baked ? side_max : max_g);
+                const float r = baked ? g : std::sqrt(g * g + h_alt * h_alt);
                 si_f = waterfallSampleForRange(
-                    pr.port_ranges, ns_port, r, max_r) + static_cast<float>(h_pan);
+                    pr.port_ranges, ns_port, r, side_max) + static_cast<float>(h_pan);
             } else {
                 si_f = static_cast<float>(nadir - 1 - x) / z_port + static_cast<float>(h_pan);
             }
-            const float si_c = std::clamp(si_f, 0.f, static_cast<float>(ns_port - 1));
+            if (si_f < 0.f || si_f > static_cast<float>(ns_port - 1)) continue;
+            const float si_c = si_f;
             const int   si0  = static_cast<int>(si_c);
             const int   si1  = std::min(si0 + 1, ns_port - 1);
             const float t    = si_c - static_cast<float>(si0);
@@ -78,24 +84,30 @@ void WaterfallRenderer::rebuildRow(const PingRow& pr, QRgb* line0,
 
     // Starboard: pixel at x=nadir is sample h_pan; further right = farther range.
     if (!pr.stbd.empty() && show_stbd) {
+        const bool baked = waterfallSideRangesAreGround(
+            pr, core::SidescanChannel::Starboard);
+        const float side_max = waterfallSideMaxRange(
+            pr, core::SidescanChannel::Starboard);
         const float h_alt = waterfallSideAltitude(pr, core::SidescanChannel::Starboard);
         const bool src = m_params.slant_range_correction
-                      && h_alt > 0.f && max_r > h_alt;
-        const float max_g = src
-            ? std::sqrt(std::max(0.f, max_r * max_r - h_alt * h_alt)) : 0.f;
+                      && (baked || (h_alt > 0.f && side_max > h_alt));
+        const float max_g = src && !baked
+            ? std::sqrt(std::max(0.f, side_max * side_max - h_alt * h_alt)) : 0.f;
         const int w = m_layout.widget_w;
         for (int x = nadir; x < w; ++x) {
             float si_f;
-            if (src && max_g > 0.f && src_stbd_w > 0.f) {
-                const float frac = std::clamp(static_cast<float>(x - nadir) / src_stbd_w, 0.f, 1.f);
-                const float g    = frac * max_g;
-                const float r    = std::sqrt(g * g + h_alt * h_alt);
+            if (src && (baked ? side_max : max_g) > 0.f && src_stbd_w > 0.f) {
+                const float frac = static_cast<float>(x - nadir) / src_stbd_w;
+                if (frac < 0.f || frac > 1.f) continue;
+                const float g = frac * (baked ? side_max : max_g);
+                const float r = baked ? g : std::sqrt(g * g + h_alt * h_alt);
                 si_f = waterfallSampleForRange(
-                    pr.stbd_ranges, ns_stbd, r, max_r) + static_cast<float>(h_pan);
+                    pr.stbd_ranges, ns_stbd, r, side_max) + static_cast<float>(h_pan);
             } else {
                 si_f = static_cast<float>(x - nadir) / z_stbd + static_cast<float>(h_pan);
             }
-            const float si_c = std::clamp(si_f, 0.f, static_cast<float>(ns_stbd - 1));
+            if (si_f < 0.f || si_f > static_cast<float>(ns_stbd - 1)) continue;
+            const float si_c = si_f;
             const int   si0  = static_cast<int>(si_c);
             const int   si1  = std::min(si0 + 1, ns_stbd - 1);
             const float t    = si_c - static_cast<float>(si0);
@@ -188,21 +200,23 @@ bool WaterfallRenderer::xToRange(int x, int row_idx,
 
     if (x < nx) {
         ch = core::SidescanChannel::Port;
+        const bool baked = waterfallSideRangesAreGround(selected_row, ch);
+        const float side_max = waterfallSideMaxRange(selected_row, ch);
         const float h_alt = waterfallSideAltitude(selected_row, ch);
         const bool src = m_params.slant_range_correction
-                      && h_alt > 0.f && max_r > h_alt;
-        const float max_g = src
-            ? std::sqrt(max_r * max_r - h_alt * h_alt) : 0.f;
-        if (src && max_g > 0.f && ns_port > 1) {
+                      && (baked || (h_alt > 0.f && side_max > h_alt));
+        const float max_g = src && !baked
+            ? std::sqrt(side_max * side_max - h_alt * h_alt) : 0.f;
+        if (src && (baked ? side_max : max_g) > 0.f && ns_port > 1) {
             const float z    = (h_zoom > 0.f) ? h_zoom : (port_w > 0 ? float(port_w) / ns_port : 1.f);
             const float sw   = float(ns_port) * z;
             const float frac = std::clamp(static_cast<float>(nx - 1 - x) / sw, 0.f, 1.f);
-            const float g    = frac * max_g;
-            const float r    = std::sqrt(g * g + h_alt * h_alt);
+            const float g = frac * (baked ? side_max : max_g);
+            const float r = baked ? g : std::sqrt(g * g + h_alt * h_alt);
             const float si = waterfallSampleForRange(
-                selected_row.port_ranges, ns_port, r, max_r) + h_pan;
+                selected_row.port_ranges, ns_port, r, side_max) + h_pan;
             range_m = waterfallRangeAtSample(
-                selected_row.port_ranges, ns_port, si, max_r);
+                selected_row.port_ranges, ns_port, si, side_max);
         } else {
             const int   ns = qMax(1, ns_port);
             const float z  = (h_zoom > 0.f) ? h_zoom
@@ -213,21 +227,23 @@ bool WaterfallRenderer::xToRange(int x, int row_idx,
         }
     } else {
         ch = core::SidescanChannel::Starboard;
+        const bool baked = waterfallSideRangesAreGround(selected_row, ch);
+        const float side_max = waterfallSideMaxRange(selected_row, ch);
         const float h_alt = waterfallSideAltitude(selected_row, ch);
         const bool src = m_params.slant_range_correction
-                      && h_alt > 0.f && max_r > h_alt;
-        const float max_g = src
-            ? std::sqrt(max_r * max_r - h_alt * h_alt) : 0.f;
-        if (src && max_g > 0.f && ns_stbd > 1) {
+                      && (baked || (h_alt > 0.f && side_max > h_alt));
+        const float max_g = src && !baked
+            ? std::sqrt(side_max * side_max - h_alt * h_alt) : 0.f;
+        if (src && (baked ? side_max : max_g) > 0.f && ns_stbd > 1) {
             const float z    = (h_zoom > 0.f) ? h_zoom : (stbd_w > 0 ? float(stbd_w) / ns_stbd : 1.f);
             const float sw   = float(ns_stbd) * z;
             const float frac = std::clamp(static_cast<float>(x - nx) / sw, 0.f, 1.f);
-            const float g    = frac * max_g;
-            const float r    = std::sqrt(g * g + h_alt * h_alt);
+            const float g = frac * (baked ? side_max : max_g);
+            const float r = baked ? g : std::sqrt(g * g + h_alt * h_alt);
             const float si = waterfallSampleForRange(
-                selected_row.stbd_ranges, ns_stbd, r, max_r) + h_pan;
+                selected_row.stbd_ranges, ns_stbd, r, side_max) + h_pan;
             range_m = waterfallRangeAtSample(
-                selected_row.stbd_ranges, ns_stbd, si, max_r);
+                selected_row.stbd_ranges, ns_stbd, si, side_max);
         } else {
             const int   ns = qMax(1, ns_stbd);
             const float z  = (h_zoom > 0.f) ? h_zoom

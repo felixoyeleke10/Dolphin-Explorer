@@ -1,6 +1,15 @@
 cmake_minimum_required(VERSION 3.20)
 project(DolphinExplorer VERSION 0.1.0 LANGUAGES CXX)
 
+if(MSVC)
+    # Embed debug information in each object instead of sharing a compiler PDB.
+    # Replacing CMake's default avoids Ninja /FS contention and C1041 failures.
+    string(REPLACE "/Zi" "/Z7" CMAKE_CXX_FLAGS_DEBUG
+           "${CMAKE_CXX_FLAGS_DEBUG}")
+    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG}" CACHE STRING
+        "Debug C++ compiler flags" FORCE)
+endif()
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
@@ -43,6 +52,10 @@ target_link_libraries(DolphinExplorer PRIVATE
 )
 if(WIN32)
     target_link_libraries(DolphinExplorer PRIVATE dbghelp)
+    add_custom_command(TARGET DolphinExplorer PRE_LINK
+        COMMAND ${CMAKE_COMMAND} -P
+                "${CMAKE_SOURCE_DIR}/cmake/CheckDolphinExplorerNotRunning.cmake"
+        VERBATIM)
 endif()
 
 set_target_properties(DolphinExplorer PROPERTIES

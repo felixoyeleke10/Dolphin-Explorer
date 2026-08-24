@@ -1,4 +1,5 @@
 #pragma once
+#include "core/SidescanGeometry.h"
 #include "core/SidescanPing.h"
 #include <cstddef>
 #include <cstdint>
@@ -33,7 +34,7 @@ enum class SssNavSmoothingMode {
     Off,            // no smoothing — use raw resolved positions as-is
     SpikeRejection, // skip positions that jump past the spike distance threshold
     MovingAverage,  // simple window average over smoothing_window pings
-    Median,         // window median (falls back to MovingAverage in this build)
+    Median,         // per-coordinate window median within continuity segments
 };
 
 // -- Processing parameters -----------------------------------------------------
@@ -70,7 +71,8 @@ struct SssGeorefParams {
     // offset from the vessel track by the near-nadir dead zone, leaving a
     // visible gap that represents the unprocessed water column.
     // When true the gap is closed — the inner edge sits on the vessel track.
-    bool slant_range_corrected = false;
+    core::SidescanRangeDomain presentation_domain =
+        core::SidescanRangeDomain::Slant;
 
     // Show the near-nadir band. Samples are always placed at their true
     // flat-bottom ground range (water column itself is never drawn); this

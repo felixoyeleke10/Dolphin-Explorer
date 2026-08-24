@@ -17,12 +17,18 @@ if not defined VCVARS (
     echo Visual Studio C++ build tools were not found.
     exit /b 1
 )
-call "%VCVARS%" >nul
+call "%VCVARS%" >nul 2>&1
+
+tasklist /FI "IMAGENAME eq DolphinExplorer.exe" 2>nul | find /I "DolphinExplorer.exe" >nul
+if not errorlevel 1 (
+    echo DolphinExplorer.exe is running - close it before building.
+    exit /b 1
+)
 
 if not exist build_mingw (
     echo build_mingw was not found.
     echo Run build_mingw.bat once to configure the Ninja build directory.
-    pause
+    if not defined DOLPHIN_NONINTERACTIVE pause
     exit /b 1
 )
 
@@ -34,10 +40,10 @@ if errorlevel 1 goto :error
 
 echo.
 echo Build complete!
-pause
+if not defined DOLPHIN_NONINTERACTIVE pause
 exit /b 0
 
 :error
 echo Build failed!
-pause
+if not defined DOLPHIN_NONINTERACTIVE pause
 exit /b 1

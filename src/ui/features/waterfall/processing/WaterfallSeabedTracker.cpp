@@ -3,6 +3,7 @@
 // Auto-detection logic has moved to SeabedAutoDetector.
 
 #include "ui/features/waterfall/processing/WaterfallSeabedTracker.h"
+#include "ui/features/waterfall/rendering/WaterfallRangeGeometry.h"
 
 #include <QtGlobal>   // qBound
 #include <cstdlib>    // std::abs
@@ -41,45 +42,58 @@ void WaterfallSeabedTracker::endDrag()
 // Compute the rendered pixel x for the seabed return on the starboard side.
 // Returns INT_MIN when the row has no starboard data or is out of the viewport.
 int WaterfallSeabedTracker::seabedPixelStbd(const PingRow& pr, float h_zoom, int h_pan,
-                                             const WfLayout& layout)
+                                             const WfLayout& layout, bool src_enabled)
 {
     const int ns = static_cast<int>(pr.stbd.size());
-    if (ns <= 1 || pr.seabed.range_m <= 0.f || pr.slant_range_m <= 0.f)
+    const auto& pick = waterfallSeabedForSide(
+        pr, core::SidescanChannel::Starboard);
+    if (ns <= 1 || pick.range_m <= 0.f)
         return INT_MIN;
 
     const int stbd_w = layout.widget_w - layout.nadir_x;
     const float z    = (h_zoom > 0.f) ? h_zoom
                      : (stbd_w > 0 ? float(stbd_w) / ns : 1.f);
-    const int si     = static_cast<int>(pr.seabed.range_m / pr.slant_range_m * (ns - 1));
-    return sampleToPixelStbd(si, z, h_pan, layout.nadir_x);
+    const float distance = waterfallPixelDistanceForRange(
+        pr, core::SidescanChannel::Starboard,
+        {pick.range_m, waterfallSeabedDomainForSide(
+            pr, core::SidescanChannel::Starboard)}, src_enabled, h_pan, z);
+    return distance >= 0.f
+        ? layout.nadir_x + static_cast<int>(std::lround(distance)) : INT_MIN;
 }
 
 int WaterfallSeabedTracker::seabedPixelPort(const PingRow& pr, float h_zoom, int h_pan,
-                                             const WfLayout& layout)
+                                             const WfLayout& layout, bool src_enabled)
 {
     const int ns = static_cast<int>(pr.port.size());
-    if (ns <= 1 || pr.seabed.range_m <= 0.f || pr.slant_range_m <= 0.f)
+    const auto& pick = waterfallSeabedForSide(
+        pr, core::SidescanChannel::Port);
+    if (ns <= 1 || pick.range_m <= 0.f)
         return INT_MIN;
 
     const int port_w = layout.nadir_x - kWfRulerW;
     const float z    = (h_zoom > 0.f) ? h_zoom
                      : (port_w > 0 ? float(port_w) / ns : 1.f);
-    const int si     = static_cast<int>(pr.seabed.range_m / pr.slant_range_m * (ns - 1));
-    return sampleToPixelPort(si, z, h_pan, layout.nadir_x);
+    const float distance = waterfallPixelDistanceForRange(
+        pr, core::SidescanChannel::Port,
+        {pick.range_m, waterfallSeabedDomainForSide(
+            pr, core::SidescanChannel::Port)}, src_enabled, h_pan, z);
+    return distance >= 0.f
+        ? layout.nadir_x - 1 - static_cast<int>(std::lround(distance)) : INT_MIN;
 }
 
 bool WaterfallSeabedTracker::hitTest(int click_x, int row_idx,
                                       const std::vector<PingRow>& rows,
                                       float h_zoom, int h_pan,
-                                      const WfLayout& layout) const
+                                      const WfLayout& layout,
+                                      bool src_enabled) const
 {
     if (row_idx < 0 || row_idx >= static_cast<int>(rows.size())) return false;
     const PingRow& pr = rows[row_idx];
 
-    const int xs = seabedPixelStbd(pr, h_zoom, h_pan, layout);
+    const int xs = seabedPixelStbd(pr, h_zoom, h_pan, layout, src_enabled);
     if (xs != INT_MIN && std::abs(click_x - xs) <= kHitRadius) return true;
 
-    const int xp = seabedPixelPort(pr, h_zoom, h_pan, layout);
+    const int xp = seabedPixelPort(pr, h_zoom, h_pan, layout, src_enabled);
     if (xp != INT_MIN && std::abs(click_x - xp) <= kHitRadius) return true;
 
     return false;

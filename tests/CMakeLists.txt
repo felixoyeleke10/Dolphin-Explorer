@@ -7,6 +7,48 @@ target_link_libraries(test_cancellation_token PRIVATE dolphin-app)
 set_target_properties(test_cancellation_token PROPERTIES CXX_STANDARD 20 AUTOMOC OFF)
 add_test(NAME CancellationToken COMMAND test_cancellation_token)
 
+add_executable(test_waterfall_contact_detector test_waterfall_contact_detector.cpp)
+target_include_directories(test_waterfall_contact_detector PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_waterfall_contact_detector PRIVATE dolphin-ui-waterfall)
+set_target_properties(test_waterfall_contact_detector PROPERTIES CXX_STANDARD 20 AUTOMOC OFF)
+add_test(NAME WaterfallContactDetector COMMAND test_waterfall_contact_detector)
+
+add_executable(test_waterfall_pipeline_policy test_waterfall_pipeline_policy.cpp)
+target_include_directories(test_waterfall_pipeline_policy PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_waterfall_pipeline_policy PRIVATE dolphin-ui-waterfall)
+set_target_properties(test_waterfall_pipeline_policy PROPERTIES CXX_STANDARD 20 AUTOMOC OFF)
+add_test(NAME WaterfallPipelinePolicy COMMAND test_waterfall_pipeline_policy)
+
+add_executable(test_waterfall_pipeline_runner test_waterfall_pipeline_runner.cpp)
+target_include_directories(test_waterfall_pipeline_runner PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_waterfall_pipeline_runner PRIVATE dolphin-ui-waterfall Qt6::Core)
+set_target_properties(test_waterfall_pipeline_runner PROPERTIES CXX_STANDARD 20 AUTOMOC OFF)
+add_test(NAME WaterfallPipelineRunner COMMAND test_waterfall_pipeline_runner)
+
+add_executable(test_waterfall_tool_policy test_waterfall_tool_policy.cpp)
+target_include_directories(test_waterfall_tool_policy PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_waterfall_tool_policy PRIVATE dolphin-ui-waterfall)
+set_target_properties(test_waterfall_tool_policy PROPERTIES CXX_STANDARD 20 AUTOMOC OFF)
+add_test(NAME WaterfallToolPolicy COMMAND test_waterfall_tool_policy)
+
+add_executable(test_waterfall_geo_projection test_waterfall_geo_projection.cpp)
+target_include_directories(test_waterfall_geo_projection PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_waterfall_geo_projection PRIVATE dolphin-ui-waterfall)
+set_target_properties(test_waterfall_geo_projection PROPERTIES CXX_STANDARD 20 AUTOMOC OFF)
+add_test(NAME WaterfallGeoProjection COMMAND test_waterfall_geo_projection)
+
+add_executable(test_sss_nav_repair test_sss_nav_repair.cpp)
+target_include_directories(test_sss_nav_repair PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_sss_nav_repair PRIVATE dolphin-ui-map)
+set_target_properties(test_sss_nav_repair PROPERTIES CXX_STANDARD 20 AUTOMOC OFF)
+add_test(NAME SssNavRepair COMMAND test_sss_nav_repair)
+
+add_executable(test_sss_nav_smoothing test_sss_nav_smoothing.cpp)
+target_include_directories(test_sss_nav_smoothing PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_sss_nav_smoothing PRIVATE dolphin-ui-map)
+set_target_properties(test_sss_nav_smoothing PROPERTIES CXX_STANDARD 20 AUTOMOC OFF)
+add_test(NAME SssNavSmoothing COMMAND test_sss_nav_smoothing)
+
 add_executable(test_task_registry
     test_task_registry.cpp
 )
@@ -220,6 +262,24 @@ set_target_properties(test_map_longitude_branch PROPERTIES
     AUTOMOC OFF
 )
 add_test(NAME MapLongitudeBranch COMMAND test_map_longitude_branch)
+
+add_executable(test_map_drape_hull test_map_drape_hull.cpp)
+target_include_directories(test_map_drape_hull PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_map_drape_hull PRIVATE dolphin-ui-map)
+set_target_properties(test_map_drape_hull PROPERTIES CXX_STANDARD 20 AUTOMOC OFF)
+add_test(NAME MapDrapeHull COMMAND test_map_drape_hull)
+
+add_executable(test_map_view3d_geometry test_map_view3d_geometry.cpp)
+target_include_directories(test_map_view3d_geometry PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_map_view3d_geometry PRIVATE dolphin-ui-map)
+set_target_properties(test_map_view3d_geometry PROPERTIES CXX_STANDARD 20 AUTOMOC OFF)
+add_test(NAME MapView3DGeometry COMMAND test_map_view3d_geometry)
+
+add_executable(test_map_empty_state_launcher test_map_empty_state_launcher.cpp)
+target_include_directories(test_map_empty_state_launcher PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_map_empty_state_launcher PRIVATE dolphin-ui-map Qt6::Widgets)
+set_target_properties(test_map_empty_state_launcher PROPERTIES CXX_STANDARD 20 AUTOMOC OFF)
+add_test(NAME MapEmptyStateLauncher COMMAND test_map_empty_state_launcher)
 
 # -- Raster cache round-trip / staleness (raster-first persistence) ------------
 add_executable(test_raster_cache

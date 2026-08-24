@@ -6,10 +6,23 @@
 #include <cmath>
 #include <optional>
 #include <cstddef>
+#include <cstdint>
 
 namespace dolphin::core {
 
 inline constexpr float kMinimumAutomaticBottomConfidence = 0.5f;
+
+// Every across-track distance must declare its coordinate domain. Keeping this
+// in core prevents the pipeline, waterfall, and map from inventing independent
+// boolean conventions for the same physical value.
+enum class SidescanRangeDomain : std::uint8_t { Slant = 0, Ground = 1 };
+
+struct SidescanRangeCoordinate {
+    double metres = 0.0;
+    SidescanRangeDomain domain = SidescanRangeDomain::Slant;
+
+    bool valid() const noexcept { return std::isfinite(metres) && metres >= 0.0; }
+};
 
 inline std::optional<double> sidescanAltitudeMetres(const SidescanPing& ping)
 {
@@ -46,6 +59,40 @@ inline std::optional<double> slantToGroundRangeMetres(double slant_m,
         || slant_m <= altitude_m || altitude_m <= 0.0)
         return std::nullopt;
     return std::sqrt((slant_m - altitude_m) * (slant_m + altitude_m));
+}
+
+inline std::optional<double> groundToSlantRangeMetres(double ground_m,
+                                                       double altitude_m)
+{
+    if (!std::isfinite(ground_m) || !std::isfinite(altitude_m)
+            || ground_m < 0.0 || altitude_m <= 0.0)
+        return std::nullopt;
+    return std::hypot(ground_m, altitude_m);
+}
+
+inline std::optional<SidescanRangeCoordinate> convertSidescanRange(
+    SidescanRangeCoordinate value,
+    SidescanRangeDomain target,
+    double altitude_m)
+{
+    if (!value.valid()) return std::nullopt;
+    if (value.domain == target) return value;
+    if (!std::isfinite(altitude_m) || altitude_m <= 0.0) return std::nullopt;
+    // A slant distance exactly equal to altitude is the valid nadir origin,
+    // not failed geometry. The legacy sample helper treats it as water-column
+    // boundary; typed coordinate conversion must preserve the reversible point.
+    std::optional<double> converted;
+    if (target == SidescanRangeDomain::Ground) {
+        const double nadir_tolerance = 1e-6
+            * std::max({1.0, std::abs(value.metres), std::abs(altitude_m)});
+        converted = std::abs(value.metres - altitude_m) <= nadir_tolerance
+            ? std::optional<double>{0.0}
+            : slantToGroundRangeMetres(value.metres, altitude_m);
+    } else {
+        converted = groundToSlantRangeMetres(value.metres, altitude_m);
+    }
+    if (!converted) return std::nullopt;
+    return SidescanRangeCoordinate{*converted, target};
 }
 
 inline std::optional<double> sidescanSampleRangeMetres(

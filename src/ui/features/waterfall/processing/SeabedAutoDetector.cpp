@@ -115,6 +115,13 @@ void SeabedAutoDetector::detectAll(std::vector<PingRow>& rows,
         row.seabed.range_m    = r;
         row.seabed.confidence = conf;
         row.seabed.detected   = (r > 0.f);
+        const bool has_port = !row.port.empty();
+        const bool has_stbd = !row.stbd.empty();
+        const bool ground = (has_port || has_stbd)
+            && (!has_port || row.port_range_domain == core::SidescanRangeDomain::Ground)
+            && (!has_stbd || row.stbd_range_domain == core::SidescanRangeDomain::Ground);
+        row.seabed_domain = ground ? core::SidescanRangeDomain::Ground
+                                   : core::SidescanRangeDomain::Slant;
     }
 
     if (params.max_delta_m > 0.f)
@@ -151,9 +158,13 @@ void SeabedAutoDetector::gapFill(std::vector<PingRow>& rows, int max_gap)
     //    Guard against signed overflow when max_gap == INT_MAX.
     const int back_start = (max_gap >= first_anchor) ? 0 : first_anchor - max_gap;
     for (int i = back_start; i < first_anchor; ++i) {
-        if (!rows[static_cast<size_t>(i)].seabed.is_manual)
-            rows[static_cast<size_t>(i)].seabed.range_m =
-                rows[static_cast<size_t>(first_anchor)].seabed.range_m;
+        if (!rows[static_cast<size_t>(i)].seabed.is_manual) {
+            auto& filled = rows[static_cast<size_t>(i)].seabed;
+            const auto& anchor = rows[static_cast<size_t>(first_anchor)].seabed;
+            filled.range_m = anchor.range_m;
+            filled.confidence = std::clamp(anchor.confidence, 0.f, 1.f);
+            filled.detected = true;
+        }
     }
 
     // 2. Interpolate between consecutive anchors.
@@ -170,7 +181,13 @@ void SeabedAutoDetector::gapFill(std::vector<PingRow>& rows, int max_gap)
                 for (int j = prev_anchor + 1; j < i; ++j) {
                     if (!rows[static_cast<size_t>(j)].seabed.is_manual) {
                         const float t = static_cast<float>(j - prev_anchor) / span;
-                        rows[static_cast<size_t>(j)].seabed.range_m = r0 + t * (r1 - r0);
+                        auto& filled = rows[static_cast<size_t>(j)].seabed;
+                        filled.range_m = r0 + t * (r1 - r0);
+                        const float endpoint_confidence = std::min(
+                            rows[static_cast<size_t>(prev_anchor)].seabed.confidence,
+                            rows[static_cast<size_t>(i)].seabed.confidence);
+                        filled.confidence = std::clamp(endpoint_confidence, 0.f, 1.f);
+                        filled.detected = true;
                     }
                 }
             }
@@ -183,9 +200,13 @@ void SeabedAutoDetector::gapFill(std::vector<PingRow>& rows, int max_gap)
     const int fwd_end = (max_gap >= n - last_anchor - 1) ? n
                                                           : last_anchor + 1 + max_gap;
     for (int i = last_anchor + 1; i < fwd_end; ++i) {
-        if (!rows[static_cast<size_t>(i)].seabed.is_manual)
-            rows[static_cast<size_t>(i)].seabed.range_m =
-                rows[static_cast<size_t>(last_anchor)].seabed.range_m;
+        if (!rows[static_cast<size_t>(i)].seabed.is_manual) {
+            auto& filled = rows[static_cast<size_t>(i)].seabed;
+            const auto& anchor = rows[static_cast<size_t>(last_anchor)].seabed;
+            filled.range_m = anchor.range_m;
+            filled.confidence = std::clamp(anchor.confidence, 0.f, 1.f);
+            filled.detected = true;
+        }
     }
 }
 

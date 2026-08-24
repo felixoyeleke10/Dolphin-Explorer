@@ -120,6 +120,24 @@ int main(int argc, char** argv)
     CHECK(recolor.display_changed_layer_ids.size() == 1);
     CHECK(recolor.display_changed_layer_ids.front() == line1->id);
 
+    // Every UI entry point consumes this one invalidation policy. Navigation
+    // changes require geometry rebuilds, and reverted layers must be excluded.
+    dolphin::ui::SidescanProcessingCoordinator::Result changed;
+    changed.display_changed_layer_ids = {"appearance"};
+    changed.pipeline_changed_layer_ids = {"amplitude"};
+    changed.geometry_changed_layer_ids = {"geometry", "reverted"};
+    changed.nav_changed_layer_ids = {"navigation"};
+    changed.revert_layer_ids = {"reverted"};
+    const auto invalidations =
+        dolphin::ui::SidescanProcessingCoordinator::invalidationsFor(changed);
+    CHECK(invalidations.size() == 4);
+    CHECK(invalidations[0].id == "appearance");
+    CHECK(invalidations[0].change == dolphin::ui::SidescanInvalidation::Appearance);
+    CHECK(invalidations[1].change == dolphin::ui::SidescanInvalidation::Amplitude);
+    CHECK(invalidations[2].id == "geometry");
+    CHECK(invalidations[3].id == "navigation");
+    CHECK(invalidations[3].change == dolphin::ui::SidescanInvalidation::Geometry);
+
     // Direct node-graph revert clears every scientific correction but preserves
     // harmless appearance choices, so baseline data cannot look processed.
     display_only.tvg.enabled = true;

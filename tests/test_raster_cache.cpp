@@ -655,7 +655,9 @@ int main()
                            "makeMeta ignored georef smoothing_window");
         expectGeorefChange([](SssGeorefParams& g) { g.debug_ping_lines_only = true; },
                            "makeMeta ignored georef debug_ping_lines_only");
-        expectGeorefChange([](SssGeorefParams& g) { g.slant_range_corrected = true; },
+        expectGeorefChange([](SssGeorefParams& g) {
+                               g.presentation_domain = core::SidescanRangeDomain::Ground;
+                           },
                            "makeMeta ignored georef slant_range_corrected");
 
         SssGeorefParams georef_drift = georef;

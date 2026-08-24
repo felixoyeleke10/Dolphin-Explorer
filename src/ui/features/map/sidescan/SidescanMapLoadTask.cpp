@@ -129,7 +129,9 @@ bool SidescanViewController::activateLayer(const std::string& layer_id,
     // background task so the right-panel SSS tools render on the map.
     const WaterfallParams sss_params = layer->sss_display_state.params;
     SssGeorefParams georef_params = m_georef_params;
-    georef_params.slant_range_corrected = layer->slant_range_corrected;
+    georef_params.presentation_domain = layer->slant_range_corrected
+        ? core::SidescanRangeDomain::Ground
+        : core::SidescanRangeDomain::Slant;
 
     // Pick the tier to build. Medium/High active layers first publish a Low
     // raster, then upgrade in the bounded background map lane. Non-active

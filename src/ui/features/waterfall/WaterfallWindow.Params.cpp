@@ -74,7 +74,7 @@ void WaterfallWindow::scheduleNavProcessing(const NavProcessingParams& nav)
 
     struct Repipe {
         std::vector<core::SidescanPing> raw_pings;
-        WaterfallView::WfPipelineResult pipeline;
+        WaterfallPipelineResult pipeline;
         bool ok = false;
     };
     // Keyed "wf:pipeline" so this supersedes any in-flight load/repipe/nav run.
@@ -88,7 +88,7 @@ void WaterfallWindow::scheduleNavProcessing(const NavProcessingParams& nav)
                 if (cancel.isCancelled()) return out;
                 r = WaterfallView::runNavCorrections(std::move(r), nav);
                 if (cancel.isCancelled()) return out;
-                out.pipeline  = WaterfallView::runPipeline(
+                out.pipeline  = runWaterfallPipeline(
                     r, params, seabed, seabed_en, amplitude_context.get());
                 out.raw_pings = std::move(r);
                 out.ok = true;

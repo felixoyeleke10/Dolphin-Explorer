@@ -25,6 +25,22 @@ dolphin::core::SidescanPing run(
 
 int main()
 {
+    const auto ground_coordinate = dolphin::core::convertSidescanRange(
+        {5.0, dolphin::core::SidescanRangeDomain::Slant},
+        dolphin::core::SidescanRangeDomain::Ground, 3.0);
+    assert(ground_coordinate && std::abs(ground_coordinate->metres - 4.0) < 1e-9);
+    const auto slant_coordinate = dolphin::core::convertSidescanRange(
+        *ground_coordinate, dolphin::core::SidescanRangeDomain::Slant, 3.0);
+    assert(slant_coordinate && std::abs(slant_coordinate->metres - 5.0) < 1e-9);
+    const auto nadir_coordinate = dolphin::core::convertSidescanRange(
+        {3.0, dolphin::core::SidescanRangeDomain::Slant},
+        dolphin::core::SidescanRangeDomain::Ground, 3.0);
+    assert(nadir_coordinate && nadir_coordinate->metres == 0.0);
+    const auto unchanged_ground = dolphin::core::convertSidescanRange(
+        {4.0, dolphin::core::SidescanRangeDomain::Ground},
+        dolphin::core::SidescanRangeDomain::Ground, 0.0);
+    assert(unchanged_ground && unchanged_ground->metres == 4.0);
+
     using namespace dolphin;
 
     pipeline::SlantRangeNode node;
@@ -137,6 +153,64 @@ int main()
     assert(std::abs(sample - 1.5f) < 1e-6f);
     assert(std::abs(ui::waterfallRangeAtSample(
         row.port_ranges, 5, sample, row.slant_range_m) - 16.f) < 1e-6f);
+
+    // Match the core correction trust policy: a confident detector result
+    // outranks nav altitude, while a weak automatic result cannot warp a swath.
+    row.seabed = {30.f, 0.9f, true, false};
+    assert(ui::waterfallSideAltitude(
+        row, core::SidescanChannel::Port) == 30.f);
+    row.seabed.confidence = 0.2f;
+    assert(ui::waterfallSideAltitude(
+        row, core::SidescanChannel::Port) == 10.f);
+    row.seabed = {};
+
+    // Manual slant-coordinate picks are channel-specific correction references.
+    row.port_seabed = {12.f, 1.f, true, true};
+    row.stbd_seabed = {24.f, 1.f, true, true};
+    row.seabed = row.port_seabed;
+    assert(ui::waterfallSideAltitude(
+        row, core::SidescanChannel::Port) == 12.f);
+    assert(ui::waterfallSideAltitude(
+        row, core::SidescanChannel::Starboard) == 24.f);
+
+    // Baked sample coordinates are already ground range. SRC presentation must
+    // space them directly in ground range rather than applying Pythagoras twice.
+    row.port_ranges = {0.f, 10.f, 30.f, 60.f, 80.f};
+    row.port_range_domain = core::SidescanRangeDomain::Ground;
+    assert(ui::waterfallSideRangesAreGround(
+        row, core::SidescanChannel::Port));
+    assert(ui::waterfallSideMaxRange(
+        row, core::SidescanChannel::Port) == 80.f);
+    row.port_ranges = {0.f, 1.f, 2.f, 3.f, 80.f};
+    row.port.assign(5, 1);
+    const float overlay_sample = ui::waterfallDisplayedSampleForRange(
+        row, core::SidescanChannel::Port, 40.f);
+    assert(overlay_sample > 3.4f && overlay_sample < 3.6f);
+
+    row.stbd_ranges = {0.f, 20.f, 40.f, 60.f, 100.f};
+    row.stbd.assign(5, 1);
+    assert(ui::waterfallSideMaxRange(
+        row, core::SidescanChannel::Port) == 80.f);
+    assert(ui::waterfallSideMaxRange(
+        row, core::SidescanChannel::Starboard) == 100.f);
+
+    row.port_range_domain = core::SidescanRangeDomain::Slant;
+    row.port_altitude_m = 12.f;
+    row.port_seabed = {12.f, 1.f, true, true};
+    row.port_seabed_domain = core::SidescanRangeDomain::Slant;
+    const float corrected_bottom_px = ui::waterfallPixelDistanceForRange(
+        row, core::SidescanChannel::Port,
+        {12.f, core::SidescanRangeDomain::Slant}, true, 0, 20.f);
+    assert(corrected_bottom_px >= 0.f && corrected_bottom_px < 1e-4f);
+
+    // A manual pick drawn in baked ground coordinates is not an altitude and
+    // must retain the assembly-time slant correction reference.
+    row.port_seabed = {45.f, 1.f, true, true};
+    row.port_seabed_domain = core::SidescanRangeDomain::Ground;
+    assert(ui::waterfallSideAltitude(
+        row, core::SidescanChannel::Port) == 12.f);
+    assert(ui::waterfallSeabedDomainForSide(
+        row, core::SidescanChannel::Port) == core::SidescanRangeDomain::Ground);
 
     core::SidescanPing invalid;
     invalid.nav.altitude_m = 3.0f;

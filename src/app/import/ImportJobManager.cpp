@@ -271,7 +271,11 @@ void ImportJobManager::onIndexingStarted(const std::string& layer_id)
                 QFileInfo fi(QString::fromStdString(src->path));
                 filename = fi.fileName();
                 format   = QString::fromStdString(src->format).toUpper();
-                size_mb  = static_cast<float>(fi.size()) / (1024.f * 1024.f);
+                // ImportService/Project already captured this source fingerprint.
+                // Do not stat large/network-backed inputs again merely to populate
+                // the progress card; keep the UI metadata tied to the same snapshot
+                // that established the dataset identity.
+                size_mb  = static_cast<float>(src->size_bytes) / (1024.f * 1024.f);
             }
             if (filename.isEmpty())
                 filename = QString::fromStdString(layer->label);

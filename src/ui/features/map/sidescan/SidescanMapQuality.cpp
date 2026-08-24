@@ -218,7 +218,9 @@ void SidescanViewController::prebuildTier(const std::string& layer_id,
     const core::SpatialRef display_ref =
         project ? project->displaySpatialRef() : core::SpatialRef{};
     SssGeorefParams       georef  = m_georef_params;
-    georef.slant_range_corrected  = layer->slant_range_corrected;
+    georef.presentation_domain = layer->slant_range_corrected
+        ? core::SidescanRangeDomain::Ground
+        : core::SidescanRangeDomain::Slant;
     const detail::QualityParams qp = detail::paramsForQuality(quality);
     // Display-time nav correction (model-owned) — applied below so the upgraded
     // tier matches activateLayer's first-paint preview (no nav jump on swap).

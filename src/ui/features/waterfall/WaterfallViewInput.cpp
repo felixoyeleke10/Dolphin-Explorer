@@ -2,6 +2,8 @@
 
 #include "ui/features/waterfall/WaterfallView.h"
 #include "ui/features/waterfall/painters/WaterfallOverlayPainter.h"
+#include "ui/features/waterfall/rendering/WaterfallRangeGeometry.h"
+#include "ui/features/waterfall/processing/WaterfallGeoProjection.h"
 #include "geo/GeoUtils.h"
 
 #include <QContextMenuEvent>
@@ -26,42 +28,16 @@ bool WaterfallView::rangeToGeo(int row, core::SidescanChannel ch, float range_m,
 {
     if (row < 0 || row >= rowCount()) return false;
 
-    const double nav_lat = m_rows[row].lat;
-    const double nav_lon = m_rows[row].lon;
-    is_projected         = m_rows[row].is_projected;
-    lat = nav_lat;
-    lon = nav_lon;
-    if (nav_lat == 0.0 && nav_lon == 0.0) return false;
-
-    const float heading  = m_rows[row].heading_deg;
-    const float altitude = m_rows[row].altitude_m;
-
-    // Slant → ground range (Pythagorean correction when altitude known)
-    float ground_range = range_m;
-    if (altitude > 0.f && range_m > altitude)
-        ground_range = std::sqrt(range_m * range_m - altitude * altitude);
-
-    // Bearing perpendicular to heading: port = left, stbd = right
-    const float bearing_deg =
-        (ch == core::SidescanChannel::Port) ? heading - 90.f : heading + 90.f;
-    const double bearing_rad = bearing_deg * M_PI / 180.0;
-
-    if (!is_projected) {
-        constexpr double R = 6371000.0;
-        const double d    = ground_range / R;
-        const double lat1 = nav_lat * M_PI / 180.0;
-        const double lon1 = nav_lon * M_PI / 180.0;
-        const double lat2 = std::asin(std::sin(lat1) * std::cos(d)
-                                      + std::cos(lat1) * std::sin(d) * std::cos(bearing_rad));
-        const double lon2 = lon1 + std::atan2(
-            std::sin(bearing_rad) * std::sin(d) * std::cos(lat1),
-            std::cos(d) - std::sin(lat1) * std::sin(lat2));
-        lat = lat2 * 180.0 / M_PI;
-        lon = lon2 * 180.0 / M_PI;
-    } else {
-        lat = nav_lat + ground_range * std::cos(bearing_rad);
-        lon = nav_lon + ground_range * std::sin(bearing_rad);
-    }
+    const float altitude = waterfallSideAltitude(m_rows[row], ch);
+    const auto input_domain = waterfallSideRangesAreGround(m_rows[row], ch)
+        ? core::SidescanRangeDomain::Ground : core::SidescanRangeDomain::Slant;
+    const auto position = projectWaterfallRange({
+        m_rows[row].lat, m_rows[row].lon, m_rows[row].heading_deg, altitude,
+        range_m, ch, input_domain, m_rows[row].is_projected});
+    if (!position) return false;
+    lat = position->lat;
+    lon = position->lon;
+    is_projected = position->is_projected;
     return true;
 }
 
@@ -201,12 +177,31 @@ void WaterfallView::mousePressEvent(QMouseEvent* ev)
         // Pen — click anywhere; smartPenRange snaps to the channel-selected array.
         const float range_m = smartPenRange(row, ev->pos().x());
         if (range_m > 0.f) {
-            m_rows[row].seabed = {range_m, 1.f, true, true};
-            if (m_rows[row].timestamp_us != 0)
-                m_manual_seabed[m_rows[row].timestamp_us] = range_m;
+            core::SidescanChannel edit_ch = ev->pos().x() < m_renderer.layout().nadir_x
+                ? core::SidescanChannel::Port : core::SidescanChannel::Starboard;
+            if (m_seabed_channel == 1) edit_ch = core::SidescanChannel::Port;
+            if (m_seabed_channel == 2) edit_ch = core::SidescanChannel::Starboard;
+            auto& side = edit_ch == core::SidescanChannel::Port
+                ? m_rows[row].port_seabed : m_rows[row].stbd_seabed;
+            side = {range_m, 1.f, true, true};
+            (edit_ch == core::SidescanChannel::Port
+                ? m_rows[row].port_seabed_domain
+                : m_rows[row].stbd_seabed_domain) =
+                    (edit_ch == core::SidescanChannel::Port
+                        ? m_rows[row].port_range_domain
+                        : m_rows[row].stbd_range_domain);
+            const int64_t edit_ts = edit_ch == core::SidescanChannel::Port
+                ? m_rows[row].port_timestamp_us : m_rows[row].stbd_timestamp_us;
+            const std::uint64_t edit_id = edit_ch == core::SidescanChannel::Port
+                ? m_rows[row].port_artifact_id : m_rows[row].stbd_artifact_id;
+            const auto edit_domain = edit_ch == core::SidescanChannel::Port
+                ? m_rows[row].port_range_domain : m_rows[row].stbd_range_domain;
+            m_manual_seabed.set(waterfallChannelRecordKey(
+                edit_id, edit_ts, edit_ch), {range_m, edit_domain});
             m_pen_last_row     = row;
             m_pen_last_range   = range_m;
             m_dirty = true;
+            m_render_generation.geometryChanged();
             update();
         }
         m_seabed.beginDrag(row);
@@ -226,10 +221,22 @@ void WaterfallView::mousePressEvent(QMouseEvent* ev)
         ev->accept();
     } else if (m_seabed_tool == 3 && row >= 0 && row < rowCount()) {
         // Eraser — always clears (seabed pick is channel-agnostic).
-        if (m_rows[row].timestamp_us != 0)
-            m_manual_seabed.erase(m_rows[row].timestamp_us);
-        m_rows[row].seabed = {};
+        const bool erase_port = ev->pos().x() < m_renderer.layout().nadir_x;
+        auto& side = erase_port ? m_rows[row].port_seabed : m_rows[row].stbd_seabed;
+        side = {};
+        (erase_port ? m_rows[row].port_seabed_domain
+                    : m_rows[row].stbd_seabed_domain) =
+                        core::SidescanRangeDomain::Slant;
+        const int64_t erase_ts = erase_port
+            ? m_rows[row].port_timestamp_us : m_rows[row].stbd_timestamp_us;
+        const std::uint64_t erase_id = erase_port
+            ? m_rows[row].port_artifact_id : m_rows[row].stbd_artifact_id;
+        const auto erase_channel = erase_port
+            ? core::SidescanChannel::Port : core::SidescanChannel::Starboard;
+        m_manual_seabed.erase(waterfallChannelRecordKey(
+            erase_id, erase_ts, erase_channel));
         m_dirty = true;
+        m_render_generation.geometryChanged();
         update();
         ev->accept();
     }
@@ -270,6 +277,10 @@ void WaterfallView::mouseMoveEvent(QMouseEvent* ev)
             // Smart snap: place seabed at peak amplitude of the channel-selected array.
             const float snapped = smartPenRange(row, ev->pos().x());
             if (snapped > 0.f) {
+                core::SidescanChannel edit_ch = ev->pos().x() < m_renderer.layout().nadir_x
+                    ? core::SidescanChannel::Port : core::SidescanChannel::Starboard;
+                if (m_seabed_channel == 1) edit_ch = core::SidescanChannel::Port;
+                if (m_seabed_channel == 2) edit_ch = core::SidescanChannel::Starboard;
                 // Interpolate gaps caused by fast mouse movement.
                 if (m_pen_last_row >= 0 && std::abs(row - m_pen_last_row) > 1) {
                     const int   r0     = qMin(m_pen_last_row, row);
@@ -281,21 +292,50 @@ void WaterfallView::mouseMoveEvent(QMouseEvent* ev)
                         if (i >= 0 && i < rowCount()) {
                             const float t = (len > 1) ? static_cast<float>(i - r0) / (len - 1) : 0.f;
                             const float r = range0 + t * (range1 - range0);
-                            m_rows[i].seabed = {r, 1.f, true, true};
-                            if (m_rows[i].timestamp_us != 0)
-                                m_manual_seabed[m_rows[i].timestamp_us] = r;
+                            auto& side = edit_ch == core::SidescanChannel::Port
+                                ? m_rows[i].port_seabed : m_rows[i].stbd_seabed;
+                            side = {r, 1.f, true, true};
+                            (edit_ch == core::SidescanChannel::Port
+                                ? m_rows[i].port_seabed_domain
+                                : m_rows[i].stbd_seabed_domain) =
+                                    (edit_ch == core::SidescanChannel::Port
+                                        ? m_rows[i].port_range_domain
+                                        : m_rows[i].stbd_range_domain);
+                            const int64_t edit_ts = edit_ch == core::SidescanChannel::Port
+                                ? m_rows[i].port_timestamp_us : m_rows[i].stbd_timestamp_us;
+                            const std::uint64_t edit_id = edit_ch == core::SidescanChannel::Port
+                                ? m_rows[i].port_artifact_id : m_rows[i].stbd_artifact_id;
+                            const auto edit_domain = edit_ch == core::SidescanChannel::Port
+                                ? m_rows[i].port_range_domain : m_rows[i].stbd_range_domain;
+                            m_manual_seabed.set(waterfallChannelRecordKey(
+                                edit_id, edit_ts, edit_ch), {r, edit_domain});
                         }
                     }
                 } else {
-                    m_rows[row].seabed = {snapped, 1.f, true, true};
-                    if (m_rows[row].timestamp_us != 0)
-                        m_manual_seabed[m_rows[row].timestamp_us] = snapped;
+                    auto& side = edit_ch == core::SidescanChannel::Port
+                        ? m_rows[row].port_seabed : m_rows[row].stbd_seabed;
+                    side = {snapped, 1.f, true, true};
+                    (edit_ch == core::SidescanChannel::Port
+                        ? m_rows[row].port_seabed_domain
+                        : m_rows[row].stbd_seabed_domain) =
+                            (edit_ch == core::SidescanChannel::Port
+                                ? m_rows[row].port_range_domain
+                                : m_rows[row].stbd_range_domain);
+                    const int64_t edit_ts = edit_ch == core::SidescanChannel::Port
+                        ? m_rows[row].port_timestamp_us : m_rows[row].stbd_timestamp_us;
+                    const std::uint64_t edit_id = edit_ch == core::SidescanChannel::Port
+                        ? m_rows[row].port_artifact_id : m_rows[row].stbd_artifact_id;
+                    const auto edit_domain = edit_ch == core::SidescanChannel::Port
+                        ? m_rows[row].port_range_domain : m_rows[row].stbd_range_domain;
+                    m_manual_seabed.set(waterfallChannelRecordKey(
+                        edit_id, edit_ts, edit_ch), {snapped, edit_domain});
                 }
                 m_pen_last_row   = row;
                 m_pen_last_range = snapped;
             }
         }
         m_dirty = true;
+        m_render_generation.geometryChanged();
         update();
         return;
     }
@@ -315,10 +355,21 @@ void WaterfallView::mouseMoveEvent(QMouseEvent* ev)
         const int rh  = m_renderer.layout().row_height;
         const int row = m_scroll.scrollRow() + (ev->pos().y() - kWfScaleBarH) / rh;
         if (row >= 0 && row < rowCount()) {
-            if (m_rows[row].timestamp_us != 0)
-                m_manual_seabed.erase(m_rows[row].timestamp_us);
-            m_rows[row].seabed = {};
+            const bool erase_port = ev->pos().x() < m_renderer.layout().nadir_x;
+            (erase_port ? m_rows[row].port_seabed : m_rows[row].stbd_seabed) = {};
+            (erase_port ? m_rows[row].port_seabed_domain
+                        : m_rows[row].stbd_seabed_domain) =
+                            core::SidescanRangeDomain::Slant;
+            const int64_t erase_ts = erase_port
+                ? m_rows[row].port_timestamp_us : m_rows[row].stbd_timestamp_us;
+            const std::uint64_t erase_id = erase_port
+                ? m_rows[row].port_artifact_id : m_rows[row].stbd_artifact_id;
+            const auto erase_channel = erase_port
+                ? core::SidescanChannel::Port : core::SidescanChannel::Starboard;
+            m_manual_seabed.erase(waterfallChannelRecordKey(
+                erase_id, erase_ts, erase_channel));
             m_dirty = true;
+            m_render_generation.geometryChanged();
             update();
         }
         return;
@@ -383,6 +434,7 @@ void WaterfallView::mouseReleaseEvent(QMouseEvent* ev)
         // so the seabed line is never broken, only reshaped.
         interpolateSeabedGaps();
         m_dirty = true;
+        m_render_generation.geometryChanged();
         update();
         return;
     }
@@ -413,6 +465,7 @@ void WaterfallView::mouseReleaseEvent(QMouseEvent* ev)
         m_box_press_sx   = -1;
         m_box_press_sy   = -1;
         m_dirty          = true;
+        m_render_generation.geometryChanged();
         update();
         return;
     }

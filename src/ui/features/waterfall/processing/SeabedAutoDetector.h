@@ -62,9 +62,9 @@ public:
 
     // Gap-fill: linearly interpolates between detected/manual anchors for rows
     // that have range_m <= 0, up to max_gap rows per span (INT_MAX = unlimited).
-    // Filled rows keep detected=false so the painter can distinguish them from
-    // true measurements.  Gaps wider than max_gap are left at range_m=0 so the
-    // painter draws a break rather than a misleading long interpolation.
+    // Filled rows are marked detected with endpoint-bounded confidence so the
+    // overlay and SLR geometry consume the same continuous result. Gaps wider
+    // than max_gap remain empty rather than creating a misleading long bridge.
     static void gapFill(std::vector<PingRow>& rows, int max_gap = INT_MAX);
 
     // Moving-average smoothing over a half-window of 'radius' rows.

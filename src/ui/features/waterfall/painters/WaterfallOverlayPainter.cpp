@@ -6,6 +6,7 @@
 // Pure-geometry HUD elements → WaterfallOverlayPainterHUD.cpp
 
 #include "ui/features/waterfall/painters/WaterfallOverlayPainter.h"
+#include "ui/features/waterfall/rendering/WaterfallRangeGeometry.h"
 #include "ui/shared/contacts/ContactSymbols.h"
 #include "ui/shell/Theme.h"
 
@@ -41,7 +42,8 @@ void WaterfallOverlayPainter::paintSeabedOverlay(
     QPainter&                        p,
     const std::vector<PingRow>&      rows,
     const WfLayout&                  lay,
-    const WaterfallScrollController& scroll)
+    const WaterfallScrollController& scroll,
+    bool                             src_enabled)
 {
     if (rows.empty()) return;
 
@@ -101,46 +103,49 @@ void WaterfallOverlayPainter::paintSeabedOverlay(
 
     for (int row = scroll.scrollRow(); row < vis_end; ++row) {
         const PingRow& pr = rows[row];
-        if (!std::isfinite(pr.seabed.range_m) || pr.seabed.range_m <= 0.f
-                || !std::isfinite(pr.slant_range_m) || pr.slant_range_m <= 0.f) {
-            flush(stbd_buf);
-            flush(port_buf);
-            continue;
-        }
-
-        const bool  solid  = pr.seabed.detected || pr.seabed.is_manual;
-        const int   style  = !solid ? 3
-                           : (pr.seabed.is_manual || pr.seabed.confidence >= 0.66f) ? 0
-                           : (pr.seabed.confidence >= 0.38f) ? 1
-                           : 2;
         const int   y      = kWfScaleBarH + (row - scroll.scrollRow()) * rh + rh / 2;
-        const float max_r  = pr.slant_range_m;
         const int   stbd_w = w - nadir;
         const int   port_w = nadir - kWfRulerW;
 
         const int ns_s = static_cast<int>(pr.stbd.size());
-        if (ns_s > 1) {
+        const auto& stbd_pick = waterfallSeabedForSide(
+            pr, core::SidescanChannel::Starboard);
+        if (ns_s > 1 && std::isfinite(stbd_pick.range_m)
+                && stbd_pick.range_m > 0.f) {
+            const int style = stbd_pick.is_manual || stbd_pick.confidence >= 0.66f
+                ? 0 : (stbd_pick.confidence >= 0.38f ? 1 : 2);
             const float z   = (h_zoom > 0.f) ? h_zoom
                             : (stbd_w > 0 ? float(stbd_w) / ns_s : 1.f);
-            const float fi_s = pr.seabed.range_m / max_r * float(ns_s - 1);
-            const int   si   = static_cast<int>(
-                std::clamp(fi_s, 0.f, float(ns_s - 1)));
-            const int   xs = sampleToPixelStbd(si, z, h_pan, nadir);
+            const float distance = waterfallPixelDistanceForRange(
+                pr, core::SidescanChannel::Starboard,
+                {stbd_pick.range_m, waterfallSeabedDomainForSide(
+                    pr, core::SidescanChannel::Starboard)},
+                src_enabled, h_pan, z);
+            const int xs = distance >= 0.f
+                ? nadir + static_cast<int>(std::lround(distance)) : INT_MIN;
             if (xs >= nadir && xs < w) addPt(stbd_buf, {xs, y}, style);
             else                       flush(stbd_buf);
-        }
+        } else flush(stbd_buf);
 
         const int ns_p = static_cast<int>(pr.port.size());
-        if (ns_p > 1) {
+        const auto& port_pick = waterfallSeabedForSide(
+            pr, core::SidescanChannel::Port);
+        if (ns_p > 1 && std::isfinite(port_pick.range_m)
+                && port_pick.range_m > 0.f) {
+            const int style = port_pick.is_manual || port_pick.confidence >= 0.66f
+                ? 0 : (port_pick.confidence >= 0.38f ? 1 : 2);
             const float z   = (h_zoom > 0.f) ? h_zoom
                             : (port_w > 0 ? float(port_w) / ns_p : 1.f);
-            const float fi_p = pr.seabed.range_m / max_r * float(ns_p - 1);
-            const int   si   = static_cast<int>(
-                std::clamp(fi_p, 0.f, float(ns_p - 1)));
-            const int   xp = sampleToPixelPort(si, z, h_pan, nadir);
+            const float distance = waterfallPixelDistanceForRange(
+                pr, core::SidescanChannel::Port,
+                {port_pick.range_m, waterfallSeabedDomainForSide(
+                    pr, core::SidescanChannel::Port)},
+                src_enabled, h_pan, z);
+            const int xp = distance >= 0.f
+                ? nadir - 1 - static_cast<int>(std::lround(distance)) : INT_MIN;
             if (xp >= kWfRulerW && xp < nadir) addPt(port_buf, {xp, y}, style);
             else                                flush(port_buf);
-        }
+        } else flush(port_buf);
     }
     flush(stbd_buf);
     flush(port_buf);

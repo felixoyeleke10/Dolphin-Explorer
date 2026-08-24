@@ -219,22 +219,8 @@ void MainWindow::applyActiveTools(bool all_lines)
         // selected target, independent of which workflow produced its sidecar.
         for (const auto& id : commit_result.revert_layer_ids)
             onRevertProcessedLayer(id);
-        std::unordered_set<std::string> reverted(
-            commit_result.revert_layer_ids.begin(),
-            commit_result.revert_layer_ids.end());
-        std::vector<SidescanInvalidationRequest> invalidations;
-        for (const auto& id : commit_result.display_changed_layer_ids)
-            if (!reverted.count(id)) invalidations.push_back(
-                {id, SidescanInvalidation::Appearance});
-        for (const auto& id : commit_result.pipeline_changed_layer_ids)
-            if (!reverted.count(id)) invalidations.push_back(
-                {id, SidescanInvalidation::Amplitude});
-        for (const auto& id : commit_result.geometry_changed_layer_ids)
-            if (!reverted.count(id)) invalidations.push_back(
-                {id, SidescanInvalidation::Geometry});
-        for (const auto& id : commit_result.nav_changed_layer_ids)
-            if (!reverted.count(id)) invalidations.push_back(
-                {id, SidescanInvalidation::Geometry});
+        auto invalidations =
+            SidescanProcessingCoordinator::invalidationsFor(commit_result);
 
         // Keep the live waterfall in sync if it is open.
         if (m_waterfall_win && m_waterfall_win->isVisible()

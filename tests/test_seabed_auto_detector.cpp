@@ -126,6 +126,18 @@ int main()
         }
     }
 
+    // Interpolated detector gaps are real derived picks, not display-only
+    // ranges: correction geometry must see the same continuous bottom track.
+    {
+        std::vector<PingRow> rows(3);
+        rows[0].seabed = {10.f, 0.8f, true, false};
+        rows[2].seabed = {14.f, 0.7f, true, false};
+        SeabedAutoDetector::gapFill(rows, 2);
+        assert(rows[1].seabed.detected);
+        assert(std::abs(rows[1].seabed.range_m - 12.f) < 1e-6f);
+        assert(std::abs(rows[1].seabed.confidence - 0.7f) < 1e-6f);
+    }
+
     // Non-linear range regression test.
     // Seabed echo is at sample index 60 of 100.  Linear interpolation places it
     // at ~60 m; the non-linear mapping places it at 90 m.  When port_ranges /
@@ -152,6 +164,8 @@ int main()
             // Non-linear: samples 0..sb_idx span 0..90 m, rest span 90..100 m.
             rows_nl[ri].port_ranges.resize(static_cast<size_t>(n_samp));
             rows_nl[ri].stbd_ranges.resize(static_cast<size_t>(n_samp));
+            rows_nl[ri].port_range_domain = dolphin::core::SidescanRangeDomain::Ground;
+            rows_nl[ri].stbd_range_domain = dolphin::core::SidescanRangeDomain::Ground;
             for (int j = 0; j < n_samp; ++j) {
                 const float r = (j <= sb_idx)
                     ? slant * 0.9f * static_cast<float>(j) / static_cast<float>(sb_idx)
@@ -173,8 +187,10 @@ int main()
         for (const auto& row : rows_lin)
             assert(row.seabed.range_m > 50.f && row.seabed.range_m < 72.f);
 
-        for (const auto& row : rows_nl)
+        for (const auto& row : rows_nl) {
             assert(row.seabed.range_m > 82.f && row.seabed.range_m < 98.f);
+            assert(row.seabed_domain == dolphin::core::SidescanRangeDomain::Ground);
+        }
     }
 
     // Rendering and hit-testing share the same nonlinear range table and the
@@ -212,6 +228,19 @@ int main()
         assert(channel == dolphin::core::SidescanChannel::Starboard);
         assert(port_range > 50.f && stbd_range > 50.f);
         assert(std::abs(port_range - stbd_range) > 0.5f);
+
+        row.port_ranges = {0.f, 1.f, 2.f, 3.f, 80.f};
+        row.port_range_domain = dolphin::core::SidescanRangeDomain::Ground;
+        rows[0] = row;
+        float baked_near_nadir = -1.f;
+        assert(renderer.xToRange(99, 0, rows, 0.f, 0,
+                                 channel, baked_near_nadir));
+        assert(channel == dolphin::core::SidescanChannel::Port);
+        assert(baked_near_nadir < 3.f);
+        float baked_mid = -1.f;
+        assert(renderer.xToRange(50, 0, rows, 0.f, 0,
+                                 channel, baked_mid));
+        assert(baked_mid > 30.f && baked_mid < 45.f);
     }
 
     return 0;

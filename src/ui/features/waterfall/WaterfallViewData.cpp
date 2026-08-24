@@ -1,15 +1,17 @@
 // WaterfallViewData.cpp — data API, params API, query API, and row rebuild
 
 #include "ui/features/waterfall/WaterfallView.h"
+#include "ui/features/waterfall/processing/WaterfallContactDetector.h"
+#include "ui/features/waterfall/processing/WaterfallPipelinePolicy.h"
+#include "ui/features/waterfall/processing/WaterfallPipelineRunner.h"
+#include "ui/features/waterfall/interaction/WaterfallToolPolicy.h"
 #include "ui/features/waterfall/processing/SeabedAutoDetector.h"
 #include "ui/features/waterfall/processing/WaterfallPingAssembler.h"
 #include "ui/shared/processing/SssAmplitudeContext.h"
 #include "ui/shared/processing/SssImagingAlgorithms.h"
 #include "ui/mainwindow/AppSettingsDialog.h"
 #include "geo/GeoUtils.h"
-#include <QFutureWatcher>
 #include <QSettings>
-#include <QtConcurrent/QtConcurrent>
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -43,8 +45,9 @@ void WaterfallView::setPings(const std::vector<core::SidescanPing>& pings,
                               bool preserve_view)
 {
     setPreassembledRows(pings,
-        runPipeline(pings, m_params, m_seabed_auto_params, m_seabed_enabled,
-                    m_amplitude_context.get()),
+        runWaterfallPipeline(
+            pings, m_params, m_seabed_auto_params, m_seabed_enabled,
+            m_amplitude_context.get()),
         preserve_view);
 }
 
@@ -55,12 +58,12 @@ void WaterfallView::setAmplitudeContext(
 }
 
 void WaterfallView::setPreassembledRows(std::vector<core::SidescanPing> raw_pings,
-                                        WfPipelineResult                result,
+                                        WaterfallPipelineResult         result,
                                         bool                            preserve_view)
 {
     // Invalidate any concurrent in-flight internal rebuild (from setParams) so
     // it cannot overwrite these rows when it eventually completes.
-    ++m_rebuild_gen;
+    m_pipeline_runner->cancel();
 
     if (!preserve_view)
         m_scroll.resetZoomPan();
@@ -86,7 +89,7 @@ void WaterfallView::setPreassembledRows(std::vector<core::SidescanPing> raw_ping
     updateCpuRendererParams();
 
     m_dirty             = true;
-    m_gl_data_dirty     = true;
+    m_render_generation.dataChanged();
     m_amp_profile_dirty = true;
 
     if (!preserve_view)
@@ -96,7 +99,7 @@ void WaterfallView::setPreassembledRows(std::vector<core::SidescanPing> raw_ping
 
 void WaterfallView::clear()
 {
-    ++m_rebuild_gen;
+    m_pipeline_runner->cancel();
     m_rows.clear();
     m_raw_pings.clear();
     m_amplitude_context.reset();
@@ -107,7 +110,7 @@ void WaterfallView::clear()
     m_feature_px.clear();
     m_feature_pen_down = false;
     m_dirty              = true;
-    m_gl_data_dirty      = true;
+    m_render_generation.dataChanged();
     m_amp_profile_dirty  = true;
     update();
 }
@@ -119,19 +122,24 @@ void WaterfallView::setSeabedChannel(int ch)
 
 void WaterfallView::setSeabedTool(int tool)
 {
-    m_seabed_tool = tool;
-    if (tool != 0) {
-        m_contact_tool = 0;
-        m_feature_tool = 0;
+    const auto selection = waterfalltools::selectSeabed(
+        {waterfalltools::seabedToolFromIndex(m_seabed_tool),
+         waterfalltools::contactToolFromIndex(m_contact_tool),
+         waterfalltools::featureToolFromIndex(m_feature_tool)},
+        waterfalltools::seabedToolFromIndex(tool));
+    m_seabed_tool = static_cast<int>(selection.seabed);
+    m_contact_tool = static_cast<int>(selection.contact);
+    m_feature_tool = static_cast<int>(selection.feature);
+    if (m_seabed_tool != 0) {
         m_feature_pts.clear();
         m_feature_px.clear();
         m_feature_pen_down = false;
     }
-    if (tool != 1) {
+    if (m_seabed_tool != 1) {
         m_seabed.endDrag();
         m_pen_last_row = -1;
     }
-    if (tool != 2) {
+    if (m_seabed_tool != 2) {
         m_box_anchor_row = -1;
         m_box_press_sx   = -1;
         m_box_press_sy   = -1;
@@ -141,11 +149,16 @@ void WaterfallView::setSeabedTool(int tool)
 
 void WaterfallView::setContactTool(int tool)
 {
-    m_contact_tool = tool;
-    if (tool != 0) {
-        m_seabed_tool = 0;
+    const auto selection = waterfalltools::selectContact(
+        {waterfalltools::seabedToolFromIndex(m_seabed_tool),
+         waterfalltools::contactToolFromIndex(m_contact_tool),
+         waterfalltools::featureToolFromIndex(m_feature_tool)},
+        waterfalltools::contactToolFromIndex(tool));
+    m_seabed_tool = static_cast<int>(selection.seabed);
+    m_contact_tool = static_cast<int>(selection.contact);
+    m_feature_tool = static_cast<int>(selection.feature);
+    if (m_contact_tool != 0) {
         m_seabed.endDrag();
-        m_feature_tool = 0;
         m_feature_pts.clear();
         m_feature_px.clear();
         m_feature_pen_down = false;
@@ -155,14 +168,19 @@ void WaterfallView::setContactTool(int tool)
 
 void WaterfallView::setFeatureTool(int tool)
 {
-    m_feature_tool = tool;
+    const auto selection = waterfalltools::selectFeature(
+        {waterfalltools::seabedToolFromIndex(m_seabed_tool),
+         waterfalltools::contactToolFromIndex(m_contact_tool),
+         waterfalltools::featureToolFromIndex(m_feature_tool)},
+        waterfalltools::featureToolFromIndex(tool));
+    m_seabed_tool = static_cast<int>(selection.seabed);
+    m_contact_tool = static_cast<int>(selection.contact);
+    m_feature_tool = static_cast<int>(selection.feature);
     // Switching tool (or off) discards any in-progress draft.
     m_feature_pts.clear();
     m_feature_px.clear();
     m_feature_pen_down = false;
-    if (tool != 0) {
-        m_contact_tool = 0;
-        m_seabed_tool  = 0;
+    if (m_feature_tool != 0) {
         m_seabed.endDrag();
         setFocus(Qt::OtherFocusReason);   // receive Enter/Esc/Backspace
     }
@@ -178,85 +196,20 @@ void WaterfallView::clearContacts()
 
 int WaterfallView::detectContactCandidates(int sensitivity)
 {
-    const float ratio_threshold = sensitivity <= 0 ? 2.2f
-                                : sensitivity == 1 ? 1.8f : 1.5f;
-    const int row_gap = sensitivity <= 0 ? 10 : sensitivity == 1 ? 7 : 5;
-    constexpr int kMaxCandidates = 40;
-    int detected = 0;
-    int last_row[2] = {-1000, -1000};
-
-    for (int row = 0; row < rowCount() && detected < kMaxCandidates; ++row) {
-        const auto& ping = m_rows[static_cast<size_t>(row)];
-        for (int side = 0; side < 2 && detected < kMaxCandidates; ++side) {
-            if (row - last_row[side] < row_gap) continue;
-            const auto& samples = side == 0 ? ping.port : ping.stbd;
-            const auto& ranges  = side == 0 ? ping.port_ranges : ping.stbd_ranges;
-            if (samples.size() < 24) continue;
-
-            int best_sample = -1;
-            float best_score = ratio_threshold;
-            for (int i = 10; i + 10 < static_cast<int>(samples.size()); ++i) {
-                const float target = static_cast<float>(samples[static_cast<size_t>(i)]);
-                if (target < 1500.f) continue;
-                if (target < samples[static_cast<size_t>(i - 1)]
-                    || target < samples[static_cast<size_t>(i + 1)]) continue;
-
-                float context = 0.f;
-                float shadow = 0.f;
-                for (int k = 4; k <= 9; ++k)
-                    context += samples[static_cast<size_t>(i - k)];
-                for (int k = 2; k <= 7; ++k)
-                    shadow += samples[static_cast<size_t>(i + k)];
-                context /= 6.f;
-                shadow /= 6.f;
-                if (context < 1.f || shadow > context * 0.9f) continue;
-                const float score = target / context;
-                if (score > best_score) {
-                    best_score = score;
-                    best_sample = i;
-                }
-            }
-            if (best_sample < 0) continue;
-
-            float range_m = 0.f;
-            if (ranges.size() == samples.size())
-                range_m = ranges[static_cast<size_t>(best_sample)];
-            else if (ping.slant_range_m > 0.f)
-                range_m = ping.slant_range_m * best_sample
-                        / static_cast<float>(samples.size() - 1);
-            if (range_m <= 0.f) continue;
-
-            const auto channel = side == 0 ? core::SidescanChannel::Port
-                                           : core::SidescanChannel::Starboard;
-            const bool already_present = std::any_of(
-                m_contacts.cbegin(), m_contacts.cend(),
-                [row, channel, range_m](const WfContact& existing) {
-                    const float range_tolerance = std::max(1.f, range_m * 0.05f);
-                    return existing.ch == channel
-                        && std::abs(existing.row_idx - row) <= 2
-                        && std::abs(existing.range_m - range_m) <= range_tolerance;
-                });
-            if (already_present) {
-                last_row[side] = row;
-                continue;
-            }
-
-            WfContact contact;
-            contact.row_idx = row;
-            contact.ch = channel;
-            contact.range_m = range_m;
-            contact.classification = m_contact_class;
-            m_contacts.push_back(contact);
-
-            double lat = 0.0, lon = 0.0;
-            bool projected = false;
-            rangeToGeo(row, channel, range_m, lat, lon, projected);
-            emit contactPicked(row, channel, range_m, lat, lon, projected, QPixmap{},
-                               0.f, 0.f, std::isfinite(ping.altitude_m) ? ping.altitude_m : 0.f);
-            last_row[side] = row;
-            ++detected;
-        }
+    auto candidates = WaterfallContactDetector::detect(
+        m_rows, m_contacts, m_contact_class, sensitivity);
+    for (const auto& contact : candidates) {
+        m_contacts.push_back(contact);
+        const auto& ping = m_rows[static_cast<size_t>(contact.row_idx)];
+        double lat = 0.0, lon = 0.0;
+        bool projected = false;
+        rangeToGeo(contact.row_idx, contact.ch, contact.range_m,
+                   lat, lon, projected);
+        emit contactPicked(contact.row_idx, contact.ch, contact.range_m,
+                           lat, lon, projected, QPixmap{}, 0.f, 0.f,
+                           std::isfinite(ping.altitude_m) ? ping.altitude_m : 0.f);
     }
+    const int detected = static_cast<int>(candidates.size());
     if (detected > 0) {
         m_dirty = true;
         update();
@@ -365,10 +318,16 @@ void WaterfallView::clearSeabedDetection()
 {
     m_seabed_enabled = false;
     m_manual_seabed.clear();
-    for (auto& row : m_rows)
+    for (auto& row : m_rows) {
         row.seabed = {};
+        row.port_seabed = {};
+        row.stbd_seabed = {};
+        row.port_seabed_domain = core::SidescanRangeDomain::Slant;
+        row.stbd_seabed_domain = core::SidescanRangeDomain::Slant;
+        row.seabed_domain = core::SidescanRangeDomain::Slant;
+    }
     m_dirty        = true;
-    m_gl_src_dirty = true;
+    m_render_generation.geometryChanged();
     update();
 }
 
@@ -376,10 +335,16 @@ void WaterfallView::resetSeabedForNewLayer()
 {
     m_seabed_enabled = true;
     m_manual_seabed.clear();
-    for (auto& row : m_rows)
+    for (auto& row : m_rows) {
         row.seabed = {};
+        row.port_seabed = {};
+        row.stbd_seabed = {};
+        row.port_seabed_domain = core::SidescanRangeDomain::Slant;
+        row.stbd_seabed_domain = core::SidescanRangeDomain::Slant;
+        row.seabed_domain = core::SidescanRangeDomain::Slant;
+    }
     m_dirty        = true;
-    m_gl_src_dirty = true;
+    m_render_generation.geometryChanged();
     update();
 }
 
@@ -387,6 +352,16 @@ void WaterfallView::redetectSeabed(const SeabedAutoParams& params)
 {
     m_seabed_enabled     = true;
     m_seabed_auto_params = params;
+    // Imported/per-channel picks must not mask the newly requested detector
+    // result. Manual edits are restored below from m_manual_seabed.
+    for (auto& row : m_rows) {
+        row.seabed = {};
+        row.seabed_domain = core::SidescanRangeDomain::Slant;
+        row.port_seabed = {};
+        row.stbd_seabed = {};
+        row.port_seabed_domain = core::SidescanRangeDomain::Slant;
+        row.stbd_seabed_domain = core::SidescanRangeDomain::Slant;
+    }
 
     if (!m_raw_pings.empty()) {
         // Detect on clean calibrated rows (pre-display) so beam/ARN/destripe/ML
@@ -401,6 +376,17 @@ void WaterfallView::redetectSeabed(const SeabedAutoParams& params)
             imaging::applyCalibration(work, m_params);
         }
         std::vector<PingRow> clean = WaterfallPingAssembler::assemble(work, m_params);
+        // Assembly faithfully imports source=2 bottom picks as manual. A user
+        // explicitly requesting Redetect is stronger than that imported state;
+        // current-session edits are the only manual picks restored afterwards.
+        for (auto& row : clean) {
+            row.seabed = {};
+            row.seabed_domain = core::SidescanRangeDomain::Slant;
+            row.port_seabed = {};
+            row.stbd_seabed = {};
+            row.port_seabed_domain = core::SidescanRangeDomain::Slant;
+            row.stbd_seabed_domain = core::SidescanRangeDomain::Slant;
+        }
         SeabedAutoDetector::detectAll(clean, params);
         if (params.smoothing > 0.f)
             SeabedAutoDetector::smooth(clean, static_cast<int>(params.smoothing));
@@ -408,19 +394,34 @@ void WaterfallView::redetectSeabed(const SeabedAutoParams& params)
         // occur if the assembler pairs differently on re-assembly (e.g., first
         // ping dropped due to nav filtering).
         const std::size_t splice_n = std::min(m_rows.size(), clean.size());
-        for (std::size_t i = 0; i < splice_n; ++i)
+        for (std::size_t i = 0; i < splice_n; ++i) {
             m_rows[i].seabed = clean[i].seabed;
+            m_rows[i].seabed_domain = clean[i].seabed_domain;
+        }
         // Clear any tail rows that the clean assembly did not cover.
-        for (std::size_t i = splice_n; i < m_rows.size(); ++i)
+        for (std::size_t i = splice_n; i < m_rows.size(); ++i) {
             m_rows[i].seabed = {};
+            m_rows[i].seabed_domain = core::SidescanRangeDomain::Slant;
+        }
     } else {
         SeabedAutoDetector::detectAll(m_rows, params);
         if (params.smoothing > 0.f)
             SeabedAutoDetector::smooth(m_rows, static_cast<int>(params.smoothing));
     }
+    // On raw slant-coordinate rows, an explicit redetection replaces an older
+    // imported bottom reference for correction as well as for the overlay.
+    // Ground-coordinate detector output is never a vertical altitude.
+    for (auto& row : m_rows) {
+        if (!row.seabed.detected
+                || row.seabed_domain == core::SidescanRangeDomain::Ground
+                || !(row.seabed.range_m > 0.f))
+            continue;
+        if (!row.port.empty()) row.port_altitude_m = row.seabed.range_m;
+        if (!row.stbd.empty()) row.stbd_altitude_m = row.seabed.range_m;
+    }
     applyManualSeabedPicks();
     m_dirty        = true;
-    m_gl_src_dirty = true;
+    m_render_generation.geometryChanged();
     update();
 }
 
@@ -430,45 +431,30 @@ void WaterfallView::redetectSeabed(const SeabedAutoParams& params)
 
 void WaterfallView::setParams(const WaterfallParams& p)
 {
-    const bool needs_rebuild = (p.agc          != m_params.agc)
-                            || (p.tvg          != m_params.tvg)
-                            || (p.arn          != m_params.arn)
-                            || (p.destripe     != m_params.destripe)
-                            || (p.beam_pattern != m_params.beam_pattern)
-                            || (p.arc          != m_params.arc)
-                            || (p.ml_enhance   != m_params.ml_enhance);
+    const bool needs_rebuild = waterfallpipeline::requiresRowRebuild(m_params, p);
     m_params = p;
     m_params.display_low  = m_stretch_low;    // restore data-derived stretch
     m_params.display_high = m_stretch_high;
     updateCpuRendererParams();
 
     const auto context = m_amplitude_context;
-    const bool context_matches = context
-        && context->params_fingerprint
-            == imaging::sssAmplitudeParamsFingerprint(m_params);
+    const bool context_matches = waterfallpipeline::amplitudeContextMatches(
+        context.get(), m_params);
     if (needs_rebuild && !m_raw_pings.empty() && context_matches) {
         auto raw_snap = std::make_shared<std::vector<core::SidescanPing>>(m_raw_pings);
         const auto   par    = m_params;
         const auto   seabed = m_seabed_auto_params;
         const bool   use_sb = m_seabed_enabled;
-        const auto   gen    = ++m_rebuild_gen;
-        auto* w = new QFutureWatcher<WfPipelineResult>(this);
-        connect(w, &QFutureWatcher<WfPipelineResult>::finished, this,
-            [this, w, gen, raw_snap]() {
-                w->deleteLater();
-                if (gen != m_rebuild_gen.load()) return;
-                try {
-                    setPreassembledRows(*raw_snap, w->result(), true);
-                } catch (...) {
-                    // Keep the previous rendered rows on an exceptional rebuild;
-                    // a later parameter change can safely retry.
-                    m_dirty = true;
-                    update();
-                }
+        m_pipeline_runner->start(
+            raw_snap, par, seabed, use_sb, context,
+            [this](WaterfallPipelineRunner::PingSnapshot snapshot,
+                   WaterfallPipelineResult result) {
+                setPreassembledRows(*snapshot, std::move(result), true);
+            },
+            [this] {
+                m_dirty = true;
+                update();
             });
-        w->setFuture(QtConcurrent::run([raw_snap, par, seabed, use_sb, context]() {
-            return runPipeline(*raw_snap, par, seabed, use_sb, context.get());
-        }));
     } else {
         m_dirty = true;
         update();

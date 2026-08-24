@@ -176,6 +176,7 @@ target_link_libraries(dolphin-ui-import
 # -- 7. Map feature (MapView + SidescanViewController) ------------------------
 add_library(dolphin-ui-map STATIC
     features/map/MapView.cpp
+    features/map/MapView.Layers.cpp
     features/map/paint/MapViewPaint.cpp
     features/map/paint/MapViewPaint.Sonar.cpp
     features/map/paint/MapViewPaint.NavTrack.cpp
@@ -188,17 +189,26 @@ add_library(dolphin-ui-map STATIC
     features/map/MapView3D.cpp
     features/map/MapView3D.Load.cpp
     features/map/MapView3D.GL.cpp
+    features/map/MapView3DGeometry.cpp
     features/map/MapView3D.Paint.cpp
     features/map/MapView3D.Overlays.cpp
     features/map/MapView3D.Input.cpp
     features/map/MapViewportHost.cpp
+    features/map/MapEmptyStateLauncher.cpp
+    features/map/MapDrapeHull.cpp
     features/map/sidescan/SidescanSwathGeoreferencer.cpp
     features/map/sidescan/SssGeorefParams.cpp
+    features/map/sidescan/SssNavResolver.cpp
+    features/map/sidescan/SssNavContinuity.cpp
+    features/map/sidescan/SssNavRepair.cpp
+    features/map/sidescan/SssNavSmoothing.cpp
+    features/map/sidescan/SssHeadingTable.cpp
     features/map/sidescan/SssCoverageBuild.cpp
     features/map/sidescan/SssNavTrackBuild.cpp
     features/map/sidescan/SssPreviewRasterBuild.cpp
     features/map/sidescan/SidescanViewController.cpp
-    features/map/sidescan/SidescanRasterCache.cpp
+      features/map/sidescan/SidescanRasterCache.cpp
+      features/map/sidescan/SidescanRasterFingerprint.cpp
     features/map/sidescan/SidescanMapQuality.cpp
     features/map/sidescan/SidescanMapLoadTask.cpp
     features/map/sidescan/SidescanMapLoadTask.Build.cpp
@@ -230,7 +240,13 @@ add_library(dolphin-ui-waterfall STATIC
     features/waterfall/WaterfallViewSeabed.cpp
     features/waterfall/WaterfallViewProcessing.cpp
     features/waterfall/processing/WaterfallProcessingAlgorithms.cpp
+    features/waterfall/processing/WaterfallContactDetector.cpp
+    features/waterfall/processing/WaterfallGeoProjection.cpp
+    features/waterfall/processing/WaterfallPipelinePolicy.cpp
+    features/waterfall/processing/WaterfallPipeline.cpp
+    features/waterfall/processing/WaterfallPipelineRunner.cpp
     features/waterfall/WaterfallViewInput.cpp
+    features/waterfall/interaction/WaterfallToolPolicy.cpp
     features/waterfall/WaterfallSettingsDialog.cpp
     features/waterfall/WaterfallQcStrip.cpp
     features/waterfall/WaterfallWindow.cpp
@@ -401,6 +417,7 @@ add_library(dolphin-ui-mainwindow STATIC
     mainwindow/MainWindow.Menus.cpp
     mainwindow/MainWindow.Geodesy.cpp
     mainwindow/ProjectSessionController.cpp
+    mainwindow/ProjectSessionController.Recent.cpp
     mainwindow/LayerDisplayCoordinator.cpp
     mainwindow/MainWindow.Project.cpp
     mainwindow/MainWindow.Events.cpp

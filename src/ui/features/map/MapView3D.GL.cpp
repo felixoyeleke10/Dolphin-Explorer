@@ -3,6 +3,7 @@
 // Shader sources are defined here because they are consumed only by initializeGL.
 
 #include "ui/features/map/MapView3D.h"
+#include "ui/features/map/MapView3DGeometry.h"
 
 #include <QOpenGLTexture>
 #include "render/sonar/SSSPalette.h"
@@ -400,23 +401,11 @@ void MapView3D::buildNavMergedVbo()
     // frame in drawNavLayers instead of N binds — eliminates per-layer state change.
     std::vector<float> all_verts;
     all_verts.reserve(m_layers.size() * 2048);
+    const MapLocalFrame frame{m_origin_x, m_origin_y, m_is_projected};
 
     for (auto& L : m_layers) {
         L.vbo_start = static_cast<int>(all_verts.size()) / 3;
-
-        QVector3D prev;
-        bool have_prev = false;
-        for (const auto& pt : L.raw_track) {
-            if (std::isnan(pt.x()) || std::isnan(pt.y())) { have_prev = false; continue; }
-            const QVector3D cur = toLocal(pt.x(), pt.y(), 0.0);
-            if (have_prev) {
-                all_verts.insert(all_verts.end(), {prev.x(), prev.y(), prev.z()});
-                all_verts.insert(all_verts.end(), {cur.x(),  cur.y(),  cur.z()});
-            }
-            prev      = cur;
-            have_prev = true;
-        }
-        L.vertex_count = static_cast<int>(all_verts.size()) / 3 - L.vbo_start;
+        L.vertex_count = appendNavTrackLineVertices(L.raw_track, frame, all_verts);
         L.dirty        = false;
     }
 
@@ -544,31 +533,8 @@ void MapView3D::buildDrapeQuad(SonarDrape3D& D)
 
 void MapView3D::buildDrapeHullVbo(SonarDrape3D& D)
 {
-    // pending_hull is a flat list of per-ribbon-pair polygon vertices separated by
-    // NaN sentinels. Each segment is closed independently as a GL_LINES polygon.
-    std::vector<float> verts;
-    std::vector<QPointF> seg;
-
-    auto flushPoly = [&]() {
-        const int n = static_cast<int>(seg.size());
-        if (n >= 3) {
-            for (int i = 0; i < n; ++i) {
-                const QVector3D a = toLocal(seg[static_cast<size_t>(i)].x(),
-                                            seg[static_cast<size_t>(i)].y(), 0.0);
-                const QVector3D b = toLocal(seg[static_cast<size_t>((i + 1) % n)].x(),
-                                            seg[static_cast<size_t>((i + 1) % n)].y(), 0.0);
-                verts.push_back(a.x()); verts.push_back(a.y()); verts.push_back(0.f);
-                verts.push_back(b.x()); verts.push_back(b.y()); verts.push_back(0.f);
-            }
-        }
-        seg.clear();
-    };
-
-    for (const auto& pt : D.pending_hull) {
-        if (std::isnan(pt.x())) { flushPoly(); continue; }
-        seg.push_back(pt);
-    }
-    flushPoly();
+    auto verts = buildClosedOutlineVertices(
+        D.pending_hull, {m_origin_x, m_origin_y, m_is_projected});
 
     D.pending_hull.clear();
     D.outline_vert_count = 0;
